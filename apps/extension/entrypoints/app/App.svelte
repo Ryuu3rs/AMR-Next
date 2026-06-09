@@ -34,6 +34,11 @@
         checkedAt: number
     } | null>(null)
     let checkingUpdates = $state(false)
+    let confirmingRemove = $state<string | null>(null)
+
+    function isSeedData(manga: LibraryManga): boolean {
+        return manga.sourceUrl.includes("/seed-c")
+    }
 
     onMount(load)
 
@@ -248,17 +253,44 @@
                     {#each visibleLibrary as manga}
                         <article>
                             <div class="poster-wrap">
-                                <button type="button" class="poster" onclick={() => read(manga)}>
+                                <button
+                                    type="button"
+                                    class="poster"
+                                    class:sample={isSeedData(manga)}
+                                    onclick={() => {
+                                        if (!isSeedData(manga)) read(manga)
+                                    }}>
                                     {#if manga.coverUrl}<img src={manga.coverUrl} alt={manga.title} />{:else}<span
                                             class="cover-initial">{manga.title[0]}</span
                                         >{/if}
+                                    {#if isSeedData(manga)}<span class="sample-chip">Sample</span>{/if}
                                 </button>
-                                <div class="poster-hover">
-                                    <span>Continue</span>
-                                    <button type="button" class="remove-btn" onclick={() => void remove(manga.id)}>
-                                        Remove
-                                    </button>
-                                </div>
+                                <button
+                                    type="button"
+                                    class="poster-menu-btn"
+                                    aria-label="Options"
+                                    onclick={e => {
+                                        e.stopPropagation()
+                                        confirmingRemove = confirmingRemove === manga.id ? null : manga.id
+                                    }}>⋯</button>
+                                {#if confirmingRemove === manga.id}
+                                    <div class="poster-confirm">
+                                        <p>Remove from library?</p>
+                                        <div class="poster-confirm-actions">
+                                            <button
+                                                type="button"
+                                                class="confirm-remove-btn"
+                                                onclick={() => {
+                                                    void remove(manga.id)
+                                                    confirmingRemove = null
+                                                }}>Remove</button>
+                                            <button
+                                                type="button"
+                                                class="confirm-cancel-btn"
+                                                onclick={() => (confirmingRemove = null)}>Cancel</button>
+                                        </div>
+                                    </div>
+                                {/if}
                             </div>
                             <p class="poster-title">{manga.title}</p>
                             <p class="poster-sub">{manga.sourceId}</p>
@@ -273,16 +305,43 @@
                     {checkingUpdates ? "Checking..." : "Check now"}
                 </button>
             </div>
-            <div class="stat-row">
-                <div class="stat-box"><strong>{updateStatus?.updated ?? 0}</strong><span>Updated</span></div>
-                <div class="stat-box"><strong>{updateStatus?.checked ?? 0}</strong><span>Checked</span></div>
-                <div class="stat-box"><strong>{updateStatus?.failed ?? 0}</strong><span>Failed</span></div>
-            </div>
-            <p class="muted" style="margin-top:20px">
+            <p class="muted" style="margin-bottom:20px">
                 {updateStatus
-                    ? `Last checked ${new Date(updateStatus.checkedAt).toLocaleString()}`
-                    : "No update check has run yet."}
+                    ? `Last checked ${new Date(updateStatus.checkedAt).toLocaleString()} — ${updateStatus.updated} updated, ${updateStatus.failed} failed`
+                    : "No update check has run yet. Click Check now to scan for new chapters."}
             </p>
+            {#if library.length === 0}
+                <p class="muted">No manga in library to check.</p>
+            {:else}
+                <div class="update-list">
+                    {#each library as manga}
+                        {@const hasNew = Boolean(
+                            manga.latestChapterId &&
+                            manga.lastReadChapterId &&
+                            manga.latestChapterId !== manga.lastReadChapterId
+                        )}
+                        {@const neverRead = Boolean(manga.latestChapterId && !manga.lastReadChapterId)}
+                        <div class="update-row">
+                            <div class="update-cover">
+                                {#if manga.coverUrl}<img src={manga.coverUrl} alt={manga.title} />{:else}<span
+                                        >{manga.title[0]}</span
+                                    >{/if}
+                            </div>
+                            <div class="update-info">
+                                <p class="update-title">{manga.title}</p>
+                                <p class="muted">{new Date(manga.updatedAt).toLocaleDateString()}</p>
+                            </div>
+                            {#if hasNew}
+                                <span class="badge-new">New chapter</span>
+                            {:else if neverRead}
+                                <span class="badge-unread">Unread</span>
+                            {:else}
+                                <span class="badge-ok-sm">Up to date</span>
+                            {/if}
+                        </div>
+                    {/each}
+                </div>
+            {/if}
         {:else if activeSection === "Achievements"}
             <h1>Achievements</h1>
             <div class="stat-row">

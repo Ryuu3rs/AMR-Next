@@ -40,6 +40,19 @@
             completed: pageIndex === chapter.pages.length - 1
         })
     }
+
+    async function closeTab() {
+        try {
+            const tab = await browser.tabs.getCurrent()
+            if (tab?.id !== undefined) {
+                await browser.tabs.remove(tab.id)
+                return
+            }
+        } catch {
+            // fallthrough
+        }
+        window.close()
+    }
 </script>
 
 <svelte:window
@@ -54,7 +67,7 @@
     }} />
 
 <header>
-    <button type="button" onclick={() => history.back()} aria-label="Close reader">Close</button>
+    <button type="button" onclick={() => void closeTab()} aria-label="Close reader">Close</button>
     <div>
         <strong>{chapter?.manga.manga.title ?? "Loading chapter"}</strong>
         <span>{chapter?.chapter.title ?? ""}</span>

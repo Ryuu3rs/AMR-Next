@@ -1,7 +1,7 @@
 :root {
     --bg: #07090f;
-    --surface: #0e1420;
-    --surface-2: #141e2e;
+    --surface: #111929;
+    --surface-2: #182338;
     --border: #1b2538;
     --accent: #8b5cf6;
     --accent-h: #7c3aed;
@@ -329,21 +329,114 @@ button:disabled {
     letter-spacing: 0.08em;
 }
 
-.remove-btn {
-    min-height: 28px;
-    padding: 0 10px;
-    font-size: 11px;
-    font-weight: 600;
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+.poster-menu-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 28px;
+    height: 28px;
+    min-height: unset;
+    padding: 0;
     border-radius: 6px;
-    color: #b0bcc8;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #e0e8f0;
+    font-size: 15px;
+    line-height: 1;
+    letter-spacing: 0;
+    opacity: 0;
+    transition:
+        opacity 0.15s,
+        background 0.1s;
+    z-index: 3;
 }
 
-.remove-btn:hover:not(:disabled) {
-    background: rgba(239, 68, 68, 0.25);
-    border-color: rgba(239, 68, 68, 0.4);
+.poster-wrap:hover .poster-menu-btn {
+    opacity: 1;
+}
+
+.poster-menu-btn:hover:not(:disabled) {
+    background: rgba(0, 0, 0, 0.85);
+}
+
+.poster-confirm {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+    background: rgba(8, 11, 18, 0.95);
+    backdrop-filter: blur(8px);
+    z-index: 4;
+    border-radius: 10px;
+}
+
+.poster-confirm p {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    text-align: center;
+    line-height: 1.4;
+}
+
+.poster-confirm-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+
+.confirm-remove-btn {
+    min-height: 30px;
+    padding: 0 12px;
+    font-size: 12px;
+    background: rgba(239, 68, 68, 0.75);
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    border-radius: 6px;
     color: #fff;
+}
+
+.confirm-remove-btn:hover:not(:disabled) {
+    background: rgb(239, 68, 68);
+}
+
+.confirm-cancel-btn {
+    min-height: 30px;
+    padding: 0 12px;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #9aa5b4;
+}
+
+.confirm-cancel-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.sample-chip {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 3px 9px;
+    border-radius: 99px;
+    background: rgba(139, 92, 246, 0.82);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.poster.sample {
+    cursor: default;
+    opacity: 0.72;
 }
 
 .poster-title {
@@ -527,6 +620,91 @@ button:disabled {
     font-size: 12px;
     font-weight: 600;
     border: 1px solid rgba(16, 185, 129, 0.22);
+}
+
+.update-list {
+    display: grid;
+    gap: 8px;
+}
+
+.update-row {
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    border-radius: 10px;
+    background: var(--surface);
+}
+
+.update-cover {
+    width: 44px;
+    height: 58px;
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--surface-2);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+}
+
+.update-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.update-cover span {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--accent);
+}
+
+.update-info {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.update-title {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.badge-new {
+    padding: 3px 10px;
+    border-radius: 99px;
+    background: rgba(139, 92, 246, 0.18);
+    color: #c4b5fd;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid rgba(139, 92, 246, 0.35);
+    white-space: nowrap;
+}
+
+.badge-unread {
+    padding: 3px 10px;
+    border-radius: 99px;
+    background: rgba(245, 158, 11, 0.12);
+    color: #fcd34d;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    white-space: nowrap;
+}
+
+.badge-ok-sm {
+    padding: 3px 10px;
+    border-radius: 99px;
+    background: rgba(16, 185, 129, 0.08);
+    color: var(--success);
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid rgba(16, 185, 129, 0.18);
+    white-space: nowrap;
 }
 
 .data-list {
