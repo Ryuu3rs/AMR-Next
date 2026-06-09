@@ -6,6 +6,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("stats:get") }),
     z.object({ type: z.literal("data:export") }),
     z.object({ type: z.literal("data:import"), envelope: z.unknown() }),
+    z.object({ type: z.literal("data:seed") }),
     z.object({ type: z.literal("updates:check") }),
     z.object({ type: z.literal("updates:get") }),
     z.object({ type: z.literal("page:current") }),

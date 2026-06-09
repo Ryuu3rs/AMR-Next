@@ -79,7 +79,7 @@ main {
 .eyebrow,
 .hero span {
     margin: 0;
-    color: #75baff;
+    color: #818cf8;
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -146,14 +146,14 @@ button {
     padding: 0 16px;
     border: 0;
     border-radius: 8px;
-    color: #07111f;
-    background: #75baff;
+    color: #fff;
+    background: #818cf8;
     font-weight: 700;
     cursor: pointer;
 }
 
 .quiet {
-    color: #b9c5d2;
+    color: #94a3b8;
     background: transparent;
 }
 
@@ -176,34 +176,32 @@ button {
 
 .library {
     display: grid;
-    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 16px;
+    margin-top: 8px;
 }
 
 .library article {
-    display: grid;
-    grid-template-columns: 52px 1fr auto auto;
-    align-items: center;
-    gap: 16px;
-    padding: 12px;
-    border: 1px solid #26313d;
+    position: relative;
     border-radius: 10px;
-    background: #121922;
+    overflow: hidden;
+    background: #111827;
+    cursor: pointer;
 }
 
-.library article h2 {
-    font-size: 17px;
+.recent-grid {
+    margin-top: 16px;
 }
 
 .cover {
     display: grid;
-    width: 52px;
-    height: 68px;
+    width: 100%;
+    height: 180px;
     place-items: center;
     overflow: hidden;
-    border-radius: 5px;
-    color: #75baff;
+    color: #818cf8;
     background: #263548;
-    font-size: 11px;
+    font-size: 28px;
     font-weight: 800;
 }
 
@@ -211,6 +209,32 @@ button {
     width: 100%;
     height: 100%;
     object-fit: cover;
+}
+
+.manga-title {
+    padding: 8px 10px 10px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.manga-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.7);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.library article:hover .manga-overlay {
+    opacity: 1;
 }
 
 .setting {
@@ -260,8 +284,8 @@ button {
 }
 
 .achievements article.unlocked {
-    border-color: #397a60;
-    background: #14241f;
+    border-color: #4f46e5;
+    background: #1a1740;
 }
 
 .update-summary {
@@ -320,8 +344,8 @@ button {
         padding: 32px 0;
     }
 
-    .library article {
-        grid-template-columns: 52px 1fr;
+    .library {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
     }
 
     .stat-grid {

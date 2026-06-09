@@ -1,5 +1,13 @@
 import type { ReadingProgress } from "@amr/contracts"
-import { db, exportDatabase, getLocalStats, importDatabase, saveProgress, saveResolvedChapter } from "../src/database"
+import {
+    db,
+    exportDatabase,
+    getLocalStats,
+    importDatabase,
+    saveProgress,
+    saveResolvedChapter,
+    seedDatabase
+} from "../src/database"
 import { runtimeRequestSchema, type RuntimeResponse } from "../src/runtime"
 import { getSettings, updateSettings } from "../src/settings"
 import { findSource, listMangaChapters, resolveChapterUrl } from "../src/sources"
@@ -146,6 +154,8 @@ export default defineBackground(() => {
                         return success(await exportDatabase())
                     case "data:import":
                         return success(await importDatabase(request.envelope))
+                    case "data:seed":
+                        return success(await seedDatabase())
                     case "updates:check":
                         return success(await checkUpdates())
                     case "updates:get": {

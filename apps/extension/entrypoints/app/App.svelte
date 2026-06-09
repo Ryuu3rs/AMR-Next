@@ -125,6 +125,11 @@
         }
     }
 
+    async function seedData() {
+        await sendRuntimeMessage({ type: "data:seed" })
+        await load()
+    }
+
     async function checkForUpdates() {
         checkingUpdates = true
         try {
@@ -153,7 +158,7 @@
     <aside>
         <div class="brand">
             <img src="/icons/icon_48.png" alt="" />
-            <div><strong>AMR</strong><span>Local reader</span></div>
+            <div><strong>AMR Next</strong><span>Local-first manga</span></div>
         </div>
 
         <nav aria-label="Main navigation">
@@ -187,6 +192,33 @@
                     </div>
                     <button type="button" onclick={() => library[0] && read(library[0])}>Continue</button>
                 </section>
+                <section class="library recent-grid">
+                    {#each library.slice(0, 6) as manga}
+                        <article onclick={() => read(manga)}>
+                            <div class="cover">
+                                {#if manga.coverUrl}<img src={manga.coverUrl} alt="" />{:else}<span
+                                        >{manga.title[0]}</span
+                                    >{/if}
+                            </div>
+                            <div class="manga-title">{manga.title}</div>
+                            <div class="manga-overlay">
+                                <button
+                                    type="button"
+                                    onclick={e => {
+                                        e.stopPropagation()
+                                        read(manga)
+                                    }}>Continue</button>
+                                <button
+                                    class="quiet"
+                                    type="button"
+                                    onclick={e => {
+                                        e.stopPropagation()
+                                        void remove(manga.id)
+                                    }}>Remove</button>
+                            </div>
+                        </article>
+                    {/each}
+                </section>
             {/if}
             <section class="add-url">
                 <div>
@@ -211,16 +243,27 @@
             </div>
             <section class="library">
                 {#each visibleLibrary as manga}
-                    <article>
+                    <article onclick={() => read(manga)}>
                         <div class="cover">
-                            {#if manga.coverUrl}<img src={manga.coverUrl} alt="" />{:else}<span>AMR</span>{/if}
+                            {#if manga.coverUrl}<img src={manga.coverUrl} alt="" />{:else}<span>{manga.title[0]}</span
+                                >{/if}
                         </div>
-                        <div>
-                            <h2>{manga.title}</h2>
-                            <p>{manga.sourceId}</p>
+                        <div class="manga-title">{manga.title}</div>
+                        <div class="manga-overlay">
+                            <button
+                                type="button"
+                                onclick={e => {
+                                    e.stopPropagation()
+                                    read(manga)
+                                }}>Continue</button>
+                            <button
+                                class="quiet"
+                                type="button"
+                                onclick={e => {
+                                    e.stopPropagation()
+                                    void remove(manga.id)
+                                }}>Remove</button>
                         </div>
-                        <button type="button" onclick={() => read(manga)}>Continue</button>
-                        <button class="quiet" type="button" onclick={() => remove(manga.id)}>Remove</button>
                     </article>
                 {:else}
                     <p>No titles match this search.</p>
@@ -294,6 +337,9 @@
                             if (file) void importData(file)
                         }} />
                 </label>
+                {#if library.length === 0}
+                    <button type="button" onclick={seedData}>Load sample data</button>
+                {/if}
                 {#if dataMessage}<p>{dataMessage}</p>{/if}
             </section>
         {:else}

@@ -138,6 +138,95 @@ export async function importDatabase(value: unknown): Promise<{ manga: number; c
     return { manga: manga.length, chapters: chapters.length }
 }
 
+export async function seedDatabase(): Promise<void> {
+    const now = Date.now()
+    const seedManga: LibraryManga[] = [
+        {
+            id: "seed-md-001",
+            title: "Chainsaw Man",
+            normalizedTitle: "chainsaw man",
+            authors: [],
+            status: "ongoing",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/seed-c1",
+            addedAt: now - 86400000 * 7,
+            updatedAt: now - 3600000 * 2,
+            latestChapterId: "seed-c1"
+        },
+        {
+            id: "seed-md-002",
+            title: "Jujutsu Kaisen",
+            normalizedTitle: "jujutsu kaisen",
+            authors: [],
+            status: "ongoing",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/seed-c2",
+            addedAt: now - 86400000 * 5,
+            updatedAt: now - 3600000 * 5,
+            latestChapterId: "seed-c2"
+        },
+        {
+            id: "seed-md-003",
+            title: "Blue Lock",
+            normalizedTitle: "blue lock",
+            authors: [],
+            status: "ongoing",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/seed-c3",
+            addedAt: now - 86400000 * 3,
+            updatedAt: now - 3600000 * 8,
+            latestChapterId: "seed-c3"
+        },
+        {
+            id: "seed-md-004",
+            title: "Spy x Family",
+            normalizedTitle: "spy x family",
+            authors: [],
+            status: "ongoing",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/seed-c4",
+            addedAt: now - 86400000 * 2,
+            updatedAt: now - 3600000 * 12,
+            latestChapterId: "seed-c4"
+        },
+        {
+            id: "seed-md-005",
+            title: "Dungeon Meshi",
+            normalizedTitle: "dungeon meshi",
+            authors: [],
+            status: "completed",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/seed-c5",
+            addedAt: now - 86400000 * 1,
+            updatedAt: now - 3600000 * 1,
+            latestChapterId: "seed-c5"
+        }
+    ]
+    const seedChapters: import("@amr/contracts").ChapterRecord[] = seedManga.map(m => ({
+        id: m.latestChapterId!,
+        mangaId: m.id,
+        sourceId: "mangadex",
+        title: "Chapter 1",
+        sortKey: 1,
+        url: m.sourceUrl,
+        addedAt: m.addedAt
+    }))
+    const seedLinks: import("@amr/contracts").SourceLinkRecord[] = seedManga.map(m => ({
+        mangaId: m.id,
+        sourceId: "mangadex",
+        sourceMangaId: m.id,
+        url: m.sourceUrl,
+        title: m.title,
+        addedAt: m.addedAt,
+        updatedAt: m.updatedAt
+    }))
+    await db.transaction("rw", db.manga, db.sourceLinks, db.chapters, async () => {
+        await db.manga.bulkPut(seedManga)
+        await db.sourceLinks.bulkPut(seedLinks)
+        await db.chapters.bulkPut(seedChapters)
+    })
+}
+
 export async function getLocalStats() {
     const [mangaCount, progress, history] = await Promise.all([
         db.manga.count(),
