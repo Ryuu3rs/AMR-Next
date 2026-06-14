@@ -160,6 +160,11 @@ export default defineBackground(() => {
                             }
                         )
                         return success(null)
+                    case "library:rate": {
+                        const rating = request.rating === 0 ? undefined : request.rating
+                        await db.manga.update(request.mangaId, { rating } as Partial<{ rating: number }>)
+                        return success(null)
+                    }
                     case "stats:get":
                         return success(await getLocalStats())
                     case "data:export":

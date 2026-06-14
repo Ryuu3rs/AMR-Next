@@ -3,6 +3,7 @@ import { z } from "zod"
 export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("library:list") }),
     z.object({ type: z.literal("library:remove"), mangaId: z.string().min(1) }),
+    z.object({ type: z.literal("library:rate"), mangaId: z.string().min(1), rating: z.number().int().min(0).max(5) }),
     z.object({ type: z.literal("stats:get") }),
     z.object({ type: z.literal("data:export") }),
     z.object({ type: z.literal("data:import"), envelope: z.unknown() }),
