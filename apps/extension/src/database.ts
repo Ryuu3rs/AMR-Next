@@ -13,6 +13,9 @@ export type LibraryManga = MangaRecord & {
     // changes that invalidate the URL-derived chapter IDs above.
     latestChapterNumber?: number
     lastReadChapterNumber?: number
+    // When the user last read a chapter of this title (for "recently read" sort),
+    // distinct from updatedAt which also moves on source update checks.
+    lastReadAt?: number
 }
 
 export type HistoryEvent = {
@@ -84,6 +87,7 @@ export async function saveProgress(progress: ReadingProgress): Promise<void> {
         await db.manga.update(progress.mangaId, {
             lastReadChapterId: progress.chapterId,
             ...(chapter && Number.isFinite(chapter.sortKey) ? { lastReadChapterNumber: chapter.sortKey } : {}),
+            lastReadAt: progress.updatedAt,
             updatedAt: progress.updatedAt
         })
         if (!existing) {
