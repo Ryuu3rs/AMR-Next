@@ -234,6 +234,50 @@ function extractSearchResults(html: string, config: MadaraConfig, mangaPath: str
     return out
 }
 
+// Parse a Madara chapter list (from the manga page or the admin-ajax fragment).
+function extractChapterList(
+    html: string,
+    config: MadaraConfig,
+    mangaPath: string,
+    slug: string,
+    language: string
+): SourceChapter[] {
+    const mangaId = `${config.id}:manga:${slug}`
+    const items = [...html.matchAll(/<li[^>]*\bwp-manga-chapter\b[^>]*>([\s\S]*?)<\/li>/gi)].map(
+        m => captureGroup(m, 1) ?? ""
+    )
+    const out: SourceChapter[] = []
+    const seen = new Set<string>()
+    for (const item of items) {
+        const anchor = item.match(/<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i)
+        const href = anchor ? captureGroup(anchor, 1) : undefined
+        if (!href) continue
+        let absolute: URL
+        try {
+            absolute = new URL(href, config.origin)
+        } catch {
+            continue
+        }
+        const chapterSlug = absolute.pathname.replace(/\/$/, "").split("/").pop()
+        if (!chapterSlug || seen.has(chapterSlug)) continue
+        seen.add(chapterSlug)
+        const label = (anchor ? (captureGroup(anchor, 2) ?? "") : "").replace(/<[^>]+>/g, "").trim()
+        const numMatch = label.match(/(\d+(?:\.\d+)?)/) ?? chapterSlug.match(/(\d+(?:\.\d+)?)/)
+        const number = numMatch ? captureGroup(numMatch, 1) : undefined
+        out.push({
+            id: `${config.id}:chapter:${slug}:${chapterSlug}`,
+            mangaId,
+            sourceId: config.id,
+            sourceChapterId: `${slug}:${chapterSlug}`,
+            title: label || `Chapter ${number ?? "?"}`,
+            url: absolute.toString(),
+            sortKey: number ? parseFloat(number) : 0,
+            language
+        })
+    }
+    return out
+}
+
 export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
     const mangaPath = config.mangaPath ?? "manga"
     const chapterPrefix = config.chapterPrefix ?? "chapter"
@@ -321,7 +365,7 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             name: config.name,
             domains: config.domains,
             languages: [language],
-            capabilities: ["pages"],
+            capabilities: ["pages", "chapters"],
             requestRateLimit: config.rateLimit ?? { requests: 3, intervalMs: 1000 },
             fixtureVersion: 1
         },
@@ -353,8 +397,35 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             }
         },
 
-        async listChapters(_input: ListChaptersInput, _context: SourceContext): Promise<SourceChapter[]> {
-            throw new SourceError("invalid-input", `${config.name} chapter listing is not supported`)
+        async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
+            const slug = input.manga.sourceMangaId
+            if (!slug) throw new SourceError("invalid-input", `A valid ${config.name} manga id is required`)
+            const mangaPageUrl = new URL(`${config.origin}/${mangaPath}/${slug}/`)
+            const html = await context.request.getText(mangaPageUrl, { headers: browserHeaders })
+
+            let chapters = extractChapterList(html, config, mangaPath, slug, language)
+            if (chapters.length === 0) {
+                // Madara loads the list lazily via admin-ajax for some sites.
+                const idMatch =
+                    html.match(/manga-chapters-holder[^>]*\bdata-id=["'](\d+)["']/i) ??
+                    html.match(/\bdata-id=["'](\d+)["'][^>]*manga-chapters-holder/i)
+                const mangaPostId = idMatch ? captureGroup(idMatch, 1) : undefined
+                if (mangaPostId) {
+                    try {
+                        const ajax = await context.request.postForm(
+                            new URL(`${config.origin}/wp-admin/admin-ajax.php`),
+                            { action: "manga_get_chapters", manga: mangaPostId },
+                            { headers: ajaxHeaders }
+                        )
+                        chapters = extractChapterList(ajax, config, mangaPath, slug, language)
+                    } catch {
+                        // fall through with empty list
+                    }
+                }
+            }
+
+            chapters.sort((a, b) => a.sortKey - b.sortKey)
+            return input.limit ? chapters.slice(-input.limit) : chapters
         },
 
         async resolveCover(

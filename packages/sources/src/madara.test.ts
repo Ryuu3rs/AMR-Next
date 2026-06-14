@@ -60,6 +60,37 @@ describe("createMadaraAdapter", () => {
         expect(result.manga.sourceMangaId).toBe("cool-manga")
     })
 
+    it("lists chapters from the manga page", async () => {
+        const mangaHtml = `<html><body>
+<div id="manga-chapters-holder" data-id="555">
+<ul class="main version-chap">
+  <li class="wp-manga-chapter"><a href="https://test-madara.example/series/cool-manga/ch-2/">Chapter 2</a></li>
+  <li class="wp-manga-chapter"><a href="https://test-madara.example/series/cool-manga/ch-1/">Chapter 1</a></li>
+</ul></div></body></html>`
+        const context = createContext({ "/series/cool-manga/": mangaHtml })
+        const manga = {
+            manga: {
+                id: "testmadara:manga:cool-manga",
+                title: "Cool Manga",
+                normalizedTitle: "cool manga",
+                authors: [],
+                status: "unknown" as const,
+                addedAt: 0,
+                updatedAt: 0
+            },
+            sourceId: "testmadara",
+            sourceMangaId: "cool-manga",
+            url: "https://test-madara.example/series/cool-manga/"
+        }
+        const chapters = await adapter.listChapters({ manga }, context)
+        expect(chapters.map(c => c.sortKey)).toEqual([1, 2])
+        expect(chapters[1]).toMatchObject({
+            sourceChapterId: "cool-manga:ch-2",
+            title: "Chapter 2",
+            language: "en"
+        })
+    })
+
     it("parses search results with cover and latest chapter", async () => {
         const searchHtml = `<html><body>
 <div class="c-tabs-item__content">

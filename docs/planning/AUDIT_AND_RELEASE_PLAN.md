@@ -80,7 +80,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 ### C. Sources & discovery
 
 - ✅ C1 (L) **`search()` in the adapter contract** — MangaDex (with latest chapter) + generic Madara (`?s=` results: title, cover, latest chapter); extension aggregates across all searchable sources.
-- C2 (L) **Implement `listChapters()` for mangaread + mgeko** so updates work. → 1.2 (pairs with deferred scraper hardening)
+- ✅ C2 (L) **`listChapters()` for the Madara family** (incl. mangaread) — parses the manga page chapter list with an admin-ajax fallback, so background update checks now work for every Madara site. (mgeko listing still pending.)
 - C3 (L) Generic Madara-family template adapter (one config → many sites). → 2.0
 - C4 (M) Self-hosted sources: Komga / Suwayomi(Tachidesk) with credentials. → 2.0
 - C5 (M) Add-by-URL flow for any supported domain. → 1.1
