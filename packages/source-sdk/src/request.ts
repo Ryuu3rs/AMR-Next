@@ -156,7 +156,11 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
 
         getText: fetchText,
 
-        async postForm(url: URL, params: Record<string, string>, requestOptions?: SourceRequestOptions): Promise<string> {
+        async postForm(
+            url: URL,
+            params: Record<string, string>,
+            requestOptions?: SourceRequestOptions
+        ): Promise<string> {
             if (!allowedOrigins.has(url.origin)) {
                 throw new SourceError("invalid-input", `Request origin is not allowed: ${url.origin}`)
             }

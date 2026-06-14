@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
+    import { sourceOrigins } from "../../src/permissions"
 
     type PageState = {
         supported: boolean
@@ -38,9 +39,7 @@
         if (!page?.url) return
         busy = true
         message = ""
-        const granted = await browser.permissions.request({
-            origins: ["https://mangadex.org/*", "https://api.mangadex.org/*", "https://uploads.mangadex.org/*"]
-        })
+        const granted = await browser.permissions.request({ origins: sourceOrigins() })
 
         if (!granted) {
             message = "Site access is required to resolve this chapter."

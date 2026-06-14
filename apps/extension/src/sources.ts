@@ -2,6 +2,7 @@ import type { SourceLinkRecord } from "@amr/contracts"
 import { createBoundedRequestClient, type SourceContext, type SourceManga } from "@amr/source-sdk"
 import { sourceAdapters } from "@amr/sources"
 import type { LibraryManga } from "./database"
+import { sourceOrigins } from "./permissions"
 
 export function findSource(url: URL) {
     return sourceAdapters.find(adapter => adapter.match(url) !== "none")
@@ -94,31 +95,11 @@ export async function getMangaChapters(mangaId: string) {
 export type MangaChapter = Awaited<ReturnType<typeof getMangaChapters>>[number]
 
 export async function checkSourcePermission(): Promise<boolean> {
-    return browser.permissions.contains({
-        origins: [
-            "https://mangadex.org/*",
-            "https://api.mangadex.org/*",
-            "https://uploads.mangadex.org/*",
-            "*://*.mangadex.network/*",
-            "https://www.mangaread.org/*",
-            "https://www.mgeko.cc/*",
-            "*://*.imgsrv4.com/*"
-        ]
-    })
+    return browser.permissions.contains({ origins: sourceOrigins() })
 }
 
 export async function requestSourcePermission(): Promise<boolean> {
-    return browser.permissions.request({
-        origins: [
-            "https://mangadex.org/*",
-            "https://api.mangadex.org/*",
-            "https://uploads.mangadex.org/*",
-            "*://*.mangadex.network/*",
-            "https://www.mangaread.org/*",
-            "https://www.mgeko.cc/*",
-            "*://*.imgsrv4.com/*"
-        ]
-    })
+    return browser.permissions.request({ origins: sourceOrigins() })
 }
 
 export async function listMangaChapters(manga: LibraryManga, link: SourceLinkRecord) {

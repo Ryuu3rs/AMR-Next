@@ -82,7 +82,9 @@ function isLikelyPageImage(url: string): boolean {
 
 function extractImagesFromHtml(html: string): string[] {
     // Narrow to reading-content section if present (gallery-dl confirmed: excludes sidebar/header junk)
-    const readingMatch = html.match(/<div[^>]*\breading-content\b[^>]*>([\s\S]*?)(?:<div[^>]*\bentry-header\b|<\/div>\s*<div[^>]*\bentry-content\b)/i)
+    const readingMatch = html.match(
+        /<div[^>]*\breading-content\b[^>]*>([\s\S]*?)(?:<div[^>]*\bentry-header\b|<\/div>\s*<div[^>]*\bentry-content\b)/i
+    )
     const scope = readingMatch ? (captureGroup(readingMatch, 1) ?? html) : html
 
     // Collect all <img> tags (handles multiline — [^>] matches \n in JS character classes)
@@ -209,9 +211,8 @@ async function fetchAjaxImages(html: string, context: SourceContext): Promise<{ 
                 )
                 if (urls.length > 0) return { urls, debug: `${debugPrefix} json.images ok (${urls.length})` }
             }
-            const htmlContent = typeof json.html === "string" ? json.html
-                : typeof json.data === "string" ? json.data
-                : undefined
+            const htmlContent =
+                typeof json.html === "string" ? json.html : typeof json.data === "string" ? json.data : undefined
             if (htmlContent) {
                 const urls = extractImagesFromHtml(htmlContent)
                 if (urls.length > 0) return { urls, debug: `${debugPrefix} json.html ok (${urls.length})` }
@@ -327,7 +328,10 @@ export const mangareadAdapter: SourceAdapter = {
             const hasChapterImg = /wp-manga-chapter-img/.test(html)
             const hasTitle = /<title>/.test(html)
             const hasCf = /cf-browser-verification|cf_chl_jschl|__cf_chl_captcha/.test(html)
-            throw new SourceError("invalid-response", `No images found [ajax:${ajaxResult.debug}] [html:${htmlLen}b hasId=${hasImageId} hasCls=${hasChapterImg} hasTitle=${hasTitle} cf=${hasCf}]`)
+            throw new SourceError(
+                "invalid-response",
+                `No images found [ajax:${ajaxResult.debug}] [html:${htmlLen}b hasId=${hasImageId} hasCls=${hasChapterImg} hasTitle=${hasTitle} cf=${hasCf}]`
+            )
         }
 
         const mangaTitle = extractMangaTitle(html, slugs.mangaSlug)

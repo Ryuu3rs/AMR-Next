@@ -3,6 +3,7 @@
     import type { AppSettings } from "../../src/settings"
     import { onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
+    import { sourceOrigins } from "../../src/permissions"
 
     const sections = ["Home", "Library", "Updates", "Achievements", "Sources", "Data", "Settings"] as const
     let activeSection = $state<(typeof sections)[number]>("Home")
@@ -89,17 +90,7 @@
         addMessage = ""
         try {
             const parsed = new URL(addUrl)
-            const granted = await browser.permissions.request({
-                origins: [
-                    "https://mangadex.org/*",
-                    "https://api.mangadex.org/*",
-                    "https://uploads.mangadex.org/*",
-                    "*://*.mangadex.network/*",
-                    "https://www.mangaread.org/*",
-                    "https://www.mgeko.cc/*",
-                    "*://*.imgsrv4.com/*"
-                ]
-            })
+            const granted = await browser.permissions.request({ origins: sourceOrigins() })
             if (!granted) {
                 addMessage = "Site access was not granted."
                 return
@@ -182,17 +173,7 @@
     }
 
     async function grantPermission() {
-        hasPermission = await browser.permissions.request({
-            origins: [
-                "https://mangadex.org/*",
-                "https://api.mangadex.org/*",
-                "https://uploads.mangadex.org/*",
-                "*://*.mangadex.network/*",
-                "https://www.mangaread.org/*",
-                "https://www.mgeko.cc/*",
-                "*://*.imgsrv4.com/*"
-            ]
-        })
+        hasPermission = await browser.permissions.request({ origins: sourceOrigins() })
     }
 
     async function doSearch() {

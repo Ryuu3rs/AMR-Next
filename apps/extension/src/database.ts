@@ -1,5 +1,6 @@
 import type { ChapterRecord, MangaRecord, ReadingProgress, SourceLinkRecord } from "@amr/contracts"
 import Dexie, { type EntityTable } from "dexie"
+import { exportEnvelopeSchema } from "./schema"
 
 export type LibraryManga = MangaRecord & {
     sourceId: string
@@ -110,32 +111,29 @@ export async function exportDatabase() {
 }
 
 export async function importDatabase(value: unknown): Promise<{ manga: number; chapters: number }> {
-    if (!value || typeof value !== "object") throw new Error("Import file is invalid")
-    const envelope = value as {
-        format?: unknown
-        version?: unknown
-        data?: {
-            manga?: LibraryManga[]
-            sourceLinks?: SourceLinkRecord[]
-            chapters?: ChapterRecord[]
-            progress?: ReadingProgress[]
-            historyEvents?: HistoryEvent[]
-        }
+    const result = exportEnvelopeSchema.safeParse(value)
+    if (!result.success) {
+        const issue = result.error.issues[0]
+        const where = issue && issue.path.length > 0 ? ` at ${issue.path.join(".")}` : ""
+        throw new Error(`Import file is invalid${where}: ${issue?.message ?? "unrecognized format"}`)
     }
-    if (envelope.format !== "all-mangas-reader" || envelope.version !== 1 || !envelope.data) {
-        throw new Error("Import format or version is not supported")
+    // Validated above; cast bridges Zod's `key?: T | undefined` optionals to the
+    // Dexie insert types' `key?: T` under exactOptionalPropertyTypes.
+    const data = result.data.data as {
+        manga: LibraryManga[]
+        sourceLinks: SourceLinkRecord[]
+        chapters: ChapterRecord[]
+        progress: ReadingProgress[]
+        historyEvents: HistoryEvent[]
     }
-
-    const manga = envelope.data.manga ?? []
-    const chapters = envelope.data.chapters ?? []
     await db.transaction("rw", [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents], async () => {
-        await db.manga.bulkPut(manga)
-        await db.sourceLinks.bulkPut(envelope.data?.sourceLinks ?? [])
-        await db.chapters.bulkPut(chapters)
-        await db.progress.bulkPut(envelope.data?.progress ?? [])
-        await db.historyEvents.bulkPut(envelope.data?.historyEvents ?? [])
+        await db.manga.bulkPut(data.manga)
+        await db.sourceLinks.bulkPut(data.sourceLinks)
+        await db.chapters.bulkPut(data.chapters)
+        await db.progress.bulkPut(data.progress)
+        await db.historyEvents.bulkPut(data.historyEvents)
     })
-    return { manga: manga.length, chapters: chapters.length }
+    return { manga: data.manga.length, chapters: data.chapters.length }
 }
 
 export async function seedDatabase(): Promise<void> {

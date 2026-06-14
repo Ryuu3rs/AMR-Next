@@ -67,7 +67,9 @@ function tryParseJsonArray(raw: string): string[] {
 function extractJsArrayVar(html: string, ...varNames: string[]): string[] {
     for (const name of varNames) {
         const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-        const m = html.match(new RegExp(`(?:var\\s+|window\\.)?${escaped}\\s*=\\s*(\\[[\\s\\S]*?\\])[;,]?\\s*(?:\\n|$)`))
+        const m = html.match(
+            new RegExp(`(?:var\\s+|window\\.)?${escaped}\\s*=\\s*(\\[[\\s\\S]*?\\])[;,]?\\s*(?:\\n|$)`)
+        )
         if (m) {
             const raw = captureGroup(m, 1)
             if (raw) {
@@ -96,7 +98,15 @@ function extractCoverUrl(html: string): string | undefined {
 
 function extractImages(html: string): string[] {
     // Strategy 1: JS array variables (chapImages, chapterImages, imageList, images, pages)
-    const jsArrayUrls = extractJsArrayVar(html, "chapImages", "chapterImages", "imageList", "images", "pages", "page_images")
+    const jsArrayUrls = extractJsArrayVar(
+        html,
+        "chapImages",
+        "chapterImages",
+        "imageList",
+        "images",
+        "pages",
+        "page_images"
+    )
     if (jsArrayUrls.length > 0) return jsArrayUrls
 
     // Strategy 2: JSON object with images/pages key
@@ -110,9 +120,7 @@ function extractImages(html: string): string[] {
     }
 
     // Collect all img tags for attribute-order-safe extraction
-    const imgTags = [...html.matchAll(/<img\b[^>]*>/gi)]
-        .map(m => captureGroup(m, 0) ?? "")
-        .filter(Boolean)
+    const imgTags = [...html.matchAll(/<img\b[^>]*>/gi)].map(m => captureGroup(m, 0) ?? "").filter(Boolean)
 
     function getImgUrl(tag: string): string | undefined {
         for (const attr of ["src", "data-src", "data-lazy-src"]) {
@@ -131,22 +139,26 @@ function extractImages(html: string): string[] {
     }
 
     // Strategy 4: gallery block images
-    const galleryMatches = [
-        ...html.matchAll(/<li[^>]*blocks-gallery-item[^>]*>[\s\S]*?<img\b[^>]*>/gi)
-    ].map(m => captureGroup(m, 0) ?? "").filter(Boolean)
+    const galleryMatches = [...html.matchAll(/<li[^>]*blocks-gallery-item[^>]*>[\s\S]*?<img\b[^>]*>/gi)]
+        .map(m => captureGroup(m, 0) ?? "")
+        .filter(Boolean)
     if (galleryMatches.length > 0) {
-        const tagMatches = galleryMatches.flatMap(block => [...block.matchAll(/<img\b[^>]*>/gi)].map(m => captureGroup(m, 0) ?? "").filter(Boolean))
+        const tagMatches = galleryMatches.flatMap(block =>
+            [...block.matchAll(/<img\b[^>]*>/gi)].map(m => captureGroup(m, 0) ?? "").filter(Boolean)
+        )
         const urls = tagMatches.map(getImgUrl).filter((u): u is string => u !== undefined)
         if (urls.length > 0) return urls
     }
 
     // Strategy 5: any image-like src from chapter content area
-    const contentIdx = Math.max(html.indexOf("chapter-content"), html.indexOf("reading-content"), html.indexOf("chapter_content"))
+    const contentIdx = Math.max(
+        html.indexOf("chapter-content"),
+        html.indexOf("reading-content"),
+        html.indexOf("chapter_content")
+    )
     if (contentIdx !== -1) {
         const section = html.slice(contentIdx, contentIdx + 200_000)
-        const sectionTags = [...section.matchAll(/<img\b[^>]*>/gi)]
-            .map(m => captureGroup(m, 0) ?? "")
-            .filter(Boolean)
+        const sectionTags = [...section.matchAll(/<img\b[^>]*>/gi)].map(m => captureGroup(m, 0) ?? "").filter(Boolean)
         const urls = sectionTags
             .map(getImgUrl)
             .filter((u): u is string => u !== undefined && /\.(jpe?g|png|webp|gif)/i.test(u))

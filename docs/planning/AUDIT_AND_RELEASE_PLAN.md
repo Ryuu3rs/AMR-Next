@@ -12,28 +12,28 @@ Status vs roadmap: Stage 1 (Reader) and most of Stage 2 (Local Product) are **fu
 
 ### 1.1 Correctness / risk (fix first)
 
-| # | Issue | Location | Impact |
-|---|-------|----------|--------|
-| I1 | `importDatabase()` accepts `unknown` and hand-casts the envelope — no Zod validation. A malformed/old export can corrupt the DB or throw mid-transaction. | `apps/extension/src/database.ts` (~L112-138) | Data loss on import |
-| I2 | Permission origin lists are **duplicated in 3 places** (`sources.ts`, `app/App.svelte`, `popup/App.svelte`). They already drifted once (the mangaread bug). | 3 files | Recurring permission bugs |
-| I3 | `search()` is **not part of the `SourceAdapter` contract**. Search is hardcoded to MangaDex via a direct `fetch()` in `sources.ts`, bypassing the bounded request client + origin allowlist. | `apps/extension/src/sources.ts` L39-92 | No multi-source search; unbounded fetch |
-| I4 | `listChapters()` **throws "not supported"** for mangaread + mgeko. Library update checks silently count these as failures forever. | `mangaread.ts` L303, `mgeko.ts` L197 | Updates never work for 2/3 sources |
-| I5 | Rate limit is **declared in the manifest but never enforced**. `requestRateLimit` is decorative; no queue/backoff. Bulk update checks can hammer a host. | `source-sdk/src/request.ts` | Risk of IP bans / source blocks |
-| I6 | No retry / backoff on transient failures (timeouts, 5xx). One blip = hard fail surfaced to user. | `source-sdk/src/request.ts` | Fragile UX |
-| I7 | Update-check + auto-capture failures are `console.warn`-only; never surfaced in UI. User sees nothing when a source breaks. | `background.ts` L64, L138 | Silent failures |
-| I8 | Reader image fallback regex is MangaDex-specific and brittle; non-MangaDex failures just warn with no recovery. | `reader/App.svelte` L69-75 | Dead images, no retry |
-| I9 | `--passWithNoTests` masks the fact that database, background handlers, UI, and 2/3 adapters have **zero tests**. CI is green over ~85% untested production code. | root `test` script | False confidence |
+| #   | Issue                                                                                                                                                                                        | Location                                     | Impact                                  |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------- |
+| I1  | `importDatabase()` accepts `unknown` and hand-casts the envelope — no Zod validation. A malformed/old export can corrupt the DB or throw mid-transaction.                                    | `apps/extension/src/database.ts` (~L112-138) | Data loss on import                     |
+| I2  | Permission origin lists are **duplicated in 3 places** (`sources.ts`, `app/App.svelte`, `popup/App.svelte`). They already drifted once (the mangaread bug).                                  | 3 files                                      | Recurring permission bugs               |
+| I3  | `search()` is **not part of the `SourceAdapter` contract**. Search is hardcoded to MangaDex via a direct `fetch()` in `sources.ts`, bypassing the bounded request client + origin allowlist. | `apps/extension/src/sources.ts` L39-92       | No multi-source search; unbounded fetch |
+| I4  | `listChapters()` **throws "not supported"** for mangaread + mgeko. Library update checks silently count these as failures forever.                                                           | `mangaread.ts` L303, `mgeko.ts` L197         | Updates never work for 2/3 sources      |
+| I5  | Rate limit is **declared in the manifest but never enforced**. `requestRateLimit` is decorative; no queue/backoff. Bulk update checks can hammer a host.                                     | `source-sdk/src/request.ts`                  | Risk of IP bans / source blocks         |
+| I6  | No retry / backoff on transient failures (timeouts, 5xx). One blip = hard fail surfaced to user.                                                                                             | `source-sdk/src/request.ts`                  | Fragile UX                              |
+| I7  | Update-check + auto-capture failures are `console.warn`-only; never surfaced in UI. User sees nothing when a source breaks.                                                                  | `background.ts` L64, L138                    | Silent failures                         |
+| I8  | Reader image fallback regex is MangaDex-specific and brittle; non-MangaDex failures just warn with no recovery.                                                                              | `reader/App.svelte` L69-75                   | Dead images, no retry                   |
+| I9  | `--passWithNoTests` masks the fact that database, background handlers, UI, and 2/3 adapters have **zero tests**. CI is green over ~85% untested production code.                             | root `test` script                           | False confidence                        |
 
 ### 1.2 Architecture / debt
 
-| # | Issue | Notes |
-|---|-------|-------|
-| D1 | Source registry is a **hardcoded array** — no lazy loading, no dynamic/plugin registration (roadmap Stage 1 wanted "lazy loading"). | `packages/sources/src/index.ts` |
-| D2 | **Contract drift**: `packages/contracts` defines `Preferences` (8 fields), `PageRecord`, `SourceHealth` — the extension implements a parallel, smaller `AppSettings` (4 fields) and ignores the rest. Two sources of truth. | `settings.ts` vs `contracts/domain.ts` |
-| D3 | No caching / request coalescing. MangaDex `resolveChapter()` makes 3 sequential calls every time; re-resolving chapters in the same manga refetches manga metadata. | `mangadex.ts` |
-| D4 | No **ESLint** — Prettier only. No unused-import/var detection, no naming rules. | repo-wide |
-| D5 | `archive/` (legacy-vue, parity-svelte, platform-prototype) is dead weight in the tree. Fine to keep, but it inflates the repo and confuses search. | `archive/` |
-| D6 | Version is hardcoded in root `package.json` and read by WXT at build — no automation, no manifest sync step, no changelog generation. | release tooling |
+| #   | Issue                                                                                                                                                                                                                       | Notes                                  |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| D1  | Source registry is a **hardcoded array** — no lazy loading, no dynamic/plugin registration (roadmap Stage 1 wanted "lazy loading").                                                                                         | `packages/sources/src/index.ts`        |
+| D2  | **Contract drift**: `packages/contracts` defines `Preferences` (8 fields), `PageRecord`, `SourceHealth` — the extension implements a parallel, smaller `AppSettings` (4 fields) and ignores the rest. Two sources of truth. | `settings.ts` vs `contracts/domain.ts` |
+| D3  | No caching / request coalescing. MangaDex `resolveChapter()` makes 3 sequential calls every time; re-resolving chapters in the same manga refetches manga metadata.                                                         | `mangadex.ts`                          |
+| D4  | No **ESLint** — Prettier only. No unused-import/var detection, no naming rules.                                                                                                                                             | repo-wide                              |
+| D5  | `archive/` (legacy-vue, parity-svelte, platform-prototype) is dead weight in the tree. Fine to keep, but it inflates the repo and confuses search.                                                                          | `archive/`                             |
+| D6  | Version is hardcoded in root `package.json` and read by WXT at build — no automation, no manifest sync step, no changelog generation.                                                                                       | release tooling                        |
 
 ### 1.3 Gaps vs the domain model (defined but unbuilt)
 
@@ -49,6 +49,7 @@ Status vs roadmap: Stage 1 (Reader) and most of Stage 2 (Local Product) are **fu
 Grouped by theme, each tagged with a rough size (S/M/L) and the target release where it lands (see §4).
 
 ### A. Reader experience
+
 - A1 (M) Reading direction: LTR / RTL / vertical webtoon. → 1.1
 - A2 (S) Page fit modes: width / height / contain / original. → 1.1
 - A3 (S) Show page-number overlay toggle. → 1.1
@@ -61,6 +62,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - A10 (S) Remember per-manga reading mode + direction overrides. → 1.2
 
 ### B. Library & tracking
+
 - B1 (M) Manga detail page: cover, description, chapter list, read/unread state. → 1.1
 - B2 (M) Tags / categories + filtering. → 1.2
 - B3 (S) Bookmarks (per-page). → 1.2
@@ -72,6 +74,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - B9 (M) Sort/group library (recently read, updated, title, unread count). → 1.1
 
 ### C. Sources & discovery
+
 - C1 (L) **Add `search()` to the adapter contract**; implement per-source. → 1.1 (contract), 1.2 (per-source)
 - C2 (L) **Implement `listChapters()` for mangaread + mgeko** so updates work. → 1.2 (pairs with deferred scraper hardening)
 - C3 (L) Generic Madara-family template adapter (one config → many sites). → 2.0
@@ -81,6 +84,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - C7 (M) New sources: Weeb Central, Dynasty Scans (roadmap Stage 3). → 1.2-2.0
 
 ### D. Reliability & platform
+
 - D1 (M) Enforce rate limiting (token-bucket per source from manifest). → 1.1
 - D2 (M) Retry with exponential backoff + jitter for transient errors. → 1.1
 - D3 (M) Request coalescing + short-TTL metadata cache. → 1.2
@@ -90,6 +94,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - D7 (M) Validated import with Zod + conflict resolution (merge/overwrite/skip) + dry-run. → 1.1
 
 ### E. UX polish
+
 - E1 (S) `theme: "system"` + light theme parity. → 1.1
 - E2 (S) Keyboard shortcut help overlay + remapping. → 1.2
 - E3 (S) Onboarding for first-run permission grant. → 1.1
@@ -116,25 +121,27 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 
 - **Single-version monorepo.** One version of record in root `package.json`; all `@amr/*` packages stay private and lockstep.
 - **Semantic Versioning.** The Vue era ended at `v3.1.0`. This rewrite ships under a **fresh `all-mangas-reader@ryuu3rs.dev` extension id**, so we restart the public line:
-  - **`0.y.z`** while the rewrite stabilizes (now). Breaking changes allowed between minors.
-  - **`1.0.0`** = first public stable: reader + library + history + ≥3 working sources + validated import/export + Firefox signed build. (Cutting `1.0.0` rather than reclaiming `4.x` avoids confusing the new extension id with old AMO listings.)
-  - After 1.0.0: `MAJOR` = breaking data/permission changes, `MINOR` = features, `PATCH` = fixes.
+    - **`0.y.z`** while the rewrite stabilizes (now). Breaking changes allowed between minors.
+    - **`1.0.0`** = first public stable: reader + library + history + ≥3 working sources + validated import/export + Firefox signed build. (Cutting `1.0.0` rather than reclaiming `4.x` avoids confusing the new extension id with old AMO listings.)
+    - After 1.0.0: `MAJOR` = breaking data/permission changes, `MINOR` = features, `PATCH` = fixes.
 - **Manifest version sync.** `wxt.config.ts` reads `package.json` version at build — keep that, and make the bump script the single mutation point so manifest never drifts.
 
 ### 4.2 Conventional commits + automated changelog
 
 - Adopt **Conventional Commits** (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`, `ci:`, `perf:`, plus `feat!:`/`BREAKING CHANGE:`).
 - Add **commitlint + a PR title lint** (GitHub Action) — soft at first, enforced before 1.0.0.
-- Generate `CHANGELOG.md` from commits with **`changesets`** (preferred for the monorepo) *or* `release-please`. Recommendation below.
+- Generate `CHANGELOG.md` from commits with **`changesets`** (preferred for the monorepo) _or_ `release-please`. Recommendation below.
 
 ### 4.3 Tooling choice — recommendation
 
 Use **`release-please` (Google) in manifest/monorepo-single mode**:
+
 - Watches `main`, parses conventional commits, and opens/maintains a **"Release PR"** that bumps `package.json`, updates `CHANGELOG.md`, and — on merge — creates the `vX.Y.Z` tag.
 - The existing `release.yml` (tag-triggered) then builds + publishes artifacts unchanged.
 - Why over changesets: no per-PR changeset files to author by hand; commit messages are the source of truth, which fits a solo/small-team flow. (If you later want manual per-change notes, switch to changesets.)
 
 Flow:
+
 ```
 PR merged to main ──▶ release-please updates Release PR (version + CHANGELOG)
 Release PR merged ──▶ tag vX.Y.Z pushed ──▶ release.yml builds, signs, publishes
@@ -148,20 +155,21 @@ Release PR merged ──▶ tag vX.Y.Z pushed ──▶ release.yml builds, sign
 
 ### 4.5 Release channels
 
-| Channel | Trigger | Artifact | Audience |
-|---------|---------|----------|----------|
-| **nightly** | every push to `main` (existing CI) | `extension-builds` artifact, 14-day retention | devs |
-| **beta** | `vX.Y.Z-beta.N` tag → GitHub *prerelease* | signed zip/xpi + checksums | testers |
-| **stable** | `vX.Y.Z` tag → GitHub Release | signed zip/xpi + checksums + notes | users |
+| Channel     | Trigger                                   | Artifact                                      | Audience |
+| ----------- | ----------------------------------------- | --------------------------------------------- | -------- |
+| **nightly** | every push to `main` (existing CI)        | `extension-builds` artifact, 14-day retention | devs     |
+| **beta**    | `vX.Y.Z-beta.N` tag → GitHub _prerelease_ | signed zip/xpi + checksums                    | testers  |
+| **stable**  | `vX.Y.Z` tag → GitHub Release             | signed zip/xpi + checksums + notes            | users    |
 
 ### 4.6 Harden the release workflow
 
 Augment `.github/workflows/release.yml`:
+
 1. **Pre-release gate**: run `npm run check` + full tests + browser smoke before packaging (today it runs `check` but not the browser smoke).
 2. **Version/tag consistency check**: fail if the git tag ≠ `package.json` version.
 3. **Firefox AMO signing automation** (roadmap Stage 5, still open):
-   - Add `web-ext sign` (or `wxt zip` + AMO API) step using repo secrets `AMO_JWT_ISSUER` / `AMO_JWT_SECRET` for the **unlisted** signing flow.
-   - Attach the signed `.xpi` to the release alongside the unsigned zips.
+    - Add `web-ext sign` (or `wxt zip` + AMO API) step using repo secrets `AMO_JWT_ISSUER` / `AMO_JWT_SECRET` for the **unlisted** signing flow.
+    - Attach the signed `.xpi` to the release alongside the unsigned zips.
 4. **Prerelease handling**: mark `-beta.N` tags as GitHub prereleases (`softprops/action-gh-release` `prerelease: true` when tag matches).
 5. **Checksums**: keep `SHA256SUMS.txt` (already present); also sign it if/when a signing key exists.
 6. **(Optional, post-1.0) Chrome Web Store** publish via the CWS API + `CWS_*` secrets — gated behind a manual approval environment.
@@ -188,7 +196,7 @@ Augment `.github/workflows/release.yml`:
 
 > Each phase ends in a tagged release. Issues from §1.1 are folded into the earliest phases.
 
-- **0.2.0 — Foundation & trust** (I1, I2, I7, D5, D7, E4; §3 items 1-5; release-please + commitlint set up; release.yml gate + version-consistency check). *No new user features — make the base solid and releasable.*
+- **0.2.0 — Foundation & trust** (I1, I2, I7, D5, D7, E4; §3 items 1-5; release-please + commitlint set up; release.yml gate + version-consistency check). _No new user features — make the base solid and releasable._
 - **0.3.0 — Reader & reliability** (A1-A4, A7, A8, E1, E3, D1, D2). Reading prefs + rate-limit + retry.
 - **0.4.0 — Library depth** (B1, B4, B9, C5, D6, A5, A6). Detail pages, history, diagnostics.
 - **0.5.0 — Source breadth** (C1 contract + C2 listChapters + C7 new sources; pairs with deferred scraper hardening). Search across sources; updates work everywhere.
@@ -211,6 +219,7 @@ Augment `.github/workflows/release.yml`:
 ## Deferred — Source Hardening (tracked, not in this plan)
 
 The mangaread.org / Madara anti-scraping issue. Approaches to evaluate together later:
+
 - Content-script extraction **in page context** (real `src` + executed lazy-load JS, full cookies).
 - Alternate Madara endpoints / nonce acquisition strategies.
 - Optional user-opt-in headless fetch.

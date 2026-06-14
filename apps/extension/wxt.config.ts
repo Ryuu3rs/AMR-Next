@@ -1,4 +1,5 @@
 import { defineConfig } from "wxt"
+import { SOURCE_ORIGINS } from "./src/permissions"
 
 export default defineConfig({
     manifestVersion: 3,
@@ -7,15 +8,7 @@ export default defineConfig({
         name: "All Mangas Reader",
         description: "Read and track manga from supported websites.",
         permissions: ["alarms", "scripting", "storage", "tabs"],
-        optional_host_permissions: [
-            "https://mangadex.org/*",
-            "https://api.mangadex.org/*",
-            "https://uploads.mangadex.org/*",
-            "*://*.mangadex.network/*",
-            "https://www.mangaread.org/*",
-            "https://www.mgeko.cc/*",
-            "*://*.imgsrv4.com/*"
-        ],
+        optional_host_permissions: [...SOURCE_ORIGINS],
         icons: {
             32: "/icons/icon_32.png",
             48: "/icons/icon_48.png",

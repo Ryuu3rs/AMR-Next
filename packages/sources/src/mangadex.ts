@@ -278,7 +278,7 @@ export const mangadexAdapter: SourceAdapter = {
         const chapter = mapChapter(chapterData, mangaId)
         const pages = atHome.chapter.data.map((fileName, index) => ({
             id: `${chapter.id}:page:${index + 1}`,
-            url: `${atHome.baseUrl}/data/${atHome.chapter.hash}/${fileName}`
+            url: `${atHome.baseUrl}/data/${atHome.chapter.hash}/${encodeURIComponent(fileName)}`
         }))
 
         context.logger.debug("Resolved MangaDex chapter", {
