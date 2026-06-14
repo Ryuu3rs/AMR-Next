@@ -588,6 +588,14 @@ button:disabled {
     align-items: center;
 }
 
+.source-refresh {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
 .sync-token input,
 .sync-gist {
     min-width: 180px;

@@ -298,17 +298,20 @@
         }
     }
 
-    async function checkForUpdates() {
+    async function checkForUpdates(sourceId?: string) {
         checkingUpdates = true
         try {
             updateStatus = await sendRuntimeMessage<NonNullable<typeof updateStatus>>({
-                type: "updates:check"
+                type: "updates:check",
+                ...(sourceId ? { sourceId } : {})
             })
             await load()
         } finally {
             checkingUpdates = false
         }
     }
+
+    const librarySources = $derived([...new Set(library.filter(m => !isSeedData(m)).map(m => m.sourceId))].sort())
 
     async function changeUpdateInterval(value: string) {
         settings = await sendRuntimeMessage<AppSettings>({
@@ -640,14 +643,28 @@
         {:else if activeSection === "Updates"}
             <div class="page-head">
                 <h1>Updates</h1>
-                <button type="button" onclick={checkForUpdates} disabled={checkingUpdates}>
-                    {checkingUpdates ? "Checking..." : "Check now"}
+                <button type="button" onclick={() => void checkForUpdates()} disabled={checkingUpdates}>
+                    {checkingUpdates ? "Checking..." : "Check all"}
                 </button>
             </div>
+            {#if librarySources.length > 1}
+                <div class="source-refresh">
+                    <span class="muted">Refresh one source:</span>
+                    {#each librarySources as src}
+                        <button
+                            type="button"
+                            class="btn-sm"
+                            disabled={checkingUpdates}
+                            onclick={() => void checkForUpdates(src)}>
+                            {src}
+                        </button>
+                    {/each}
+                </div>
+            {/if}
             <p class="muted" style="margin-bottom:20px">
                 {updateStatus
                     ? `Last checked ${new Date(updateStatus.checkedAt).toLocaleString()} — ${updateStatus.updated} updated, ${updateStatus.failed} failed`
-                    : "No update check has run yet. Click Check now to scan for new chapters."}
+                    : "No update check has run yet. Click Check all to scan for new chapters."}
             </p>
             {#if library.length === 0}
                 <p class="muted">No manga in library to check.</p>

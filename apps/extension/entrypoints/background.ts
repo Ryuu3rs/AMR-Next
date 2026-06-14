@@ -55,8 +55,9 @@ async function autoPush() {
     }
 }
 
-async function checkUpdates() {
-    const manga = await db.manga.toArray()
+async function checkUpdates(sourceId?: string) {
+    const all = await db.manga.toArray()
+    const manga = sourceId ? all.filter(item => item.sourceId === sourceId) : all
     let checked = 0
     let updated = 0
     let failed = 0
@@ -263,7 +264,7 @@ export default defineBackground(() => {
                     case "source:permission:check":
                         return success(await checkSourcePermission())
                     case "updates:check":
-                        return success(await checkUpdates())
+                        return success(await checkUpdates(request.sourceId))
                     case "updates:get": {
                         const stored = await browser.storage.local.get("updateStatus")
                         return success(stored["updateStatus"] ?? null)

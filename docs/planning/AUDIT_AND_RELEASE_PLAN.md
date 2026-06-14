@@ -123,7 +123,7 @@ These are weighted toward the owner's stated priorities: accurate list/updates o
 - G1 (M) **Chapter-number tracking** — store the last-read chapter _number_ (and available count) on the record, independent of the URL/domain, so a mirror domain change never loses progress. The durable key for everything else. (community #90/#92) → 0.4
 - ✅ G2 (M) **Manual / "Do Not Scan" titles** — flag a title to skip auto-scan and set the available + read chapter numbers by hand from the library menu; manual titles are excluded from update checks and show a "Manual" badge (Asura-style). (community #80/#95/#110)
 - G3 (M) **Broken-link checker + migrator** — detect entries whose source 403s/redirects/dies, surface them, and offer re-link (overlaps F2). (community #30/#33/#34/#110) → 0.5
-- G4 (S) **Per-source refresh** — refresh updates for one source/mirror instead of the whole library. (community #36/#112) → 0.4
+- ✅ G4 (S) **Per-source refresh** — Updates tab can refresh one source at a time (buttons per source in the library) instead of the whole list. (community #36/#112)
 - ✅ G5 (M) **Human-readable sync + Gist** — pretty-printed JSON export round-trips the import/export envelope; GitHub Gist push/pull (token with `gist` scope stored locally), optional hourly auto-push, Settings UI under Data. (owner core) Future: per-record last-write-wins merge + YAML option.
 - G6 (S) **Timed local backups** — scheduled export to a user-chosen location on a frequency (lazy: compare-on-open). (community #87/#89) → 1.x
 - ✅ G7 (M) **Smart cross-site search w/ latest-chapter** — Browse searches every permitted source at once; each result shows its source and latest hosted chapter. Builds on C1. (owner core + bonus)
