@@ -8,8 +8,16 @@ const allowedPermissions = ["alarms", "scripting", "storage", "tabs"]
 const allowedOptionalHosts = [
     "*://*.imgsrv4.com/*",
     "*://*.mangadex.network/*",
+    "https://agrcomics.com/*",
     "https://api.mangadex.org/*",
+    "https://arvencomics.com/*",
+    "https://arvenscans.org/*",
+    "https://aryascans.com/*",
+    "https://freakscans.com/*",
     "https://mangadex.org/*",
+    "https://manhuaplus.org/*",
+    "https://novelmic.com/*",
+    "https://rawkuma.com/*",
     "https://uploads.mangadex.org/*",
     "https://www.mangaread.org/*",
     "https://www.mgeko.cc/*"

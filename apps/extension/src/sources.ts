@@ -1,6 +1,6 @@
 import type { SourceLinkRecord } from "@amr/contracts"
 import { createBoundedRequestClient, type SourceContext, type SourceManga } from "@amr/source-sdk"
-import { sourceAdapters } from "@amr/sources"
+import { sourceAdapters, madaraOrigins } from "@amr/sources"
 import type { LibraryManga } from "./database"
 import { sourceOrigins } from "./permissions"
 
@@ -11,7 +11,12 @@ export function findSource(url: URL) {
 function createSourceContext(rateLimit?: { requests: number; intervalMs: number }): SourceContext {
     const request = createBoundedRequestClient({
         fetch: (requestUrl, init) => fetch(requestUrl, init),
-        allowedOrigins: ["https://api.mangadex.org", "https://www.mangaread.org", "https://www.mgeko.cc"],
+        allowedOrigins: [
+            "https://api.mangadex.org",
+            "https://www.mangaread.org",
+            "https://www.mgeko.cc",
+            ...madaraOrigins.map(o => o.replace(/\/\*$/, ""))
+        ],
         maxRequests: 20,
         maxResponseBytes: 10 * 1024 * 1024,
         timeoutMs: 20_000,
