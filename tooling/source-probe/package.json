@@ -1,0 +1,10 @@
+{
+    "name": "@amr/source-probe",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "description": "Anti-scrape / viability probe for manga mirror candidates",
+    "scripts": {
+        "probe": "node probe.mjs"
+    }
+}
