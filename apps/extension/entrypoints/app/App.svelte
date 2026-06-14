@@ -78,6 +78,14 @@
         library = library.filter(m => m.id !== mangaId)
     }
 
+    async function rate(manga: LibraryManga, value: number) {
+        const next = manga.rating === value ? 0 : value
+        await sendRuntimeMessage({ type: "library:rate", mangaId: manga.id, rating: next })
+        library = library.map(m =>
+            m.id === manga.id ? { ...m, ...(next === 0 ? { rating: undefined } : { rating: next }) } : m
+        )
+    }
+
     async function changeAutoAdd(enabled: boolean) {
         settings = await sendRuntimeMessage<AppSettings>({
             type: "settings:update",
@@ -370,6 +378,17 @@
                             </div>
                             <p class="poster-title">{manga.title}</p>
                             <p class="poster-sub">{manga.sourceId}</p>
+                            <div class="poster-rating" role="group" aria-label={`Rate ${manga.title}`}>
+                                {#each [1, 2, 3, 4, 5] as star}
+                                    <button
+                                        type="button"
+                                        class="star"
+                                        class:filled={(manga.rating ?? 0) >= star}
+                                        aria-label={`${star} star${star > 1 ? "s" : ""}`}
+                                        aria-pressed={(manga.rating ?? 0) >= star}
+                                        onclick={() => void rate(manga, star)}>★</button>
+                                {/each}
+                            </div>
                         </article>
                     {/each}
                 </div>

@@ -454,6 +454,28 @@ button:disabled {
     color: var(--muted);
 }
 
+.poster-rating {
+    display: flex;
+    gap: 2px;
+    margin-top: 4px;
+}
+
+.poster-rating .star {
+    min-height: auto;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #3b4653;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.poster-rating .star:hover,
+.poster-rating .star.filled {
+    color: #f5b14a;
+}
+
 .empty-state {
     padding: 48px 0 32px;
     display: grid;

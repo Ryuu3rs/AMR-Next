@@ -30,3 +30,15 @@ describe("settings:update schema", () => {
         expect(runtimeRequestSchema.safeParse(msg).success).toBe(false)
     })
 })
+
+describe("library:rate schema", () => {
+    it("accepts a 1–5 rating and 0 to clear", () => {
+        expect(runtimeRequestSchema.safeParse({ type: "library:rate", mangaId: "m1", rating: 4 }).success).toBe(true)
+        expect(runtimeRequestSchema.safeParse({ type: "library:rate", mangaId: "m1", rating: 0 }).success).toBe(true)
+    })
+
+    it("rejects out-of-range and non-integer ratings", () => {
+        expect(runtimeRequestSchema.safeParse({ type: "library:rate", mangaId: "m1", rating: 6 }).success).toBe(false)
+        expect(runtimeRequestSchema.safeParse({ type: "library:rate", mangaId: "m1", rating: 2.5 }).success).toBe(false)
+    })
+})

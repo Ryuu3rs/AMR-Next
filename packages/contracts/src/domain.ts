@@ -22,6 +22,7 @@ export const mangaRecordSchema = z
         normalizedTitle: z.string().trim().min(1),
         coverUrl: httpUrlSchema.optional(),
         description: z.string().optional(),
+        rating: z.number().int().min(1).max(5).optional(),
         authors: z.array(z.string().trim().min(1)).default([]),
         status: z.enum(["unknown", "ongoing", "completed", "hiatus", "cancelled"]).default("unknown"),
         addedAt: timestampSchema,
