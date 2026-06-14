@@ -129,6 +129,25 @@
         )
     }
 
+    async function setManual(manga: LibraryManga, manual: boolean) {
+        await sendRuntimeMessage({ type: "library:manual", mangaId: manga.id, manual })
+        library = library.map(m => (m.id === manga.id ? { ...m, manualTracking: manual } : m))
+    }
+
+    async function setNumber(manga: LibraryManga, field: "lastReadChapterNumber" | "latestChapterNumber", raw: string) {
+        const trimmed = raw.trim()
+        const value = trimmed === "" ? null : Math.max(0, Number(trimmed))
+        if (value !== null && !Number.isFinite(value)) return
+        await sendRuntimeMessage({ type: "library:numbers", mangaId: manga.id, [field]: value })
+        library = library.map(m => {
+            if (m.id !== manga.id) return m
+            const next = { ...m }
+            if (value === null) delete next[field]
+            else next[field] = value
+            return next
+        })
+    }
+
     async function changeAutoAdd(enabled: boolean) {
         settings = await sendRuntimeMessage<AppSettings>({
             type: "settings:update",
@@ -436,6 +455,7 @@
                                             >{manga.title[0]}</span
                                         >{/if}
                                     {#if isSeedData(manga)}<span class="sample-chip">Sample</span>{/if}
+                                    {#if manga.manualTracking}<span class="manual-chip">Manual</span>{/if}
                                     {#if !isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId}
                                         <span class="new-chip">New</span>
                                     {/if}
@@ -450,7 +470,41 @@
                                     }}>⋯</button>
                                 {#if confirmingRemove === manga.id}
                                     <div class="poster-confirm">
-                                        <p>Remove from library?</p>
+                                        <label class="menu-toggle">
+                                            <input
+                                                type="checkbox"
+                                                checked={manga.manualTracking ?? false}
+                                                onchange={e => void setManual(manga, e.currentTarget.checked)} />
+                                            Manual tracking (skip auto-scan)
+                                        </label>
+                                        <label class="menu-num">
+                                            Read ch
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.1"
+                                                value={manga.lastReadChapterNumber ?? ""}
+                                                onchange={e =>
+                                                    void setNumber(
+                                                        manga,
+                                                        "lastReadChapterNumber",
+                                                        e.currentTarget.value
+                                                    )} />
+                                        </label>
+                                        <label class="menu-num">
+                                            Latest ch
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.1"
+                                                value={manga.latestChapterNumber ?? ""}
+                                                onchange={e =>
+                                                    void setNumber(
+                                                        manga,
+                                                        "latestChapterNumber",
+                                                        e.currentTarget.value
+                                                    )} />
+                                        </label>
                                         <div class="poster-confirm-actions">
                                             <button
                                                 type="button"
@@ -462,7 +516,7 @@
                                             <button
                                                 type="button"
                                                 class="confirm-cancel-btn"
-                                                onclick={() => (confirmingRemove = null)}>Cancel</button>
+                                                onclick={() => (confirmingRemove = null)}>Close</button>
                                         </div>
                                     </div>
                                 {/if}

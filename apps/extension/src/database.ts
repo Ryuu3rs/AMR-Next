@@ -16,6 +16,9 @@ export type LibraryManga = MangaRecord & {
     // When the user last read a chapter of this title (for "recently read" sort),
     // distinct from updatedAt which also moves on source update checks.
     lastReadAt?: number
+    // Manual / "Do Not Scan": skip automatic update checks; the user maintains the
+    // available + read chapter numbers by hand (e.g. Asura-style domain-hoppers).
+    manualTracking?: boolean
 }
 
 export type HistoryEvent = {

@@ -391,6 +391,45 @@ button:disabled {
     width: 100%;
 }
 
+.menu-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+}
+
+.menu-num {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.menu-num input {
+    width: 64px;
+    min-height: 26px;
+    padding: 0 6px;
+}
+
+.manual-chip {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    background: rgba(245, 177, 74, 0.92);
+    color: #1a1205;
+    z-index: 3;
+}
+
 .confirm-remove-btn {
     min-height: 30px;
     padding: 0 12px;

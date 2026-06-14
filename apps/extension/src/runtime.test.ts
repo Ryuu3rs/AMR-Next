@@ -52,3 +52,27 @@ describe("library:rate schema", () => {
         expect(runtimeRequestSchema.safeParse({ type: "library:rate", mangaId: "m1", rating: 2.5 }).success).toBe(false)
     })
 })
+
+describe("manual tracking schema (G2)", () => {
+    it("accepts library:manual toggles", () => {
+        expect(runtimeRequestSchema.safeParse({ type: "library:manual", mangaId: "m1", manual: true }).success).toBe(
+            true
+        )
+    })
+
+    it("accepts library:numbers with values or null to clear", () => {
+        expect(
+            runtimeRequestSchema.safeParse({ type: "library:numbers", mangaId: "m1", latestChapterNumber: 161 }).success
+        ).toBe(true)
+        expect(
+            runtimeRequestSchema.safeParse({ type: "library:numbers", mangaId: "m1", lastReadChapterNumber: null })
+                .success
+        ).toBe(true)
+    })
+
+    it("rejects negative chapter numbers", () => {
+        expect(
+            runtimeRequestSchema.safeParse({ type: "library:numbers", mangaId: "m1", latestChapterNumber: -3 }).success
+        ).toBe(false)
+    })
+})

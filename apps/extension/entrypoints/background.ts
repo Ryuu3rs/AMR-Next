@@ -42,6 +42,7 @@ async function checkUpdates() {
     let failed = 0
 
     for (const item of manga) {
+        if (item.manualTracking) continue
         const link = await db.sourceLinks.get(item.id)
         if (!link) continue
         try {
@@ -167,6 +168,23 @@ export default defineBackground(() => {
                     case "library:rate": {
                         const rating = request.rating === 0 ? undefined : request.rating
                         await db.manga.update(request.mangaId, { rating } as Partial<{ rating: number }>)
+                        return success(null)
+                    }
+                    case "library:manual": {
+                        await db.manga.update(request.mangaId, {
+                            manualTracking: request.manual ? true : undefined
+                        } as Partial<{ manualTracking: boolean }>)
+                        return success(null)
+                    }
+                    case "library:numbers": {
+                        const patch: Record<string, number | undefined> = {}
+                        if (request.latestChapterNumber !== undefined)
+                            patch["latestChapterNumber"] = request.latestChapterNumber ?? undefined
+                        if (request.lastReadChapterNumber !== undefined)
+                            patch["lastReadChapterNumber"] = request.lastReadChapterNumber ?? undefined
+                        if (Object.keys(patch).length > 0) {
+                            await db.manga.update(request.mangaId, patch as Partial<{ latestChapterNumber: number }>)
+                        }
                         return success(null)
                     }
                     case "library:covers:backfill": {

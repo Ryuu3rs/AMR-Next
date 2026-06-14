@@ -121,7 +121,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 These are weighted toward the owner's stated priorities: accurate list/updates over a variety of generic sites, smart cross-site search, reliable open-in-browser, and high-integrity human-readable sync — reader polish is explicitly low priority.
 
 - G1 (M) **Chapter-number tracking** — store the last-read chapter _number_ (and available count) on the record, independent of the URL/domain, so a mirror domain change never loses progress. The durable key for everything else. (community #90/#92) → 0.4
-- G2 (M) **Manual / "Do Not Scan" titles** — flag a title to skip auto-scan and let the user set the available chapter count by hand; full library entry with no live source (Asura-style). (community #80/#95/#110) → 0.4
+- ✅ G2 (M) **Manual / "Do Not Scan" titles** — flag a title to skip auto-scan and set the available + read chapter numbers by hand from the library menu; manual titles are excluded from update checks and show a "Manual" badge (Asura-style). (community #80/#95/#110)
 - G3 (M) **Broken-link checker + migrator** — detect entries whose source 403s/redirects/dies, surface them, and offer re-link (overlaps F2). (community #30/#33/#34/#110) → 0.5
 - G4 (S) **Per-source refresh** — refresh updates for one source/mirror instead of the whole library. (community #36/#112) → 0.4
 - G5 (M) **Human-readable sync file** — store the list + progress + settings as YAML/TOML/JSON (round-trips with the import/export envelope) for Gist sync + hand-editing with high integrity. (owner core) → 0.4
