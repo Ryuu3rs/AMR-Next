@@ -4,3 +4,4 @@ node_modules
 coverage
 archive
 package-lock.json
+CHANGELOG.md
