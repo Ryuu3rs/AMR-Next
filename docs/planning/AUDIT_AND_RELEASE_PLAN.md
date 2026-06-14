@@ -211,9 +211,9 @@ Augment `.github/workflows/release.yml`:
 
 > Each phase ends in a tagged release. Issues from §1.1 are folded into the earliest phases.
 
-- **0.2.0 — Foundation & trust** (I1, I2, I7, D5, D7, E4; §3 items 1-5; release-please + commitlint set up; release.yml gate + version-consistency check). _No new user features — make the base solid and releasable._
-- **0.3.0 — Reader & reliability** (A1-A4, A7, A8, E1, E3, D1, D2). Reading prefs + rate-limit + retry.
-- **0.4.0 — Library depth** (B1, B4, B9, B10, C5, D6, A5, A6, F7, F8). Detail pages, history, diagnostics, star rating, up-next, search autocomplete.
+- ✅ **0.2.0 — Foundation & trust** (shipped) — I1, I2, I5, I6 done; adapter test baseline; release-please + PR-title lint + AMO-signing hook; version-sync. (I7/D5/D7-conflict-resolution/E4 carried forward.)
+- 🚧 **0.3.0 — Reader & reliability** (in Release PR) — ✅ A1–A4 (reading direction, page fit, page number, preload), ✅ B10 (star rating, pulled earlier), ✅ D1/D2 (rate-limit/retry, shipped in 0.2.0). Remaining: A7/A8 (blocked by C2), E1 (theme), E3 (onboarding).
+- **0.4.0 — Library depth** (B1, B4, B9, ~~B10~~✅, C5, D6, A5, A6, F7, F8). Detail pages, history, diagnostics, up-next, search autocomplete.
 - **0.5.0 — Source breadth** (C1 contract + C2 listChapters + C7 new sources; pairs with deferred scraper hardening). Search across sources; updates work everywhere.
 - **1.0.0 — Public stable** (Firefox AMO signing automation live, in-extension update check, full test floor, docs/runbook complete, ≥3 sources solid). Reclaim the roadmap Stage 5 checkboxes.
 - **1.x** — B2/B3/B5/B6/B7/B8/B11/B12/B13, C6, D3/D4, E2/E5, A10, F3/F4/F5. Advanced filters, collections, bulk actions, duplicate merge, NSFW.
