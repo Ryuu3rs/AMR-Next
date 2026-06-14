@@ -1,0 +1,118 @@
+{
+    "_comment": "Mirror candidates extracted from the AMR backlog. priority 'core' = owner's stated must-haves. cmsGuess is a hint only; the probe confirms. Add new sites here as a row, not as code.",
+    "sites": [
+        {
+            "url": "https://www.mangaread.org/",
+            "name": "MangaRead",
+            "priority": "core",
+            "cmsGuess": "madara",
+            "note": "supported adapter; src-over-data-src"
+        },
+        { "url": "https://mangahub.io/", "name": "MangaHub", "priority": "core", "cmsGuess": "bespoke" },
+        { "url": "https://toonclash.com/", "name": "Toonclash", "priority": "core", "cmsGuess": "madara" },
+        { "url": "https://mangaclash.com/", "name": "Mangaclash", "priority": "core", "cmsGuess": "madara" },
+        {
+            "url": "https://www.mgeko.cc/",
+            "name": "Mgeko",
+            "priority": "core",
+            "cmsGuess": "bespoke",
+            "note": "supported adapter"
+        },
+        { "url": "https://mangademon.org/", "name": "Manga Demon", "priority": "community", "cmsGuess": "bespoke" },
+        { "url": "https://demonicscans.org/", "name": "Demonic Scans", "priority": "community", "cmsGuess": "bespoke" },
+        { "url": "https://freakscans.com/", "name": "Freak Scans", "priority": "community", "cmsGuess": "madara" },
+        { "url": "https://arvenscans.org/", "name": "Arven Scans", "priority": "community", "cmsGuess": "madara" },
+        { "url": "https://arvencomics.com/", "name": "Arven Comics", "priority": "community", "cmsGuess": "madara" },
+        { "url": "https://drakecomic.com/", "name": "Drake Comic", "priority": "community", "cmsGuess": "mangastream" },
+        {
+            "url": "https://cypherscans.xyz/",
+            "name": "Cypher Scans",
+            "priority": "community",
+            "cmsGuess": "mangastream"
+        },
+        {
+            "url": "https://rizzfables.com/",
+            "name": "Rizz Fables",
+            "priority": "community",
+            "cmsGuess": "mangastream",
+            "note": "403 on chromium scrape, cloudflare suspected"
+        },
+        {
+            "url": "https://toongod.org/",
+            "name": "ToonGod",
+            "priority": "community",
+            "cmsGuess": "madara",
+            "note": "cloudflare turnstile reported"
+        },
+        { "url": "https://manhuaplus.org/", "name": "ManhuaPlus", "priority": "community", "cmsGuess": "madara" },
+        {
+            "url": "https://rawkuma.com/",
+            "name": "Rawkuma",
+            "priority": "community",
+            "cmsGuess": "madara",
+            "note": "raw, mixed JP/KR/CN"
+        },
+        {
+            "url": "https://namicomi.com/",
+            "name": "NamiComi",
+            "priority": "community",
+            "cmsGuess": "spa",
+            "note": "flaky, react app"
+        },
+        {
+            "url": "https://en-thunderscans.com/",
+            "name": "Thunder Scans EN",
+            "priority": "community",
+            "cmsGuess": "mangastream"
+        },
+        { "url": "https://kappabeast.com/", "name": "Kappa Beast", "priority": "community", "cmsGuess": "mangastream" },
+        { "url": "https://read-nifteam.info/", "name": "NIFTeam", "priority": "community", "cmsGuess": "unknown" },
+        {
+            "url": "https://www.mangaworld.ac/",
+            "name": "MangaWorld (ITA)",
+            "priority": "community",
+            "cmsGuess": "bespoke"
+        },
+        {
+            "url": "https://www.juinjutsureader.ovh/",
+            "name": "Juinjutsu Reader",
+            "priority": "community",
+            "cmsGuess": "unknown"
+        },
+        {
+            "url": "https://www.phoenixscans.com/",
+            "name": "Phoenix Scans",
+            "priority": "community",
+            "cmsGuess": "mangastream"
+        },
+        { "url": "https://weebcentral.com/", "name": "Weeb Central", "priority": "community", "cmsGuess": "bespoke" },
+        { "url": "https://aryascans.com/", "name": "Arya Scans", "priority": "community", "cmsGuess": "madara" },
+        { "url": "https://novelmic.com/", "name": "Novelmic", "priority": "community", "cmsGuess": "madara" },
+        {
+            "url": "https://spiderscans.xyz/",
+            "name": "Spider Scans",
+            "priority": "community",
+            "cmsGuess": "mangastream"
+        },
+        { "url": "https://agrcomics.com/", "name": "AGR Comics", "priority": "community", "cmsGuess": "madara" },
+        { "url": "https://nyanukafe.com/", "name": "Nyanu Kafe", "priority": "community", "cmsGuess": "unknown" },
+        { "url": "https://mangafire.to/", "name": "MangaFire", "priority": "community", "cmsGuess": "bespoke" },
+        { "url": "https://weebdex.org/", "name": "WeebDex", "priority": "community", "cmsGuess": "spa" },
+        { "url": "https://mangapuma.com/", "name": "MangaPuma", "priority": "community", "cmsGuess": "mangabuddy" },
+        { "url": "https://mangamirror.com/", "name": "MangaMirror", "priority": "community", "cmsGuess": "mangabuddy" },
+        {
+            "url": "https://comikey.com/",
+            "name": "Comikey",
+            "priority": "community",
+            "cmsGuess": "api",
+            "note": "official, JSON api at /sapi/"
+        },
+        {
+            "url": "https://bato.to/",
+            "name": "Bato.to",
+            "priority": "community",
+            "cmsGuess": "bespoke",
+            "note": "mirrors: bato.ac/.bz/.cc/.cx/.day"
+        }
+    ]
+}

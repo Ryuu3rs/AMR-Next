@@ -116,6 +116,26 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - E4 (S) In-extension "update available" banner via GitHub release check. → 1.0
 - E5 (S) Accessibility pass (focus, aria, contrast). → 1.2
 
+### G. Tracking integrity & resilience (owner's core needs + community asks)
+
+These are weighted toward the owner's stated priorities: accurate list/updates over a variety of generic sites, smart cross-site search, reliable open-in-browser, and high-integrity human-readable sync — reader polish is explicitly low priority.
+
+- G1 (M) **Chapter-number tracking** — store the last-read chapter _number_ (and available count) on the record, independent of the URL/domain, so a mirror domain change never loses progress. The durable key for everything else. (community #90/#92) → 0.4
+- G2 (M) **Manual / "Do Not Scan" titles** — flag a title to skip auto-scan and let the user set the available chapter count by hand; full library entry with no live source (Asura-style). (community #80/#95/#110) → 0.4
+- G3 (M) **Broken-link checker + migrator** — detect entries whose source 403s/redirects/dies, surface them, and offer re-link (overlaps F2). (community #30/#33/#34/#110) → 0.5
+- G4 (S) **Per-source refresh** — refresh updates for one source/mirror instead of the whole library. (community #36/#112) → 0.4
+- G5 (M) **Human-readable sync file** — store the list + progress + settings as YAML/TOML/JSON (round-trips with the import/export envelope) for Gist sync + hand-editing with high integrity. (owner core) → 0.4
+- G6 (S) **Timed local backups** — scheduled export to a user-chosen location on a frequency (lazy: compare-on-open). (community #87/#89) → 1.x
+- G7 (M) **Smart cross-site search w/ latest-chapter** — search the compatible-source list for a title and show each mirror's latest hosted chapter number, so dead/stale mirrors are obvious. Builds on C1. (owner core + bonus) → 0.5
+- G8 (M) **MangaUpdates backbone** — use the MangaUpdates API as the canonical series identity for search, clustering (F1), and mirror comparison/auto-pick-best (per yonilern's fork). → 1.x
+- G9 (M) **Suwayomi/Tachidesk connector** — offload source breadth to a self-hosted Suwayomi backend (== C4, owner-recommended). → 2.0
+- G10 (S) Categories/labels + assign-from-reader — tag titles into categories and add/remove them from the reader view (== B2 + a reader hook). (community #12/#79/#84) → 1.2
+- G11 (S) Open chapter in new tab / Ctrl+click / context-menu, in the user's default browser. (community #23) → 0.4
+- G12 (S) Sort by recently added / recently read (local), distinct from source "recently updated". (community #20/#22) → 0.4
+- G13 (S) Bulk-remove broken/disabled-mirror titles to keep large lists fast. (community #109/#110) → 1.2
+- G14 (L) **Android** — package/verify on Firefox-for-Android (extensions supported) so the list + sync + open-in-browser work on phone. (owner bonus) → 2.0
+- G15 (S) Asura/Void-style "unreliable domain" warning banner (dismissible) on known domain-hoppers. (community #25) → 1.x
+
 ---
 
 ## 3. Testing & Quality Plan (prerequisite for trustworthy releases)
@@ -241,3 +261,31 @@ The mangaread.org / Madara anti-scraping issue. Approaches to evaluate together 
 - Alternate Madara endpoints / nonce acquisition strategies.
 - Optional user-opt-in headless fetch.
 - Per-source "extraction mode" flag in the adapter manifest.
+
+---
+
+## 7. Strategic direction — escaping the whack-a-mole (owner question)
+
+> "Functionality is gradually decaying. Upkeep for site compatibility is constant whack-a-mole. Is there a path forward?"
+
+Yes. The decay comes from **one per-site adapter per site**, each breaking independently. Four moves change the economics so the owner's true needs (accurate list/updates, smart search, reliable open-in-browser, high-integrity human-readable sync, ideally Android) stop depending on any single fragile mirror.
+
+1. **Generic theme adapters, not per-site.** Most requested sites are a handful of CMS templates — **Madara** (WordPress `wp-manga`), **MangaStream/MangaReader** (`ts_reader`), **MangaBuddy** clones, a few bespoke. One config-driven adapter per _template_ covers dozens of domains; a new site is usually a row in a table, not new code. (== C3, raised in priority.) This is the single biggest lever against whack-a-mole.
+2. **Decouple identity from mirrors via MangaUpdates (G8).** Track series by a stable MangaUpdates id, not a URL. Search, clustering, and "which mirror has the latest chapter" all hang off that. When a mirror dies, identity + progress survive and migration (F2/G3) is a re-link, not a rebuild.
+3. **Chapter-number tracking (G1).** Persist the read chapter _number_, not just the URL. Domain hops (Asura/Manganato→chapmanganato) stop destroying progress — the #1 cause of "stuck/broken" entries in the community logs.
+4. **Suwayomi/Tachidesk as the heavy-lift backend (G9/C4).** For breadth and aggressive anti-scrape sites, let a self-hosted Suwayomi do extraction; AMR becomes the tracker/sync/UI over it. This also gives a clean **Android** story (G14): Suwayomi-Server + the extension on Firefox-for-Android, or Suwayomi's own clients, with AMR's YAML/JSON sync (G5) as the portable source of truth.
+
+**Honest alternative if upkeep still outweighs value:** track in AMR but read in **Suwayomi/Tachiyomi-class apps** that have a maintained extension ecosystem; AMR's differentiator becomes high-integrity, human-readable, Gist-synced tracking (G1/G5) across devices — which is exactly the owner's stated core need and the "easy part" reader is explicitly _not_.
+
+**Near-term sequencing to serve the core needs fastest:** G1 + G5 + G4 + G11 + G12 (0.4) → C1 + C2 + G7 + C3 generic-Madara + G3 (0.5) → G8 + G10 (1.x) → G9 + G14 (2.0).
+
+---
+
+## 8. Mirror candidates & auto-triage
+
+Every site mentioned in the community/owner backlog is captured as machine-readable input for an **anti-scrape probe** that classifies each before we invest in an adapter — exactly the requested "auto-test whether it has anti-scrape code, how bad, and whether it's workable; if not, move on."
+
+- **Candidate list:** `tooling/source-probe/candidates.json` (owner-priority sites flagged).
+- **Probe:** `tooling/source-probe/probe.mjs` (`npm run probe -w @amr/source-probe`) fetches each, detects reachability, anti-scrape signatures (Cloudflare "Just a moment"/`cf_chl`, Turnstile, DDoS-Guard, generic captcha), guesses the CMS/template (Madara, MangaStream, MangaBuddy, etc.), and emits a **viability score** + report.
+- **Workflow:** a manual-dispatch GitHub Action runs the probe and uploads the report so triage stays current without local setup.
+- **Policy:** green (no/weak anti-scrape, known template) → add via the matching generic adapter; yellow (cookies/credentials help) → revisit with content-script mode; red (hard Cloudflare/Turnstile/captcha) → skip, prefer a Suwayomi route. Owner core sites — **mangaread.org, mangahub.io, toonclash.com / mangaclash.com** — are first in the queue.
