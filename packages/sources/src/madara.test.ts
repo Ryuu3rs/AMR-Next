@@ -59,4 +59,29 @@ describe("createMadaraAdapter", () => {
         expect(result.manga.manga.coverUrl).toBe("https://test-madara.example/cover.jpg")
         expect(result.manga.sourceMangaId).toBe("cool-manga")
     })
+
+    it("parses search results with cover and latest chapter", async () => {
+        const searchHtml = `<html><body>
+<div class="c-tabs-item__content">
+  <div class="tab-thumb"><a href="https://test-madara.example/series/cool-manga/"><img src="https://cdn.example/cool.jpg" /></a></div>
+  <div class="post-title"><h3><a href="https://test-madara.example/series/cool-manga/">Cool Manga</a></h3></div>
+  <div class="latest-chap"><span class="chapter"><a>Chapter 12</a></span></div>
+</div>
+<div class="c-tabs-item__content">
+  <div class="post-title"><h3><a href="https://test-madara.example/series/other-title/">Other Title</a></h3></div>
+  <span class="chapter"><a>Chapter 7</a></span>
+</div>
+</body></html>`
+        const context = createContext({ "/": searchHtml })
+        const results = await adapter.search!("cool", context)
+        expect(results).toHaveLength(2)
+        expect(results[0]).toMatchObject({
+            sourceId: "testmadara",
+            sourceMangaId: "cool-manga",
+            title: "Cool Manga",
+            latestChapter: "12"
+        })
+        expect(results[0]?.coverUrl).toBe("https://cdn.example/cool.jpg")
+        expect(results[1]?.sourceMangaId).toBe("other-title")
+    })
 })
