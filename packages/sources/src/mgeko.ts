@@ -210,6 +210,22 @@ export const mgekoAdapter: SourceAdapter = {
         throw new SourceError("invalid-input", "Mgeko chapter listing is not supported")
     },
 
+    async resolveCover(
+        input: { sourceMangaId?: string; url?: URL },
+        context: SourceContext
+    ): Promise<string | undefined> {
+        const slug = input.sourceMangaId ?? (input.url ? extractMangaSlug(input.url) : undefined)
+        if (!slug) return undefined
+        try {
+            const html = await context.request.getText(new URL(`${ORIGIN}/comic/${slug}/`), {
+                headers: BROWSER_HEADERS
+            })
+            return extractCoverUrl(html)
+        } catch {
+            return undefined
+        }
+    },
+
     async resolveChapter(input: ResolveChapterInput, context: SourceContext): Promise<ResolvedChapter> {
         if (!input.url) throw new SourceError("invalid-input", "A chapter URL is required")
         const chapterSlug = extractChapterSlug(input.url)

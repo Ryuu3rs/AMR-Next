@@ -304,6 +304,22 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             throw new SourceError("invalid-input", `${config.name} chapter listing is not supported`)
         },
 
+        async resolveCover(
+            input: { sourceMangaId?: string; url?: URL },
+            context: SourceContext
+        ): Promise<string | undefined> {
+            const slug = input.sourceMangaId ?? (input.url ? extractMangaSlug(input.url) : undefined)
+            if (!slug) return undefined
+            try {
+                const html = await context.request.getText(new URL(`${config.origin}/${mangaPath}/${slug}/`), {
+                    headers: browserHeaders
+                })
+                return extractCoverUrl(html)
+            } catch {
+                return undefined
+            }
+        },
+
         async resolveChapter(input: ResolveChapterInput, context: SourceContext): Promise<ResolvedChapter> {
             if (!input.url) throw new SourceError("invalid-input", "A chapter URL is required")
             const slugs = extractChapterSlugs(input.url)

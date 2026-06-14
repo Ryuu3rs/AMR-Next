@@ -15,10 +15,13 @@ import {
     findSource,
     listMangaChapters,
     resolveChapterUrl,
+    resolveCoverFor,
     searchManga,
     getMangaChapters,
     checkSourcePermission
 } from "../src/sources"
+
+const COVER_BACKFILL_BATCH = 12
 
 const updateAlarmName = "check-manga-updates"
 
@@ -165,6 +168,23 @@ export default defineBackground(() => {
                         const rating = request.rating === 0 ? undefined : request.rating
                         await db.manga.update(request.mangaId, { rating } as Partial<{ rating: number }>)
                         return success(null)
+                    }
+                    case "library:covers:backfill": {
+                        const all = await db.manga.toArray()
+                        const missing = all.filter(m => !m.coverUrl && !m.id.startsWith("seed-"))
+                        let updated = 0
+                        for (const m of missing.slice(0, COVER_BACKFILL_BATCH)) {
+                            try {
+                                const cover = await resolveCoverFor(m)
+                                if (cover) {
+                                    await db.manga.update(m.id, { coverUrl: cover })
+                                    updated += 1
+                                }
+                            } catch (error) {
+                                console.warn("[AMR] Cover backfill failed", { mangaId: m.id, error })
+                            }
+                        }
+                        return success({ updated, remaining: Math.max(0, missing.length - COVER_BACKFILL_BATCH) })
                     }
                     case "stats:get":
                         return success(await getLocalStats())
