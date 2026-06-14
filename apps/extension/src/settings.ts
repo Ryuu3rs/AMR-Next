@@ -1,6 +1,13 @@
+export type ReadingDirection = "ltr" | "rtl" | "vertical"
+export type PageFit = "width" | "height" | "contain" | "original"
+
 export type AppSettings = {
     autoAdd: boolean
     readingMode: "continuous" | "single"
+    readingDirection: ReadingDirection
+    pageFit: PageFit
+    showPageNumber: boolean
+    preloadPages: number
     theme: "dark" | "light"
     updateIntervalHours: 0 | 6 | 12 | 24
 }
@@ -10,6 +17,10 @@ const settingsKey = "settings"
 export const defaultSettings: AppSettings = {
     autoAdd: true,
     readingMode: "continuous",
+    readingDirection: "ltr",
+    pageFit: "width",
+    showPageNumber: true,
+    preloadPages: 3,
     theme: "dark",
     updateIntervalHours: 12
 }

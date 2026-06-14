@@ -30,6 +30,10 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         settings: z.object({
             autoAdd: z.boolean().optional(),
             readingMode: z.enum(["continuous", "single"]).optional(),
+            readingDirection: z.enum(["ltr", "rtl", "vertical"]).optional(),
+            pageFit: z.enum(["width", "height", "contain", "original"]).optional(),
+            showPageNumber: z.boolean().optional(),
+            preloadPages: z.number().int().min(0).max(10).optional(),
             theme: z.enum(["dark", "light"]).optional(),
             updateIntervalHours: z.union([z.literal(0), z.literal(6), z.literal(12), z.literal(24)]).optional()
         })

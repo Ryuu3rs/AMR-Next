@@ -101,10 +101,46 @@ main {
     padding: 8px;
 }
 
-main img {
+.page {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+
+.page img {
     display: block;
+}
+
+/* Page-fit modes */
+main.fit-width .page img {
     width: min(100%, 1100px);
     height: auto;
+}
+
+main.fit-height .page img {
+    width: auto;
+    max-width: 100%;
+    height: calc(100vh - 80px);
+}
+
+main.fit-contain .page img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: calc(100vh - 80px);
+    object-fit: contain;
+}
+
+main.fit-original .page img {
+    width: auto;
+    height: auto;
+    max-width: none;
+}
+
+main.fit-original .page {
+    justify-content: flex-start;
+    overflow-x: auto;
 }
 
 main.single {
@@ -112,10 +148,29 @@ main.single {
     align-items: center;
 }
 
-main.single img {
+main.single.fit-width .page img,
+main.single.fit-original .page img {
     max-width: 100%;
     max-height: calc(100vh - 80px);
+    width: auto;
     object-fit: contain;
+}
+
+.page-num {
+    position: absolute;
+    right: 12px;
+    bottom: 8px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #f5f7fa;
+    font-size: 11px;
+    pointer-events: none;
+}
+
+main.dir-rtl .page-num {
+    right: auto;
+    left: 12px;
 }
 
 .message {

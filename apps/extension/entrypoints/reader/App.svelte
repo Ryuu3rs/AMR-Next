@@ -4,13 +4,22 @@
     import { onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
 
+    type ReadingDirection = "ltr" | "rtl" | "vertical"
+    type PageFit = "width" | "height" | "contain" | "original"
+
     let chapter = $state<ResolvedChapter | undefined>()
     let error = $state("")
     let resolving = $state(false)
     let currentPage = $state(0)
     let mode = $state<"continuous" | "single">("continuous")
+    let direction = $state<ReadingDirection>("ltr")
+    let pageFit = $state<PageFit>("width")
+    let showPageNumber = $state(true)
+    let preloadPages = $state(3)
     let chapterUrl = $state("")
 
+    // Vertical (webtoon) direction always scrolls continuously.
+    const effectiveMode = $derived(direction === "vertical" ? "continuous" : mode)
     const progressPct = $derived(chapter ? Math.round(((currentPage + 1) / chapter.pages.length) * 100) : 0)
 
     async function loadChapter(url: string) {
@@ -25,12 +34,20 @@
             })
             currentPage = progress?.pageIndex ?? 0
             try {
-                const settings = await sendRuntimeMessage<{ readingMode: "continuous" | "single" }>({
-                    type: "settings:get"
-                })
+                const settings = await sendRuntimeMessage<{
+                    readingMode: "continuous" | "single"
+                    readingDirection: ReadingDirection
+                    pageFit: PageFit
+                    showPageNumber: boolean
+                    preloadPages: number
+                }>({ type: "settings:get" })
                 mode = settings.readingMode
+                direction = settings.readingDirection
+                pageFit = settings.pageFit
+                showPageNumber = settings.showPageNumber
+                preloadPages = settings.preloadPages
             } catch {
-                // keep default
+                // keep defaults
             }
         } catch (cause) {
             error = cause instanceof Error ? cause.message : "The chapter could not be loaded"
@@ -92,13 +109,15 @@
 
 <svelte:window
     onkeydown={event => {
-        if (mode !== "single" || !chapter) return
-        if (event.key === "ArrowRight" || event.key.toLowerCase() === "j") {
-            recordProgress(Math.min(currentPage + 1, chapter.pages.length - 1))
-        }
-        if (event.key === "ArrowLeft" || event.key.toLowerCase() === "k") {
-            recordProgress(Math.max(currentPage - 1, 0))
-        }
+        if (effectiveMode !== "single" || !chapter) return
+        const lastIndex = chapter.pages.length - 1
+        const next = () => recordProgress(Math.min(currentPage + 1, lastIndex))
+        const prev = () => recordProgress(Math.max(currentPage - 1, 0))
+        const key = event.key.toLowerCase()
+        if (key === "j") next()
+        else if (key === "k") prev()
+        else if (event.key === "ArrowRight") direction === "rtl" ? prev() : next()
+        else if (event.key === "ArrowLeft") direction === "rtl" ? next() : prev()
     }} />
 
 <header>
@@ -115,8 +134,10 @@
             <button
                 type="button"
                 class="btn-sm"
+                disabled={direction === "vertical"}
+                title={direction === "vertical" ? "Vertical mode always scrolls" : "Toggle reading mode"}
                 onclick={() => (mode = mode === "continuous" ? "single" : "continuous")}>
-                {mode === "continuous" ? "Single" : "Scroll"}
+                {effectiveMode === "continuous" ? "Single" : "Scroll"}
             </button>
         {/if}
         <button
@@ -135,7 +156,7 @@
     </div>
 {/if}
 
-<main class:single={mode === "single"}>
+<main class:single={effectiveMode === "single"} class="fit-{pageFit} dir-{direction}">
     {#if error}
         <section class="message">
             <h1>Chapter could not be loaded</h1>
@@ -148,20 +169,26 @@
         <section class="message"><p>Loading chapter…</p></section>
     {:else if !chapter}
         <section class="message"><p>No chapter loaded.</p></section>
-    {:else if mode === "single"}
-        <img
-            src={chapter.pages[currentPage]?.url}
-            alt={`Page ${currentPage + 1}`}
-            onerror={handleImageError}
-            onload={() => recordProgress(currentPage)} />
+    {:else if effectiveMode === "single"}
+        <div class="page">
+            <img
+                src={chapter.pages[currentPage]?.url}
+                alt={`Page ${currentPage + 1}`}
+                onerror={handleImageError}
+                onload={() => recordProgress(currentPage)} />
+            {#if showPageNumber}<span class="page-num">{currentPage + 1} / {chapter.pages.length}</span>{/if}
+        </div>
     {:else}
         {#each chapter.pages as page, index}
-            <img
-                src={page.url}
-                alt={`Page ${index + 1}`}
-                loading={index < 3 ? "eager" : "lazy"}
-                onerror={handleImageError}
-                onload={() => recordProgress(index)} />
+            <div class="page">
+                <img
+                    src={page.url}
+                    alt={`Page ${index + 1}`}
+                    loading={index < preloadPages ? "eager" : "lazy"}
+                    onerror={handleImageError}
+                    onload={() => recordProgress(index)} />
+                {#if showPageNumber}<span class="page-num">{index + 1} / {chapter.pages.length}</span>{/if}
+            </div>
         {/each}
     {/if}
 </main>
