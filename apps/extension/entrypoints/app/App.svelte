@@ -60,9 +60,17 @@
     let confirmingRemove = $state<string | null>(null)
     let hasPermission = $state(false)
     let browseQuery = $state("")
-    let searchResults = $state<Array<{ id: string; title: string; coverUrl?: string; status: string }>>([])
+    type SearchResult = {
+        sourceId: string
+        sourceMangaId: string
+        title: string
+        url: string
+        coverUrl?: string
+        latestChapter?: string
+    }
+    let searchResults = $state<SearchResult[]>([])
     let searchLoading = $state(false)
-    let selectedManga = $state<{ id: string; title: string; coverUrl?: string } | null>(null)
+    let selectedManga = $state<{ title: string } | null>(null)
     let mangaChapters = $state<Array<{ id: string; title: string; chapter?: string; url: string }>>([])
     let chaptersLoading = $state(false)
 
@@ -344,14 +352,19 @@
         }
     }
 
-    async function browseChapters(manga: { id: string; title: string; coverUrl?: string }) {
-        selectedManga = manga
+    // MangaDex can list chapters; other sources open the manga page directly.
+    async function openResult(result: SearchResult) {
+        if (result.sourceId !== "mangadex") {
+            void browser.tabs.create({ url: result.url })
+            return
+        }
+        selectedManga = { title: result.title }
         chaptersLoading = true
         mangaChapters = []
         try {
             mangaChapters = await sendRuntimeMessage<typeof mangaChapters>({
                 type: "manga:chapters",
-                mangaId: manga.id
+                mangaId: result.sourceMangaId
             })
         } catch {
             mangaChapters = []
@@ -782,9 +795,14 @@
                             </div>
                             <div class="result-info">
                                 <p class="result-title">{result.title}</p>
-                                <p class="muted">{result.status}</p>
+                                <p class="muted">
+                                    {result.sourceId}{#if result.latestChapter}
+                                        · latest ch {result.latestChapter}{/if}
+                                </p>
                             </div>
-                            <button type="button" onclick={() => void browseChapters(result)}>Chapters</button>
+                            <button type="button" onclick={() => void openResult(result)}>
+                                {result.sourceId === "mangadex" ? "Chapters" : "Open"}
+                            </button>
                         </div>
                     {/each}
                 </div>

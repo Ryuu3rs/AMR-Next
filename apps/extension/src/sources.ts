@@ -1,5 +1,10 @@
 import type { SourceLinkRecord } from "@amr/contracts"
-import { createBoundedRequestClient, type SourceContext, type SourceManga } from "@amr/source-sdk"
+import {
+    createBoundedRequestClient,
+    type SourceContext,
+    type SourceManga,
+    type SourceSearchResult
+} from "@amr/source-sdk"
 import { sourceAdapters, madaraOrigins } from "@amr/sources"
 import type { LibraryManga } from "./database"
 import { sourceOrigins } from "./permissions"
@@ -63,34 +68,17 @@ export async function resolveChapterUrl(url: string) {
     return source.resolveChapter({ url: parsedUrl }, createSourceContext(source.manifest.requestRateLimit))
 }
 
-export async function searchManga(query: string) {
-    const params = new URLSearchParams({
-        title: query,
-        limit: "12",
-        "includes[]": "cover_art"
-    })
-    const res = await fetch(`https://api.mangadex.org/manga?${params}`)
-    if (!res.ok) throw new Error(`MangaDex search failed: ${res.status}`)
-    const json = (await res.json()) as {
-        data: Array<{
-            id: string
-            attributes: { title: Record<string, string>; status: string }
-            relationships: Array<{ type: string; attributes?: { fileName?: string } }>
-        }>
-    }
-    return json.data.map(m => {
-        const cover = m.relationships.find(r => r.type === "cover_art")
-        const fileName = cover?.attributes?.fileName
-        return {
-            id: m.id,
-            title: m.attributes.title["en"] ?? Object.values(m.attributes.title)[0] ?? "Unknown",
-            coverUrl: fileName ? `https://uploads.mangadex.org/covers/${m.id}/${fileName}.256.jpg` : undefined,
-            status: m.attributes.status
-        }
-    })
+// Aggregate search across every adapter that supports it. Sources without
+// granted host permission fail their origin check and are skipped (allSettled).
+export async function searchManga(query: string): Promise<SourceSearchResult[]> {
+    const searchable = sourceAdapters.filter(adapter => adapter.search)
+    const settled = await Promise.allSettled(
+        searchable.map(adapter => adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)))
+    )
+    return settled.flatMap(result => (result.status === "fulfilled" ? result.value : []))
 }
 
-export type MangaSearchResult = Awaited<ReturnType<typeof searchManga>>[number]
+export type MangaSearchResult = SourceSearchResult
 
 export async function getMangaChapters(mangaId: string) {
     const params = new URLSearchParams({

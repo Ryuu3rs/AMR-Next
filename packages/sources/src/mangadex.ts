@@ -9,7 +9,8 @@ import {
     type SourceChapter,
     type SourceContext,
     type SourceManga,
-    type SourcePageMatch
+    type SourcePageMatch,
+    type SourceSearchResult
 } from "@amr/source-sdk"
 import { z } from "zod"
 
@@ -34,6 +35,7 @@ const mangaSchema = z.object({
         title: localizedStringsSchema,
         altTitles: z.array(localizedStringsSchema).optional(),
         status: z.enum(["ongoing", "completed", "hiatus", "cancelled"]).optional(),
+        lastChapter: z.string().nullish(),
         createdAt: z.string(),
         updatedAt: z.string()
     }),
@@ -42,6 +44,10 @@ const mangaSchema = z.object({
 const mangaResponseSchema = z.object({
     result: z.literal("ok"),
     data: mangaSchema
+})
+const mangaListSchema = z.object({
+    result: z.literal("ok"),
+    data: z.array(mangaSchema)
 })
 const chapterSchema = z.object({
     id: z.string(),
@@ -246,6 +252,32 @@ export const mangadexAdapter: SourceAdapter = {
         if (!id) return undefined
         const manga = await fetchManga(id, context)
         return manga.manga.coverUrl
+    },
+
+    async search(query: string, context: SourceContext): Promise<SourceSearchResult[]> {
+        const url = new URL("/manga", API_ORIGIN)
+        url.searchParams.set("title", query)
+        url.searchParams.set("limit", "12")
+        url.searchParams.append("includes[]", "cover_art")
+        url.searchParams.append("order[relevance]", "desc")
+        const response = await context.request.getJson(url, mangaListSchema)
+        return response.data.map(item => {
+            const cover = item.relationships?.find(r => r.type === "cover_art")
+            const fileName = cover?.attributes?.["fileName"]
+            const coverUrl =
+                typeof fileName === "string"
+                    ? `${UPLOADS_ORIGIN}/covers/${item.id}/${encodeURIComponent(fileName)}.256.jpg`
+                    : undefined
+            const lastChapter = item.attributes.lastChapter
+            return {
+                sourceId: SOURCE_ID,
+                sourceMangaId: item.id,
+                title: pickLocalized(item.attributes.title) ?? "Unknown",
+                url: mangaUrl(item.id),
+                ...(coverUrl ? { coverUrl } : {}),
+                ...(lastChapter ? { latestChapter: lastChapter } : {})
+            }
+        })
     },
 
     async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {

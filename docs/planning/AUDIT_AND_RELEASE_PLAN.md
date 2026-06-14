@@ -79,7 +79,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 
 ### C. Sources & discovery
 
-- C1 (L) **Add `search()` to the adapter contract**; implement per-source. → 1.1 (contract), 1.2 (per-source)
+- ✅ C1 (L) **`search()` in the adapter contract** — MangaDex (with latest chapter) + generic Madara (`?s=` results: title, cover, latest chapter); extension aggregates across all searchable sources.
 - C2 (L) **Implement `listChapters()` for mangaread + mgeko** so updates work. → 1.2 (pairs with deferred scraper hardening)
 - C3 (L) Generic Madara-family template adapter (one config → many sites). → 2.0
 - C4 (M) Self-hosted sources: Komga / Suwayomi(Tachidesk) with credentials. → 2.0
@@ -126,7 +126,7 @@ These are weighted toward the owner's stated priorities: accurate list/updates o
 - G4 (S) **Per-source refresh** — refresh updates for one source/mirror instead of the whole library. (community #36/#112) → 0.4
 - ✅ G5 (M) **Human-readable sync + Gist** — pretty-printed JSON export round-trips the import/export envelope; GitHub Gist push/pull (token with `gist` scope stored locally), optional hourly auto-push, Settings UI under Data. (owner core) Future: per-record last-write-wins merge + YAML option.
 - G6 (S) **Timed local backups** — scheduled export to a user-chosen location on a frequency (lazy: compare-on-open). (community #87/#89) → 1.x
-- G7 (M) **Smart cross-site search w/ latest-chapter** — search the compatible-source list for a title and show each mirror's latest hosted chapter number, so dead/stale mirrors are obvious. Builds on C1. (owner core + bonus) → 0.5
+- ✅ G7 (M) **Smart cross-site search w/ latest-chapter** — Browse searches every permitted source at once; each result shows its source and latest hosted chapter. Builds on C1. (owner core + bonus)
 - G8 (M) **MangaUpdates backbone** — use the MangaUpdates API as the canonical series identity for search, clustering (F1), and mirror comparison/auto-pick-best (per yonilern's fork). → 1.x
 - G9 (M) **Suwayomi/Tachidesk connector** — offload source breadth to a self-hosted Suwayomi backend (== C4, owner-recommended). → 2.0
 - G10 (S) Categories/labels + assign-from-reader — tag titles into categories and add/remove them from the reader view (== B2 + a reader hook). (community #12/#79/#84) → 1.2

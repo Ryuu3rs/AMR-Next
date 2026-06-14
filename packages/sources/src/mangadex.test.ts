@@ -135,6 +135,39 @@ describe("mangadexAdapter", () => {
         expect(requests).toHaveLength(3)
     })
 
+    it("searches and surfaces the latest chapter", async () => {
+        const searchFixture = {
+            result: "ok",
+            data: [
+                {
+                    id: MANGA_ID,
+                    type: "manga",
+                    attributes: {
+                        title: { en: "Test Manga" },
+                        altTitles: [],
+                        status: "ongoing",
+                        lastChapter: "152",
+                        createdAt: "2024-01-02T03:04:05+00:00",
+                        updatedAt: "2025-02-03T04:05:06+00:00"
+                    },
+                    relationships: [{ id: "c", type: "cover_art", attributes: { fileName: "cover.jpg" } }]
+                }
+            ]
+        }
+        const requests: string[] = []
+        const context = createContext({ "/manga": searchFixture }, requests)
+
+        const results = await mangadexAdapter.search!("test", context)
+        expect(results).toHaveLength(1)
+        expect(results[0]).toMatchObject({
+            sourceId: "mangadex",
+            sourceMangaId: MANGA_ID,
+            title: "Test Manga",
+            latestChapter: "152"
+        })
+        expect(requests[0]).toContain("title=test")
+    })
+
     it("rejects malformed API responses", async () => {
         const context = createContext(
             {

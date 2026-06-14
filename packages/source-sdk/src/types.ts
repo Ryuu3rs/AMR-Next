@@ -57,6 +57,17 @@ export type ResolveChapterInput = {
     sourceChapterId?: string
 }
 
+export type SourceSearchResult = {
+    sourceId: string
+    sourceMangaId: string
+    title: string
+    url: string
+    coverUrl?: string
+    // Latest hosted chapter number/label if the search surface exposes it — lets
+    // the UI show which mirrors are actively updated (G7).
+    latestChapter?: string
+}
+
 export type SourceRequestOptions = {
     headers?: Readonly<Record<string, string>>
 }
@@ -88,4 +99,6 @@ export interface SourceAdapter {
     // and/or manga page URL. Used to backfill covers for library entries that were
     // added by reading a chapter (which may not carry a reliable cover).
     resolveCover?(input: { sourceMangaId?: string; url?: URL }, context: SourceContext): Promise<string | undefined>
+    // Optional: search this source for a title. Adapters that can't search omit it.
+    search?(query: string, context: SourceContext): Promise<SourceSearchResult[]>
 }

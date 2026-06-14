@@ -9,7 +9,8 @@ import {
     type SourceChapter,
     type SourceContext,
     type SourceManga,
-    type SourcePageMatch
+    type SourcePageMatch,
+    type SourceSearchResult
 } from "@amr/source-sdk"
 
 // Config-driven adapter for the Madara WordPress manga theme. One factory covers
@@ -181,6 +182,58 @@ function extractMangaTitle(html: string, mangaSlug: string): string {
     return mangaSlug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
 }
 
+function escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+// Parse Madara's `?s=` search results page into structured results. Standard
+// Madara markup wraps each hit in .c-tabs-item__content; we fall back to scanning
+// the whole page for manga links if the theme differs.
+function extractSearchResults(html: string, config: MadaraConfig, mangaPath: string): SourceSearchResult[] {
+    const originPath = `${escapeRegex(config.origin)}/${escapeRegex(mangaPath)}`
+    const blocks = [
+        ...html.matchAll(/<div[^>]*\bc-tabs-item__content\b[^>]*>([\s\S]*?)(?=<div[^>]*\bc-tabs-item__content\b|$)/gi)
+    ].map(m => captureGroup(m, 1) ?? "")
+    const scopes = blocks.length > 0 ? blocks : [html]
+    const linkRe = new RegExp(`<a\\s+href="(${originPath}/([^"/]+)/?)"[^>]*>([\\s\\S]*?)</a>`, "gi")
+
+    const out: SourceSearchResult[] = []
+    const seen = new Set<string>()
+    for (const block of scopes) {
+        const anchors = [...block.matchAll(linkRe)]
+        const first = anchors[0]
+        const url = first ? captureGroup(first, 1) : undefined
+        const slug = first ? captureGroup(first, 2) : undefined
+        if (!url || !slug || seen.has(slug)) continue
+        seen.add(slug)
+        // The thumbnail anchor has no text; the title anchor does — take the first non-empty.
+        let title = ""
+        for (const a of anchors) {
+            const text = (captureGroup(a, 3) ?? "").replace(/<[^>]+>/g, "").trim()
+            if (text) {
+                title = text
+                break
+            }
+        }
+        if (!title) title = slug.replace(/-/g, " ")
+        const imgTag = block.match(/<img\b[^>]*>/i)
+        const coverUrl = imgTag
+            ? getImgAttr(captureGroup(imgTag, 0) ?? "", "src", "data-src", "data-lazy-src")
+            : undefined
+        const chap = block.match(/chapter[\s-]*(\d+(?:\.\d+)?)/i)
+        const latestChapter = chap ? captureGroup(chap, 1) : undefined
+        out.push({
+            sourceId: config.id,
+            sourceMangaId: slug,
+            title,
+            url,
+            ...(coverUrl ? { coverUrl } : {}),
+            ...(latestChapter ? { latestChapter } : {})
+        })
+    }
+    return out
+}
+
 export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
     const mangaPath = config.mangaPath ?? "manga"
     const chapterPrefix = config.chapterPrefix ?? "chapter"
@@ -317,6 +370,18 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
                 return extractCoverUrl(html)
             } catch {
                 return undefined
+            }
+        },
+
+        async search(query: string, context: SourceContext): Promise<SourceSearchResult[]> {
+            const url = new URL(`${config.origin}/`)
+            url.searchParams.set("s", query)
+            url.searchParams.set("post_type", "wp-manga")
+            try {
+                const html = await context.request.getText(url, { headers: browserHeaders })
+                return extractSearchResults(html, config, mangaPath)
+            } catch {
+                return []
             }
         },
 
