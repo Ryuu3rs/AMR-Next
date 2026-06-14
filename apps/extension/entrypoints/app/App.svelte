@@ -11,6 +11,7 @@
     let settings = $state<AppSettings | undefined>()
     let loading = $state(true)
     let query = $state("")
+    let librarySort = $state<"recent-read" | "recent-added" | "title" | "latest-chapter">("recent-read")
     let addUrl = $state("")
     let addMessage = $state("")
     let adding = $state(false)
@@ -67,10 +68,25 @@
         }
     }
 
-    function read(manga: LibraryManga) {
+    function openInBrowser(manga: LibraryManga, active = true) {
+        void browser.tabs.create({ url: manga.sourceUrl, active })
+    }
+
+    function openInReader(manga: LibraryManga) {
         void browser.tabs.create({
             url: browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(manga.sourceUrl)}`)
         })
+    }
+
+    // Primary click honors the openChapterIn setting. Ctrl/middle-click always
+    // opens the source page directly in a background tab (G11).
+    function read(manga: LibraryManga, event?: MouseEvent) {
+        if (event && (event.ctrlKey || event.metaKey || event.button === 1)) {
+            openInBrowser(manga, false)
+            return
+        }
+        if (settings?.openChapterIn === "browser") openInBrowser(manga)
+        else openInReader(manga)
     }
 
     async function remove(mangaId: string) {
@@ -227,7 +243,25 @@
         })
     }
 
-    const visibleLibrary = $derived(library.filter(m => m.title.toLowerCase().includes(query.trim().toLowerCase())))
+    const visibleLibrary = $derived.by(() => {
+        const filtered = library.filter(m => m.title.toLowerCase().includes(query.trim().toLowerCase()))
+        const sorted = [...filtered]
+        switch (librarySort) {
+            case "recent-read":
+                sorted.sort((a, b) => (b.lastReadAt ?? 0) - (a.lastReadAt ?? 0) || b.updatedAt - a.updatedAt)
+                break
+            case "recent-added":
+                sorted.sort((a, b) => b.addedAt - a.addedAt)
+                break
+            case "title":
+                sorted.sort((a, b) => a.title.localeCompare(b.title))
+                break
+            case "latest-chapter":
+                sorted.sort((a, b) => (b.latestChapterNumber ?? 0) - (a.latestChapterNumber ?? 0))
+                break
+        }
+        return sorted
+    })
 </script>
 
 <div class="shell">
@@ -290,7 +324,11 @@
                         {#each library.slice(1, 7) as manga}
                             <article>
                                 <div class="poster-wrap">
-                                    <button type="button" class="poster" onclick={() => read(manga)}>
+                                    <button
+                                        type="button"
+                                        class="poster"
+                                        onclick={e => read(manga, e)}
+                                        onauxclick={e => read(manga, e)}>
                                         {#if manga.coverUrl}<img src={manga.coverUrl} alt={manga.title} />{:else}<span
                                                 class="cover-initial">{manga.title[0]}</span
                                             >{/if}
@@ -317,7 +355,15 @@
         {:else if activeSection === "Library"}
             <div class="page-head">
                 <h1>Library</h1>
-                <input bind:value={query} aria-label="Search library" placeholder="Search titles..." />
+                <div class="library-controls">
+                    <select aria-label="Sort library" bind:value={librarySort}>
+                        <option value="recent-read">Recently read</option>
+                        <option value="recent-added">Recently added</option>
+                        <option value="title">Title (A–Z)</option>
+                        <option value="latest-chapter">Latest chapter</option>
+                    </select>
+                    <input bind:value={query} aria-label="Search library" placeholder="Search titles..." />
+                </div>
             </div>
             <form
                 class="url-form"
@@ -340,7 +386,8 @@
                                     type="button"
                                     class="poster"
                                     class:sample={isSeedData(manga)}
-                                    onclick={() => read(manga)}>
+                                    onclick={e => read(manga, e)}
+                                    onauxclick={e => read(manga, e)}>
                                     {#if manga.coverUrl}<img src={manga.coverUrl} alt={manga.title} />{:else}<span
                                             class="cover-initial">{manga.title[0]}</span
                                         >{/if}
@@ -698,6 +745,23 @@
                             void updateSetting({
                                 preloadPages: Math.max(0, Math.min(10, Number(e.currentTarget.value) || 0))
                             })} />
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Open chapters in</p>
+                        <p class="muted">
+                            The built-in reader, or the source site in your browser. (Ctrl/middle-click always opens the
+                            source.)
+                        </p>
+                    </div>
+                    <select
+                        aria-label="Open chapters in"
+                        value={settings?.openChapterIn ?? "reader"}
+                        onchange={e =>
+                            void updateSetting({ openChapterIn: e.currentTarget.value as "reader" | "browser" })}>
+                        <option value="reader">Built-in reader</option>
+                        <option value="browser">Source site</option>
+                    </select>
                 </div>
             </div>
         {/if}

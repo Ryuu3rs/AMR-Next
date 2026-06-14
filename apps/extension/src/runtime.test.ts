@@ -29,6 +29,16 @@ describe("settings:update schema", () => {
         const msg = { type: "settings:update", settings: { pageFit: "stretch" } }
         expect(runtimeRequestSchema.safeParse(msg).success).toBe(false)
     })
+
+    it("accepts openChapterIn and rejects unknown values", () => {
+        expect(
+            runtimeRequestSchema.safeParse({ type: "settings:update", settings: { openChapterIn: "browser" } }).success
+        ).toBe(true)
+        expect(
+            runtimeRequestSchema.safeParse({ type: "settings:update", settings: { openChapterIn: "telepathy" } })
+                .success
+        ).toBe(false)
+    })
 })
 
 describe("library:rate schema", () => {

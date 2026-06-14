@@ -1,6 +1,8 @@
 export type ReadingDirection = "ltr" | "rtl" | "vertical"
 export type PageFit = "width" | "height" | "contain" | "original"
 
+export type OpenChapterIn = "reader" | "browser"
+
 export type AppSettings = {
     autoAdd: boolean
     readingMode: "continuous" | "single"
@@ -8,6 +10,7 @@ export type AppSettings = {
     pageFit: PageFit
     showPageNumber: boolean
     preloadPages: number
+    openChapterIn: OpenChapterIn
     theme: "dark" | "light"
     updateIntervalHours: 0 | 6 | 12 | 24
 }
@@ -21,6 +24,7 @@ export const defaultSettings: AppSettings = {
     pageFit: "width",
     showPageNumber: true,
     preloadPages: 3,
+    openChapterIn: "reader",
     theme: "dark",
     updateIntervalHours: 12
 }
