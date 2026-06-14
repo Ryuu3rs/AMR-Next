@@ -12,6 +12,14 @@
     let loading = $state(true)
     let query = $state("")
     let librarySort = $state<"recent-read" | "recent-added" | "title" | "latest-chapter">("recent-read")
+    let failedCovers = $state<Set<string>>(new Set())
+    let refreshingCovers = $state(false)
+
+    function coverFailed(id: string) {
+        const next = new Set(failedCovers)
+        next.add(id)
+        failedCovers = next
+    }
     let addUrl = $state("")
     let addMessage = $state("")
     let adding = $state(false)
@@ -52,7 +60,26 @@
     onMount(async () => {
         await load()
         hasPermission = await sendRuntimeMessage<boolean>({ type: "source:permission:check" })
+        if (hasPermission) void backfillCovers()
     })
+
+    async function backfillCovers() {
+        if (refreshingCovers) return
+        refreshingCovers = true
+        try {
+            const res = await sendRuntimeMessage<{ updated: number; remaining: number }>({
+                type: "library:covers:backfill"
+            })
+            if (res.updated > 0) {
+                failedCovers = new Set()
+                await load()
+            }
+        } catch {
+            // covers are best-effort
+        } finally {
+            refreshingCovers = false
+        }
+    }
 
     async function load() {
         loading = true
@@ -306,7 +333,10 @@
             {:else}
                 <div class="home-feature">
                     <div class="home-feature-cover">
-                        {#if library[0]?.coverUrl}<img src={library[0].coverUrl} alt="" />{:else}<span
+                        {#if library[0]?.coverUrl && !failedCovers.has(library[0].id)}<img
+                                src={library[0].coverUrl}
+                                alt=""
+                                onerror={() => library[0] && coverFailed(library[0].id)} />{:else}<span
                                 class="cover-initial">{library[0]?.title[0]}</span
                             >{/if}
                     </div>
@@ -329,7 +359,10 @@
                                         class="poster"
                                         onclick={e => read(manga, e)}
                                         onauxclick={e => read(manga, e)}>
-                                        {#if manga.coverUrl}<img src={manga.coverUrl} alt={manga.title} />{:else}<span
+                                        {#if manga.coverUrl && !failedCovers.has(manga.id)}<img
+                                                src={manga.coverUrl}
+                                                alt={manga.title}
+                                                onerror={() => coverFailed(manga.id)} />{:else}<span
                                                 class="cover-initial">{manga.title[0]}</span
                                             >{/if}
                                     </button>
@@ -362,6 +395,14 @@
                         <option value="title">Title (A–Z)</option>
                         <option value="latest-chapter">Latest chapter</option>
                     </select>
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        onclick={() => void backfillCovers()}
+                        disabled={refreshingCovers || !hasPermission}
+                        title={hasPermission ? "Fetch missing covers" : "Grant source access first"}>
+                        {refreshingCovers ? "Fetching…" : "Refresh covers"}
+                    </button>
                     <input bind:value={query} aria-label="Search library" placeholder="Search titles..." />
                 </div>
             </div>
@@ -388,8 +429,11 @@
                                     class:sample={isSeedData(manga)}
                                     onclick={e => read(manga, e)}
                                     onauxclick={e => read(manga, e)}>
-                                    {#if manga.coverUrl}<img src={manga.coverUrl} alt={manga.title} />{:else}<span
-                                            class="cover-initial">{manga.title[0]}</span
+                                    {#if manga.coverUrl && !failedCovers.has(manga.id)}<img
+                                            src={manga.coverUrl}
+                                            alt={manga.title}
+                                            onerror={() => coverFailed(manga.id)} />{:else}<span class="cover-initial"
+                                            >{manga.title[0]}</span
                                         >{/if}
                                     {#if isSeedData(manga)}<span class="sample-chip">Sample</span>{/if}
                                     {#if !isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId}

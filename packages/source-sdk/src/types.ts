@@ -84,4 +84,8 @@ export interface SourceAdapter {
     resolveManga(input: ResolveMangaInput, context: SourceContext): Promise<SourceManga>
     listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]>
     resolveChapter(input: ResolveChapterInput, context: SourceContext): Promise<ResolvedChapter>
+    // Optional: fetch just the cover image URL for a series, by its source manga id
+    // and/or manga page URL. Used to backfill covers for library entries that were
+    // added by reading a chapter (which may not carry a reliable cover).
+    resolveCover?(input: { sourceMangaId?: string; url?: URL }, context: SourceContext): Promise<string | undefined>
 }

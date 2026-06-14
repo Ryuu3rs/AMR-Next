@@ -238,6 +238,16 @@ export const mangadexAdapter: SourceAdapter = {
         return fetchManga(id, context)
     },
 
+    async resolveCover(
+        input: { sourceMangaId?: string; url?: URL },
+        context: SourceContext
+    ): Promise<string | undefined> {
+        const id = input.sourceMangaId ?? (input.url ? extractId(input.url, "title") : undefined)
+        if (!id) return undefined
+        const manga = await fetchManga(id, context)
+        return manga.manga.coverUrl
+    },
+
     async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
         if (input.manga.sourceId !== SOURCE_ID || !UUID_PATTERN.test(input.manga.sourceMangaId)) {
             throw new SourceError("invalid-input", "The manga does not belong to MangaDex")
