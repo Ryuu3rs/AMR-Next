@@ -54,6 +54,7 @@ async function checkUpdates() {
                     await db.manga.update(item.id, {
                         latestChapterId: latest.id,
                         sourceUrl: latest.url,
+                        ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
                         updatedAt: Date.now()
                     })
                 }

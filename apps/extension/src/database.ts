@@ -9,6 +9,10 @@ export type LibraryManga = MangaRecord & {
     mangaUrl?: string
     latestChapterId?: string
     lastReadChapterId?: string
+    // Domain-independent progress: the chapter *number* survives mirror/domain
+    // changes that invalidate the URL-derived chapter IDs above.
+    latestChapterNumber?: number
+    lastReadChapterNumber?: number
 }
 
 export type HistoryEvent = {
@@ -60,7 +64,11 @@ export async function saveResolvedChapter(input: {
             ...(input.sourceLink.sourceMangaId ? { sourceMangaId: input.sourceLink.sourceMangaId } : {}),
             mangaUrl: input.sourceLink.url,
             latestChapterId: input.chapter.id,
-            ...(existing?.lastReadChapterId ? { lastReadChapterId: existing.lastReadChapterId } : {})
+            ...(Number.isFinite(input.chapter.sortKey) ? { latestChapterNumber: input.chapter.sortKey } : {}),
+            ...(existing?.lastReadChapterId ? { lastReadChapterId: existing.lastReadChapterId } : {}),
+            ...(existing?.lastReadChapterNumber !== undefined
+                ? { lastReadChapterNumber: existing.lastReadChapterNumber }
+                : {})
         }
         await db.manga.put(manga)
         await db.sourceLinks.put(input.sourceLink)
@@ -69,11 +77,13 @@ export async function saveResolvedChapter(input: {
 }
 
 export async function saveProgress(progress: ReadingProgress): Promise<void> {
-    await db.transaction("rw", db.progress, db.manga, db.historyEvents, async () => {
+    await db.transaction("rw", db.progress, db.manga, db.chapters, db.historyEvents, async () => {
         const existing = await db.progress.get(progress.chapterId)
         await db.progress.put(progress)
+        const chapter = await db.chapters.get(progress.chapterId)
         await db.manga.update(progress.mangaId, {
             lastReadChapterId: progress.chapterId,
+            ...(chapter && Number.isFinite(chapter.sortKey) ? { lastReadChapterNumber: chapter.sortKey } : {}),
             updatedAt: progress.updatedAt
         })
         if (!existing) {

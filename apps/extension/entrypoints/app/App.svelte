@@ -378,6 +378,15 @@
                             </div>
                             <p class="poster-title">{manga.title}</p>
                             <p class="poster-sub">{manga.sourceId}</p>
+                            {#if manga.lastReadChapterNumber !== undefined || manga.latestChapterNumber !== undefined}
+                                <p class="poster-chapter">
+                                    {manga.lastReadChapterNumber !== undefined
+                                        ? `Ch ${manga.lastReadChapterNumber}`
+                                        : "Unread"}{#if manga.latestChapterNumber !== undefined}<span class="muted">
+                                            / {manga.latestChapterNumber}</span
+                                        >{/if}
+                                </p>
+                            {/if}
                             <div class="poster-rating" role="group" aria-label={`Rate ${manga.title}`}>
                                 {#each [1, 2, 3, 4, 5] as star}
                                     <button

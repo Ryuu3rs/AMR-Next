@@ -454,6 +454,12 @@ button:disabled {
     color: var(--muted);
 }
 
+.poster-chapter {
+    font-size: 11px;
+    color: var(--text, #f5f7fa);
+    margin: 2px 0 0;
+}
+
 .poster-rating {
     display: flex;
     gap: 2px;

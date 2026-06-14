@@ -72,6 +72,21 @@ describe("exportEnvelopeSchema", () => {
         expect(exportEnvelopeSchema.safeParse("not json").success).toBe(false)
     })
 
+    it("round-trips domain-independent chapter numbers (G1)", () => {
+        const env = validEnvelope()
+        env.data.manga[0] = {
+            ...env.data.manga[0],
+            latestChapterNumber: 161,
+            lastReadChapterNumber: 79
+        } as (typeof env.data.manga)[0]
+        const parsed = exportEnvelopeSchema.safeParse(env)
+        expect(parsed.success).toBe(true)
+        if (parsed.success) {
+            expect(parsed.data.data.manga[0]?.lastReadChapterNumber).toBe(79)
+            expect(parsed.data.data.manga[0]?.latestChapterNumber).toBe(161)
+        }
+    })
+
     it("drops unknown extra tables but keeps known ones", () => {
         const env = validEnvelope() as Record<string, unknown> & { data: Record<string, unknown> }
         env.data["futureTable"] = [{ anything: true }]
