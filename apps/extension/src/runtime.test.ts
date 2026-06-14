@@ -53,6 +53,21 @@ describe("library:rate schema", () => {
     })
 })
 
+describe("sync schema (G5)", () => {
+    it("accepts sync:config patches and action messages", () => {
+        expect(
+            runtimeRequestSchema.safeParse({ type: "sync:config", config: { token: "ghp_x", autoSync: true } }).success
+        ).toBe(true)
+        expect(runtimeRequestSchema.safeParse({ type: "sync:push" }).success).toBe(true)
+        expect(runtimeRequestSchema.safeParse({ type: "sync:pull" }).success).toBe(true)
+        expect(runtimeRequestSchema.safeParse({ type: "sync:status" }).success).toBe(true)
+    })
+
+    it("rejects a non-boolean autoSync", () => {
+        expect(runtimeRequestSchema.safeParse({ type: "sync:config", config: { autoSync: "yes" } }).success).toBe(false)
+    })
+})
+
 describe("manual tracking schema (G2)", () => {
     it("accepts library:manual toggles", () => {
         expect(runtimeRequestSchema.safeParse({ type: "library:manual", mangaId: "m1", manual: true }).success).toBe(

@@ -11,6 +11,7 @@ import {
 } from "../src/database"
 import { runtimeRequestSchema, type RuntimeResponse } from "../src/runtime"
 import { getSettings, updateSettings } from "../src/settings"
+import { getSyncConfig, getSyncStatus, pullFromGist, pushToGist, setSyncConfig } from "../src/sync"
 import {
     findSource,
     listMangaChapters,
@@ -24,6 +25,7 @@ import {
 const COVER_BACKFILL_BATCH = 12
 
 const updateAlarmName = "check-manga-updates"
+const syncAlarmName = "sync-push"
 
 async function configureUpdateAlarm() {
     const settings = await getSettings()
@@ -32,6 +34,24 @@ async function configureUpdateAlarm() {
         await browser.alarms.create(updateAlarmName, {
             periodInMinutes: settings.updateIntervalHours * 60
         })
+    }
+}
+
+async function configureSyncAlarm() {
+    const config = await getSyncConfig()
+    await browser.alarms.clear(syncAlarmName)
+    if (config.autoSync && config.token) {
+        await browser.alarms.create(syncAlarmName, { periodInMinutes: 60 })
+    }
+}
+
+async function autoPush() {
+    const config = await getSyncConfig()
+    if (!config.autoSync || !config.token) return
+    try {
+        await pushToGist(await exportDatabase())
+    } catch (error) {
+        console.warn("[AMR] Auto sync push failed", error)
     }
 }
 
@@ -131,10 +151,12 @@ async function captureChapter(url: string) {
 export default defineBackground(() => {
     browser.runtime.onInstalled.addListener(() => {
         void configureUpdateAlarm()
+        void configureSyncAlarm()
     })
 
     browser.alarms.onAlarm.addListener(alarm => {
         if (alarm.name === updateAlarmName) void checkUpdates()
+        if (alarm.name === syncAlarmName) void autoPush()
     })
 
     browser.tabs.onUpdated.addListener((_tabId, changeInfo) => {
@@ -212,6 +234,28 @@ export default defineBackground(() => {
                         return success(await importDatabase(request.envelope))
                     case "data:seed":
                         return success(await seedDatabase())
+                    case "sync:status":
+                        return success(await getSyncStatus())
+                    case "sync:config": {
+                        const patch = Object.fromEntries(
+                            Object.entries(request.config).filter(([, v]) => v !== undefined)
+                        )
+                        const next = await setSyncConfig(patch)
+                        await configureSyncAlarm()
+                        return success({
+                            hasToken: Boolean(next.token),
+                            ...(next.gistId ? { gistId: next.gistId } : {}),
+                            autoSync: next.autoSync
+                        })
+                    }
+                    case "sync:push": {
+                        const envelope = await exportDatabase()
+                        return success(await pushToGist(envelope))
+                    }
+                    case "sync:pull": {
+                        const envelope = await pullFromGist()
+                        return success(await importDatabase(envelope))
+                    }
                     case "manga:search":
                         return success(await searchManga(request.query))
                     case "manga:chapters":

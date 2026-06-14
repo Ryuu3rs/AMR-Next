@@ -16,6 +16,17 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("data:export") }),
     z.object({ type: z.literal("data:import"), envelope: z.unknown() }),
     z.object({ type: z.literal("data:seed") }),
+    z.object({ type: z.literal("sync:status") }),
+    z.object({
+        type: z.literal("sync:config"),
+        config: z.object({
+            token: z.string().optional(),
+            gistId: z.string().optional(),
+            autoSync: z.boolean().optional()
+        })
+    }),
+    z.object({ type: z.literal("sync:push") }),
+    z.object({ type: z.literal("sync:pull") }),
     z.object({ type: z.literal("manga:search"), query: z.string().min(1) }),
     z.object({ type: z.literal("manga:chapters"), mangaId: z.string().min(1) }),
     z.object({ type: z.literal("source:permission:check") }),

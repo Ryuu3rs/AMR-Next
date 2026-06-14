@@ -16,7 +16,18 @@ const BASE_SOURCE_ORIGINS = [
 
 export const SOURCE_ORIGINS: readonly string[] = [...BASE_SOURCE_ORIGINS, ...madaraOrigins]
 
+// GitHub API origin for Gist sync (G5). Separate from source origins — requested
+// only when the user enables sync.
+export const SYNC_ORIGINS = ["https://api.github.com/*"] as const
+
+// All optional host origins for the manifest.
+export const ALL_OPTIONAL_ORIGINS: readonly string[] = [...SOURCE_ORIGINS, ...SYNC_ORIGINS]
+
 // Mutable copy for the browser.permissions APIs, which expect string[].
 export function sourceOrigins(): string[] {
     return [...SOURCE_ORIGINS]
+}
+
+export function syncOrigins(): string[] {
+    return [...SYNC_ORIGINS]
 }

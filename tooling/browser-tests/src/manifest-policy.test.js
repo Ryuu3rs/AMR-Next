@@ -9,6 +9,7 @@ const allowedOptionalHosts = [
     "*://*.imgsrv4.com/*",
     "*://*.mangadex.network/*",
     "https://agrcomics.com/*",
+    "https://api.github.com/*",
     "https://api.mangadex.org/*",
     "https://arvencomics.com/*",
     "https://arvenscans.org/*",

@@ -3,7 +3,15 @@
     import type { AppSettings } from "../../src/settings"
     import { onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
-    import { sourceOrigins } from "../../src/permissions"
+    import { sourceOrigins, syncOrigins } from "../../src/permissions"
+
+    type SyncStatus = {
+        hasToken: boolean
+        gistId?: string
+        autoSync: boolean
+        lastPushedAt?: number
+        lastPulledAt?: number
+    }
 
     const sections = ["Home", "Library", "Updates", "Achievements", "Sources", "Data", "Settings"] as const
     let activeSection = $state<(typeof sections)[number]>("Home")
@@ -14,6 +22,11 @@
     let librarySort = $state<"recent-read" | "recent-added" | "title" | "latest-chapter">("recent-read")
     let failedCovers = $state<Set<string>>(new Set())
     let refreshingCovers = $state(false)
+    let syncStatus = $state<SyncStatus | undefined>()
+    let syncToken = $state("")
+    let syncGistId = $state("")
+    let syncMessage = $state("")
+    let syncing = $state(false)
 
     function coverFailed(id: string) {
         const next = new Set(failedCovers)
@@ -61,7 +74,71 @@
         await load()
         hasPermission = await sendRuntimeMessage<boolean>({ type: "source:permission:check" })
         if (hasPermission) void backfillCovers()
+        await loadSyncStatus()
     })
+
+    async function loadSyncStatus() {
+        try {
+            syncStatus = await sendRuntimeMessage<SyncStatus>({ type: "sync:status" })
+            syncGistId = syncStatus.gistId ?? ""
+        } catch {
+            // sync optional
+        }
+    }
+
+    async function saveSyncToken() {
+        const token = syncToken.trim()
+        if (!token) return
+        const granted = await browser.permissions.request({ origins: syncOrigins() })
+        if (!granted) {
+            syncMessage = "GitHub access was not granted."
+            return
+        }
+        syncStatus = await sendRuntimeMessage<SyncStatus>({ type: "sync:config", config: { token } })
+        syncToken = ""
+        syncMessage = "Token saved."
+    }
+
+    async function saveGistId() {
+        syncStatus = await sendRuntimeMessage<SyncStatus>({
+            type: "sync:config",
+            config: { gistId: syncGistId.trim() }
+        })
+    }
+
+    async function toggleAutoSync(on: boolean) {
+        syncStatus = await sendRuntimeMessage<SyncStatus>({ type: "sync:config", config: { autoSync: on } })
+    }
+
+    async function pushSync() {
+        syncing = true
+        syncMessage = ""
+        try {
+            const res = await sendRuntimeMessage<{ gistId: string }>({ type: "sync:push" })
+            syncMessage = `Pushed to gist ${res.gistId}.`
+            await loadSyncStatus()
+        } catch (cause) {
+            syncMessage = cause instanceof Error ? cause.message : "Push failed."
+        } finally {
+            syncing = false
+        }
+    }
+
+    async function pullSync() {
+        syncing = true
+        syncMessage = ""
+        try {
+            const res = await sendRuntimeMessage<{ manga: number; chapters: number }>({ type: "sync:pull" })
+            syncMessage = `Pulled ${res.manga} manga and ${res.chapters} chapters.`
+            failedCovers = new Set()
+            await load()
+            await loadSyncStatus()
+        } catch (cause) {
+            syncMessage = cause instanceof Error ? cause.message : "Pull failed."
+        } finally {
+            syncing = false
+        }
+    }
 
     async function backfillCovers() {
         if (refreshingCovers) return
@@ -749,6 +826,70 @@
                 </div>
             </div>
             {#if dataMessage}<p class="notice">{dataMessage}</p>{/if}
+
+            <h1 style="margin-top:32px">GitHub Gist sync</h1>
+            <div class="data-list">
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Personal access token</p>
+                        <p class="muted">
+                            A token with the <code>gist</code> scope. Stored locally on this device only.
+                            {syncStatus?.hasToken ? " A token is saved." : ""}
+                        </p>
+                    </div>
+                    <div class="sync-token">
+                        <input
+                            type="password"
+                            placeholder={syncStatus?.hasToken ? "••••••• (saved)" : "ghp_…"}
+                            bind:value={syncToken} />
+                        <button type="button" onclick={saveSyncToken} disabled={!syncToken.trim()}>Save</button>
+                    </div>
+                </div>
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Gist ID</p>
+                        <p class="muted">Leave blank to create a new private gist on first push.</p>
+                    </div>
+                    <input class="sync-gist" placeholder="(auto)" bind:value={syncGistId} onchange={saveGistId} />
+                </div>
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Auto-sync</p>
+                        <p class="muted">Push the backup to the gist hourly when enabled.</p>
+                    </div>
+                    <label class="toggle">
+                        <input
+                            type="checkbox"
+                            checked={syncStatus?.autoSync ?? false}
+                            disabled={!syncStatus?.hasToken}
+                            onchange={e => void toggleAutoSync(e.currentTarget.checked)} />
+                        <span class="track"></span>
+                    </label>
+                </div>
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Sync now</p>
+                        <p class="muted">
+                            {syncStatus?.lastPushedAt
+                                ? `Last pushed ${new Date(syncStatus.lastPushedAt).toLocaleString()}.`
+                                : "Not pushed yet."}
+                        </p>
+                    </div>
+                    <div class="sync-actions">
+                        <button type="button" onclick={pushSync} disabled={!syncStatus?.hasToken || syncing}>
+                            Push
+                        </button>
+                        <button
+                            type="button"
+                            class="btn-outline"
+                            onclick={pullSync}
+                            disabled={!syncStatus?.hasToken || !syncStatus?.gistId || syncing}>
+                            Pull
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {#if syncMessage}<p class="notice">{syncMessage}</p>{/if}
         {:else}
             <h1>Settings</h1>
             <div class="settings-list">

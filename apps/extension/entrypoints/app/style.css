@@ -581,6 +581,18 @@ button:disabled {
     align-items: center;
 }
 
+.sync-token,
+.sync-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.sync-token input,
+.sync-gist {
+    min-width: 180px;
+}
+
 .page-head input {
     width: 220px;
     min-height: 36px;

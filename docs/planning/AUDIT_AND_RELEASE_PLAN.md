@@ -124,7 +124,7 @@ These are weighted toward the owner's stated priorities: accurate list/updates o
 - ✅ G2 (M) **Manual / "Do Not Scan" titles** — flag a title to skip auto-scan and set the available + read chapter numbers by hand from the library menu; manual titles are excluded from update checks and show a "Manual" badge (Asura-style). (community #80/#95/#110)
 - G3 (M) **Broken-link checker + migrator** — detect entries whose source 403s/redirects/dies, surface them, and offer re-link (overlaps F2). (community #30/#33/#34/#110) → 0.5
 - G4 (S) **Per-source refresh** — refresh updates for one source/mirror instead of the whole library. (community #36/#112) → 0.4
-- G5 (M) **Human-readable sync file** — store the list + progress + settings as YAML/TOML/JSON (round-trips with the import/export envelope) for Gist sync + hand-editing with high integrity. (owner core) → 0.4
+- ✅ G5 (M) **Human-readable sync + Gist** — pretty-printed JSON export round-trips the import/export envelope; GitHub Gist push/pull (token with `gist` scope stored locally), optional hourly auto-push, Settings UI under Data. (owner core) Future: per-record last-write-wins merge + YAML option.
 - G6 (S) **Timed local backups** — scheduled export to a user-chosen location on a frequency (lazy: compare-on-open). (community #87/#89) → 1.x
 - G7 (M) **Smart cross-site search w/ latest-chapter** — search the compatible-source list for a title and show each mirror's latest hosted chapter number, so dead/stale mirrors are obvious. Builds on C1. (owner core + bonus) → 0.5
 - G8 (M) **MangaUpdates backbone** — use the MangaUpdates API as the canonical series identity for search, clustering (F1), and mirror comparison/auto-pick-best (per yonilern's fork). → 1.x
