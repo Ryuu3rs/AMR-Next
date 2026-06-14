@@ -85,6 +85,10 @@
         })
     }
 
+    async function updateSetting(patch: Partial<AppSettings>) {
+        settings = await sendRuntimeMessage<AppSettings>({ type: "settings:update", settings: patch })
+    }
+
     async function addByUrl() {
         adding = true
         addMessage = ""
@@ -602,6 +606,70 @@
                         <option value="12">Every 12 h</option>
                         <option value="24">Daily</option>
                     </select>
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Reading direction</p>
+                        <p class="muted">Left-to-right, right-to-left (manga), or vertical (webtoon).</p>
+                    </div>
+                    <select
+                        aria-label="Reading direction"
+                        value={settings?.readingDirection ?? "ltr"}
+                        onchange={e =>
+                            void updateSetting({
+                                readingDirection: e.currentTarget.value as "ltr" | "rtl" | "vertical"
+                            })}>
+                        <option value="ltr">Left to right</option>
+                        <option value="rtl">Right to left</option>
+                        <option value="vertical">Vertical</option>
+                    </select>
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Page fit</p>
+                        <p class="muted">How pages are scaled to the viewport.</p>
+                    </div>
+                    <select
+                        aria-label="Page fit"
+                        value={settings?.pageFit ?? "width"}
+                        onchange={e =>
+                            void updateSetting({
+                                pageFit: e.currentTarget.value as "width" | "height" | "contain" | "original"
+                            })}>
+                        <option value="width">Fit width</option>
+                        <option value="height">Fit height</option>
+                        <option value="contain">Fit screen</option>
+                        <option value="original">Original size</option>
+                    </select>
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Show page number</p>
+                        <p class="muted">Overlay the current page number while reading.</p>
+                    </div>
+                    <label class="toggle">
+                        <input
+                            type="checkbox"
+                            checked={settings?.showPageNumber ?? true}
+                            onchange={e => void updateSetting({ showPageNumber: e.currentTarget.checked })} />
+                        <span class="track"></span>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Preload pages</p>
+                        <p class="muted">How many upcoming pages load eagerly (0–10).</p>
+                    </div>
+                    <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        aria-label="Preload pages"
+                        value={settings?.preloadPages ?? 3}
+                        onchange={e =>
+                            void updateSetting({
+                                preloadPages: Math.max(0, Math.min(10, Number(e.currentTarget.value) || 0))
+                            })} />
                 </div>
             </div>
         {/if}
