@@ -1,8 +1,8 @@
 # AMR — Codebase Audit, Feature Backlog & Release/Versioning Plan
 
 Last updated: 2026-06-14
-Branch at time of writing: `rewrite/extension-core`
-Status vs roadmap: Stage 1 (Reader) and most of Stage 2 (Local Product) are **functionally done** but the `ROADMAP.md` checkboxes were never ticked. This document reconciles reality with the roadmap and plans the path to a versioned public release.
+Branch at time of writing: `main` (rewrite merged)
+Status: **v0.2.0 released** — rewrite merged to `main`; release-please pipeline live and proven end-to-end (CI fixes, version-sync, AMO-signing hook in place). Foundation phase (§1.1 I1/I2/I5/I6, §3 test baseline, §4 release automation) is done. Stage 1 (Reader) and most of Stage 2 (Local Product) are functionally complete. This document reconciles reality with the roadmap and plans the path to public stable.
 
 > Scope note: the mangaread.org / Madara anti-scraping problem is **deliberately deferred**. It needs a multi-angle approach (content-script extraction in page context, alternate Madara endpoints, optional headless fetch) and is tracked separately under "Deferred — Source Hardening". Nothing in this plan depends on solving it.
 
@@ -72,6 +72,10 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - B7 (S) Extensible achievements (data-driven, not 3 hardcoded). → 1.3
 - B8 (S) Local share cards (export a stats image). → 1.3
 - B9 (M) Sort/group library (recently read, updated, title, unread count). → 1.1
+- B10 (S) Star rating (1–5) per manga; sortable + filterable; stored on the manga record. → 1.2
+- B11 (M) Advanced library filters — multi-facet (status, source, tags, rating, unread count, language, updated-since) with saved filter presets. → 1.2
+- B12 (S) Per-manga notes. → 1.3
+- B13 (M) Custom collections / smart lists (rule-based, e.g. "ongoing + rating ≥ 4 + unread > 0"). → 1.3
 
 ### C. Sources & discovery
 
@@ -92,6 +96,17 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - D5 (S) Surface update/capture failures in the UI (toast + diagnostics panel). → 1.1
 - D6 (M) Diagnostics page: last errors, source status, DB stats, export logs. → 1.2
 - D7 (M) Validated import with Zod + conflict resolution (merge/overwrite/skip) + dry-run. → 1.1
+
+### F. Curation & source management
+
+- F1 (L) **Automatic scanlation clustering** — group multiple scanlation groups/sources of the same series into one library entry; pick a preferred source; dedupe chapters across groups by chapter number; show which groups cover which chapters. Depends on C1 (search contract) + a title-similarity matcher. → 2.0
+- F2 (L) **Migration wizard for dead sources** — when D4 health monitoring flags a source dead/unavailable, fuzzy-match each affected title to candidate sources, preview matches, bulk re-link, and preserve reading progress by mapping chapter numbers. Depends on C1 + D4. → 2.0
+- F3 (M) Duplicate detection + merge (same series added twice, e.g. via two URLs). → 1.3
+- F4 (S) NSFW flag with blur/hide toggle + setting. → 1.3
+- F5 (M) Bulk actions — multi-select in the library for tag, remove, mark-read, rate, migrate. → 1.2
+- F6 (M) Local recommendations ("because you read X") derived from tags/authors/history — no network. → 2.0
+- F7 (S) Continue-reading / up-next queue shelf on Home. → 1.2
+- F8 (S) Search autocomplete + recent searches. → 1.2
 
 ### E. UX polish
 
@@ -198,11 +213,13 @@ Augment `.github/workflows/release.yml`:
 
 - **0.2.0 — Foundation & trust** (I1, I2, I7, D5, D7, E4; §3 items 1-5; release-please + commitlint set up; release.yml gate + version-consistency check). _No new user features — make the base solid and releasable._
 - **0.3.0 — Reader & reliability** (A1-A4, A7, A8, E1, E3, D1, D2). Reading prefs + rate-limit + retry.
-- **0.4.0 — Library depth** (B1, B4, B9, C5, D6, A5, A6). Detail pages, history, diagnostics.
+- **0.4.0 — Library depth** (B1, B4, B9, B10, C5, D6, A5, A6, F7, F8). Detail pages, history, diagnostics, star rating, up-next, search autocomplete.
 - **0.5.0 — Source breadth** (C1 contract + C2 listChapters + C7 new sources; pairs with deferred scraper hardening). Search across sources; updates work everywhere.
 - **1.0.0 — Public stable** (Firefox AMO signing automation live, in-extension update check, full test floor, docs/runbook complete, ≥3 sources solid). Reclaim the roadmap Stage 5 checkboxes.
-- **1.x** — B2/B3/B5/B6/B7/B8, C6, D3/D4, E2/E5, A10.
-- **2.0** — A9 offline/downloads, C3 Madara template, C4 self-hosted (Komga/Suwayomi). Data-model bump justifies major.
+- **1.x** — B2/B3/B5/B6/B7/B8/B11/B12/B13, C6, D3/D4, E2/E5, A10, F3/F4/F5. Advanced filters, collections, bulk actions, duplicate merge, NSFW.
+- **2.0** — A9 offline/downloads, C3 Madara template, C4 self-hosted (Komga/Suwayomi), **F1 scanlation clustering**, **F2 migration wizard**, F6 recommendations. Data-model bump justifies major.
+
+**Contract impact of the new features.** Several need additive `MangaRecord` fields (a `MINOR`, non-breaking schema bump): `rating?` (1–5, B10), `nsfw?` (F4), `notes?` (B12), and a cluster/group key for F1. Tags/collections (B2/B13) need a tags table or array. Plan these into the `0.4.0` contract change so later features don't each re-migrate the DB.
 
 ---
 
