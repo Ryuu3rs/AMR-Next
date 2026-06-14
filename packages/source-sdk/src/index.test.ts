@@ -64,6 +64,92 @@ describe("createBoundedRequestClient", () => {
     })
 })
 
+describe("createBoundedRequestClient retry + rate limit", () => {
+    it("retries transient failures then succeeds", async () => {
+        let calls = 0
+        const client = createBoundedRequestClient({
+            fetch: async () => {
+                calls += 1
+                if (calls < 3) return { ok: false, status: 503, text: async () => "busy" }
+                return { ok: true, status: 200, text: async () => "ok-body" }
+            },
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 5,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            maxRetries: 2,
+            sleep: async () => undefined,
+            random: () => 0
+        })
+
+        await expect(client.getText(new URL("https://api.example.test/x"))).resolves.toBe("ok-body")
+        expect(calls).toBe(3)
+    })
+
+    it("does not retry deterministic 4xx responses", async () => {
+        let calls = 0
+        const client = createBoundedRequestClient({
+            fetch: async () => {
+                calls += 1
+                return { ok: false, status: 404, text: async () => "nope" }
+            },
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 5,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            sleep: async () => undefined
+        })
+
+        await expect(client.getText(new URL("https://api.example.test/x"))).rejects.toMatchObject({
+            code: "not-found"
+        })
+        expect(calls).toBe(1)
+    })
+
+    it("gives up after maxRetries on persistent transient failure", async () => {
+        let calls = 0
+        const client = createBoundedRequestClient({
+            fetch: async () => {
+                calls += 1
+                return { ok: false, status: 500, text: async () => "err" }
+            },
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 10,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            maxRetries: 2,
+            sleep: async () => undefined,
+            random: () => 0
+        })
+
+        await expect(client.getText(new URL("https://api.example.test/x"))).rejects.toMatchObject({
+            code: "request-failed"
+        })
+        expect(calls).toBe(3)
+    })
+
+    it("spaces requests according to the rate limit", async () => {
+        const waits: number[] = []
+        const client = createBoundedRequestClient({
+            fetch: async () => ({ ok: true, status: 200, text: async () => "x" }),
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 10,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            rateLimit: { requests: 1, intervalMs: 1000 },
+            sleep: async ms => {
+                waits.push(ms)
+            }
+        })
+
+        await client.getText(new URL("https://api.example.test/a"))
+        await client.getText(new URL("https://api.example.test/b"))
+        await client.getText(new URL("https://api.example.test/c"))
+
+        expect(waits.filter(w => w > 0).length).toBeGreaterThanOrEqual(2)
+    })
+})
+
 describe("SourceRegistry", () => {
     const adapter = {
         manifest: {

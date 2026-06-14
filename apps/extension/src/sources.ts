@@ -8,13 +8,14 @@ export function findSource(url: URL) {
     return sourceAdapters.find(adapter => adapter.match(url) !== "none")
 }
 
-function createSourceContext(): SourceContext {
+function createSourceContext(rateLimit?: { requests: number; intervalMs: number }): SourceContext {
     const request = createBoundedRequestClient({
         fetch: (requestUrl, init) => fetch(requestUrl, init),
         allowedOrigins: ["https://api.mangadex.org", "https://www.mangaread.org", "https://www.mgeko.cc"],
         maxRequests: 20,
         maxResponseBytes: 10 * 1024 * 1024,
-        timeoutMs: 20_000
+        timeoutMs: 20_000,
+        ...(rateLimit ? { rateLimit } : {})
     })
     return {
         request,
@@ -34,7 +35,7 @@ export async function resolveChapterUrl(url: string) {
         throw new Error("This chapter is not supported")
     }
 
-    return source.resolveChapter({ url: parsedUrl }, createSourceContext())
+    return source.resolveChapter({ url: parsedUrl }, createSourceContext(source.manifest.requestRateLimit))
 }
 
 export async function searchManga(query: string) {
@@ -117,6 +118,6 @@ export async function listMangaChapters(manga: LibraryManga, link: SourceLinkRec
             languages: link.language ? [link.language] : ["en"],
             limit: 500
         },
-        createSourceContext()
+        createSourceContext(source.manifest.requestRateLimit)
     )
 }
