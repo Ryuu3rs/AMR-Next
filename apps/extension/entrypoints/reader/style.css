@@ -1,0 +1,147 @@
+:root {
+    color: #f5f7fa;
+    background: #090b0e;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+    margin: 0;
+}
+
+header {
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 16px;
+    min-height: 56px;
+    padding: 0 16px;
+    border-bottom: 1px solid #29313b;
+    background: rgb(13 17 23 / 94%);
+    backdrop-filter: blur(12px);
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+}
+
+.header-title {
+    display: grid;
+    gap: 2px;
+    overflow: hidden;
+}
+
+.header-title strong {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 14px;
+}
+
+.header-title span {
+    color: #9faab7;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.page-count {
+    font-size: 12px;
+    color: #9faab7;
+    white-space: nowrap;
+}
+
+.btn-back {
+    background: transparent;
+    border: none;
+    color: #9faab7;
+    padding: 0 8px;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 6px;
+    min-height: 36px;
+}
+
+.btn-back:hover {
+    color: #f5f7fa;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.btn-sm {
+    min-height: 30px;
+    padding: 0 10px;
+    font-size: 12px;
+}
+
+button {
+    min-height: 36px;
+    padding: 0 12px;
+    border: 1px solid #3b4653;
+    border-radius: 7px;
+    color: inherit;
+    background: #18202a;
+    font: inherit;
+    cursor: pointer;
+}
+
+main {
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    padding: 8px;
+}
+
+main img {
+    display: block;
+    width: min(100%, 1100px);
+    height: auto;
+}
+
+main.single {
+    min-height: calc(100vh - 73px);
+    align-items: center;
+}
+
+main.single img {
+    max-width: 100%;
+    max-height: calc(100vh - 80px);
+    object-fit: contain;
+}
+
+.message {
+    max-width: 560px;
+    margin-top: 15vh;
+    padding: 24px;
+    text-align: center;
+}
+
+.message button {
+    margin-top: 16px;
+    background: #8b5cf6;
+    border-color: #7c3aed;
+    color: #fff;
+}
+
+.progress-bar {
+    position: sticky;
+    top: 56px;
+    z-index: 1;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.progress-fill {
+    height: 100%;
+    background: #8b5cf6;
+    transition: width 0.3s ease;
+}

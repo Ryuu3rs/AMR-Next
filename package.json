@@ -1,0 +1,34 @@
+{
+    "name": "all-mangas-reader",
+    "version": "0.1.0",
+    "private": true,
+    "description": "A lightweight cross-browser manga reader extension",
+    "type": "module",
+    "workspaces": [
+        "apps/*",
+        "packages/*",
+        "tooling/*"
+    ],
+    "engines": {
+        "node": ">=22.0.0",
+        "npm": ">=11.0.0"
+    },
+    "scripts": {
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "dev": "npm run dev --workspace @amr/extension",
+        "dev:firefox": "npm run dev:firefox --workspace @amr/extension",
+        "build": "npm run build --workspace @amr/extension",
+        "build:firefox": "npm run build:firefox --workspace @amr/extension",
+        "zip": "npm run zip --workspace @amr/extension",
+        "zip:firefox": "npm run zip:firefox --workspace @amr/extension",
+        "typecheck": "npm run typecheck --workspaces --if-present",
+        "test": "npm run test --workspaces --if-present",
+        "check": "npm run format:check && npm run typecheck && npm run test && npm run build && npm run build:firefox"
+    },
+    "devDependencies": {
+        "prettier": "^3.8.3",
+        "prettier-plugin-svelte": "^3.4.1"
+    },
+    "packageManager": "npm@11.6.2"
+}

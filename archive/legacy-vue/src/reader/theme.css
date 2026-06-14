@@ -1,0 +1,1140 @@
+/**
+ * .amr-theme-marker - AMR Reader Theme System
+ *
+ * CSS Custom Properties for theming the reader without Vuetify.
+ * Replaces Vuetify's theme system with a lightweight alternative.
+ *
+ * Usage:
+ * - Light mode: default (no attribute needed)
+ * - Dark mode: add data-theme="dark" to #amrapp
+ *
+ * Access colors via: var(--amr-color-name)
+ *
+ * NOTE: The .amr- prefix in the first line is intentional - it prevents
+ * the removeStyles() function in init-reading.js from removing this stylesheet.
+ */
+
+/* ========================================
+   Base Color Palette
+   ======================================== */
+:root {
+    /* Primary brand color */
+    --amr-primary: #1976d2;
+    --amr-primary-light: #42a5f5;
+    --amr-primary-dark: #1565c0;
+
+    /* Semantic colors */
+    --amr-success: #4caf50;
+    --amr-success-light: #81c784;
+    --amr-warning: #fb8c00;
+    --amr-error: #c62828;
+    --amr-error-light: #ef5350;
+    --amr-info: #2196f3;
+
+    /* Accent colors */
+    --amr-yellow: #ffeb3b;
+    --amr-yellow-light: #fff59d;
+    --amr-orange: #ff9800;
+    --amr-green: #4caf50;
+    --amr-green-light: #a5d6a7;
+    --amr-red: #f44336;
+    --amr-red-dark: #c62828;
+    --amr-blue: #2196f3;
+}
+
+/* ========================================
+   Light Theme (Default)
+   ======================================== */
+#amrapp {
+    /* Background colors */
+    --amr-bg-primary: #ffffff;
+    --amr-bg-secondary: #fafafa;
+    --amr-bg-tertiary: #f5f5f5;
+    --amr-bg-surface: #ffffff;
+    --amr-bg-overlay: rgba(0, 0, 0, 0.5);
+
+    /* Grey scale for cards/drawers */
+    --amr-grey-100: #f5f5f5;
+    --amr-grey-200: #eeeeee;
+    --amr-grey-300: #e0e0e0;
+    --amr-grey-400: #bdbdbd;
+    --amr-grey-500: #9e9e9e;
+    --amr-grey-600: #757575;
+    --amr-grey-700: #616161;
+    --amr-grey-800: #424242;
+    --amr-grey-900: #212121;
+
+    /* Text colors */
+    --amr-text-primary: #212121;
+    --amr-text-secondary: #757575;
+    --amr-text-disabled: #9e9e9e;
+    --amr-text-inverse: #ffffff;
+
+    /* Border colors */
+    --amr-border: #e0e0e0;
+    --amr-border-light: #f5f5f5;
+
+    /* Surface and hover (for menus, dropdowns) */
+    --amr-surface: #ffffff;
+    --amr-hover: rgba(0, 0, 0, 0.04);
+
+    /* Drawer/Card backgrounds (matching Vuetify grey-lighten-X) */
+    --amr-drawer-bg: #e0e0e0; /* grey-lighten-1 */
+    --amr-drawer-bg-1: #eeeeee; /* grey-lighten-2 */
+    --amr-drawer-bg-2: #f5f5f5; /* grey-lighten-3 */
+    --amr-drawer-bg-3: #fafafa; /* grey-lighten-4 */
+
+    /* Scrollbar */
+    --amr-scrollbar-thumb: #dddddd;
+    --amr-scrollbar-track: #666666;
+
+    /* Shadows */
+    --amr-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    --amr-shadow-md: 0 3px 6px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.12);
+    --amr-shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.15), 0 3px 6px rgba(0, 0, 0, 0.1);
+
+    /* Transitions */
+    --amr-transition-fast: 150ms ease;
+    --amr-transition-normal: 250ms ease;
+    --amr-transition-slow: 350ms ease;
+}
+
+/* ========================================
+   Dark Theme
+   ======================================== */
+#amrapp[data-theme="dark"] {
+    /* Background colors */
+    --amr-bg-primary: #121212;
+    --amr-bg-secondary: #1e1e1e;
+    --amr-bg-tertiary: #2d2d2d;
+    --amr-bg-surface: #1e1e1e;
+    --amr-bg-overlay: rgba(0, 0, 0, 0.7);
+
+    /* Grey scale for cards/drawers (inverted for dark mode) */
+    --amr-grey-100: #212121;
+    --amr-grey-200: #303030;
+    --amr-grey-300: #424242;
+    --amr-grey-400: #616161;
+    --amr-grey-500: #757575;
+    --amr-grey-600: #9e9e9e;
+    --amr-grey-700: #bdbdbd;
+    --amr-grey-800: #e0e0e0;
+    --amr-grey-900: #f5f5f5;
+
+    /* Text colors */
+    --amr-text-primary: #ffffff;
+    --amr-text-secondary: #b3b3b3;
+    --amr-text-disabled: #757575;
+    --amr-text-inverse: #212121;
+
+    /* Border colors */
+    --amr-border: #424242;
+    --amr-border-light: #303030;
+
+    /* Surface and hover (for menus, dropdowns) */
+    --amr-surface: #2d2d2d;
+    --amr-hover: rgba(255, 255, 255, 0.08);
+
+    /* Drawer/Card backgrounds (matching Vuetify grey-darken-X) */
+    --amr-drawer-bg: #424242; /* grey-darken-3 */
+    --amr-drawer-bg-1: #303030; /* grey-darken-2 */
+    --amr-drawer-bg-2: #212121; /* grey-darken-1 */
+    --amr-drawer-bg-3: #1a1a1a; /* grey-darken-4 */
+
+    /* Scrollbar */
+    --amr-scrollbar-thumb: #555555;
+    --amr-scrollbar-track: #333333;
+
+    /* Shadows (more subtle in dark mode) */
+    --amr-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.24), 0 1px 2px rgba(0, 0, 0, 0.36);
+    --amr-shadow-md: 0 3px 6px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.24);
+    --amr-shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.3), 0 3px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* ========================================
+   Utility Classes
+   ======================================== */
+
+/* Text colors */
+.amr-text-primary {
+    color: var(--amr-text-primary);
+}
+.amr-text-secondary {
+    color: var(--amr-text-secondary);
+}
+.amr-text-inverse {
+    color: var(--amr-text-inverse);
+}
+.amr-text-success {
+    color: var(--amr-success);
+}
+.amr-text-warning {
+    color: var(--amr-warning);
+}
+.amr-text-error {
+    color: var(--amr-error);
+}
+.amr-text-info {
+    color: var(--amr-info);
+}
+
+/* Background colors */
+.amr-bg-primary {
+    background-color: var(--amr-bg-primary);
+}
+.amr-bg-secondary {
+    background-color: var(--amr-bg-secondary);
+}
+.amr-bg-surface {
+    background-color: var(--amr-bg-surface);
+}
+.amr-bg-overlay {
+    background-color: var(--amr-bg-overlay);
+}
+
+/* Drawer background colors (matching backcolor() method) */
+.amr-bg-drawer {
+    background-color: var(--amr-drawer-bg) !important;
+}
+.amr-bg-drawer-1 {
+    background-color: var(--amr-drawer-bg-1) !important;
+}
+.amr-bg-drawer-2 {
+    background-color: var(--amr-drawer-bg-2) !important;
+}
+.amr-bg-drawer-3 {
+    background-color: var(--amr-drawer-bg-3) !important;
+}
+
+/* ========================================
+   Base Component Styles
+   ======================================== */
+
+/* Buttons */
+.amr-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all var(--amr-transition-fast);
+    background-color: var(--amr-grey-300);
+    color: var(--amr-text-primary);
+}
+
+.amr-btn:hover {
+    filter: brightness(0.95);
+    box-shadow: var(--amr-shadow-sm);
+}
+
+.amr-btn:active {
+    filter: brightness(0.9);
+}
+
+.amr-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.amr-btn--primary {
+    background-color: var(--amr-primary);
+    color: white;
+}
+.amr-btn--success {
+    background-color: var(--amr-success);
+    color: white;
+}
+.amr-btn--warning {
+    background-color: var(--amr-warning);
+    color: white;
+}
+.amr-btn--error {
+    background-color: var(--amr-error);
+    color: white;
+}
+.amr-btn--info {
+    background-color: var(--amr-info);
+    color: white;
+}
+
+.amr-btn--icon {
+    padding: 8px;
+    border-radius: 50%;
+    min-width: 36px;
+    min-height: 36px;
+}
+
+.amr-btn--small {
+    padding: 4px 8px;
+    font-size: 12px;
+    min-width: 28px;
+    min-height: 28px;
+}
+
+/* Icon base */
+.amr-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+}
+
+.amr-icon svg {
+    width: 100%;
+    height: 100%;
+    fill: currentColor;
+}
+
+/* Form controls */
+.amr-select {
+    padding: 8px 12px;
+    border: 1px solid var(--amr-border);
+    border-radius: 4px;
+    background-color: var(--amr-bg-surface);
+    color: var(--amr-text-primary);
+    font-size: 14px;
+    cursor: pointer;
+    min-width: 120px;
+}
+
+.amr-select:focus {
+    outline: 2px solid var(--amr-primary);
+    outline-offset: 1px;
+}
+
+/* Slider/Range input */
+.amr-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--amr-grey-400);
+    outline: none;
+}
+
+.amr-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--amr-primary);
+    cursor: pointer;
+    transition: transform var(--amr-transition-fast);
+}
+
+.amr-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+/* Toggle/Switch */
+.amr-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.amr-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.amr-switch__track {
+    position: relative;
+    width: 36px;
+    height: 14px;
+    background-color: var(--amr-grey-400);
+    border-radius: 7px;
+    transition: background-color var(--amr-transition-fast);
+}
+
+.amr-switch__thumb {
+    position: absolute;
+    top: -3px;
+    left: 0;
+    width: 20px;
+    height: 20px;
+    background-color: var(--amr-grey-100);
+    border-radius: 50%;
+    box-shadow: var(--amr-shadow-sm);
+    transition: transform var(--amr-transition-fast), background-color var(--amr-transition-fast);
+}
+
+.amr-switch input:checked + .amr-switch__track {
+    background-color: var(--amr-primary-light);
+}
+
+.amr-switch input:checked + .amr-switch__track .amr-switch__thumb {
+    transform: translateX(16px);
+    background-color: var(--amr-primary);
+}
+
+.amr-switch__label {
+    margin-left: 8px;
+    color: var(--amr-text-primary);
+    font-size: 14px;
+}
+
+/* Card */
+.amr-card {
+    background-color: var(--amr-bg-surface);
+    border-radius: 4px;
+    box-shadow: var(--amr-shadow-sm);
+    overflow: hidden;
+}
+
+.amr-card__title,
+.amr-card-title {
+    padding: 16px;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--amr-text-primary);
+}
+
+.amr-card__content,
+.amr-card-content {
+    padding: 16px;
+}
+
+.amr-card__actions,
+.amr-card-actions {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px;
+}
+
+/* Grid system */
+.amr-row {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0 -4px;
+}
+
+.amr-row-dense {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.amr-col-12 {
+    flex: 0 0 100%;
+    max-width: 100%;
+    padding: 0 4px;
+}
+
+.amr-col-6 {
+    flex: 0 0 50%;
+    max-width: 50%;
+    padding: 0 4px;
+}
+
+/* Toolbar */
+.amr-toolbar {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+}
+
+.amr-chapters-toolbar {
+    width: 100%;
+}
+
+/* Spacer */
+.amr-spacer {
+    flex-grow: 1;
+}
+
+/* Progress linear */
+.amr-progress-linear {
+    height: 4px;
+    background-color: var(--amr-primary);
+    border-radius: 2px;
+    transition: width var(--amr-transition-normal);
+}
+
+.amr-floting-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+}
+
+.amr-chapter-progress-cont {
+    position: relative;
+    height: 4px;
+}
+
+/* Manga title in drawer */
+.amr-manga-title {
+    word-break: break-word;
+}
+
+.amr-manga-title img {
+    width: 24px;
+    height: 24px;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+
+.amr-manga-title a {
+    color: var(--amr-text-primary);
+    text-decoration: none;
+}
+
+.amr-manga-title a:hover {
+    text-decoration: underline;
+}
+
+/* Chapter select */
+.amr-chapter-select {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Additional column sizes */
+.amr-col-4 {
+    flex: 0 0 33.333%;
+    max-width: 33.333%;
+    padding: 0 4px;
+}
+
+/* Card text content */
+.amr-card-text {
+    padding: 8px 16px;
+    color: var(--amr-text-secondary);
+}
+
+/* Button color variants */
+.amr-btn-yellow {
+    background-color: #ffc107 !important;
+    color: #000 !important;
+}
+
+.amr-btn-yellow:hover {
+    background-color: #ffca2c !important;
+}
+
+.amr-btn-yellow-light {
+    background-color: rgba(255, 193, 7, 0.3) !important;
+    color: var(--amr-text-primary) !important;
+}
+
+.amr-btn-yellow-light:hover {
+    background-color: rgba(255, 193, 7, 0.5) !important;
+}
+
+/* Bookmark menu */
+.amr-bookmark-menu {
+    min-width: 300px;
+    max-width: 400px;
+}
+
+.amr-bookmarked-scans-cont {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.amr-bookmarked-scan {
+    cursor: pointer;
+    padding: 4px;
+}
+
+.amr-bookmarked-scan:hover {
+    background-color: var(--amr-bg-tertiary);
+}
+
+/* Progress circular (spinner) */
+.amr-spinner {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--amr-grey-300);
+    border-top-color: var(--amr-primary);
+    border-radius: 50%;
+    animation: amr-spin 1s linear infinite;
+}
+
+@keyframes amr-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.amr-spinner--large,
+.amr-spinner-large {
+    display: inline-block;
+    width: 48px;
+    height: 48px;
+    border: 4px solid var(--amr-grey-300);
+    border-top-color: var(--amr-primary);
+    border-radius: 50%;
+    animation: amr-spin 1s linear infinite;
+}
+
+/* Transition cover (for chapter loading) */
+.amr-transition-cover {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--amr-bg-primary);
+}
+
+/* Tooltip */
+.amr-tooltip {
+    position: relative;
+}
+
+.amr-tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 8px;
+    background-color: var(--amr-grey-800);
+    color: white;
+    font-size: 12px;
+    border-radius: 4px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--amr-transition-fast);
+    z-index: 1000;
+}
+
+.amr-tooltip:hover::after {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Drawer / Navigation panel */
+.amr-drawer,
+.amr-navigation-drawer {
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    left: auto !important;
+    bottom: 0 !important;
+    width: 300px !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    background-color: var(--amr-drawer-bg) !important;
+    box-shadow: var(--amr-shadow-lg) !important;
+    transform: translateX(100%) !important;
+    transition: transform var(--amr-transition-normal) !important;
+    z-index: 1000 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+.amr-drawer.amr-drawer-open,
+.amr-navigation-drawer.amr-drawer-open,
+.amr-drawer.amr-drawer--open,
+.amr-navigation-drawer.amr-drawer--open {
+    transform: translateX(0) !important;
+}
+
+/* Drawer backdrop */
+.amr-drawer-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+}
+
+/* Main app container */
+.amr-app {
+    min-height: 100vh;
+    background-color: var(--amr-bg);
+    color: var(--amr-text);
+    position: relative;
+}
+
+/* Main content area */
+.amr-main {
+    width: 100%;
+    min-height: 100vh;
+    padding: 0;
+    margin: 0;
+}
+
+/* Select button placeholder (for disabled state alignment) */
+.select-btn {
+    min-width: 36px;
+    min-height: 36px;
+}
+
+/* FAB container positioning */
+.fab-container {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 1001;
+}
+
+/* FAB buttons */
+.amr-fab-btn {
+    opacity: 0.3;
+    transition: opacity var(--amr-transition-fast);
+}
+
+.amr-fab-btn:hover,
+.amr-fab-visible {
+    opacity: 1;
+}
+
+/* Overlay for modals/drawers */
+.amr-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--amr-bg-overlay);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--amr-transition-normal);
+    z-index: 99;
+}
+
+.amr-overlay--visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Dialog/Modal */
+.amr-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.9);
+    background-color: var(--amr-bg-surface);
+    border-radius: 8px;
+    box-shadow: var(--amr-shadow-lg);
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow: auto;
+    opacity: 0;
+    visibility: hidden;
+    transition: all var(--amr-transition-normal);
+    z-index: 200;
+}
+
+.amr-dialog--open {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.amr-dialog__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid var(--amr-border);
+}
+
+.amr-dialog__title {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--amr-text-primary);
+}
+
+.amr-dialog__content {
+    padding: 16px;
+}
+
+.amr-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px 16px 16px;
+}
+
+/* Menu/Dropdown */
+.amr-menu {
+    position: absolute;
+    min-width: 120px;
+    background-color: var(--amr-bg-surface);
+    border-radius: 4px;
+    box-shadow: var(--amr-shadow-md);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px);
+    transition: all var(--amr-transition-fast);
+    z-index: 150;
+}
+
+.amr-menu--open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.amr-menu__item {
+    display: block;
+    width: 100%;
+    padding: 10px 16px;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--amr-text-primary);
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color var(--amr-transition-fast);
+}
+
+.amr-menu__item:hover {
+    background-color: var(--amr-grey-200);
+}
+
+/* Progress bar */
+.amr-progress {
+    width: 100%;
+    height: 4px;
+    background-color: var(--amr-grey-300);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.amr-progress__bar {
+    height: 100%;
+    background-color: var(--amr-primary);
+    transition: width var(--amr-transition-normal);
+}
+
+/* Progress ring (circular progress for FAB buttons) */
+.amr-progress-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.amr-progress-ring {
+    transform: rotate(-90deg);
+}
+
+.amr-progress-ring-bg {
+    fill: none;
+    stroke: var(--amr-grey-300);
+    stroke-width: 3;
+}
+
+.amr-progress-ring-fg {
+    fill: none;
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke-dashoffset var(--amr-transition-normal);
+}
+
+.amr-progress-green {
+    stroke: #4caf50;
+}
+
+.amr-progress-red {
+    stroke: #f44336;
+}
+
+.amr-progress-inner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.amr-progress-spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(270deg);
+    }
+}
+
+/* Button toggle group */
+.amr-btn-toggle {
+    display: inline-flex;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--amr-border);
+}
+
+.amr-btn-toggle .amr-btn {
+    border-radius: 0;
+    border: none;
+    border-right: 1px solid var(--amr-border);
+}
+
+.amr-btn-toggle .amr-btn:last-child {
+    border-right: none;
+}
+
+.amr-btn-toggle .amr-btn--active,
+.amr-btn-toggle .amr-btn-active {
+    background-color: var(--amr-primary);
+    color: white;
+}
+
+/* Zoom controls row */
+.amr-zoom-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+}
+
+.amr-zoom-icon {
+    cursor: pointer;
+    color: var(--amr-text-secondary);
+}
+
+.amr-zoom-icon:hover {
+    color: var(--amr-text-primary);
+}
+
+.amr-zoom-slider {
+    flex: 1;
+}
+
+/* Light/Dark mode toggle buttons */
+.amr-btn-light {
+    background-color: #fafafa !important;
+    color: #333 !important;
+}
+
+.amr-btn-dark {
+    background-color: #333 !important;
+    color: #fafafa !important;
+}
+
+/* ============================================================
+   Utility Classes (replacing Vuetify utilities)
+   ============================================================ */
+
+/* Flexbox utilities */
+.d-flex {
+    display: flex !important;
+}
+.d-inline-flex {
+    display: inline-flex !important;
+}
+.d-block {
+    display: block !important;
+}
+.d-none {
+    display: none !important;
+}
+.flex-column {
+    flex-direction: column !important;
+}
+.flex-row {
+    flex-direction: row !important;
+}
+.flex-wrap {
+    flex-wrap: wrap !important;
+}
+.align-center {
+    align-items: center !important;
+}
+.align-start {
+    align-items: flex-start !important;
+}
+.align-end {
+    align-items: flex-end !important;
+}
+.justify-center {
+    justify-content: center !important;
+}
+.justify-start {
+    justify-content: flex-start !important;
+}
+.justify-end {
+    justify-content: flex-end !important;
+}
+.justify-space-between {
+    justify-content: space-between !important;
+}
+
+/* Text utilities */
+.text-center {
+    text-align: center !important;
+}
+.text-left {
+    text-align: left !important;
+}
+.text-right {
+    text-align: right !important;
+}
+.text-subtitle-1 {
+    font-size: 1rem;
+    line-height: 1.75rem;
+    font-weight: 400;
+}
+.text-green {
+    color: #4caf50 !important;
+}
+.text-red {
+    color: #f44336 !important;
+}
+.truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Spacing utilities - padding */
+.pa-0 {
+    padding: 0 !important;
+}
+.pa-1 {
+    padding: 4px !important;
+}
+.pa-2 {
+    padding: 8px !important;
+}
+.pa-3 {
+    padding: 12px !important;
+}
+.pa-4 {
+    padding: 16px !important;
+}
+.py-0 {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+.py-1 {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+}
+.py-2 {
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+}
+.px-0 {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+}
+.px-1 {
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+}
+.px-2 {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+}
+
+/* Spacing utilities - margin */
+.ma-0 {
+    margin: 0 !important;
+}
+.ma-1 {
+    margin: 4px !important;
+}
+.ma-2 {
+    margin: 8px !important;
+}
+.mt-0 {
+    margin-top: 0 !important;
+}
+.mt-1 {
+    margin-top: 4px !important;
+}
+.mt-2 {
+    margin-top: 8px !important;
+}
+.mt-3 {
+    margin-top: 12px !important;
+}
+.mt-4 {
+    margin-top: 16px !important;
+}
+.mb-0 {
+    margin-bottom: 0 !important;
+}
+.mb-1 {
+    margin-bottom: 4px !important;
+}
+.mb-2 {
+    margin-bottom: 8px !important;
+}
+.ml-0 {
+    margin-left: 0 !important;
+}
+.ml-1 {
+    margin-left: 4px !important;
+}
+.ml-2 {
+    margin-left: 8px !important;
+}
+.mr-0 {
+    margin-right: 0 !important;
+}
+.mr-1 {
+    margin-right: 4px !important;
+}
+.mr-2 {
+    margin-right: 8px !important;
+}
+.mx-auto {
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+/* Width/Height utilities */
+.w-100 {
+    width: 100% !important;
+}
+.h-100 {
+    height: 100% !important;
+}
+
+/* Additional padding utilities */
+.pb-1 {
+    padding-bottom: 4px !important;
+}
+.pb-2 {
+    padding-bottom: 8px !important;
+}
+.pt-1 {
+    padding-top: 4px !important;
+}
+.pt-2 {
+    padding-top: 8px !important;
+}
+
+/* Divider */
+.amr-divider {
+    height: 1px;
+    background-color: var(--amr-border);
+    margin: 8px 0;
+}
+
+/* Small spinner (inline) */
+.amr-spinner-small {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--amr-grey-300);
+    border-top-color: var(--amr-primary);
+    border-radius: 50%;
+    animation: amr-spin 1s linear infinite;
+}

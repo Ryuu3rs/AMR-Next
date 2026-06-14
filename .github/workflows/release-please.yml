@@ -1,0 +1,93 @@
+name: Release Please
+
+# Single release path. On every push to main, release-please maintains a
+# "Release PR" that bumps the version and CHANGELOG from conventional commits.
+# When that PR merges, a release is created and this same job builds, (optionally)
+# signs, checksums, and uploads the extension artifacts to it. Packaging lives
+# here rather than in a separate tag-triggered workflow because tags pushed by
+# GITHUB_TOKEN do not trigger other workflows.
+
+on:
+    push:
+        branches:
+            - main
+
+permissions:
+    contents: write
+    pull-requests: write
+
+jobs:
+    release-please:
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        env:
+            AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+            AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        steps:
+            - name: Run release-please
+              id: release
+              uses: googleapis/release-please-action@v4
+              with:
+                  config-file: release-please-config.json
+                  manifest-file: .release-please-manifest.json
+
+            - name: Checkout
+              if: ${{ steps.release.outputs.release_created }}
+              uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              if: ${{ steps.release.outputs.release_created }}
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+
+            - name: Use npm 11
+              if: ${{ steps.release.outputs.release_created }}
+              run: npm install -g npm@11
+
+            - name: Install
+              if: ${{ steps.release.outputs.release_created }}
+              run: npm ci
+
+            - name: Validate
+              if: ${{ steps.release.outputs.release_created }}
+              run: npm run check
+
+            - name: Package Chromium
+              if: ${{ steps.release.outputs.release_created }}
+              run: npm run zip
+
+            - name: Package Firefox
+              if: ${{ steps.release.outputs.release_created }}
+              run: npm run zip:firefox
+
+            - name: Sign Firefox add-on (AMO, optional)
+              if: ${{ steps.release.outputs.release_created && env.AMO_JWT_ISSUER != '' }}
+              run: |
+                  npx --yes web-ext sign \
+                    --channel=unlisted \
+                    --api-key="$AMO_JWT_ISSUER" \
+                    --api-secret="$AMO_JWT_SECRET" \
+                    --source-dir=apps/extension/.output/firefox-mv3 \
+                    --artifacts-dir=apps/extension/.output
+
+            - name: Generate checksums
+              if: ${{ steps.release.outputs.release_created }}
+              shell: bash
+              run: |
+                  cd apps/extension/.output
+                  sha256sum *.zip > SHA256SUMS.txt
+
+            - name: Upload release assets
+              if: ${{ steps.release.outputs.release_created }}
+              shell: bash
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  TAG: ${{ steps.release.outputs.tag_name }}
+              run: |
+                  files=(apps/extension/.output/*.zip apps/extension/.output/SHA256SUMS.txt)
+                  if compgen -G "apps/extension/.output/*.xpi" > /dev/null; then
+                    files+=(apps/extension/.output/*.xpi)
+                  fi
+                  gh release upload "$TAG" "${files[@]}" --clobber

@@ -1,0 +1,12 @@
+{
+    "name": "@amr/browser-tests",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "test": "npm run test:manifest",
+        "test:manifest": "node --test ./src/manifest-policy.test.js",
+        "test:chromium": "npm test --prefix ./runner -- --config playwright.config.js",
+        "test:firefox": "npm run test:firefox --prefix ./runner"
+    }
+}

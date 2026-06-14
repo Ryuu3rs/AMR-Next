@@ -1,0 +1,14 @@
+{
+    "name": "@amr-next/worker",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "start": "tsx src/index.ts",
+        "type-check": "tsc --noEmit -p tsconfig.json"
+    },
+    "dependencies": {
+        "@amr-next/contracts": "*"
+    }
+}

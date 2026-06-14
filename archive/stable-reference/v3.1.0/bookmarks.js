@@ -1,0 +1,135 @@
+/**
+ * State of bookmarks linked to the current chapter
+ * Helpers to load / save / delete bookmarks
+ */
+import { reactive } from "vue"
+import browser from "webextension-polyfill"
+
+import pageData from "./pagedata"
+
+export default {
+    state: reactive({
+        booked: false, // true if chapter is booked
+        note: undefined, // note of current chapter
+        scans: [] // list of scans [{url, name, note, booked}]
+    }),
+
+    mirror: {
+        mirrorName: ""
+    },
+
+    /** Initialize state with a whole list of scans urls */
+    init(scansUrl, mirror) {
+        this.mirror = mirror
+        // initialize chapter
+        this.loadBookmark()
+        // Clear existing scans and push new ones to maintain reactivity
+        this.state.scans.length = 0
+        this.state.scans.push(
+            ...scansUrl.map((url, i) => {
+                return {
+                    index: i,
+                    url: url,
+                    name: "" + (i + 1),
+                    booked: false,
+                    note: undefined
+                }
+            })
+        )
+        for (const scUrl of scansUrl) {
+            this.loadBookmark({ scanUrl: scUrl })
+        }
+    },
+
+    /** retrieve a scan from state */
+    getScan(scanUrl) {
+        return this.state.scans.find(scan => scan.url === scanUrl)
+    },
+
+    /** Save a bookmark */
+    async saveBookmark({ note, scanUrl, scanName } = {}) {
+        const obj = {
+            action: "addUpdateBookmark",
+            mirror: this.mirror.mirrorName,
+            url: pageData.state.currentMangaURL,
+            chapUrl: pageData.state.currentChapterURL,
+            name: pageData.state.name,
+            chapName: pageData.state.currentChapter,
+            note: note
+        }
+        if (!scanUrl) {
+            obj.type = "chapter"
+        } else {
+            obj.type = "scan"
+            obj.scanUrl = scanUrl
+            obj.scanName = scanName
+        }
+        await browser.runtime.sendMessage(obj)
+
+        if (!scanUrl) {
+            this.state.note = note
+            this.state.booked = true
+        } else {
+            const sc = this.getScan(scanUrl)
+            if (sc) {
+                sc.note = note
+                sc.booked = true
+            }
+        }
+    },
+    /** Delete a bookmark */
+    async deleteBookmark({ scanUrl } = {}) {
+        const obj = {
+            action: "deleteBookmark",
+            mirror: this.mirror.mirrorName,
+            url: pageData.state.currentMangaURL,
+            chapUrl: pageData.state.currentChapterURL
+        }
+        if (!scanUrl) {
+            obj.type = "chapter"
+        } else {
+            obj.type = "scan"
+            obj.scanUrl = scanUrl
+        }
+        await browser.runtime.sendMessage(obj)
+
+        if (!scanUrl) {
+            this.state.note = undefined
+            this.state.booked = false
+        } else {
+            const sc = this.getScan(scanUrl)
+            if (sc) {
+                sc.note = undefined
+                sc.booked = false
+            }
+        }
+    },
+
+    /** Check data for a bookmark from server */
+    async loadBookmark({ scanUrl } = {}) {
+        const obj = {
+            action: "getBookmarkNote",
+            mirror: this.mirror.mirrorName,
+            url: pageData.state.currentMangaURL,
+            chapUrl: pageData.state.currentChapterURL
+        }
+        if (!scanUrl) {
+            obj.type = "chapter"
+        } else {
+            obj.type = "scan"
+            obj.scanUrl = scanUrl
+        }
+        const result = await browser.runtime.sendMessage(obj)
+
+        if (!scanUrl) {
+            this.state.note = result.note
+            this.state.booked = result.isBooked
+        } else {
+            const sc = this.getScan(scanUrl)
+            if (sc) {
+                sc.note = result.note
+                sc.booked = result.isBooked
+            }
+        }
+    }
+}

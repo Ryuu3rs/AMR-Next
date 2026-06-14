@@ -1,0 +1,24 @@
+{
+    "name": "@amr-next/api",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "start": "tsx src/index.ts",
+        "db:init": "tsx src/db-init.ts",
+        "db:migrate": "tsx src/db-init.ts",
+        "test:store": "tsx tests/store-regression.test.ts",
+        "test:pg-store": "tsx tests/postgres-store-regression.test.ts",
+        "type-check": "tsc --noEmit -p tsconfig.json"
+    },
+    "dependencies": {
+        "@amr-next/contracts": "*",
+        "@fastify/cors": "^10.1.0",
+        "fastify": "^5.6.0",
+        "pg": "^8.16.3"
+    },
+    "devDependencies": {
+        "@types/pg": "^8.15.5"
+    }
+}

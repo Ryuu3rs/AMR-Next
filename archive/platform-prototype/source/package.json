@@ -1,0 +1,22 @@
+{
+    "name": "amr-next",
+    "private": true,
+    "version": "0.1.0",
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ],
+    "scripts": {
+        "dev:api": "npm run dev --workspace @amr-next/api",
+        "dev:web": "npm run dev --workspace @amr-next/web",
+        "dev:worker": "npm run dev --workspace @amr-next/worker",
+        "build": "npm run build --workspace @amr-next/web",
+        "test": "npm run test:store --workspace @amr-next/api",
+        "type-check": "npm run type-check --workspace @amr-next/contracts && npm run type-check --workspace @amr-next/api && npm run type-check --workspace @amr-next/worker && npm run type-check --workspace @amr-next/web"
+    },
+    "devDependencies": {
+        "@types/node": "^25.3.0",
+        "tsx": "^4.20.5",
+        "typescript": "^5.9.2"
+    }
+}

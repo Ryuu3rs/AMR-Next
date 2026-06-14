@@ -1,0 +1,51 @@
+{
+    "manifest_version": 3,
+    "name": "All Mangas Reader Rewrite",
+    "version": "0.0.1",
+    "description": "AMR rewrite track with Svelte UI and TypeScript core",
+    "icons": {
+        "32": "icons/icon_32.png",
+        "48": "icons/icon_48.png",
+        "96": "icons/icon_96.png",
+        "128": "icons/icon_128.png"
+    },
+    "action": {
+        "default_title": "All Mangas Reader Rewrite",
+        "default_icon": {
+            "32": "icons/icon_32.png"
+        }
+    },
+    "background": {
+        "service_worker": "scripts/background/background.js",
+        "type": "module"
+    },
+    "permissions": [
+        "storage",
+        "alarms",
+        "tabs",
+        "scripting",
+        "declarativeNetRequest",
+        "declarativeNetRequestWithHostAccess",
+        "declarativeNetRequestFeedback",
+        "notifications",
+        "webNavigation"
+    ],
+    "host_permissions": ["https://*/*", "http://*/*"],
+    "content_scripts": [
+        {
+            "matches": ["https://*/*", "http://*/*"],
+            "js": ["scripts/content/reader-bootstrap.js"],
+            "run_at": "document_idle"
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": ["scripts/content/reader.js", "scripts/chunks/*", "assets/*"],
+            "matches": ["<all_urls>"]
+        }
+    ],
+    "options_ui": {
+        "page": "pages/options.html",
+        "open_in_tab": true
+    }
+}

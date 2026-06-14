@@ -1,0 +1,15 @@
+{
+    "tieHeavyBatch": [
+        { "key": "manga:a", "updatedAt": 100, "data": { "title": "A1" } },
+        { "key": "manga:a", "updatedAt": 100, "deletedAt": 100, "data": { "title": "A1-old" } },
+        { "key": "manga:b", "updatedAt": 200, "data": { "title": "B1" } },
+        { "key": "manga:b", "updatedAt": 200, "data": { "title": "B2" } },
+        { "key": "manga:c", "updatedAt": 300, "data": { "title": "C1" } }
+    ],
+    "malformedBatch": [
+        null,
+        { "updatedAt": 1 },
+        { "key": 42, "updatedAt": 10 },
+        { "key": "manga:ok", "ts": 123, "data": { "title": "ok" } }
+    ]
+}

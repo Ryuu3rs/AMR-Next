@@ -1,0 +1,27 @@
+{
+    "name": "all-mangas-reader-svelte-rewrite",
+    "private": true,
+    "version": "0.0.1",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "type-check": "tsc --noEmit",
+        "manifest:chrome": "node ./scripts/build-manifest.mjs chrome",
+        "manifest:firefox": "node ./scripts/build-manifest.mjs firefox",
+        "check:regression": "node ./scripts/run-regression-checks.mjs",
+        "build:chrome": "npm run build && npm run manifest:chrome && node ./scripts/verify-release.mjs chrome",
+        "build:firefox": "npm run build && npm run manifest:firefox && node ./scripts/verify-release.mjs firefox",
+        "verify:chrome": "node ./scripts/verify-release.mjs chrome",
+        "verify:firefox": "node ./scripts/verify-release.mjs firefox"
+    },
+    "dependencies": {
+        "svelte": "^5.38.7"
+    },
+    "devDependencies": {
+        "@sveltejs/vite-plugin-svelte": "^5.0.3",
+        "typescript": "^5.9.2",
+        "vite": "^6.2.0"
+    },
+    "packageManager": "yarn@4.12.0"
+}

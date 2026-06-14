@@ -1,0 +1,110 @@
+name: CI
+
+on:
+    push:
+        branches:
+            - main
+            - master
+            - "rewrite/**"
+    pull_request:
+
+permissions:
+    contents: read
+
+jobs:
+    validate:
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+
+            - name: Use npm 11
+              run: npm install -g npm@11
+
+            - name: Install
+              run: npm ci
+
+            - name: Formatting
+              run: npm run format:check
+
+            - name: Typecheck
+              run: npm run typecheck
+
+            - name: Build Chromium
+              run: npm run build
+
+            - name: Build Firefox
+              run: npm run build:firefox
+
+            - name: Test
+              run: npm run test
+
+            - name: Package Firefox
+              run: npm run zip:firefox
+
+            - name: Upload builds
+              uses: actions/upload-artifact@v4
+              with:
+                  name: extension-builds
+                  path: apps/extension/.output/
+                  include-hidden-files: true
+                  retention-days: 14
+
+    browser-smoke:
+        needs: validate
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+                  cache-dependency-path: tooling/browser-tests/runner/package-lock.json
+
+            - name: Use npm 11
+              run: npm install -g npm@11
+
+            - name: Download extension builds
+              uses: actions/download-artifact@v4
+              with:
+                  name: extension-builds
+                  path: apps/extension/.output/
+
+            - name: Install browser test dependencies
+              working-directory: tooling/browser-tests/runner
+              run: npm ci --workspaces=false
+
+            - name: Install browsers
+              working-directory: tooling/browser-tests/runner
+              run: npx playwright install --with-deps chromium firefox
+
+            - name: Manifest policy
+              run: npm run test:manifest --workspace @amr/browser-tests
+
+            - name: Chromium smoke
+              run: npm run test:chromium --workspace @amr/browser-tests
+
+            - name: Firefox smoke
+              run: npm run test:firefox --workspace @amr/browser-tests
+
+            - name: Upload browser test artifacts
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: browser-test-artifacts
+                  path: tooling/browser-tests/artifacts/
+                  if-no-files-found: ignore
+                  retention-days: 14

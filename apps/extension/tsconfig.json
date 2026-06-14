@@ -1,0 +1,11 @@
+{
+    "extends": "./.wxt/tsconfig.json",
+    "compilerOptions": {
+        "exactOptionalPropertyTypes": true,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+        "noUncheckedIndexedAccess": true,
+        "verbatimModuleSyntax": true
+    },
+    "include": [".wxt/**/*.ts", "entrypoints/**/*.ts", "entrypoints/**/*.svelte", "src/**/*.ts", "wxt.config.ts"]
+}

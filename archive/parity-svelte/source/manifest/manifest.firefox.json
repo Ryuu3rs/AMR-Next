@@ -1,0 +1,10 @@
+{
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "rewrite@allmangasreader.com"
+        }
+    },
+    "background": {
+        "scripts": ["scripts/background/background-loader.js"]
+    }
+}
