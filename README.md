@@ -1,4 +1,4 @@
-# All Mangas Reader
+# All Mangas Reader Or AMR Next
 
 A lightweight, privacy-respecting Firefox and Chromium extension for reading and
 tracking manga from many sources. All data lives locally in your browser; the only
