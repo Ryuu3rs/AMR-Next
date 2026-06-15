@@ -781,6 +781,28 @@ button:disabled {
     width: 100%;
 }
 
+.detail-mirrors {
+    display: grid;
+    gap: 8px;
+}
+
+.mirror-list {
+    display: grid;
+    gap: 4px;
+}
+
+.mirror-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+}
+
+.mirror-source {
+    font-weight: 600;
+    flex: 1;
+}
+
 .detail-actions {
     display: flex;
     flex-wrap: wrap;
