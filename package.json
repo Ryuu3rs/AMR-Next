@@ -24,7 +24,7 @@
         "zip:firefox": "npm run zip:firefox --workspace @amr/extension",
         "typecheck": "npm run typecheck --workspaces --if-present",
         "test": "npm run test --workspaces --if-present",
-        "check": "npm run format:check && npm run typecheck && npm run test && npm run build && npm run build:firefox"
+        "check": "npm run format:check && npm run typecheck && npm run build && npm run build:firefox && npm run test"
     },
     "devDependencies": {
         "prettier": "^3.8.3",
