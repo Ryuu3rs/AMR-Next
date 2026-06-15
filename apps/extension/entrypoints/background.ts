@@ -15,6 +15,7 @@ import { getSettings, updateSettings } from "../src/settings"
 import { getSyncConfig, getSyncStatus, pullFromGist, pushToGist, setSyncConfig } from "../src/sync"
 import {
     findSource,
+    listChaptersBySource,
     listChaptersForSource,
     listMangaChapters,
     resolveChapterUrl,
@@ -409,6 +410,23 @@ export default defineBackground(() => {
                             }
                         }
                         return success(resolved)
+                    }
+                    case "reader:chapters": {
+                        try {
+                            const chapters = await listChaptersBySource(
+                                request.sourceId,
+                                request.sourceMangaId,
+                                request.mangaUrl
+                            )
+                            return success(
+                                chapters
+                                    .map(c => ({ url: c.url, sortKey: c.sortKey, title: c.title }))
+                                    .sort((a, b) => a.sortKey - b.sortKey)
+                            )
+                        } catch {
+                            // Source can't list chapters (e.g. mgeko) — no nav.
+                            return success([])
+                        }
                     }
                     case "reader:progress:get":
                         return success((await db.progress.get(request.chapterId)) ?? null)

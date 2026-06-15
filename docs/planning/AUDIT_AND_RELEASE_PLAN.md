@@ -56,8 +56,8 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - A4 (M) Configurable preload (0-20 pages) + bounded image scheduler. → 1.1
 - A5 (S) Zoom / pinch + double-click-to-fit. → 1.2
 - A6 (M) Fullscreen + immersive mode (hide chrome on scroll). → 1.2
-- A7 (M) Prev/next chapter navigation with prefetch of next chapter's page list. → 1.1
-- A8 (S) "Mark as read & go to next" single action. → 1.1
+- ✅ A7 (M) Prev/next chapter navigation — reader fetches the source chapter list and offers Prev/Next (header + [ ] keys + end-of-chapter bar). (Page-list prefetch is a future optimization.)
+- ✅ A8 (S) "Mark read & next" — one action at the end of a chapter marks it complete and loads the next.
 - A9 (L) Offline / downloaded chapters (store `PageRecord` + blobs in IndexedDB). → 2.0
 - A10 (S) Remember per-manga reading mode + direction overrides. → 1.2
 
