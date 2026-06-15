@@ -632,6 +632,14 @@
                 </button>
             {/each}
         </nav>
+        <div class="sidebar-footer">
+            <button
+                type="button"
+                class="kofi-btn"
+                onclick={() => void browser.tabs.create({ url: "https://ko-fi.com/ryuu3rs" })}>
+                ☕ Support on Ko-fi
+            </button>
+        </div>
     </aside>
 
     <main>
@@ -709,6 +717,20 @@
                     <button type="submit" disabled={adding}>{adding ? "Adding..." : "Add"}</button>
                 </form>
                 {#if addMessage}<p class="notice">{addMessage}</p>{/if}
+
+                <div class="support-card">
+                    <p class="row-label">Enjoying AMR Next?</p>
+                    <p class="muted">
+                        If you like the work, please consider donating. Request features and report issues in the AMR
+                        Discord.
+                    </p>
+                    <button
+                        type="button"
+                        class="kofi-btn"
+                        onclick={() => void browser.tabs.create({ url: "https://ko-fi.com/ryuu3rs" })}>
+                        ☕ Support on Ko-fi
+                    </button>
+                </div>
             {/if}
         {:else if activeSection === "Library"}
             <div class="page-head">
