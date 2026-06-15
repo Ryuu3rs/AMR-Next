@@ -126,6 +126,7 @@
         currentStreak: number
         longestStreak: number
         chaptersThisWeek: number
+        chaptersToday: number
         achievements: Array<{
             id: string
             title: string
@@ -1070,6 +1071,18 @@
                 <div class="stat-box"><strong>{stats?.longestStreak ?? 0}</strong><span>Longest streak</span></div>
                 <div class="stat-box"><strong>{stats?.chaptersThisWeek ?? 0}</strong><span>This week</span></div>
             </div>
+            {#if settings && settings.dailyGoal > 0}
+                {@const today = stats?.chaptersToday ?? 0}
+                {@const pct = Math.min(100, Math.round((today / settings.dailyGoal) * 100))}
+                <div class="goal-card">
+                    <div class="goal-head">
+                        <span class="row-label">Today's goal</span>
+                        <span class="muted"
+                            >{today} / {settings.dailyGoal} chapters{today >= settings.dailyGoal ? " ✓" : ""}</span>
+                    </div>
+                    <div class="goal-bar"><div class="goal-fill" style="width:{pct}%"></div></div>
+                </div>
+            {/if}
             <div class="achievement-list">
                 {#each stats?.achievements ?? [] as a}
                     <div class="achievement" class:unlocked={a.unlocked}>
@@ -1431,6 +1444,22 @@
                         <option value="light">Light</option>
                         <option value="system">System</option>
                     </select>
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Daily reading goal</p>
+                        <p class="muted">Chapters per day to aim for (0 disables). Shown on the Stats tab.</p>
+                    </div>
+                    <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        aria-label="Daily reading goal"
+                        value={settings?.dailyGoal ?? 0}
+                        onchange={e =>
+                            void updateSetting({
+                                dailyGoal: Math.max(0, Math.min(50, Number(e.currentTarget.value) || 0))
+                            })} />
                 </div>
             </div>
         {/if}
