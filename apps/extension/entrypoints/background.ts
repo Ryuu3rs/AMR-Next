@@ -394,12 +394,19 @@ export default defineBackground(() => {
                         const tab = sender.tab ?? (await browser.tabs.query({ active: true, currentWindow: true }))[0]
                         const url = tab?.url
                         if (!url) return success({ supported: false })
-                        const parsedUrl = new URL(url)
+                        let parsedUrl: URL
+                        try {
+                            parsedUrl = new URL(url)
+                        } catch {
+                            return success({ supported: false })
+                        }
                         const source = findSource(parsedUrl)
+                        const pageType = source?.match(parsedUrl) ?? "none"
                         return success({
-                            supported: Boolean(source),
-                            pageType: source?.match(parsedUrl) ?? "none",
-                            url
+                            supported: Boolean(source) && pageType !== "none",
+                            pageType,
+                            url,
+                            ...(source ? { sourceName: source.manifest.name } : {})
                         })
                     }
                     case "page:capture":

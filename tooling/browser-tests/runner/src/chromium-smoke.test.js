@@ -17,7 +17,7 @@ test("Chromium loads the extension popup and app", async () => {
         const popup = await context.newPage()
         await popup.goto(`chrome-extension://${extensionId}/popup.html`)
         await expect(popup.getByRole("heading", { name: "All Mangas Reader" })).toBeVisible()
-        await expect(popup.getByRole("heading", { name: "This page is not supported" })).toBeVisible()
+        await expect(popup.getByRole("heading", { name: "Not a supported manga page" })).toBeVisible()
 
         const app = await context.newPage()
         await app.goto(`chrome-extension://${extensionId}/app.html`)
