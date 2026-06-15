@@ -14,14 +14,21 @@ const allowedOptionalHosts = [
     "https://arvencomics.com/*",
     "https://arvenscans.org/*",
     "https://aryascans.com/*",
+    "https://cypherscans.xyz/*",
+    "https://drakecomic.com/*",
+    "https://en-thunderscans.com/*",
     "https://freakscans.com/*",
+    "https://kappabeast.com/*",
     "https://mangadex.org/*",
     "https://manhuaplus.org/*",
     "https://novelmic.com/*",
+    "https://phoenixscans.com/*",
     "https://rawkuma.com/*",
+    "https://spiderscans.xyz/*",
     "https://uploads.mangadex.org/*",
     "https://www.mangaread.org/*",
-    "https://www.mgeko.cc/*"
+    "https://www.mgeko.cc/*",
+    "https://www.phoenixscans.com/*"
 ]
 
 async function readManifest(extensionDirectory) {

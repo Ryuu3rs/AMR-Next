@@ -5,7 +5,7 @@ import {
     type SourceManga,
     type SourceSearchResult
 } from "@amr/source-sdk"
-import { sourceAdapters, madaraOrigins } from "@amr/sources"
+import { sourceAdapters, madaraOrigins, mangaStreamOrigins } from "@amr/sources"
 import type { LibraryManga } from "./database"
 import { sourceOrigins } from "./permissions"
 
@@ -20,7 +20,8 @@ function createSourceContext(rateLimit?: { requests: number; intervalMs: number 
             "https://api.mangadex.org",
             "https://www.mangaread.org",
             "https://www.mgeko.cc",
-            ...madaraOrigins.map(o => o.replace(/\/\*$/, ""))
+            ...madaraOrigins.map(o => o.replace(/\/\*$/, "")),
+            ...mangaStreamOrigins.map(o => o.replace(/\/\*$/, ""))
         ],
         maxRequests: 20,
         maxResponseBytes: 10 * 1024 * 1024,

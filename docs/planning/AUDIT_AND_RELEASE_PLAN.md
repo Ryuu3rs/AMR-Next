@@ -81,7 +81,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 
 - ✅ C1 (L) **`search()` in the adapter contract** — MangaDex (with latest chapter) + generic Madara (`?s=` results: title, cover, latest chapter); extension aggregates across all searchable sources.
 - ✅ C2 (L) **`listChapters()` for the Madara family** (incl. mangaread) — parses the manga page chapter list with an admin-ajax fallback, so background update checks now work for every Madara site. (mgeko listing still pending.)
-- C3 (L) Generic Madara-family template adapter (one config → many sites). → 2.0
+- ✅ C3 (L) Generic template adapters — Madara family (8 sites) AND MangaStream/ts family (6 sites: drakecomic, cypher, thunderscans, kappabeast, phoenix, spider) each via one config-driven factory.
 - C4 (M) Self-hosted sources: Komga / Suwayomi(Tachidesk) with credentials. → 2.0
 - C5 (M) Add-by-URL flow for any supported domain. → 1.1
 - C6 (L) Multi-language chapter selection per manga. → 1.3
