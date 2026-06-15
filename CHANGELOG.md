@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.3.0...v0.4.0) (2026-06-15)
+
+
+### Features
+
+* **app:** add Ko-fi support section + Discord mention ([#30](https://github.com/Ryuu3rs/AMR-Next/issues/30)) ([32e38f0](https://github.com/Ryuu3rs/AMR-Next/commit/32e38f05916c97e7d762e2a2310c39e41953cd55))
+* **app:** dark/light/system theme (E1) ([#29](https://github.com/Ryuu3rs/AMR-Next/issues/29)) ([e955bbe](https://github.com/Ryuu3rs/AMR-Next/commit/e955bbec0f8c966538ec10b05d2dc35e776bcfdb))
+* **app:** first-run onboarding card (E3) ([#31](https://github.com/Ryuu3rs/AMR-Next/issues/31)) ([6b0daa2](https://github.com/Ryuu3rs/AMR-Next/commit/6b0daa239a5f254b03200a92f7c82a2f08f52035))
+* **library:** bulk actions via select mode (F5) ([#22](https://github.com/Ryuu3rs/AMR-Next/issues/22)) ([4ba7ee0](https://github.com/Ryuu3rs/AMR-Next/commit/4ba7ee0c8382e5ac60010f1e7eedd1477ad99dca))
+* **library:** categories + filtering (B2 / G10) ([#20](https://github.com/Ryuu3rs/AMR-Next/issues/20)) ([e6b8707](https://github.com/Ryuu3rs/AMR-Next/commit/e6b870777d804c451f4f9d2255d4ccf5a65d7f49))
+* **library:** check a title across all supported mirrors (G17) ([#24](https://github.com/Ryuu3rs/AMR-Next/issues/24)) ([b498a3e](https://github.com/Ryuu3rs/AMR-Next/commit/b498a3e84879d75ed2bd2fb909bdecd1344ed702))
+* **library:** duplicate detection + merge (F3) ([#23](https://github.com/Ryuu3rs/AMR-Next/issues/23)) ([3893c53](https://github.com/Ryuu3rs/AMR-Next/commit/3893c53d245ba9fef238627b5a66cf57e5a02c93))
+* **library:** one-click switch to another mirror (G8) ([#27](https://github.com/Ryuu3rs/AMR-Next/issues/27)) ([7a4ad21](https://github.com/Ryuu3rs/AMR-Next/commit/7a4ad2182ac46346d30869f1586b0c202aba4fba))
+* **library:** re-link a title to a new source/mirror (G3) ([#21](https://github.com/Ryuu3rs/AMR-Next/issues/21)) ([a38270f](https://github.com/Ryuu3rs/AMR-Next/commit/a38270f6235f7cb1b751226adb70a808a5127c89))
+* **sources:** generic MangaStream/ts-theme adapter + 6 sites ([#25](https://github.com/Ryuu3rs/AMR-Next/issues/25)) ([bb42d64](https://github.com/Ryuu3rs/AMR-Next/commit/bb42d64989b538fad9c49bd8dffc64986a56f8ce))
+* **stats:** daily reading goal (B6) ([#35](https://github.com/Ryuu3rs/AMR-Next/issues/35)) ([2b9c9fe](https://github.com/Ryuu3rs/AMR-Next/commit/2b9c9fe39f59fae7ca25d74ab12a6cb43251afac))
+* **stats:** reading streaks + this-week stats (B5) ([#32](https://github.com/Ryuu3rs/AMR-Next/issues/32)) ([2ac9454](https://github.com/Ryuu3rs/AMR-Next/commit/2ac94545b817f56e2357e7b48a409d39fdd0ca73))
+
+
+### Bug Fixes
+
+* **ci:** build before test in check script so manifest test finds .output ([1d3d6b9](https://github.com/Ryuu3rs/AMR-Next/commit/1d3d6b9827085bb5831e6fa4a376d29a8c3df90f))
+
 ## [0.3.0](https://github.com/Ryuu3rs/all-mangas-reader-3/compare/v0.2.0...v0.3.0) (2026-06-15)
 
 
