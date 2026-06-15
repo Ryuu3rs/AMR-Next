@@ -21,6 +21,48 @@
     let query = $state("")
     let librarySort = $state<"recent-read" | "recent-added" | "title" | "latest-chapter">("recent-read")
     let categoryFilter = $state("")
+    let selectMode = $state(false)
+    let selectedIds = $state<Set<string>>(new Set())
+    let bulkCategory = $state("")
+
+    function toggleSelect(id: string) {
+        const next = new Set(selectedIds)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        selectedIds = next
+    }
+
+    function clearSelection() {
+        selectedIds = new Set()
+        selectMode = false
+    }
+
+    async function bulkRemove() {
+        const ids = [...selectedIds]
+        for (const id of ids) await sendRuntimeMessage({ type: "library:remove", mangaId: id })
+        library = library.filter(m => !selectedIds.has(m.id))
+        clearSelection()
+    }
+
+    async function bulkAddCategory() {
+        const cat = bulkCategory.trim()
+        if (!cat) return
+        for (const id of [...selectedIds]) {
+            const m = library.find(x => x.id === id)
+            if (!m) continue
+            const categories = [...new Set([...(m.categories ?? []), cat])]
+            await sendRuntimeMessage({ type: "library:categories", mangaId: id, categories })
+            library = library.map(x => applyCategories(x, id, categories))
+        }
+        bulkCategory = ""
+        clearSelection()
+    }
+
+    async function bulkManual(on: boolean) {
+        for (const id of [...selectedIds]) await sendRuntimeMessage({ type: "library:manual", mangaId: id, manual: on })
+        library = library.map(m => (selectedIds.has(m.id) ? { ...m, manualTracking: on } : m))
+        clearSelection()
+    }
     let failedCovers = $state<Set<string>>(new Set())
     let refreshingCovers = $state(false)
     let syncStatus = $state<SyncStatus | undefined>()
@@ -239,6 +281,10 @@
     // Primary click honors the openChapterIn setting. Ctrl/middle-click always
     // opens the source page directly in a background tab (G11).
     function read(manga: LibraryManga, event?: MouseEvent) {
+        if (selectMode) {
+            toggleSelect(manga.id)
+            return
+        }
         if (event && (event.ctrlKey || event.metaKey || event.button === 1)) {
             openInBrowser(manga, false)
             return
@@ -596,6 +642,12 @@
                         title={hasPermission ? "Fetch missing covers" : "Grant source access first"}>
                         {refreshingCovers ? "Fetching…" : "Refresh covers"}
                     </button>
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        onclick={() => (selectMode ? clearSelection() : (selectMode = true))}>
+                        {selectMode ? "Cancel" : "Select"}
+                    </button>
                     <input bind:value={query} aria-label="Search library" placeholder="Search titles..." />
                 </div>
             </div>
@@ -609,12 +661,33 @@
                 <button type="submit" disabled={adding}>{adding ? "Adding..." : "Add"}</button>
             </form>
             {#if addMessage}<p class="notice">{addMessage}</p>{/if}
+            {#if selectMode}
+                <div class="bulk-bar">
+                    <span>{selectedIds.size} selected</span>
+                    <input bind:value={bulkCategory} placeholder="Category…" aria-label="Bulk category" />
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        disabled={selectedIds.size === 0 || !bulkCategory.trim()}
+                        onclick={() => void bulkAddCategory()}>Add category</button>
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        disabled={selectedIds.size === 0}
+                        onclick={() => void bulkManual(true)}>Mark manual</button>
+                    <button
+                        type="button"
+                        class="btn-sm confirm-remove-btn"
+                        disabled={selectedIds.size === 0}
+                        onclick={() => void bulkRemove()}>Remove</button>
+                </div>
+            {/if}
             {#if visibleLibrary.length === 0}
                 <p class="muted" style="margin-top:16px">{query ? "No titles match." : "Your library is empty."}</p>
             {:else}
                 <div class="poster-grid">
                     {#each visibleLibrary as manga}
-                        <article>
+                        <article class:selected={selectMode && selectedIds.has(manga.id)}>
                             <div class="poster-wrap">
                                 <button
                                     type="button"

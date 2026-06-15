@@ -103,7 +103,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - F2 (L) **Migration wizard for dead sources** — when D4 health monitoring flags a source dead/unavailable, fuzzy-match each affected title to candidate sources, preview matches, bulk re-link, and preserve reading progress by mapping chapter numbers. Depends on C1 + D4. → 2.0
 - F3 (M) Duplicate detection + merge (same series added twice, e.g. via two URLs). → 1.3
 - F4 (S) NSFW flag with blur/hide toggle + setting. → 1.3
-- F5 (M) Bulk actions — multi-select in the library for tag, remove, mark-read, rate, migrate. → 1.2
+- ✅ F5 (M) Bulk actions — Select mode in the library to multi-select titles, then bulk add-category, mark-manual, or remove.
 - F6 (M) Local recommendations ("because you read X") derived from tags/authors/history — no network. → 2.0
 - F7 (S) Continue-reading / up-next queue shelf on Home. → 1.2
 - F8 (S) Search autocomplete + recent searches. → 1.2

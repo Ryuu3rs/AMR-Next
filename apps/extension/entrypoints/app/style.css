@@ -596,6 +596,30 @@ button:disabled {
     margin-bottom: 16px;
 }
 
+.bulk-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    margin: 8px 0 16px;
+    border-radius: 10px;
+    background: var(--panel, #11161d);
+    border: 1px solid var(--border, #29313b);
+    font-size: 12px;
+}
+
+.bulk-bar input {
+    min-height: 28px;
+    width: 140px;
+}
+
+.poster-grid article.selected .poster {
+    outline: 3px solid #8b5cf6;
+    outline-offset: 2px;
+    border-radius: 10px;
+}
+
 .error-panel {
     border: 1px solid #5b2a2a;
     background: rgba(120, 40, 40, 0.15);
