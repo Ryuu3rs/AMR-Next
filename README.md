@@ -1,20 +1,52 @@
 # All Mangas Reader
 
-All Mangas Reader is being rebuilt as a lightweight Firefox and Chromium extension for
-reading and tracking manga from supported websites.
+A lightweight, privacy-respecting Firefox and Chromium extension for reading and
+tracking manga from many sources. All data lives locally in your browser; the only
+network calls are to the manga sources you grant access to and (optionally) GitHub
+for backup sync.
 
-## Current Status
+## Features
 
-The repository was cleaned and reorganized on 2026-06-09.
+**Library & tracking**
 
-- Active implementation: `apps/extension/`
-- Shared contracts: `packages/`
-- Browser automation: `tooling/browser-tests/`
-- Product and engineering plans: `docs/`
-- Previous implementations: `archive/`
+- Track titles with read / latest chapter numbers that survive mirror domain changes
+- Star ratings, user categories with filtering, reading-history timeline
+- Detail view per title; sort by recently read / added / title / latest chapter
+- Bulk actions (multi-select to categorize, mark manual, or remove)
+- Duplicate detection + merge
+- Manual / "Do Not Scan" titles with hand-set chapter counts (for dead or
+  hard-to-scrape sources)
+- Automatic + per-source update checks, with failures surfaced in the UI
 
-The current extension is an initial WXT and Svelte shell. Reader, library, source
-adapter, and browser automation work follows the roadmap.
+**Sources & discovery**
+
+- Multi-source search across every supported site at once, showing each mirror's
+  latest hosted chapter
+- "Check mirrors" — find which supported sites carry a title, freshest first
+- Re-link a title to a new source/mirror without losing progress
+- Generic, config-driven adapters for the **Madara** and **MangaStream/ts** WordPress
+  theme families (adding a site in either is usually a config row, not new code),
+  plus dedicated MangaDex and Mgeko adapters
+- Automatic cover fetching with graceful fallback
+
+**Reader**
+
+- Continuous and single-page modes, LTR / RTL / vertical (webtoon) direction
+- Page-fit modes, page-number overlay, configurable preload
+- Or open chapters directly in the source site in your browser (Ctrl/middle-click)
+
+**Backup & sync**
+
+- Human-readable JSON import/export
+- Optional GitHub Gist sync (token stored locally; private gists)
+
+## Repository layout
+
+- `apps/extension/` — the WXT + Svelte 5 extension (MV3)
+- `packages/` — shared contracts, the source SDK, and source adapters
+- `tooling/` — browser tests and the source-probe triage tool
+- `docs/` — product and engineering plans (see `docs/planning/AUDIT_AND_RELEASE_PLAN.md`)
+- `archive/` — previous implementations (not built)
 
 ## Requirements
 
@@ -29,19 +61,12 @@ npm install
 
 ## Development
 
-Chromium:
-
 ```powershell
-npm run dev
+npm run dev          # Chromium
+npm run dev:firefox  # Firefox
 ```
 
-Firefox:
-
-```powershell
-npm run dev:firefox
-```
-
-WXT launches a development browser with the extension loaded.
+WXT launches a development browser with the extension loaded and hot-reload.
 
 ## Build
 
@@ -55,25 +80,36 @@ Build output is generated under `apps/extension/.output/`.
 ## Validate
 
 ```powershell
-npm run check
+npm run check        # format, typecheck, build (both), then tests
 ```
 
-## Distribution
+## Loading a build manually
 
-Releases are published through GitHub Releases.
+- **Firefox:** `about:debugging#/runtime/this-firefox` → Load Temporary Add-on →
+  pick any file in `apps/extension/.output/firefox-mv3/`.
+- **Chromium:** `chrome://extensions` → enable Developer mode → Load unpacked →
+  `apps/extension/.output/chrome-mv3/`.
 
-- Chromium users download the ZIP, extract it, enable developer mode, and use
-  `Load unpacked`.
-- Firefox packages may be signed through Mozilla's unlisted signing flow and attached
-  to GitHub Releases.
-- The extension checks GitHub for available versions but never downloads or executes
-  update code automatically.
+After loading, open the extension and grant source access so it can fetch from the
+manga sites you use.
+
+## Source triage
+
+`tooling/source-probe/` probes candidate mirror sites for reachability, anti-scrape
+posture (Cloudflare / Turnstile / DDoS-Guard / captcha), and CMS template, scoring
+each for adapter viability:
+
+```powershell
+npm run probe -w @amr/source-probe
+```
+
+## Releases
+
+Releases are automated with release-please and published as GitHub Releases with
+Chromium/Firefox zips and SHA-256 checksums. The extension can check GitHub for a
+newer version but never downloads or executes update code automatically.
 
 ## Documentation
 
-Start with [docs/README.md](docs/README.md).
-
-## Preservation
-
-The complete pre-clean workspace is preserved in commit `1d032ef0` on branch
-`archive/pre-clean-rewrite`.
+Start with [docs/README.md](docs/README.md). The living roadmap and feature status
+is in [docs/planning/AUDIT_AND_RELEASE_PLAN.md](docs/planning/AUDIT_AND_RELEASE_PLAN.md).
