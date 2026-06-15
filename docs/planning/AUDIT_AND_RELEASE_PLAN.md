@@ -63,7 +63,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 
 ### B. Library & tracking
 
-- B1 (M) Manga detail page: cover, description, chapter list, read/unread state. → 1.1
+- ✅ B1 (M) Manga detail view — modal with cover, source, status, read/latest chapter, inline rating, and open-reader/open-source actions (from the library ⋯ menu). (full chapter list per source = future.)
 - B2 (M) Tags / categories + filtering. → 1.2
 - B3 (S) Bookmarks (per-page). → 1.2
 - ✅ B4 (M) Reading history view — timeline of started/completed events (from historyEvents) in a new History tab.

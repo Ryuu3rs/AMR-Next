@@ -62,6 +62,7 @@
     >([])
     let checkingUpdates = $state(false)
     let confirmingRemove = $state<string | null>(null)
+    let detailManga = $state<LibraryManga | null>(null)
     let hasPermission = $state(false)
     let browseQuery = $state("")
     type SearchResult = {
@@ -628,6 +629,13 @@
                                         <div class="poster-confirm-actions">
                                             <button
                                                 type="button"
+                                                class="confirm-cancel-btn"
+                                                onclick={() => {
+                                                    detailManga = manga
+                                                    confirmingRemove = null
+                                                }}>Details</button>
+                                            <button
+                                                type="button"
                                                 class="confirm-remove-btn"
                                                 onclick={() => {
                                                     void remove(manga.id)
@@ -1112,3 +1120,67 @@
         {/if}
     </main>
 </div>
+
+{#if detailManga}
+    <div
+        class="detail-overlay"
+        role="button"
+        tabindex="0"
+        onclick={() => (detailManga = null)}
+        onkeydown={e => {
+            if (e.key === "Escape" || e.key === "Enter") detailManga = null
+        }}>
+        <div
+            class="detail-card"
+            role="dialog"
+            aria-label={detailManga.title}
+            tabindex="0"
+            onclick={e => e.stopPropagation()}
+            onkeydown={() => {}}>
+            <div class="detail-cover">
+                {#if detailManga.coverUrl && !failedCovers.has(detailManga.id)}<img
+                        src={detailManga.coverUrl}
+                        alt=""
+                        onerror={() => detailManga && coverFailed(detailManga.id)} />{:else}<span class="cover-initial"
+                        >{detailManga.title[0]}</span
+                    >{/if}
+            </div>
+            <div class="detail-body">
+                <h2>{detailManga.title}</h2>
+                <p class="muted">{detailManga.sourceId} · {detailManga.status}</p>
+                <p class="detail-meta">
+                    {detailManga.lastReadChapterNumber !== undefined
+                        ? `Read ch ${detailManga.lastReadChapterNumber}`
+                        : "Unread"}{#if detailManga.latestChapterNumber !== undefined}
+                        · latest ch {detailManga.latestChapterNumber}{/if}
+                    {#if detailManga.manualTracking}
+                        · manual{/if}
+                </p>
+                <div class="poster-rating" role="group" aria-label="Rate">
+                    {#each [1, 2, 3, 4, 5] as star}
+                        <button
+                            type="button"
+                            class="star"
+                            class:filled={(detailManga.rating ?? 0) >= star}
+                            aria-label={`${star} star`}
+                            onclick={() => {
+                                if (detailManga) void rate(detailManga, star)
+                                if (detailManga)
+                                    detailManga = {
+                                        ...detailManga,
+                                        rating: detailManga.rating === star ? undefined : star
+                                    }
+                            }}>★</button>
+                    {/each}
+                </div>
+                <div class="detail-actions">
+                    <button type="button" onclick={() => detailManga && openInReader(detailManga)}>Open reader</button>
+                    <button type="button" class="btn-outline" onclick={() => detailManga && openInBrowser(detailManga)}>
+                        Open source
+                    </button>
+                    <button type="button" class="btn-outline" onclick={() => (detailManga = null)}>Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{/if}
