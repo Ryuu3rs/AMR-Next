@@ -23,12 +23,17 @@
         "zip": "npm run zip --workspace @amr/extension",
         "zip:firefox": "npm run zip:firefox --workspace @amr/extension",
         "typecheck": "npm run typecheck --workspaces --if-present",
+        "lint": "eslint .",
         "test": "npm run test --workspaces --if-present",
-        "check": "npm run format:check && npm run typecheck && npm run build && npm run build:firefox && npm run test"
+        "check": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run build:firefox && npm run test"
     },
     "devDependencies": {
+        "eslint": "^9.39.4",
+        "eslint-plugin-svelte": "^3.19.0",
+        "globals": "^17.6.0",
         "prettier": "^3.8.3",
-        "prettier-plugin-svelte": "^3.4.1"
+        "prettier-plugin-svelte": "^3.4.1",
+        "typescript-eslint": "^8.61.1"
     },
     "packageManager": "npm@11.6.2"
 }

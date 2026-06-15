@@ -116,8 +116,8 @@
         const key = event.key.toLowerCase()
         if (key === "j") next()
         else if (key === "k") prev()
-        else if (event.key === "ArrowRight") direction === "rtl" ? prev() : next()
-        else if (event.key === "ArrowLeft") direction === "rtl" ? next() : prev()
+        else if (event.key === "ArrowRight") (direction === "rtl" ? prev : next)()
+        else if (event.key === "ArrowLeft") (direction === "rtl" ? next : prev)()
     }} />
 
 <header>

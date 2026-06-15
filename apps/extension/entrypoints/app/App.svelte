@@ -555,10 +555,6 @@
         }
     }
 
-    async function checkPermission() {
-        hasPermission = await sendRuntimeMessage<boolean>({ type: "source:permission:check" })
-    }
-
     async function grantPermission() {
         hasPermission = await browser.permissions.request({ origins: sourceOrigins() })
     }
