@@ -17,10 +17,30 @@
     let showPageNumber = $state(true)
     let preloadPages = $state(3)
     let chapterUrl = $state("")
+    let siblings = $state<Array<{ url: string; sortKey: number; title: string }>>([])
 
     // Vertical (webtoon) direction always scrolls continuously.
     const effectiveMode = $derived(direction === "vertical" ? "continuous" : mode)
     const progressPct = $derived(chapter ? Math.round(((currentPage + 1) / chapter.pages.length) * 100) : 0)
+
+    const currentIndex = $derived(chapter ? siblings.findIndex(s => s.url === chapter!.chapter.url) : -1)
+    const prevUrl = $derived(currentIndex > 0 ? siblings[currentIndex - 1]?.url : undefined)
+    const nextUrl = $derived(
+        currentIndex >= 0 && currentIndex < siblings.length - 1 ? siblings[currentIndex + 1]?.url : undefined
+    )
+
+    async function loadSiblings(resolved: ResolvedChapter) {
+        try {
+            siblings = await sendRuntimeMessage<typeof siblings>({
+                type: "reader:chapters",
+                sourceId: resolved.manga.sourceId,
+                sourceMangaId: resolved.manga.sourceMangaId,
+                mangaUrl: resolved.manga.url
+            })
+        } catch {
+            siblings = []
+        }
+    }
 
     async function loadChapter(url: string) {
         resolving = true
@@ -28,6 +48,7 @@
         chapter = undefined
         try {
             chapter = await sendRuntimeMessage<ResolvedChapter>({ type: "reader:resolve", url })
+            void loadSiblings(chapter)
             const progress = await sendRuntimeMessage<ReadingProgress | null>({
                 type: "reader:progress:get",
                 chapterId: chapter.chapter.id
@@ -79,6 +100,19 @@
         })
     }
 
+    function goToChapter(url: string | undefined) {
+        if (!url) return
+        chapterUrl = url
+        window.scrollTo(0, 0)
+        void loadChapter(url)
+    }
+
+    // A8: mark the current chapter complete and jump to the next one.
+    function markReadAndNext() {
+        if (chapter) recordProgress(chapter.pages.length - 1)
+        goToChapter(nextUrl)
+    }
+
     function handleImageError(e: Event) {
         const img = e.currentTarget as HTMLImageElement
         console.warn("[AMR reader] Image error:", img.src)
@@ -109,7 +143,17 @@
 
 <svelte:window
     onkeydown={event => {
-        if (effectiveMode !== "single" || !chapter) return
+        if (!chapter) return
+        // Chapter navigation works in any mode.
+        if (event.key === "[") {
+            goToChapter(prevUrl)
+            return
+        }
+        if (event.key === "]") {
+            goToChapter(nextUrl)
+            return
+        }
+        if (effectiveMode !== "single") return
         const lastIndex = chapter.pages.length - 1
         const next = () => recordProgress(Math.min(currentPage + 1, lastIndex))
         const prev = () => recordProgress(Math.max(currentPage - 1, 0))
@@ -130,6 +174,20 @@
     </div>
     <div class="header-right">
         {#if chapter}
+            {#if siblings.length > 1}
+                <button
+                    type="button"
+                    class="btn-sm"
+                    disabled={!prevUrl}
+                    title="Previous chapter"
+                    onclick={() => goToChapter(prevUrl)}>‹ Prev</button>
+                <button
+                    type="button"
+                    class="btn-sm"
+                    disabled={!nextUrl}
+                    title="Next chapter"
+                    onclick={() => goToChapter(nextUrl)}>Next ›</button>
+            {/if}
             <span class="page-count">{currentPage + 1} / {chapter.pages.length}</span>
             <button
                 type="button"
@@ -192,3 +250,18 @@
         {/each}
     {/if}
 </main>
+
+{#if chapter && !error && !resolving && (nextUrl || prevUrl)}
+    <footer class="chapter-nav">
+        <button type="button" class="btn-sm" disabled={!prevUrl} onclick={() => goToChapter(prevUrl)}>
+            ‹ Previous chapter
+        </button>
+        {#if nextUrl}
+            <button type="button" class="nav-primary" onclick={() => markReadAndNext()}>
+                Mark read &amp; next ›
+            </button>
+        {:else}
+            <span class="muted">You're on the latest chapter.</span>
+        {/if}
+    </footer>
+{/if}

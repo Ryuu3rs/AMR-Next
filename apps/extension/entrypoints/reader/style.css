@@ -200,3 +200,21 @@ main.dir-rtl .page-num {
     background: #8b5cf6;
     transition: width 0.3s ease;
 }
+
+.chapter-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 24px 16px 48px;
+}
+
+.chapter-nav .nav-primary {
+    background: #8b5cf6;
+    border-color: #7c3aed;
+    color: #fff;
+    font-weight: 600;
+    padding: 0 20px;
+    min-height: 40px;
+}

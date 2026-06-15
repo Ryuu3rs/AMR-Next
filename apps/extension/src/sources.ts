@@ -1,4 +1,4 @@
-import type { SourceLinkRecord } from "@amr/contracts"
+import type { MangaRecord, SourceLinkRecord } from "@amr/contracts"
 import {
     createBoundedRequestClient,
     type SourceContext,
@@ -128,6 +128,27 @@ export async function listChaptersForSource(
     const source = sourceAdapters.find(adapter => adapter.manifest.id === sourceId)
     if (!source) throw new Error("That source is not supported")
     const sourceManga: SourceManga = { manga, sourceId, sourceMangaId, url: mangaUrl }
+    return source.listChapters(
+        { manga: sourceManga, limit: 500 },
+        createSourceContext(source.manifest.requestRateLimit)
+    )
+}
+
+// List chapters for a source/manga that may not be in the library (used by the
+// reader for prev/next navigation).
+export async function listChaptersBySource(sourceId: string, sourceMangaId: string, mangaUrl: string) {
+    const source = sourceAdapters.find(adapter => adapter.manifest.id === sourceId)
+    if (!source) throw new Error("That source is not supported")
+    const stub: MangaRecord = {
+        id: `${sourceId}:manga:${sourceMangaId}`,
+        title: sourceMangaId,
+        normalizedTitle: sourceMangaId,
+        authors: [],
+        status: "unknown",
+        addedAt: 0,
+        updatedAt: 0
+    }
+    const sourceManga: SourceManga = { manga: stub, sourceId, sourceMangaId, url: mangaUrl }
     return source.listChapters(
         { manga: sourceManga, limit: 500 },
         createSourceContext(source.manifest.requestRateLimit)
