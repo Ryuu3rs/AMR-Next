@@ -1,5 +1,6 @@
 import type { ReadingProgress } from "@amr/contracts"
 import { SourceError } from "@amr/source-sdk"
+import { sourceAdapters } from "@amr/sources"
 import {
     db,
     exportDatabase,
@@ -62,6 +63,8 @@ async function checkUpdates(sourceId?: string) {
     let updated = 0
     let failed = 0
 
+    const errors: Array<{ mangaId: string; title: string; message: string }> = []
+
     for (const item of manga) {
         if (item.manualTracking) continue
         const link = await db.sourceLinks.get(item.id)
@@ -87,11 +90,14 @@ async function checkUpdates(sourceId?: string) {
             checked += 1
         } catch (error) {
             failed += 1
+            const message = error instanceof Error ? error.message : "Update failed"
+            errors.push({ mangaId: item.id, title: item.title, message })
             console.warn("[AMR] Update check failed", { mangaId: item.id, error })
         }
     }
 
-    const status = { checked, updated, failed, checkedAt: Date.now() }
+    // Keep only the most recent handful of errors so the status stays small.
+    const status = { checked, updated, failed, checkedAt: Date.now(), errors: errors.slice(0, 20) }
     await browser.storage.local.set({ updateStatus: status })
     return status
 }
@@ -263,6 +269,16 @@ export default defineBackground(() => {
                         return success(await getMangaChapters(request.mangaId))
                     case "source:permission:check":
                         return success(await checkSourcePermission())
+                    case "sources:list":
+                        return success(
+                            sourceAdapters.map(adapter => ({
+                                id: adapter.manifest.id,
+                                name: adapter.manifest.name,
+                                domains: adapter.manifest.domains,
+                                capabilities: adapter.manifest.capabilities,
+                                canSearch: Boolean(adapter.search)
+                            }))
+                        )
                     case "updates:check":
                         return success(await checkUpdates(request.sourceId))
                     case "updates:get": {

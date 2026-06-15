@@ -93,8 +93,8 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - D2 (M) Retry with exponential backoff + jitter for transient errors. → 1.1
 - D3 (M) Request coalescing + short-TTL metadata cache. → 1.2
 - D4 (M) Source health monitoring + nightly checks + UI badges. → 1.3
-- D5 (S) Surface update/capture failures in the UI (toast + diagnostics panel). → 1.1
-- D6 (M) Diagnostics page: last errors, source status, DB stats, export logs. → 1.2
+- ✅ D5/I7 (S) Surface update failures in the UI — failed titles + reasons shown in the Updates tab (were console-only).
+- 🚧 D6 (M) Diagnostics — registered-adapter list with capabilities/search in the Sources tab + update-error panel. (DB stats/logs still to add.)
 - D7 (M) Validated import with Zod + conflict resolution (merge/overwrite/skip) + dry-run. → 1.1
 
 ### F. Curation & source management

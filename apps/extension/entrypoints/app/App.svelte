@@ -55,7 +55,11 @@
         updated: number
         failed: number
         checkedAt: number
+        errors?: Array<{ mangaId: string; title: string; message: string }>
     } | null>(null)
+    let sourcesList = $state<
+        Array<{ id: string; name: string; domains: string[]; capabilities: string[]; canSearch: boolean }>
+    >([])
     let checkingUpdates = $state(false)
     let confirmingRemove = $state<string | null>(null)
     let hasPermission = $state(false)
@@ -83,6 +87,11 @@
         hasPermission = await sendRuntimeMessage<boolean>({ type: "source:permission:check" })
         if (hasPermission) void backfillCovers()
         await loadSyncStatus()
+        try {
+            sourcesList = await sendRuntimeMessage<typeof sourcesList>({ type: "sources:list" })
+        } catch {
+            // optional
+        }
     })
 
     async function loadSyncStatus() {
@@ -666,6 +675,17 @@
                     ? `Last checked ${new Date(updateStatus.checkedAt).toLocaleString()} — ${updateStatus.updated} updated, ${updateStatus.failed} failed`
                     : "No update check has run yet. Click Check all to scan for new chapters."}
             </p>
+            {#if updateStatus?.errors && updateStatus.errors.length > 0}
+                <div class="error-panel">
+                    <p class="row-label">Titles that failed to update</p>
+                    {#each updateStatus.errors as err}
+                        <div class="error-row">
+                            <span class="error-title">{err.title}</span>
+                            <span class="muted">{err.message}</span>
+                        </div>
+                    {/each}
+                </div>
+            {/if}
             {#if library.length === 0}
                 <p class="muted">No manga in library to check.</p>
             {:else}
@@ -775,6 +795,21 @@
                     <p class="muted">Paste a chapter URL to read from Mgeko.</p>
                 </div>
             </div>
+
+            {#if sourcesList.length > 0}
+                <p class="shelf-label" style="margin-top:24px">All registered adapters ({sourcesList.length})</p>
+                <div class="adapter-grid">
+                    {#each sourcesList as src}
+                        <div class="adapter-chip">
+                            <span class="adapter-name">{src.name}</span>
+                            <span class="muted">
+                                {src.capabilities.join(", ")}{#if src.canSearch}
+                                    · search{/if}
+                            </span>
+                        </div>
+                    {/each}
+                </div>
+            {/if}
 
             {#if selectedManga}
                 <div class="chapters-panel">
