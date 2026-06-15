@@ -113,3 +113,11 @@ newer version but never downloads or executes update code automatically.
 
 Start with [docs/README.md](docs/README.md). The living roadmap and feature status
 is in [docs/planning/AUDIT_AND_RELEASE_PLAN.md](docs/planning/AUDIT_AND_RELEASE_PLAN.md).
+
+## License
+
+Licensed under the **GNU General Public License v3.0 or later** (see [LICENSE](LICENSE)).
+
+This is a ground-up rewrite of the original All Mangas Reader and remains GPL-3.0 as a
+derivative work. If you distribute a modified version, you must keep it under the GPL
+and make the source available.
