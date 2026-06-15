@@ -63,6 +63,46 @@
         library = library.map(m => (selectedIds.has(m.id) ? { ...m, manualTracking: on } : m))
         clearSelection()
     }
+
+    let showDuplicates = $state(false)
+
+    const duplicateGroups = $derived.by(() => {
+        const byKey = new Map<string, LibraryManga[]>()
+        for (const m of library) {
+            if (isSeedData(m)) continue
+            const key = (m.normalizedTitle || m.title).trim().toLowerCase()
+            const arr = byKey.get(key) ?? []
+            arr.push(m)
+            byKey.set(key, arr)
+        }
+        return [...byKey.values()].filter(group => group.length > 1)
+    })
+
+    async function mergeDuplicates(group: LibraryManga[]) {
+        // Keep the entry with the most progress (then most recent) as primary.
+        const primary = [...group].sort(
+            (a, b) => (b.lastReadChapterNumber ?? 0) - (a.lastReadChapterNumber ?? 0) || b.updatedAt - a.updatedAt
+        )[0]
+        if (!primary) return
+        const maxRead = Math.max(...group.map(m => m.lastReadChapterNumber ?? 0))
+        const maxLatest = Math.max(...group.map(m => m.latestChapterNumber ?? 0))
+        const categories = [...new Set(group.flatMap(m => m.categories ?? []))]
+        if (maxRead > 0 || maxLatest > 0) {
+            await sendRuntimeMessage({
+                type: "library:numbers",
+                mangaId: primary.id,
+                lastReadChapterNumber: maxRead > 0 ? maxRead : null,
+                latestChapterNumber: maxLatest > 0 ? maxLatest : null
+            })
+        }
+        if (categories.length > 0) {
+            await sendRuntimeMessage({ type: "library:categories", mangaId: primary.id, categories })
+        }
+        for (const m of group) {
+            if (m.id !== primary.id) await sendRuntimeMessage({ type: "library:remove", mangaId: m.id })
+        }
+        await load()
+    }
     let failedCovers = $state<Set<string>>(new Set())
     let refreshingCovers = $state(false)
     let syncStatus = $state<SyncStatus | undefined>()
@@ -648,6 +688,11 @@
                         onclick={() => (selectMode ? clearSelection() : (selectMode = true))}>
                         {selectMode ? "Cancel" : "Select"}
                     </button>
+                    {#if duplicateGroups.length > 0}
+                        <button type="button" class="btn-sm" onclick={() => (showDuplicates = !showDuplicates)}>
+                            Duplicates ({duplicateGroups.length})
+                        </button>
+                    {/if}
                     <input bind:value={query} aria-label="Search library" placeholder="Search titles..." />
                 </div>
             </div>
@@ -661,6 +706,20 @@
                 <button type="submit" disabled={adding}>{adding ? "Adding..." : "Add"}</button>
             </form>
             {#if addMessage}<p class="notice">{addMessage}</p>{/if}
+            {#if showDuplicates && duplicateGroups.length > 0}
+                <div class="dup-panel">
+                    <p class="row-label">Possible duplicates</p>
+                    {#each duplicateGroups as group}
+                        <div class="dup-group">
+                            <span class="dup-title">{group[0]?.title}</span>
+                            <span class="muted">{group.map(m => m.sourceId).join(", ")}</span>
+                            <button type="button" class="btn-sm" onclick={() => void mergeDuplicates(group)}>
+                                Merge {group.length}
+                            </button>
+                        </div>
+                    {/each}
+                </div>
+            {/if}
             {#if selectMode}
                 <div class="bulk-bar">
                     <span>{selectedIds.size} selected</span>
