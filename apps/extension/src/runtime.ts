@@ -16,6 +16,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         latestChapterNumber: z.union([z.number().finite().nonnegative(), z.null()]).optional(),
         lastReadChapterNumber: z.union([z.number().finite().nonnegative(), z.null()]).optional()
     }),
+    z.object({ type: z.literal("library:relink"), mangaId: z.string().min(1), url: z.url() }),
     z.object({ type: z.literal("library:covers:backfill") }),
     z.object({ type: z.literal("stats:get") }),
     z.object({ type: z.literal("history:list") }),

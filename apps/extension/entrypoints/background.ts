@@ -223,6 +223,38 @@ export default defineBackground(() => {
                         } as Partial<{ categories: string[] }>)
                         return success(null)
                     }
+                    case "library:relink": {
+                        const resolved = await resolveChapterUrl(request.url)
+                        const existing = await db.manga.get(request.mangaId)
+                        if (!existing) throw new SourceError("not-found", "That title is not in your library")
+                        await db.transaction("rw", db.manga, db.sourceLinks, async () => {
+                            await db.manga.update(request.mangaId, {
+                                sourceId: resolved.manga.sourceId,
+                                sourceUrl: resolved.chapter.url,
+                                ...(resolved.manga.sourceMangaId
+                                    ? { sourceMangaId: resolved.manga.sourceMangaId }
+                                    : {}),
+                                mangaUrl: resolved.manga.url,
+                                latestChapterId: resolved.chapter.id,
+                                ...(Number.isFinite(resolved.chapter.sortKey)
+                                    ? { latestChapterNumber: resolved.chapter.sortKey }
+                                    : {}),
+                                updatedAt: Date.now()
+                            })
+                            await db.sourceLinks.put({
+                                mangaId: request.mangaId,
+                                sourceId: resolved.manga.sourceId,
+                                ...(resolved.manga.sourceMangaId
+                                    ? { sourceMangaId: resolved.manga.sourceMangaId }
+                                    : {}),
+                                url: resolved.manga.url,
+                                title: existing.title,
+                                addedAt: existing.addedAt,
+                                updatedAt: Date.now()
+                            })
+                        })
+                        return success({ sourceId: resolved.manga.sourceId })
+                    }
                     case "library:covers:backfill": {
                         const all = await db.manga.toArray()
                         const missing = all.filter(m => !m.coverUrl && !m.id.startsWith("seed-"))
