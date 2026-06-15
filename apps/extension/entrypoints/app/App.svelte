@@ -64,6 +64,23 @@
     let checkingUpdates = $state(false)
     let confirmingRemove = $state<string | null>(null)
     let detailManga = $state<LibraryManga | null>(null)
+    let relinkUrl = $state("")
+    let relinkMessage = $state("")
+
+    async function relink(manga: LibraryManga) {
+        const url = relinkUrl.trim()
+        if (!url) return
+        relinkMessage = "Re-linking…"
+        try {
+            await sendRuntimeMessage({ type: "library:relink", mangaId: manga.id, url })
+            relinkUrl = ""
+            await load()
+            detailManga = library.find(m => m.id === manga.id) ?? null
+            relinkMessage = "Re-linked. Progress preserved by chapter number."
+        } catch (cause) {
+            relinkMessage = cause instanceof Error ? cause.message : "Re-link failed."
+        }
+    }
     let hasPermission = $state(false)
     let browseQuery = $state("")
     type SearchResult = {
@@ -1216,6 +1233,22 @@
                         placeholder="e.g. action, favorites"
                         value={(detailManga.categories ?? []).join(", ")}
                         onchange={e => detailManga && void setCategories(detailManga, e.currentTarget.value)} />
+                </label>
+                <label class="detail-categories">
+                    <span class="muted">Re-link source (paste a chapter URL from a new mirror)</span>
+                    <div class="sync-token">
+                        <input
+                            type="url"
+                            placeholder="https://newmirror.example/manga/…/chapter-…/"
+                            bind:value={relinkUrl} />
+                        <button
+                            type="button"
+                            onclick={() => detailManga && void relink(detailManga)}
+                            disabled={!relinkUrl.trim()}>
+                            Re-link
+                        </button>
+                    </div>
+                    {#if relinkMessage}<span class="muted">{relinkMessage}</span>{/if}
                 </label>
                 <div class="detail-actions">
                     <button type="button" onclick={() => detailManga && openInReader(detailManga)}>Open reader</button>
