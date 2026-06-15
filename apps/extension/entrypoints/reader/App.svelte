@@ -21,6 +21,13 @@
     let fitOverride = $state<PageFit | null>(null)
     let isFullscreen = $state(false)
     let chromeHidden = $state(false)
+    let mangaId = $state("")
+
+    // A10: remember the reading mode (scroll/single) per title.
+    async function setMode(next: "continuous" | "single") {
+        mode = next
+        if (mangaId) await browser.storage.local.set({ [`readerMode:${mangaId}`]: next })
+    }
 
     // Vertical (webtoon) direction always scrolls continuously.
     const effectiveMode = $derived(direction === "vertical" ? "continuous" : mode)
@@ -95,6 +102,16 @@
                 preloadPages = settings.preloadPages
             } catch {
                 // keep defaults
+            }
+            // Per-title mode override (A10) takes precedence over the global default.
+            mangaId = chapter.manga.manga.id
+            try {
+                const key = `readerMode:${mangaId}`
+                const stored = await browser.storage.local.get(key)
+                const override = stored[key]
+                if (override === "single" || override === "continuous") mode = override
+            } catch {
+                // ignore
             }
         } catch (cause) {
             error = cause instanceof Error ? cause.message : "The chapter could not be loaded"
@@ -223,7 +240,7 @@
                 class="btn-sm"
                 disabled={direction === "vertical"}
                 title={direction === "vertical" ? "Vertical mode always scrolls" : "Toggle reading mode"}
-                onclick={() => (mode = mode === "continuous" ? "single" : "continuous")}>
+                onclick={() => void setMode(mode === "continuous" ? "single" : "continuous")}>
                 {effectiveMode === "continuous" ? "Single" : "Scroll"}
             </button>
         {/if}

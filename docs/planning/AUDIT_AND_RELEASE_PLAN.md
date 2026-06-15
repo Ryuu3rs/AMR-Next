@@ -59,7 +59,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - ✅ A7 (M) Prev/next chapter navigation — reader fetches the source chapter list and offers Prev/Next (header + [ ] keys + end-of-chapter bar). (Page-list prefetch is a future optimization.)
 - ✅ A8 (S) "Mark read & next" — one action at the end of a chapter marks it complete and loads the next.
 - A9 (L) Offline / downloaded chapters (store `PageRecord` + blobs in IndexedDB). → 2.0
-- A10 (S) Remember per-manga reading mode + direction overrides. → 1.2
+- ✅ A10 (S) Remember per-title reading mode — the scroll/single choice is saved per manga and restored on next open (overrides the global default). (Direction override is a future add.)
 
 ### B. Library & tracking
 
