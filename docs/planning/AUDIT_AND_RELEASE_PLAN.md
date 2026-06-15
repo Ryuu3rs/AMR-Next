@@ -112,7 +112,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 
 - ✅ E1 (S) Theme — dark/light/system selector applied via data-theme on the dashboard; light + system (prefers-color-scheme) palettes over the CSS variables. (Reader theming is a follow-up.)
 - E2 (S) Keyboard shortcut help overlay + remapping. → 1.2
-- E3 (S) Onboarding for first-run permission grant. → 1.1
+- ✅ E3 (S) First-run onboarding — a welcome card on Home (when source access is not yet granted) with a grant button + quick steps; dismissible and remembered.
 - E4 (S) In-extension "update available" banner via GitHub release check. → 1.0
 - E5 (S) Accessibility pass (focus, aria, contrast). → 1.2
 

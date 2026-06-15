@@ -214,7 +214,18 @@
         }
     }
     let hasPermission = $state(false)
+    let onboardingDismissed = $state(true)
     let browseQuery = $state("")
+
+    async function dismissOnboarding() {
+        onboardingDismissed = true
+        await browser.storage.local.set({ onboardingDismissed: true })
+    }
+
+    async function onboardGrant() {
+        await grantPermission()
+        if (hasPermission) void backfillCovers()
+    }
     type SearchResult = {
         sourceId: string
         sourceMangaId: string
@@ -259,6 +270,12 @@
         await load()
         hasPermission = await sendRuntimeMessage<boolean>({ type: "source:permission:check" })
         if (hasPermission) void backfillCovers()
+        try {
+            const stored = await browser.storage.local.get("onboardingDismissed")
+            onboardingDismissed = Boolean(stored["onboardingDismissed"])
+        } catch {
+            onboardingDismissed = false
+        }
         await loadSyncStatus()
         try {
             sourcesList = await sendRuntimeMessage<typeof sourcesList>({ type: "sources:list" })
@@ -645,6 +662,25 @@
     <main>
         {#if activeSection === "Home"}
             <h1>Home</h1>
+            {#if !hasPermission && !onboardingDismissed}
+                <div class="onboarding">
+                    <h2>Welcome to AMR Next</h2>
+                    <p class="muted">
+                        Track and read manga from many sources — everything stays local in your browser.
+                    </p>
+                    <ol class="onboarding-steps">
+                        <li>Grant access to the manga sites you use.</li>
+                        <li>Open a chapter and click “Read in AMR”, or paste a chapter URL below.</li>
+                        <li>Search across every source, or set up Gist sync under Data.</li>
+                    </ol>
+                    <div class="onboarding-actions">
+                        <button type="button" onclick={() => void onboardGrant()}>Grant source access</button>
+                        <button type="button" class="btn-outline" onclick={() => void dismissOnboarding()}>
+                            Maybe later
+                        </button>
+                    </div>
+                </div>
+            {/if}
             {#if loading}
                 <p class="muted">Loading...</p>
             {:else if library.length === 0}

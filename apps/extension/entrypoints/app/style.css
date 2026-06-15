@@ -813,6 +813,36 @@ button:disabled {
     width: 100%;
 }
 
+.onboarding {
+    margin-bottom: 24px;
+    padding: 20px 22px;
+    border-radius: 14px;
+    border: 1px solid var(--accent, #8b5cf6);
+    background: var(--surface, #11161d);
+    display: grid;
+    gap: 10px;
+}
+
+.onboarding h2 {
+    margin: 0;
+}
+
+.onboarding-steps {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--muted);
+    font-size: 13px;
+    display: grid;
+    gap: 4px;
+}
+
+.onboarding-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 4px;
+}
+
 .sidebar-footer {
     margin-top: auto;
     padding-top: 12px;
