@@ -148,6 +148,38 @@
     let detailManga = $state<LibraryManga | null>(null)
     let relinkUrl = $state("")
     let relinkMessage = $state("")
+    let mirrorResults = $state<SearchResult[]>([])
+    let mirrorChecking = $state(false)
+    let mirrorCheckedFor = $state("")
+
+    function normTitle(s: string): string {
+        return s
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, " ")
+            .trim()
+    }
+
+    // Search every supported source for this title and show which mirrors carry
+    // it, sorted by the latest hosted chapter so the freshest mirror is on top.
+    async function checkMirrors(manga: LibraryManga) {
+        mirrorChecking = true
+        mirrorResults = []
+        mirrorCheckedFor = manga.id
+        try {
+            const all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
+            const want = normTitle(manga.title)
+            mirrorResults = all
+                .filter(r => {
+                    const t = normTitle(r.title)
+                    return t === want || t.includes(want) || want.includes(t)
+                })
+                .sort((a, b) => (parseFloat(b.latestChapter ?? "0") || 0) - (parseFloat(a.latestChapter ?? "0") || 0))
+        } catch {
+            mirrorResults = []
+        } finally {
+            mirrorChecking = false
+        }
+    }
 
     async function relink(manga: LibraryManga) {
         const url = relinkUrl.trim()
@@ -1382,6 +1414,37 @@
                     </div>
                     {#if relinkMessage}<span class="muted">{relinkMessage}</span>{/if}
                 </label>
+                <div class="detail-mirrors">
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        disabled={mirrorChecking || !hasPermission}
+                        title={hasPermission
+                            ? "Search every supported source for this title"
+                            : "Grant source access first"}
+                        onclick={() => detailManga && void checkMirrors(detailManga)}>
+                        {mirrorChecking ? "Checking mirrors…" : "Check mirrors"}
+                    </button>
+                    {#if !mirrorChecking && mirrorCheckedFor === detailManga.id}
+                        {#if mirrorResults.length === 0}
+                            <span class="muted">No other supported mirror found.</span>
+                        {:else}
+                            <div class="mirror-list">
+                                {#each mirrorResults as r}
+                                    <div class="mirror-row">
+                                        <span class="mirror-source">{r.sourceId}</span>
+                                        <span class="muted"
+                                            >{r.latestChapter ? `latest ch ${r.latestChapter}` : "—"}</span>
+                                        <button
+                                            type="button"
+                                            class="btn-sm"
+                                            onclick={() => void browser.tabs.create({ url: r.url })}>Open</button>
+                                    </div>
+                                {/each}
+                            </div>
+                        {/if}
+                    {/if}
+                </div>
                 <div class="detail-actions">
                     <button type="button" onclick={() => detailManga && openInReader(detailManga)}>Open reader</button>
                     <button type="button" class="btn-outline" onclick={() => detailManga && openInBrowser(detailManga)}>

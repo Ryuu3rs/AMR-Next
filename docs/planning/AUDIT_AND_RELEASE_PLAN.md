@@ -136,6 +136,7 @@ These are weighted toward the owner's stated priorities: accurate list/updates o
 - G14 (L) **Android** — package/verify on Firefox-for-Android (extensions supported) so the list + sync + open-in-browser work on phone. (owner bonus) → 2.0
 - G15 (S) Asura/Void-style "unreliable domain" warning banner (dismissible) on known domain-hoppers. (community #25) → 1.x
 - ✅ G16 (M) **Cover system** — covers were unreliable because entries added by _reading_ a chapter didn't always carry one. Added an optional `resolveCover(sourceMangaId/url)` on the adapter contract (MangaDex via cover API; Madara/mgeko via the manga page's og:image), a bounded background backfill for library entries missing a cover (auto-runs on load when permission is granted, plus a "Refresh covers" button), and graceful `onerror` fallback to the title initial so a failed cover never shows blank. Future: store a `PageRecord`-style cover cache + periodic refresh.
+- ✅ G17 (M) **Check mirrors** — from a title's detail, search every supported source and list which mirrors carry it, sorted by latest hosted chapter (freshest first), each openable. Builds on C1/G7; groundwork for automatic mirror comparison (G8).
 
 ---
 
