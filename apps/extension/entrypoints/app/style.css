@@ -726,6 +726,16 @@ button:disabled {
     color: var(--text, #f5f7fa);
 }
 
+.detail-categories {
+    display: grid;
+    gap: 4px;
+    font-size: 11px;
+}
+
+.detail-categories input {
+    width: 100%;
+}
+
 .detail-actions {
     display: flex;
     flex-wrap: wrap;

@@ -216,6 +216,13 @@ export default defineBackground(() => {
                         }
                         return success(null)
                     }
+                    case "library:categories": {
+                        const categories = [...new Set(request.categories.map(c => c.trim()).filter(Boolean))]
+                        await db.manga.update(request.mangaId, {
+                            categories: categories.length > 0 ? categories : undefined
+                        } as Partial<{ categories: string[] }>)
+                        return success(null)
+                    }
                     case "library:covers:backfill": {
                         const all = await db.manga.toArray()
                         const missing = all.filter(m => !m.coverUrl && !m.id.startsWith("seed-"))

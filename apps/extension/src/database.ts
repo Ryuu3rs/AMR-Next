@@ -19,6 +19,8 @@ export type LibraryManga = MangaRecord & {
     // Manual / "Do Not Scan": skip automatic update checks; the user maintains the
     // available + read chapter numbers by hand (e.g. Asura-style domain-hoppers).
     manualTracking?: boolean
+    // User categories / labels for filtering the library.
+    categories?: string[]
 }
 
 export type HistoryEvent = {

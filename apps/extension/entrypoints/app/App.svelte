@@ -20,6 +20,7 @@
     let loading = $state(true)
     let query = $state("")
     let librarySort = $state<"recent-read" | "recent-added" | "title" | "latest-chapter">("recent-read")
+    let categoryFilter = $state("")
     let failedCovers = $state<Set<string>>(new Set())
     let refreshingCovers = $state(false)
     let syncStatus = $state<SyncStatus | undefined>()
@@ -234,6 +235,25 @@
         library = library.filter(m => m.id !== mangaId)
     }
 
+    function applyCategories<T extends { id: string; categories?: string[] }>(item: T, id: string, next?: string[]): T {
+        if (item.id !== id) return item
+        const copy = { ...item }
+        if (next && next.length > 0) copy.categories = next
+        else delete copy.categories
+        return copy
+    }
+
+    async function setCategories(manga: LibraryManga, raw: string) {
+        const categories = raw
+            .split(",")
+            .map(s => s.trim())
+            .filter(Boolean)
+        await sendRuntimeMessage({ type: "library:categories", mangaId: manga.id, categories })
+        const next = categories.length > 0 ? categories : undefined
+        library = library.map(m => applyCategories(m, manga.id, next))
+        if (detailManga && detailManga.id === manga.id) detailManga = applyCategories(detailManga, manga.id, next)
+    }
+
     async function rate(manga: LibraryManga, value: number) {
         const next = manga.rating === value ? 0 : value
         await sendRuntimeMessage({ type: "library:rate", mangaId: manga.id, rating: next })
@@ -410,8 +430,16 @@
         })
     }
 
+    const allCategories = $derived(
+        [...new Set(library.flatMap(m => m.categories ?? []))].sort((a, b) => a.localeCompare(b))
+    )
+
     const visibleLibrary = $derived.by(() => {
-        const filtered = library.filter(m => m.title.toLowerCase().includes(query.trim().toLowerCase()))
+        const filtered = library.filter(
+            m =>
+                m.title.toLowerCase().includes(query.trim().toLowerCase()) &&
+                (!categoryFilter || (m.categories ?? []).includes(categoryFilter))
+        )
         const sorted = [...filtered]
         switch (librarySort) {
             case "recent-read":
@@ -535,6 +563,14 @@
                         <option value="title">Title (A–Z)</option>
                         <option value="latest-chapter">Latest chapter</option>
                     </select>
+                    {#if allCategories.length > 0}
+                        <select aria-label="Filter by category" bind:value={categoryFilter}>
+                            <option value="">All categories</option>
+                            {#each allCategories as cat}
+                                <option value={cat}>{cat}</option>
+                            {/each}
+                        </select>
+                    {/if}
                     <button
                         type="button"
                         class="btn-sm"
@@ -1173,6 +1209,14 @@
                             }}>★</button>
                     {/each}
                 </div>
+                <label class="detail-categories">
+                    <span class="muted">Categories (comma-separated)</span>
+                    <input
+                        type="text"
+                        placeholder="e.g. action, favorites"
+                        value={(detailManga.categories ?? []).join(", ")}
+                        onchange={e => detailManga && void setCategories(detailManga, e.currentTarget.value)} />
+                </label>
                 <div class="detail-actions">
                     <button type="button" onclick={() => detailManga && openInReader(detailManga)}>Open reader</button>
                     <button type="button" class="btn-outline" onclick={() => detailManga && openInBrowser(detailManga)}>

@@ -6,6 +6,11 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("library:rate"), mangaId: z.string().min(1), rating: z.number().int().min(0).max(5) }),
     z.object({ type: z.literal("library:manual"), mangaId: z.string().min(1), manual: z.boolean() }),
     z.object({
+        type: z.literal("library:categories"),
+        mangaId: z.string().min(1),
+        categories: z.array(z.string().trim().min(1)).max(20)
+    }),
+    z.object({
         type: z.literal("library:numbers"),
         mangaId: z.string().min(1),
         latestChapterNumber: z.union([z.number().finite().nonnegative(), z.null()]).optional(),

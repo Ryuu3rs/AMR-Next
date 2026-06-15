@@ -90,4 +90,14 @@ describe("manual tracking schema (G2)", () => {
             runtimeRequestSchema.safeParse({ type: "library:numbers", mangaId: "m1", latestChapterNumber: -3 }).success
         ).toBe(false)
     })
+
+    it("accepts library:categories arrays", () => {
+        expect(
+            runtimeRequestSchema.safeParse({ type: "library:categories", mangaId: "m1", categories: ["a", "b"] })
+                .success
+        ).toBe(true)
+        expect(
+            runtimeRequestSchema.safeParse({ type: "library:categories", mangaId: "m1", categories: [] }).success
+        ).toBe(true)
+    })
 })
