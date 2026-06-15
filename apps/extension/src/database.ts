@@ -277,12 +277,40 @@ export async function getLocalStats() {
         db.historyEvents.orderBy("occurredAt").toArray()
     ])
     const completedChapters = progress.filter(item => item.completed).length
-    const readingDays = new Set(history.map(event => new Date(event.occurredAt).toISOString().slice(0, 10))).size
+    const dayKeys = [...new Set(history.map(event => new Date(event.occurredAt).toISOString().slice(0, 10)))].sort()
+    const readingDays = dayKeys.length
+
+    const dayMs = 86_400_000
+    const asDay = (key: string) => Date.parse(`${key}T00:00:00Z`)
+    let longestStreak = 0
+    let run = 0
+    let prev: number | null = null
+    for (const key of dayKeys) {
+        const t = asDay(key)
+        run = prev !== null && t - prev === dayMs ? run + 1 : 1
+        longestStreak = Math.max(longestStreak, run)
+        prev = t
+    }
+    // Current streak: consecutive days ending today or yesterday.
+    let currentStreak = 0
+    const todayKey = new Date().toISOString().slice(0, 10)
+    let cursor = asDay(todayKey)
+    const daySet = new Set(dayKeys.map(asDay))
+    if (!daySet.has(cursor) && daySet.has(cursor - dayMs)) cursor -= dayMs
+    while (daySet.has(cursor)) {
+        currentStreak += 1
+        cursor -= dayMs
+    }
+    const weekAgo = Date.now() - 7 * dayMs
+    const chaptersThisWeek = history.filter(e => e.type === "completed" && e.occurredAt >= weekAgo).length
 
     return {
         mangaCount,
         completedChapters,
         readingDays,
+        currentStreak,
+        longestStreak,
+        chaptersThisWeek,
         achievements: [
             {
                 id: "first-chapter",

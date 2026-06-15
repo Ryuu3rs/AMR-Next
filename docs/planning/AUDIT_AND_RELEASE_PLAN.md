@@ -67,7 +67,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - ✅ B2/G10 (M) Categories + filtering — assign comma-separated categories from the detail modal; filter the library by category. (assign-from-reader still to add.)
 - B3 (S) Bookmarks (per-page). → 1.2
 - ✅ B4 (M) Reading history view — timeline of started/completed events (from historyEvents) in a new History tab.
-- B5 (M) Statistics dashboard: chapters read, active reading time, streaks. → 1.2
+- ✅ B5 (M) Statistics — completed chapters, saved, active days, current/longest day streak, chapters this week, in the Stats & achievements tab. (Active reading time needs session timing — future.)
 - B6 (M) Goals & streaks (daily/weekly). → 1.3
 - B7 (S) Extensible achievements (data-driven, not 3 hardcoded). → 1.3
 - B8 (S) Local share cards (export a stats image). → 1.3

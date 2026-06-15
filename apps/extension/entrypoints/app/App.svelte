@@ -123,6 +123,9 @@
         mangaCount: number
         completedChapters: number
         readingDays: number
+        currentStreak: number
+        longestStreak: number
+        chaptersThisWeek: number
         achievements: Array<{
             id: string
             title: string
@@ -1060,11 +1063,16 @@
                 </div>
             {/if}
         {:else if activeSection === "Achievements"}
-            <h1>Achievements</h1>
+            <h1>Stats &amp; achievements</h1>
             <div class="stat-row">
                 <div class="stat-box"><strong>{stats?.completedChapters ?? 0}</strong><span>Completed</span></div>
                 <div class="stat-box"><strong>{stats?.mangaCount ?? 0}</strong><span>Saved</span></div>
                 <div class="stat-box"><strong>{stats?.readingDays ?? 0}</strong><span>Active days</span></div>
+            </div>
+            <div class="stat-row">
+                <div class="stat-box"><strong>{stats?.currentStreak ?? 0}</strong><span>Day streak</span></div>
+                <div class="stat-box"><strong>{stats?.longestStreak ?? 0}</strong><span>Longest streak</span></div>
+                <div class="stat-box"><strong>{stats?.chaptersThisWeek ?? 0}</strong><span>This week</span></div>
             </div>
             <div class="achievement-list">
                 {#each stats?.achievements ?? [] as a}
