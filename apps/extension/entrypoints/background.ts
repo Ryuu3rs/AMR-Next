@@ -235,6 +235,20 @@ export default defineBackground(() => {
                     }
                     case "stats:get":
                         return success(await getLocalStats())
+                    case "history:list": {
+                        const events = await db.historyEvents.orderBy("occurredAt").reverse().limit(60).toArray()
+                        const ids = [...new Set(events.map(e => e.mangaId))]
+                        const mangas = await db.manga.bulkGet(ids)
+                        const titleById = new Map(ids.map((id, i) => [id, mangas[i]?.title ?? id]))
+                        return success(
+                            events.map(e => ({
+                                mangaId: e.mangaId,
+                                title: titleById.get(e.mangaId) ?? e.mangaId,
+                                type: e.type,
+                                occurredAt: e.occurredAt
+                            }))
+                        )
+                    }
                     case "data:export":
                         return success(await exportDatabase())
                     case "data:import":

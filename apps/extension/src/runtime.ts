@@ -13,6 +13,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     }),
     z.object({ type: z.literal("library:covers:backfill") }),
     z.object({ type: z.literal("stats:get") }),
+    z.object({ type: z.literal("history:list") }),
     z.object({ type: z.literal("data:export") }),
     z.object({ type: z.literal("data:import"), envelope: z.unknown() }),
     z.object({ type: z.literal("data:seed") }),

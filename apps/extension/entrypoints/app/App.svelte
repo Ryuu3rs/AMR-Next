@@ -13,7 +13,7 @@
         lastPulledAt?: number
     }
 
-    const sections = ["Home", "Library", "Updates", "Achievements", "Sources", "Data", "Settings"] as const
+    const sections = ["Home", "Library", "Updates", "History", "Achievements", "Sources", "Data", "Settings"] as const
     let activeSection = $state<(typeof sections)[number]>("Home")
     let library = $state<LibraryManga[]>([])
     let settings = $state<AppSettings | undefined>()
@@ -77,6 +77,24 @@
     let selectedManga = $state<{ title: string } | null>(null)
     let mangaChapters = $state<Array<{ id: string; title: string; chapter?: string; url: string }>>([])
     let chaptersLoading = $state(false)
+    let history = $state<Array<{ mangaId: string; title: string; type: "started" | "completed"; occurredAt: number }>>(
+        []
+    )
+    let historyLoaded = $state(false)
+
+    async function loadHistory() {
+        try {
+            history = await sendRuntimeMessage<typeof history>({ type: "history:list" })
+        } catch {
+            history = []
+        } finally {
+            historyLoaded = true
+        }
+    }
+
+    $effect(() => {
+        if (activeSection === "History" && !historyLoaded) void loadHistory()
+    })
 
     function isSeedData(manga: LibraryManga): boolean {
         return manga.id.startsWith("seed-")
@@ -714,6 +732,24 @@
                             {:else}
                                 <span class="badge-ok-sm">Up to date</span>
                             {/if}
+                        </div>
+                    {/each}
+                </div>
+            {/if}
+        {:else if activeSection === "History"}
+            <h1>Reading history</h1>
+            {#if !historyLoaded}
+                <p class="muted">Loading…</p>
+            {:else if history.length === 0}
+                <p class="muted">No reading activity yet. Open a chapter to start tracking.</p>
+            {:else}
+                <div class="history-list">
+                    {#each history as event}
+                        <div class="history-row">
+                            <span class="history-dot" class:done={event.type === "completed"}></span>
+                            <span class="history-title">{event.title}</span>
+                            <span class="muted">{event.type === "completed" ? "Completed" : "Started"}</span>
+                            <span class="muted history-when">{new Date(event.occurredAt).toLocaleString()}</span>
                         </div>
                     {/each}
                 </div>
