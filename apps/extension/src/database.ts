@@ -21,6 +21,8 @@ export type LibraryManga = MangaRecord & {
     manualTracking?: boolean
     // User categories / labels for filtering the library.
     categories?: string[]
+    // User-flagged adult content (covers blurred when the blur setting is on).
+    nsfw?: boolean
 }
 
 export type HistoryEvent = {

@@ -301,6 +301,12 @@ export default defineBackground(() => {
                         })
                         return success({ sourceId: request.sourceId, latest: latest?.sortKey ?? null })
                     }
+                    case "library:nsfw": {
+                        await db.manga.update(request.mangaId, {
+                            nsfw: request.nsfw ? true : undefined
+                        } as Partial<{ nsfw: boolean }>)
+                        return success(null)
+                    }
                     case "library:covers:backfill": {
                         const all = await db.manga.toArray()
                         const missing = all.filter(m => !m.coverUrl && !m.id.startsWith("seed-"))

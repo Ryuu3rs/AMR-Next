@@ -5,6 +5,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("library:remove"), mangaId: z.string().min(1) }),
     z.object({ type: z.literal("library:rate"), mangaId: z.string().min(1), rating: z.number().int().min(0).max(5) }),
     z.object({ type: z.literal("library:manual"), mangaId: z.string().min(1), manual: z.boolean() }),
+    z.object({ type: z.literal("library:nsfw"), mangaId: z.string().min(1), nsfw: z.boolean() }),
     z.object({
         type: z.literal("library:categories"),
         mangaId: z.string().min(1),
@@ -78,6 +79,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
             openChapterIn: z.enum(["reader", "browser"]).optional(),
             theme: z.enum(["dark", "light", "system"]).optional(),
             dailyGoal: z.number().int().min(0).max(50).optional(),
+            blurNsfw: z.boolean().optional(),
             updateIntervalHours: z.union([z.literal(0), z.literal(6), z.literal(12), z.literal(24)]).optional()
         })
     })

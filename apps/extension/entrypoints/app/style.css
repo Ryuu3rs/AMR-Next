@@ -813,6 +813,15 @@ button:disabled {
     width: 100%;
 }
 
+.nsfw-blur {
+    filter: blur(14px);
+    transition: filter 0.15s ease;
+}
+
+.poster:hover .nsfw-blur {
+    filter: blur(0);
+}
+
 .goal-card {
     margin: 16px 0 8px;
     display: grid;

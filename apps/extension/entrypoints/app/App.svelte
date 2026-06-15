@@ -440,6 +440,12 @@
         )
     }
 
+    async function setNsfw(manga: LibraryManga, nsfw: boolean) {
+        await sendRuntimeMessage({ type: "library:nsfw", mangaId: manga.id, nsfw })
+        library = library.map(m => (m.id === manga.id ? { ...m, nsfw } : m))
+        if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, nsfw }
+    }
+
     async function setManual(manga: LibraryManga, manual: boolean) {
         await sendRuntimeMessage({ type: "library:manual", mangaId: manga.id, manual })
         library = library.map(m => (m.id === manga.id ? { ...m, manualTracking: manual } : m))
@@ -731,6 +737,7 @@
                                         {#if manga.coverUrl && !failedCovers.has(manga.id)}<img
                                                 src={manga.coverUrl}
                                                 alt={manga.title}
+                                                class:nsfw-blur={manga.nsfw && (settings?.blurNsfw ?? true)}
                                                 onerror={() => coverFailed(manga.id)} />{:else}<span
                                                 class="cover-initial">{manga.title[0]}</span
                                             >{/if}
@@ -1461,6 +1468,19 @@
                                 dailyGoal: Math.max(0, Math.min(50, Number(e.currentTarget.value) || 0))
                             })} />
                 </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Blur NSFW covers</p>
+                        <p class="muted">Blur covers of titles you've marked NSFW (from the detail view).</p>
+                    </div>
+                    <label class="toggle">
+                        <input
+                            type="checkbox"
+                            checked={settings?.blurNsfw ?? true}
+                            onchange={e => void updateSetting({ blurNsfw: e.currentTarget.checked })} />
+                        <span class="track"></span>
+                    </label>
+                </div>
             </div>
         {/if}
     </main>
@@ -1525,6 +1545,13 @@
                         placeholder="e.g. action, favorites"
                         value={(detailManga.categories ?? []).join(", ")}
                         onchange={e => detailManga && void setCategories(detailManga, e.currentTarget.value)} />
+                </label>
+                <label class="menu-toggle">
+                    <input
+                        type="checkbox"
+                        checked={detailManga.nsfw ?? false}
+                        onchange={e => detailManga && void setNsfw(detailManga, e.currentTarget.checked)} />
+                    Mark as NSFW (blurs the cover)
                 </label>
                 <label class="detail-categories">
                     <span class="muted">Re-link source (paste a chapter URL from a new mirror)</span>

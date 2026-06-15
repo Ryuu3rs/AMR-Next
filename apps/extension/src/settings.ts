@@ -13,6 +13,7 @@ export type AppSettings = {
     openChapterIn: OpenChapterIn
     theme: "dark" | "light" | "system"
     dailyGoal: number
+    blurNsfw: boolean
     updateIntervalHours: 0 | 6 | 12 | 24
 }
 
@@ -28,6 +29,7 @@ export const defaultSettings: AppSettings = {
     openChapterIn: "reader",
     theme: "dark",
     dailyGoal: 0,
+    blurNsfw: true,
     updateIntervalHours: 12
 }
 
