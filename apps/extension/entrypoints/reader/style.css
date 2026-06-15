@@ -201,6 +201,24 @@ main.dir-rtl .page-num {
     transition: width 0.3s ease;
 }
 
+header {
+    transition:
+        transform 0.25s ease,
+        opacity 0.25s ease;
+}
+
+header.chrome-hidden {
+    transform: translateY(-100%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.btn-sm.active {
+    background: #8b5cf6;
+    border-color: #7c3aed;
+    color: #fff;
+}
+
 .chapter-nav {
     display: flex;
     align-items: center;

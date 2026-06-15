@@ -18,10 +18,36 @@
     let preloadPages = $state(3)
     let chapterUrl = $state("")
     let siblings = $state<Array<{ url: string; sortKey: number; title: string }>>([])
+    let fitOverride = $state<PageFit | null>(null)
+    let isFullscreen = $state(false)
+    let chromeHidden = $state(false)
 
     // Vertical (webtoon) direction always scrolls continuously.
     const effectiveMode = $derived(direction === "vertical" ? "continuous" : mode)
+    // A5: double-click toggles between the configured fit and original (zoom).
+    const effectivePageFit = $derived(fitOverride ?? pageFit)
     const progressPct = $derived(chapter ? Math.round(((currentPage + 1) / chapter.pages.length) * 100) : 0)
+
+    function toggleZoom() {
+        fitOverride = fitOverride ? null : "original"
+    }
+
+    // A6: fullscreen + immersive (auto-hide chrome on scroll-down).
+    async function toggleFullscreen() {
+        try {
+            if (document.fullscreenElement) await document.exitFullscreen()
+            else await document.documentElement.requestFullscreen()
+        } catch {
+            // ignore (denied / unsupported)
+        }
+    }
+
+    let lastScroll = 0
+    function onScroll() {
+        const y = window.scrollY
+        chromeHidden = y > 120 && y > lastScroll
+        lastScroll = y
+    }
 
     const currentIndex = $derived(chapter ? siblings.findIndex(s => s.url === chapter!.chapter.url) : -1)
     const prevUrl = $derived(currentIndex > 0 ? siblings[currentIndex - 1]?.url : undefined)
@@ -162,9 +188,12 @@
         else if (key === "k") prev()
         else if (event.key === "ArrowRight") (direction === "rtl" ? prev : next)()
         else if (event.key === "ArrowLeft") (direction === "rtl" ? next : prev)()
-    }} />
+    }}
+    onscroll={onScroll} />
 
-<header>
+<svelte:document onfullscreenchange={() => (isFullscreen = Boolean(document.fullscreenElement))} />
+
+<header class:chrome-hidden={chromeHidden}>
     <div class="header-left">
         <button type="button" class="btn-back" onclick={() => void goToApp()}>← Dashboard</button>
     </div>
@@ -198,6 +227,17 @@
                 {effectiveMode === "continuous" ? "Single" : "Scroll"}
             </button>
         {/if}
+        {#if chapter}
+            <button
+                type="button"
+                class="btn-sm"
+                class:active={fitOverride === "original"}
+                title="Toggle zoom (or double-click a page)"
+                onclick={toggleZoom}>⛶±</button>
+            <button type="button" class="btn-sm" title="Fullscreen" onclick={() => void toggleFullscreen()}>
+                {isFullscreen ? "⤢" : "⛶"}
+            </button>
+        {/if}
         <button
             type="button"
             class="btn-sm"
@@ -214,7 +254,7 @@
     </div>
 {/if}
 
-<main class:single={effectiveMode === "single"} class="fit-{pageFit} dir-{direction}">
+<main class:single={effectiveMode === "single"} class="fit-{effectivePageFit} dir-{direction}">
     {#if error}
         <section class="message">
             <h1>Chapter could not be loaded</h1>
@@ -232,6 +272,7 @@
             <img
                 src={chapter.pages[currentPage]?.url}
                 alt={`Page ${currentPage + 1}`}
+                ondblclick={toggleZoom}
                 onerror={handleImageError}
                 onload={() => recordProgress(currentPage)} />
             {#if showPageNumber}<span class="page-num">{currentPage + 1} / {chapter.pages.length}</span>{/if}
@@ -243,6 +284,7 @@
                     src={page.url}
                     alt={`Page ${index + 1}`}
                     loading={index < preloadPages ? "eager" : "lazy"}
+                    ondblclick={toggleZoom}
                     onerror={handleImageError}
                     onload={() => recordProgress(index)} />
                 {#if showPageNumber}<span class="page-num">{index + 1} / {chapter.pages.length}</span>{/if}

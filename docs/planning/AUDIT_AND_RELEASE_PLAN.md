@@ -54,8 +54,8 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - A2 (S) Page fit modes: width / height / contain / original. → 1.1
 - A3 (S) Show page-number overlay toggle. → 1.1
 - A4 (M) Configurable preload (0-20 pages) + bounded image scheduler. → 1.1
-- A5 (S) Zoom / pinch + double-click-to-fit. → 1.2
-- A6 (M) Fullscreen + immersive mode (hide chrome on scroll). → 1.2
+- ✅ A5 (S) Zoom — double-click a page (or the zoom button) toggles between the configured fit and original size.
+- ✅ A6 (M) Fullscreen + immersive — fullscreen button + auto-hide header on scroll-down (reappears on scroll-up).
 - ✅ A7 (M) Prev/next chapter navigation — reader fetches the source chapter list and offers Prev/Next (header + [ ] keys + end-of-chapter bar). (Page-list prefetch is a future optimization.)
 - ✅ A8 (S) "Mark read & next" — one action at the end of a chapter marks it complete and loads the next.
 - A9 (L) Offline / downloaded chapters (store `PageRecord` + blobs in IndexedDB). → 2.0
