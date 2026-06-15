@@ -101,7 +101,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 
 - F1 (L) **Automatic scanlation clustering** — group multiple scanlation groups/sources of the same series into one library entry; pick a preferred source; dedupe chapters across groups by chapter number; show which groups cover which chapters. Depends on C1 (search contract) + a title-similarity matcher. → 2.0
 - F2 (L) **Migration wizard for dead sources** — when D4 health monitoring flags a source dead/unavailable, fuzzy-match each affected title to candidate sources, preview matches, bulk re-link, and preserve reading progress by mapping chapter numbers. Depends on C1 + D4. → 2.0
-- F3 (M) Duplicate detection + merge (same series added twice, e.g. via two URLs). → 1.3
+- ✅ F3 (M) Duplicate detection + merge — groups titles by normalized name; one click merges a group into the highest-progress entry (max chapter numbers, union categories, removes the rest).
 - F4 (S) NSFW flag with blur/hide toggle + setting. → 1.3
 - ✅ F5 (M) Bulk actions — Select mode in the library to multi-select titles, then bulk add-category, mark-manual, or remove.
 - F6 (M) Local recommendations ("because you read X") derived from tags/authors/history — no network. → 2.0
