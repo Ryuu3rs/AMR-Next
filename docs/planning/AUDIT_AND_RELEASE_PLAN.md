@@ -66,7 +66,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - B1 (M) Manga detail page: cover, description, chapter list, read/unread state. → 1.1
 - B2 (M) Tags / categories + filtering. → 1.2
 - B3 (S) Bookmarks (per-page). → 1.2
-- B4 (M) Reading history view (uses existing `historyEvents`). → 1.1
+- ✅ B4 (M) Reading history view — timeline of started/completed events (from historyEvents) in a new History tab.
 - B5 (M) Statistics dashboard: chapters read, active reading time, streaks. → 1.2
 - B6 (M) Goals & streaks (daily/weekly). → 1.3
 - B7 (S) Extensible achievements (data-driven, not 3 hardcoded). → 1.3
