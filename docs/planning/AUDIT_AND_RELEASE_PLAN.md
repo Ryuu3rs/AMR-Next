@@ -110,7 +110,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 
 ### E. UX polish
 
-- E1 (S) `theme: "system"` + light theme parity. → 1.1
+- ✅ E1 (S) Theme — dark/light/system selector applied via data-theme on the dashboard; light + system (prefers-color-scheme) palettes over the CSS variables. (Reader theming is a follow-up.)
 - E2 (S) Keyboard shortcut help overlay + remapping. → 1.2
 - E3 (S) Onboarding for first-run permission grant. → 1.1
 - E4 (S) In-extension "update available" banner via GitHub release check. → 1.0

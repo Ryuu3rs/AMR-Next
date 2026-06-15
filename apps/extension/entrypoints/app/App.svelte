@@ -247,6 +247,10 @@
         if (activeSection === "History" && !historyLoaded) void loadHistory()
     })
 
+    $effect(() => {
+        document.documentElement.dataset["theme"] = settings?.theme ?? "dark"
+    })
+
     function isSeedData(manga: LibraryManga): boolean {
         return manga.id.startsWith("seed-")
     }
@@ -1349,6 +1353,21 @@
                             void updateSetting({ openChapterIn: e.currentTarget.value as "reader" | "browser" })}>
                         <option value="reader">Built-in reader</option>
                         <option value="browser">Source site</option>
+                    </select>
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Theme</p>
+                        <p class="muted">Dark, light, or follow your system setting.</p>
+                    </div>
+                    <select
+                        aria-label="Theme"
+                        value={settings?.theme ?? "dark"}
+                        onchange={e =>
+                            void updateSetting({ theme: e.currentTarget.value as "dark" | "light" | "system" })}>
+                        <option value="dark">Dark</option>
+                        <option value="light">Light</option>
+                        <option value="system">System</option>
                     </select>
                 </div>
             </div>

@@ -11,7 +11,7 @@ export type AppSettings = {
     showPageNumber: boolean
     preloadPages: number
     openChapterIn: OpenChapterIn
-    theme: "dark" | "light"
+    theme: "dark" | "light" | "system"
     updateIntervalHours: 0 | 6 | 12 | 24
 }
 
