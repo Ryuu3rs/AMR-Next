@@ -303,6 +303,9 @@ export async function getLocalStats() {
     }
     const weekAgo = Date.now() - 7 * dayMs
     const chaptersThisWeek = history.filter(e => e.type === "completed" && e.occurredAt >= weekAgo).length
+    const chaptersToday = history.filter(
+        e => e.type === "completed" && new Date(e.occurredAt).toISOString().slice(0, 10) === todayKey
+    ).length
 
     return {
         mangaCount,
@@ -311,6 +314,7 @@ export async function getLocalStats() {
         currentStreak,
         longestStreak,
         chaptersThisWeek,
+        chaptersToday,
         achievements: [
             {
                 id: "first-chapter",

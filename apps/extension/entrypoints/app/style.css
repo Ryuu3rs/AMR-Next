@@ -813,6 +813,31 @@ button:disabled {
     width: 100%;
 }
 
+.goal-card {
+    margin: 16px 0 8px;
+    display: grid;
+    gap: 8px;
+}
+
+.goal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.goal-bar {
+    height: 8px;
+    border-radius: 6px;
+    background: var(--surface-2, #182338);
+    overflow: hidden;
+}
+
+.goal-fill {
+    height: 100%;
+    background: var(--success, #10b981);
+    transition: width 0.3s ease;
+}
+
 .onboarding {
     margin-bottom: 24px;
     padding: 20px 22px;

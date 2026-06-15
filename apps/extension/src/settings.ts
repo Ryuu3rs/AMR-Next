@@ -12,6 +12,7 @@ export type AppSettings = {
     preloadPages: number
     openChapterIn: OpenChapterIn
     theme: "dark" | "light" | "system"
+    dailyGoal: number
     updateIntervalHours: 0 | 6 | 12 | 24
 }
 
@@ -26,6 +27,7 @@ export const defaultSettings: AppSettings = {
     preloadPages: 3,
     openChapterIn: "reader",
     theme: "dark",
+    dailyGoal: 0,
     updateIntervalHours: 12
 }
 
