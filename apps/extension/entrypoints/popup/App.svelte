@@ -7,6 +7,7 @@
         supported: boolean
         pageType?: "chapter" | "manga" | "none"
         url?: string
+        sourceName?: string
     }
 
     let page = $state<PageState | undefined>()
@@ -15,17 +16,7 @@
 
     onMount(async () => {
         try {
-            const [tab] = await browser.tabs.query({ active: true, currentWindow: true })
-            if (!tab?.url) {
-                page = { supported: false }
-                return
-            }
-            const url = new URL(tab.url)
-            page = {
-                supported: url.hostname === "mangadex.org" || url.hostname.endsWith(".mangadex.org"),
-                pageType: url.pathname.startsWith("/chapter/") ? "chapter" : "manga",
-                url: tab.url
-            }
+            page = await sendRuntimeMessage<PageState>({ type: "page:current" })
         } catch {
             page = { supported: false }
         }
@@ -77,23 +68,26 @@
         <section class="card"><p>Checking this page...</p></section>
     {:else if page.supported && page.pageType === "chapter"}
         <section class="card">
-            <span class="source">MangaDex chapter</span>
+            <span class="source">{page.sourceName ?? "Supported source"} · chapter</span>
             <h2>Ready to read</h2>
-            <p>Open this chapter in the distraction-free AMR reader.</p>
+            <p>Open this chapter in the AMR reader and add the title to your library.</p>
             <button type="button" onclick={grantAndRead} disabled={busy}>
                 {busy ? "Resolving chapter..." : "Read in AMR"}
             </button>
         </section>
     {:else if page.supported}
         <section class="card">
-            <span class="source">MangaDex</span>
+            <span class="source">{page.sourceName ?? "Supported source"}</span>
             <h2>Manga page detected</h2>
             <p>Open a chapter to read it and automatically add the title to your library.</p>
         </section>
     {:else}
         <section class="card">
-            <h2>This page is not supported</h2>
-            <p>MangaDex is available in the first reader milestone. More source families follow.</p>
+            <h2>Not a supported manga page</h2>
+            <p>
+                Open a chapter on a supported source — MangaDex, MangaRead, Mgeko, and many Madara / MangaStream sites —
+                or manage your library.
+            </p>
         </section>
     {/if}
 

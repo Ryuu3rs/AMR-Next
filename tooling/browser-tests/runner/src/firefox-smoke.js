@@ -62,7 +62,7 @@ async function run() {
         assert.equal(await heading.getText(), "All Mangas Reader")
 
         const stateHeading = await driver.wait(until.elementLocated(By.css("section.card h2")), 15_000)
-        assert.equal(await stateHeading.getText(), "This page is not supported")
+        assert.equal(await stateHeading.getText(), "Not a supported manga page")
     } catch (error) {
         if (driver) {
             await mkdir(artifactsDirectory, { recursive: true })
