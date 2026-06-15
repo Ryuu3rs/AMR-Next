@@ -159,6 +159,24 @@
             .trim()
     }
 
+    async function switchMirror(manga: LibraryManga, result: SearchResult) {
+        mirrorCheckedFor = manga.id
+        try {
+            await sendRuntimeMessage({
+                type: "library:switch",
+                mangaId: manga.id,
+                sourceId: result.sourceId,
+                sourceMangaId: result.sourceMangaId,
+                mangaUrl: result.url
+            })
+            await load()
+            detailManga = library.find(m => m.id === manga.id) ?? null
+            relinkMessage = `Switched to ${result.sourceId}. Progress preserved by chapter number.`
+        } catch (cause) {
+            relinkMessage = cause instanceof Error ? cause.message : "Switch failed."
+        }
+    }
+
     // Search every supported source for this title and show which mirrors carry
     // it, sorted by the latest hosted chapter so the freshest mirror is on top.
     async function checkMirrors(manga: LibraryManga) {
@@ -1435,6 +1453,16 @@
                                         <span class="mirror-source">{r.sourceId}</span>
                                         <span class="muted"
                                             >{r.latestChapter ? `latest ch ${r.latestChapter}` : "—"}</span>
+                                        {#if detailManga && r.sourceId !== detailManga.sourceId}
+                                            <button
+                                                type="button"
+                                                class="btn-sm"
+                                                onclick={() => detailManga && void switchMirror(detailManga, r)}>
+                                                Switch
+                                            </button>
+                                        {:else}
+                                            <span class="muted">current</span>
+                                        {/if}
                                         <button
                                             type="button"
                                             class="btn-sm"

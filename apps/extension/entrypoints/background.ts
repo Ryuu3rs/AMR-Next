@@ -15,6 +15,7 @@ import { getSettings, updateSettings } from "../src/settings"
 import { getSyncConfig, getSyncStatus, pullFromGist, pushToGist, setSyncConfig } from "../src/sync"
 import {
     findSource,
+    listChaptersForSource,
     listMangaChapters,
     resolveChapterUrl,
     resolveCoverFor,
@@ -254,6 +255,50 @@ export default defineBackground(() => {
                             })
                         })
                         return success({ sourceId: resolved.manga.sourceId })
+                    }
+                    case "library:switch": {
+                        const existing = await db.manga.get(request.mangaId)
+                        if (!existing) throw new SourceError("not-found", "That title is not in your library")
+                        const chapters = await listChaptersForSource(
+                            existing,
+                            request.sourceId,
+                            request.sourceMangaId,
+                            request.mangaUrl
+                        )
+                        if (chapters.length === 0)
+                            throw new SourceError("invalid-response", "No chapters on that mirror")
+                        const latest = chapters.reduce(
+                            (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
+                            chapters[0]
+                        )
+                        await db.transaction("rw", db.manga, db.sourceLinks, db.chapters, async () => {
+                            await db.chapters.bulkPut(chapters)
+                            await db.manga.update(request.mangaId, {
+                                sourceId: request.sourceId,
+                                sourceMangaId: request.sourceMangaId,
+                                mangaUrl: request.mangaUrl,
+                                ...(latest
+                                    ? {
+                                          sourceUrl: latest.url,
+                                          latestChapterId: latest.id,
+                                          ...(Number.isFinite(latest.sortKey)
+                                              ? { latestChapterNumber: latest.sortKey }
+                                              : {})
+                                      }
+                                    : {}),
+                                updatedAt: Date.now()
+                            })
+                            await db.sourceLinks.put({
+                                mangaId: request.mangaId,
+                                sourceId: request.sourceId,
+                                sourceMangaId: request.sourceMangaId,
+                                url: request.mangaUrl,
+                                title: existing.title,
+                                addedAt: existing.addedAt,
+                                updatedAt: Date.now()
+                            })
+                        })
+                        return success({ sourceId: request.sourceId, latest: latest?.sortKey ?? null })
                     }
                     case "library:covers:backfill": {
                         const all = await db.manga.toArray()

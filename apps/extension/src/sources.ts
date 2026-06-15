@@ -117,6 +117,23 @@ export async function requestSourcePermission(): Promise<boolean> {
     return browser.permissions.request({ origins: sourceOrigins() })
 }
 
+// List chapters from an arbitrary source/mirror for a manga already in the
+// library — used to switch a title to a different mirror (G8).
+export async function listChaptersForSource(
+    manga: LibraryManga,
+    sourceId: string,
+    sourceMangaId: string,
+    mangaUrl: string
+) {
+    const source = sourceAdapters.find(adapter => adapter.manifest.id === sourceId)
+    if (!source) throw new Error("That source is not supported")
+    const sourceManga: SourceManga = { manga, sourceId, sourceMangaId, url: mangaUrl }
+    return source.listChapters(
+        { manga: sourceManga, limit: 500 },
+        createSourceContext(source.manifest.requestRateLimit)
+    )
+}
+
 export async function listMangaChapters(manga: LibraryManga, link: SourceLinkRecord) {
     const source = sourceAdapters.find(adapter => adapter.manifest.id === link.sourceId)
     if (!source || !link.sourceMangaId) throw new Error("The source link cannot be refreshed")

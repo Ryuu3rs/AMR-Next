@@ -127,7 +127,7 @@ These are weighted toward the owner's stated priorities: accurate list/updates o
 - ✅ G5 (M) **Human-readable sync + Gist** — pretty-printed JSON export round-trips the import/export envelope; GitHub Gist push/pull (token with `gist` scope stored locally), optional hourly auto-push, Settings UI under Data. (owner core) Future: per-record last-write-wins merge + YAML option.
 - G6 (S) **Timed local backups** — scheduled export to a user-chosen location on a frequency (lazy: compare-on-open). (community #87/#89) → 1.x
 - ✅ G7 (M) **Smart cross-site search w/ latest-chapter** — Browse searches every permitted source at once; each result shows its source and latest hosted chapter. Builds on C1. (owner core + bonus)
-- G8 (M) **MangaUpdates backbone** — use the MangaUpdates API as the canonical series identity for search, clustering (F1), and mirror comparison/auto-pick-best (per yonilern's fork). → 1.x
+- 🚧 G8 (M) **Mirror compare + one-click switch** — "Check mirrors" ranks every supported source by latest chapter; "Switch" re-points the title to that mirror (lists its chapters, picks the latest, preserves progress by number). Next: MangaUpdates as the canonical identity backbone. — use the MangaUpdates API as the canonical series identity for search, clustering (F1), and mirror comparison/auto-pick-best (per yonilern's fork). → 1.x
 - G9 (M) **Suwayomi/Tachidesk connector** — offload source breadth to a self-hosted Suwayomi backend (== C4, owner-recommended). → 2.0
 - G10 (S) Categories/labels + assign-from-reader — tag titles into categories and add/remove them from the reader view (== B2 + a reader hook). (community #12/#79/#84) → 1.2
 - G11 (S) Open chapter in new tab / Ctrl+click / context-menu, in the user's default browser. (community #23) → 0.4
