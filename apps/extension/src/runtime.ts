@@ -30,6 +30,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("manga:search"), query: z.string().min(1) }),
     z.object({ type: z.literal("manga:chapters"), mangaId: z.string().min(1) }),
     z.object({ type: z.literal("source:permission:check") }),
+    z.object({ type: z.literal("sources:list") }),
     z.object({ type: z.literal("updates:check"), sourceId: z.string().optional() }),
     z.object({ type: z.literal("updates:get") }),
     z.object({ type: z.literal("page:current") }),
