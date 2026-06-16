@@ -32,17 +32,30 @@ export const historyEventSchema = z.object({
 
 // Envelope is intentionally non-strict on the data object so a future export with
 // extra tables still imports (unknown keys are dropped, known tables validated).
-export const exportEnvelopeSchema = z.object({
-    format: z.literal("all-mangas-reader"),
-    version: z.literal(1),
-    exportedAt: z.number().int().nonnegative(),
-    data: z.object({
-        manga: z.array(libraryMangaSchema),
-        sourceLinks: z.array(sourceLinkRecordSchema),
-        chapters: z.array(chapterRecordSchema),
-        progress: z.array(readingProgressSchema),
-        historyEvents: z.array(historyEventSchema)
+// Accepts both strict v1 format and legacy loose format for backward compatibility.
+export const exportEnvelopeSchema = z
+    .object({
+        format: z.literal("all-mangas-reader"),
+        version: z.literal(1),
+        exportedAt: z.number().int().nonnegative().optional(),
+        data: z.object({
+            manga: z.array(libraryMangaSchema).optional(),
+            sourceLinks: z.array(sourceLinkRecordSchema).optional(),
+            chapters: z.array(chapterRecordSchema).optional(),
+            progress: z.array(readingProgressSchema).optional(),
+            historyEvents: z.array(historyEventSchema).optional()
+        })
     })
-})
+    .passthrough()
+    .transform(envelope => ({
+        ...envelope,
+        data: {
+            manga: envelope.data.manga ?? [],
+            sourceLinks: envelope.data.sourceLinks ?? [],
+            chapters: envelope.data.chapters ?? [],
+            progress: envelope.data.progress ?? [],
+            historyEvents: envelope.data.historyEvents ?? []
+        }
+    }))
 
 export type ExportEnvelope = z.infer<typeof exportEnvelopeSchema>

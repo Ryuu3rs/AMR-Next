@@ -293,19 +293,19 @@ export async function importDatabase(value: unknown): Promise<{ manga: number; c
     }
     // Validated above; cast bridges Zod's `key?: T | undefined` optionals to the
     // Dexie insert types' `key?: T` under exactOptionalPropertyTypes.
-    const data = result.data.data as {
-        manga: LibraryManga[]
-        sourceLinks: SourceLinkRecord[]
-        chapters: ChapterRecord[]
-        progress: ReadingProgress[]
-        historyEvents: HistoryEvent[]
+    const data = {
+        manga: (result.data.data?.manga as LibraryManga[] | undefined) ?? [],
+        sourceLinks: (result.data.data?.sourceLinks as SourceLinkRecord[] | undefined) ?? [],
+        chapters: (result.data.data?.chapters as ChapterRecord[] | undefined) ?? [],
+        progress: (result.data.data?.progress as ReadingProgress[] | undefined) ?? [],
+        historyEvents: (result.data.data?.historyEvents as HistoryEvent[] | undefined) ?? []
     }
     await db.transaction("rw", [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents], async () => {
-        await db.manga.bulkPut(data.manga)
-        await db.sourceLinks.bulkPut(data.sourceLinks)
-        await db.chapters.bulkPut(data.chapters)
-        await db.progress.bulkPut(data.progress)
-        await db.historyEvents.bulkPut(data.historyEvents)
+        if (data.manga.length > 0) await db.manga.bulkPut(data.manga)
+        if (data.sourceLinks.length > 0) await db.sourceLinks.bulkPut(data.sourceLinks)
+        if (data.chapters.length > 0) await db.chapters.bulkPut(data.chapters)
+        if (data.progress.length > 0) await db.progress.bulkPut(data.progress)
+        if (data.historyEvents.length > 0) await db.historyEvents.bulkPut(data.historyEvents)
     })
     return { manga: data.manga.length, chapters: data.chapters.length }
 }
