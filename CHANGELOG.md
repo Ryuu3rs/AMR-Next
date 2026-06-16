@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.5.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.4.0...v0.5.0) (2026-06-16)
+
+
+### Features
+
+* auto-add/track any opened chapter + cache covers as data URLs ([#54](https://github.com/Ryuu3rs/AMR-Next/issues/54)) ([79d7e19](https://github.com/Ryuu3rs/AMR-Next/commit/79d7e19a91dd03e58d0a6cbdb94c1e4992cccc7f))
+* library list view, grouped history + 6 features ([#55](https://github.com/Ryuu3rs/AMR-Next/issues/55)) ([89492ba](https://github.com/Ryuu3rs/AMR-Next/commit/89492ba1c8700c897b2122337a2f66f79f61c2ff))
+* **library:** NSFW flag with cover blur (F4) ([#38](https://github.com/Ryuu3rs/AMR-Next/issues/38)) ([0d2ab31](https://github.com/Ryuu3rs/AMR-Next/commit/0d2ab317e273217880489e3829d08031273c2c84))
+* manga tags with source suggestions, tag manager, palette + more ([#56](https://github.com/Ryuu3rs/AMR-Next/issues/56)) ([c67ba51](https://github.com/Ryuu3rs/AMR-Next/commit/c67ba5171a642948327bd5304e0ed6377fc149f7))
+* **mobile:** responsive layout for phones + Android docs (G14) ([#43](https://github.com/Ryuu3rs/AMR-Next/issues/43)) ([9671bbb](https://github.com/Ryuu3rs/AMR-Next/commit/9671bbb5411d09099a519996e8982b8a3063c46d))
+* **reader:** keyboard-shortcut help overlay (E2) ([#47](https://github.com/Ryuu3rs/AMR-Next/issues/47)) ([06b5679](https://github.com/Ryuu3rs/AMR-Next/commit/06b5679a86045ba7a1b55fb00b64de9ab69cc9a0))
+* **reader:** offline chapter downloads (A9) ([#44](https://github.com/Ryuu3rs/AMR-Next/issues/44)) ([e14d59a](https://github.com/Ryuu3rs/AMR-Next/commit/e14d59a9b2719f9973466fe7b75facfe4f5cd6f9))
+* **reader:** prev/next chapter navigation + mark-read-and-next (A7, A8) ([#36](https://github.com/Ryuu3rs/AMR-Next/issues/36)) ([a9013ae](https://github.com/Ryuu3rs/AMR-Next/commit/a9013aeb3c31e75ae0bca8f5eb4d92c3584efdb2))
+* **reader:** read-on-site fallback that still tracks progress ([#53](https://github.com/Ryuu3rs/AMR-Next/issues/53)) ([74b3a6b](https://github.com/Ryuu3rs/AMR-Next/commit/74b3a6b43f4d5739f9a38348b9d450fa9b130033))
+* **reader:** remember reading mode per title (A10) ([#41](https://github.com/Ryuu3rs/AMR-Next/issues/41)) ([eba2f25](https://github.com/Ryuu3rs/AMR-Next/commit/eba2f255ae911e199965abd5fe1477719afeecb0))
+* **reader:** zoom + fullscreen + immersive mode (A5, A6) ([#40](https://github.com/Ryuu3rs/AMR-Next/issues/40)) ([7e58430](https://github.com/Ryuu3rs/AMR-Next/commit/7e5843099257c5306df00e53878d6f302737d7b9))
+* **sources:** 5 more probe-green sites as config rows ([#48](https://github.com/Ryuu3rs/AMR-Next/issues/48)) ([744104f](https://github.com/Ryuu3rs/AMR-Next/commit/744104f93941cb646338558ba79a01b8eda3d0a0))
+* **sources:** MangaBuddy adapter (2 sites) + multi-language preference (C3, C6) ([#42](https://github.com/Ryuu3rs/AMR-Next/issues/42)) ([c67711e](https://github.com/Ryuu3rs/AMR-Next/commit/c67711efc6c2833c8669e693a5ecf81eb24e26da))
+* **stats:** data-driven achievements (B7) ([#49](https://github.com/Ryuu3rs/AMR-Next/issues/49)) ([f13285d](https://github.com/Ryuu3rs/AMR-Next/commit/f13285dc3bfbb1f14673671947d097455e3668c8))
+* **ux:** covers, global search, mirror fallback, download resiliency + UI polish ([#50](https://github.com/Ryuu3rs/AMR-Next/issues/50)) ([3bf786d](https://github.com/Ryuu3rs/AMR-Next/commit/3bf786dc0522ffdd97a5feb0189278842604a721))
+
+
+### Bug Fixes
+
+* **popup:** detect all supported sources, drop stale copy ([#39](https://github.com/Ryuu3rs/AMR-Next/issues/39)) ([767ad72](https://github.com/Ryuu3rs/AMR-Next/commit/767ad725504586569aa0ef92c6d379b3b718ed7f))
+* **sources:** reject nav-junk in search + give sample data real covers ([#51](https://github.com/Ryuu3rs/AMR-Next/issues/51)) ([d92d8ae](https://github.com/Ryuu3rs/AMR-Next/commit/d92d8aef0908fc05c518e479fb90e49c0a3e4e21))
+* **ux:** bundle sample covers, move search to Home, source ping dots, drop Cypher Scans ([#52](https://github.com/Ryuu3rs/AMR-Next/issues/52)) ([7f31906](https://github.com/Ryuu3rs/AMR-Next/commit/7f3190687b801cff624968ac94d9ad3448d0d0f6))
+
+
+### Performance Improvements
+
+* **source-sdk:** coalesce concurrent identical GET requests (D3) ([#45](https://github.com/Ryuu3rs/AMR-Next/issues/45)) ([7de331e](https://github.com/Ryuu3rs/AMR-Next/commit/7de331e44cc2a0fbac306cee508099279d50200b))
+
 ## [0.4.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.3.0...v0.4.0) (2026-06-15)
 
 
