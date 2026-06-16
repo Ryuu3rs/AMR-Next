@@ -22,6 +22,7 @@
     let isFullscreen = $state(false)
     let chromeHidden = $state(false)
     let mangaId = $state("")
+    let showHelp = $state(false)
 
     // A9: offline downloads. When a chapter has been downloaded, render the
     // stored Blobs via object URLs instead of the remote page URLs.
@@ -255,6 +256,15 @@
 <svelte:window
     onkeydown={event => {
         if (!chapter) return
+        // E2: keyboard-shortcut help overlay.
+        if (event.key === "?") {
+            showHelp = !showHelp
+            return
+        }
+        if (event.key === "Escape" && showHelp) {
+            showHelp = false
+            return
+        }
         // Chapter navigation works in any mode.
         if (event.key === "[") {
             goToChapter(prevUrl)
@@ -341,6 +351,13 @@
                     {downloading ? "…" : "⬇"}
                 </button>
             {/if}
+            <button
+                type="button"
+                class="btn-sm"
+                class:active={showHelp}
+                title="Keyboard shortcuts (?)"
+                aria-label="Keyboard shortcuts"
+                onclick={() => (showHelp = !showHelp)}>?</button>
         {/if}
         <button
             type="button"
@@ -410,4 +427,53 @@
             <span class="muted">You're on the latest chapter.</span>
         {/if}
     </footer>
+{/if}
+
+{#if showHelp}
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div class="help-backdrop" onclick={() => (showHelp = false)}>
+        <div
+            class="help-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Keyboard shortcuts"
+            tabindex="-1"
+            onclick={event => event.stopPropagation()}>
+            <div class="help-head">
+                <h2>Keyboard shortcuts</h2>
+                <button type="button" class="help-close" aria-label="Close" onclick={() => (showHelp = false)}
+                    >×</button>
+            </div>
+            <div class="help-list">
+                <div class="shortcut-row">
+                    <span class="keys"><kbd>j</kbd> / <kbd>k</kbd></span>
+                    <span class="label">Next / previous page</span>
+                </div>
+                <div class="shortcut-row">
+                    <span class="keys"><kbd>←</kbd> / <kbd>→</kbd></span>
+                    <span class="label">Previous / next page (direction-aware, respects RTL)</span>
+                </div>
+                <div class="shortcut-row">
+                    <span class="keys"><kbd>[</kbd> / <kbd>]</kbd></span>
+                    <span class="label">Previous / next chapter</span>
+                </div>
+                <div class="shortcut-row">
+                    <span class="keys"><kbd>?</kbd></span>
+                    <span class="label">Toggle this help</span>
+                </div>
+                <div class="shortcut-row">
+                    <span class="keys"><kbd>Esc</kbd></span>
+                    <span class="label">Close help</span>
+                </div>
+                <div class="shortcut-row">
+                    <span class="keys">Double-click</span>
+                    <span class="label">Toggle zoom on a page (fit ↔ original)</span>
+                </div>
+            </div>
+            <p class="help-note">
+                Page keys (<kbd>j</kbd>/<kbd>k</kbd>, arrows) apply in single-page mode. Chapter keys work in any mode.
+            </p>
+            <button type="button" class="help-got-it" onclick={() => (showHelp = false)}>Got it</button>
+        </div>
+    </div>
 {/if}
