@@ -33,12 +33,21 @@ export type HistoryEvent = {
     occurredAt: number
 }
 
+export type ChapterDownload = {
+    chapterId: string
+    mangaId: string
+    pageBlobs: Blob[]
+    pageCount: number
+    downloadedAt: number
+}
+
 export class AmrDatabase extends Dexie {
     manga!: EntityTable<LibraryManga, "id">
     sourceLinks!: EntityTable<SourceLinkRecord, "mangaId">
     chapters!: EntityTable<ChapterRecord, "id">
     progress!: EntityTable<ReadingProgress, "chapterId">
     historyEvents!: EntityTable<HistoryEvent, "id">
+    downloads!: EntityTable<ChapterDownload, "chapterId">
 
     constructor() {
         super("all-mangas-reader")
@@ -53,6 +62,14 @@ export class AmrDatabase extends Dexie {
             chapters: "id, mangaId, sourceId, sortKey",
             progress: "chapterId, mangaId, updatedAt, completed",
             historyEvents: "++id, mangaId, chapterId, type, occurredAt"
+        })
+        this.version(3).stores({
+            manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+            sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+            chapters: "id, mangaId, sourceId, sortKey",
+            progress: "chapterId, mangaId, updatedAt, completed",
+            historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+            downloads: "chapterId, mangaId, downloadedAt"
         })
     }
 }
@@ -114,6 +131,34 @@ export async function saveProgress(progress: ReadingProgress): Promise<void> {
             })
         }
     })
+}
+
+export async function saveDownload(d: ChapterDownload): Promise<void> {
+    await db.downloads.put(d)
+}
+
+export async function getDownload(chapterId: string): Promise<ChapterDownload | undefined> {
+    return db.downloads.get(chapterId)
+}
+
+export async function removeDownload(chapterId: string): Promise<void> {
+    await db.downloads.delete(chapterId)
+}
+
+export async function listDownloads(): Promise<
+    Array<{ chapterId: string; mangaId: string; pageCount: number; downloadedAt: number }>
+> {
+    const all = await db.downloads.orderBy("downloadedAt").reverse().toArray()
+    return all.map(({ chapterId, mangaId, pageCount, downloadedAt }) => ({
+        chapterId,
+        mangaId,
+        pageCount,
+        downloadedAt
+    }))
+}
+
+export async function downloadsCount(): Promise<number> {
+    return db.downloads.count()
 }
 
 export async function exportDatabase() {
