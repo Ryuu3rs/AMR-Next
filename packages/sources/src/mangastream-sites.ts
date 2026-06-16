@@ -20,7 +20,11 @@ const SITES: MangaStreamConfig[] = [
         origin: "https://www.phoenixscans.com",
         domains: ["phoenixscans.com", "www.phoenixscans.com"]
     },
-    { id: "spiderscans", name: "Spider Scans", origin: "https://spiderscans.xyz", domains: ["spiderscans.xyz"] }
+    { id: "spiderscans", name: "Spider Scans", origin: "https://spiderscans.xyz", domains: ["spiderscans.xyz"] },
+    // Probe-green by homepage; needs live chapter confirmation (mangaPath/chapterPrefix may need tuning per site).
+    { id: "asuracomic", name: "Asura Comic", origin: "https://asuracomic.net", domains: ["asuracomic.net"] },
+    { id: "flamecomics", name: "Flame Comics", origin: "https://flamecomics.xyz", domains: ["flamecomics.xyz"] },
+    { id: "templescan", name: "Temple Scan", origin: "https://templescan.net", domains: ["templescan.net"] }
 ]
 
 export const mangaStreamAdapters: readonly SourceAdapter[] = SITES.map(createMangaStreamAdapter)
