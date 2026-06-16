@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { ReadingProgress } from "@amr/contracts"
     import type { ResolvedChapter } from "@amr/source-sdk"
-    import { onMount } from "svelte"
+    import { onDestroy, onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
 
     type ReadingDirection = "ltr" | "rtl" | "vertical"
@@ -22,6 +22,69 @@
     let isFullscreen = $state(false)
     let chromeHidden = $state(false)
     let mangaId = $state("")
+
+    // A9: offline downloads. When a chapter has been downloaded, render the
+    // stored Blobs via object URLs instead of the remote page URLs.
+    let offlinePages = $state<string[]>([])
+    let downloaded = $state(false)
+    let downloading = $state(false)
+    let removingDownload = $state(false)
+
+    function revokeOfflinePages() {
+        for (const url of offlinePages) URL.revokeObjectURL(url)
+        offlinePages = []
+    }
+
+    // The page srcs the reader renders: offline blobs when available, else remote.
+    const pageSrcs = $derived.by(() => {
+        if (!chapter) return [] as string[]
+        if (offlinePages.length === chapter.pages.length && offlinePages.length > 0) return offlinePages
+        return chapter.pages.map(p => p.url)
+    })
+
+    async function refreshDownloadState(chapterId: string) {
+        revokeOfflinePages()
+        downloaded = false
+        try {
+            const record = await sendRuntimeMessage<{ pageBlobs: Blob[]; pageCount: number } | null>({
+                type: "chapter:download:get",
+                chapterId
+            })
+            if (record && record.pageBlobs.length > 0) {
+                downloaded = true
+                offlinePages = record.pageBlobs.map(blob => URL.createObjectURL(blob))
+            }
+        } catch {
+            // offline read is best-effort
+        }
+    }
+
+    async function downloadChapter() {
+        if (!chapter || downloading) return
+        downloading = true
+        try {
+            await sendRuntimeMessage({ type: "chapter:download", url: chapter.chapter.url })
+            await refreshDownloadState(chapter.chapter.id)
+        } catch (cause) {
+            error = cause instanceof Error ? cause.message : "The chapter could not be downloaded"
+        } finally {
+            downloading = false
+        }
+    }
+
+    async function removeChapterDownload() {
+        if (!chapter || removingDownload) return
+        removingDownload = true
+        try {
+            await sendRuntimeMessage({ type: "chapter:download:remove", chapterId: chapter.chapter.id })
+            revokeOfflinePages()
+            downloaded = false
+        } catch {
+            // ignore
+        } finally {
+            removingDownload = false
+        }
+    }
 
     // A10: remember the reading mode (scroll/single) per title.
     async function setMode(next: "continuous" | "single") {
@@ -79,9 +142,12 @@
         resolving = true
         error = ""
         chapter = undefined
+        revokeOfflinePages()
+        downloaded = false
         try {
             chapter = await sendRuntimeMessage<ResolvedChapter>({ type: "reader:resolve", url })
             void loadSiblings(chapter)
+            void refreshDownloadState(chapter.chapter.id)
             const progress = await sendRuntimeMessage<ReadingProgress | null>({
                 type: "reader:progress:get",
                 chapterId: chapter.chapter.id
@@ -129,6 +195,8 @@
         chapterUrl = url
         await loadChapter(url)
     })
+
+    onDestroy(() => revokeOfflinePages())
 
     function recordProgress(pageIndex: number) {
         if (!chapter) return
@@ -254,6 +322,25 @@
             <button type="button" class="btn-sm" title="Fullscreen" onclick={() => void toggleFullscreen()}>
                 {isFullscreen ? "⤢" : "⛶"}
             </button>
+            {#if downloaded}
+                <button
+                    type="button"
+                    class="btn-sm active"
+                    disabled={removingDownload}
+                    title="Available offline — click to remove"
+                    onclick={() => void removeChapterDownload()}>
+                    {removingDownload ? "…" : "✓ Offline"}
+                </button>
+            {:else}
+                <button
+                    type="button"
+                    class="btn-sm"
+                    disabled={downloading}
+                    title="Download chapter for offline reading"
+                    onclick={() => void downloadChapter()}>
+                    {downloading ? "…" : "⬇"}
+                </button>
+            {/if}
         {/if}
         <button
             type="button"
@@ -287,7 +374,7 @@
     {:else if effectiveMode === "single"}
         <div class="page">
             <img
-                src={chapter.pages[currentPage]?.url}
+                src={pageSrcs[currentPage]}
                 alt={`Page ${currentPage + 1}`}
                 ondblclick={toggleZoom}
                 onerror={handleImageError}
@@ -295,10 +382,10 @@
             {#if showPageNumber}<span class="page-num">{currentPage + 1} / {chapter.pages.length}</span>{/if}
         </div>
     {:else}
-        {#each chapter.pages as page, index}
+        {#each pageSrcs as src, index}
             <div class="page">
                 <img
-                    src={page.url}
+                    {src}
                     alt={`Page ${index + 1}`}
                     loading={index < preloadPages ? "eager" : "lazy"}
                     ondblclick={toggleZoom}

@@ -4,8 +4,12 @@ import { sourceAdapters } from "@amr/sources"
 import {
     db,
     exportDatabase,
+    getDownload,
     getLocalStats,
     importDatabase,
+    listDownloads,
+    removeDownload,
+    saveDownload,
     saveProgress,
     saveResolvedChapter,
     seedDatabase
@@ -187,13 +191,14 @@ export default defineBackground(() => {
                     case "library:remove":
                         await db.transaction(
                             "rw",
-                            [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents],
+                            [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.downloads],
                             async () => {
                                 await db.manga.delete(request.mangaId)
                                 await db.sourceLinks.delete(request.mangaId)
                                 await db.chapters.where("mangaId").equals(request.mangaId).delete()
                                 await db.progress.where("mangaId").equals(request.mangaId).delete()
                                 await db.historyEvents.where("mangaId").equals(request.mangaId).delete()
+                                await db.downloads.where("mangaId").equals(request.mangaId).delete()
                             }
                         )
                         return success(null)
@@ -458,6 +463,43 @@ export default defineBackground(() => {
                         await saveProgress(progress)
                         return success(progress)
                     }
+                    case "chapter:download": {
+                        const resolved = await resolveChapterUrl(request.url)
+                        const pages = resolved.pages.slice(0, 200)
+                        const pageBlobs: Blob[] = []
+                        for (const p of pages) {
+                            let res: Response
+                            try {
+                                res = await fetch(p.url)
+                            } catch (cause) {
+                                throw new SourceError("request-failed", "Failed to download a page", {
+                                    url: p.url,
+                                    cause: cause instanceof Error ? cause.message : String(cause)
+                                })
+                            }
+                            if (!res.ok) {
+                                throw new SourceError("request-failed", `Failed to download a page (${res.status})`, {
+                                    url: p.url
+                                })
+                            }
+                            pageBlobs.push(await res.blob())
+                        }
+                        await saveDownload({
+                            chapterId: resolved.chapter.id,
+                            mangaId: resolved.manga.manga.id,
+                            pageBlobs,
+                            pageCount: pageBlobs.length,
+                            downloadedAt: Date.now()
+                        })
+                        return success({ chapterId: resolved.chapter.id, pageCount: pageBlobs.length })
+                    }
+                    case "chapter:download:get":
+                        return success((await getDownload(request.chapterId)) ?? null)
+                    case "chapter:download:remove":
+                        await removeDownload(request.chapterId)
+                        return success(null)
+                    case "downloads:list":
+                        return success(await listDownloads())
                     case "settings:get":
                         return success(await getSettings())
                     case "settings:update": {

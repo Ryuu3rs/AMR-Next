@@ -137,6 +137,7 @@
         }>
     }>()
     let dataMessage = $state("")
+    let downloadsCount = $state(0)
     let updateStatus = $state<{
         checked: number
         updated: number
@@ -283,6 +284,12 @@
         await loadSyncStatus()
         try {
             sourcesList = await sendRuntimeMessage<typeof sourcesList>({ type: "sources:list" })
+        } catch {
+            // optional
+        }
+        try {
+            const downloads = await sendRuntimeMessage<Array<{ chapterId: string }>>({ type: "downloads:list" })
+            downloadsCount = downloads.length
         } catch {
             // optional
         }
@@ -1258,6 +1265,16 @@
                         </p>
                     </div>
                     <button type="button" class="btn-outline" onclick={seedData}>Load samples</button>
+                </div>
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Offline downloads</p>
+                        <p class="muted">
+                            Chapters saved for offline reading. Download from the reader's ⬇ button; they're served
+                            automatically when you reopen the chapter.
+                        </p>
+                    </div>
+                    <span class="data-count">{downloadsCount} {downloadsCount === 1 ? "chapter" : "chapters"}</span>
                 </div>
             </div>
             {#if dataMessage}<p class="notice">{dataMessage}</p>{/if}

@@ -66,6 +66,10 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         pageCount: z.number().int().positive(),
         completed: z.boolean()
     }),
+    z.object({ type: z.literal("chapter:download"), url: z.url() }),
+    z.object({ type: z.literal("chapter:download:get"), chapterId: z.string().min(1) }),
+    z.object({ type: z.literal("chapter:download:remove"), chapterId: z.string().min(1) }),
+    z.object({ type: z.literal("downloads:list") }),
     z.object({ type: z.literal("settings:get") }),
     z.object({
         type: z.literal("settings:update"),
