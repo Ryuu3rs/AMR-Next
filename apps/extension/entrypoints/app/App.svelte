@@ -4,6 +4,7 @@
     import { onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
+    import { migrateLegacyImport } from "../../src/legacy-import"
     import ActivityHeatmap from "./ActivityHeatmap.svelte"
 
     type SyncStatus = {
@@ -642,12 +643,19 @@
 
     async function importData(file: File) {
         try {
-            const envelope: unknown = JSON.parse(await file.text())
+            const raw: unknown = JSON.parse(await file.text())
+            const { envelope, migrated, converted, skipped } = migrateLegacyImport(raw)
             const result = await sendRuntimeMessage<{ manga: number; chapters: number }>({
                 type: "data:import",
                 envelope
             })
-            dataMessage = `Imported ${result.manga} manga and ${result.chapters} chapters.`
+            if (migrated) {
+                dataMessage =
+                    `Imported ${converted} manga from old AMR backup.` +
+                    (skipped > 0 ? ` ${skipped} entries skipped (no title or URL).` : "")
+            } else {
+                dataMessage = `Imported ${result.manga} manga and ${result.chapters} chapters.`
+            }
             await load()
         } catch (cause) {
             dataMessage = cause instanceof Error ? cause.message : "The backup could not be imported."
