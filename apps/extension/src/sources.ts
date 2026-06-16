@@ -5,7 +5,7 @@ import {
     type SourceManga,
     type SourceSearchResult
 } from "@amr/source-sdk"
-import { sourceAdapters, madaraOrigins, mangaStreamOrigins } from "@amr/sources"
+import { sourceAdapters, madaraOrigins, mangaStreamOrigins, mangaBuddyOrigins } from "@amr/sources"
 import type { LibraryManga } from "./database"
 import { sourceOrigins } from "./permissions"
 
@@ -21,7 +21,8 @@ function createSourceContext(rateLimit?: { requests: number; intervalMs: number 
             "https://www.mangaread.org",
             "https://www.mgeko.cc",
             ...madaraOrigins.map(o => o.replace(/\/\*$/, "")),
-            ...mangaStreamOrigins.map(o => o.replace(/\/\*$/, ""))
+            ...mangaStreamOrigins.map(o => o.replace(/\/\*$/, "")),
+            ...mangaBuddyOrigins.map(o => o.replace(/\/\*$/, ""))
         ],
         maxRequests: 20,
         maxResponseBytes: 10 * 1024 * 1024,
@@ -81,10 +82,10 @@ export async function searchManga(query: string): Promise<SourceSearchResult[]> 
 
 export type MangaSearchResult = SourceSearchResult
 
-export async function getMangaChapters(mangaId: string) {
+export async function getMangaChapters(mangaId: string, language = "en") {
     const params = new URLSearchParams({
         limit: "100",
-        "translatedLanguage[]": "en",
+        "translatedLanguage[]": language,
         "order[chapter]": "desc"
     })
     const res = await fetch(`https://api.mangadex.org/manga/${mangaId}/feed?${params}`)
@@ -155,7 +156,7 @@ export async function listChaptersBySource(sourceId: string, sourceMangaId: stri
     )
 }
 
-export async function listMangaChapters(manga: LibraryManga, link: SourceLinkRecord) {
+export async function listMangaChapters(manga: LibraryManga, link: SourceLinkRecord, language = "en") {
     const source = sourceAdapters.find(adapter => adapter.manifest.id === link.sourceId)
     if (!source || !link.sourceMangaId) throw new Error("The source link cannot be refreshed")
     const sourceManga: SourceManga = {
@@ -167,7 +168,7 @@ export async function listMangaChapters(manga: LibraryManga, link: SourceLinkRec
     return source.listChapters(
         {
             manga: sourceManga,
-            languages: link.language ? [link.language] : ["en"],
+            languages: link.language ? [link.language] : [language],
             limit: 500
         },
         createSourceContext(source.manifest.requestRateLimit)

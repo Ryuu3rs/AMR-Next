@@ -1,0 +1,14 @@
+import type { SourceAdapter } from "@amr/source-sdk"
+import { createMangaBuddyAdapter, type MangaBuddyConfig } from "./mangabuddy"
+
+// MangaBuddy-family mirrors flagged green (reachable, buddy reader) by the
+// source-probe. Each is a config row over the shared factory. Confirm a live
+// chapter before relying on any of them; mangaPath is tunable per config.
+const SITES: MangaBuddyConfig[] = [
+    { id: "mangapuma", name: "MangaPuma", origin: "https://mangapuma.com", domains: ["mangapuma.com"] },
+    { id: "mangamirror", name: "MangaMirror", origin: "https://mangamirror.com", domains: ["mangamirror.com"] }
+]
+
+export const mangaBuddyAdapters: readonly SourceAdapter[] = SITES.map(createMangaBuddyAdapter)
+
+export const mangaBuddyOrigins: readonly string[] = SITES.flatMap(s => s.domains.map(d => `https://${d}/*`))

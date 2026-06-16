@@ -59,6 +59,7 @@ async function autoPush() {
 }
 
 async function checkUpdates(sourceId?: string) {
+    const settings = await getSettings()
     const all = await db.manga.toArray()
     const manga = sourceId ? all.filter(item => item.sourceId === sourceId) : all
     let checked = 0
@@ -72,7 +73,7 @@ async function checkUpdates(sourceId?: string) {
         const link = await db.sourceLinks.get(item.id)
         if (!link) continue
         try {
-            const chapters = await listMangaChapters(item, link)
+            const chapters = await listMangaChapters(item, link, settings.language)
             const latest = chapters.reduce(
                 (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
                 chapters[0]
@@ -370,8 +371,10 @@ export default defineBackground(() => {
                     }
                     case "manga:search":
                         return success(await searchManga(request.query))
-                    case "manga:chapters":
-                        return success(await getMangaChapters(request.mangaId))
+                    case "manga:chapters": {
+                        const settings = await getSettings()
+                        return success(await getMangaChapters(request.mangaId, settings.language))
+                    }
                     case "source:permission:check":
                         return success(await checkSourcePermission())
                     case "sources:list":

@@ -78,6 +78,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
             preloadPages: z.number().int().min(0).max(10).optional(),
             openChapterIn: z.enum(["reader", "browser"]).optional(),
             theme: z.enum(["dark", "light", "system"]).optional(),
+            language: z.string().min(2).max(8).optional(),
             dailyGoal: z.number().int().min(0).max(50).optional(),
             blurNsfw: z.boolean().optional(),
             updateIntervalHours: z.union([z.literal(0), z.literal(6), z.literal(12), z.literal(24)]).optional()
