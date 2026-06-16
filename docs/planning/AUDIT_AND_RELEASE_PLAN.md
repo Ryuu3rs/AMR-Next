@@ -69,7 +69,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - ✅ B4 (M) Reading history view — timeline of started/completed events (from historyEvents) in a new History tab.
 - ✅ B5 (M) Statistics — completed chapters, saved, active days, current/longest day streak, chapters this week, in the Stats & achievements tab. (Active reading time needs session timing — future.)
 - B6 (M) Goals & streaks (daily/weekly). → 1.3
-- B7 (S) Extensible achievements (data-driven, not 3 hardcoded). → 1.3
+- ✅ B7 (S) Data-driven achievements — getLocalStats computes 10 achievements from a definition list (streaks/days/chapters), with an X/N unlocked summary.
 - B8 (S) Local share cards (export a stats image). → 1.3
 - B9 (M) Sort/group library (recently read, updated, title, unread count). → 1.1
 - B10 (S) Star rating (1–5) per manga; sortable + filterable; stored on the manga record. → 1.2
@@ -111,7 +111,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 ### E. UX polish
 
 - ✅ E1 (S) Theme — dark/light/system selector applied via data-theme on the dashboard; light + system (prefers-color-scheme) palettes over the CSS variables. (Reader theming is a follow-up.)
-- E2 (S) Keyboard shortcut help overlay + remapping. → 1.2
+- ✅ E2 (S) Keyboard-shortcut help overlay (? key / button) listing the reader shortcuts. (Remapping is future.)
 - ✅ E3 (S) First-run onboarding — a welcome card on Home (when source access is not yet granted) with a grant button + quick steps; dismissible and remembered.
 - E4 (S) In-extension "update available" banner via GitHub release check. → 1.0
 - E5 (S) Accessibility pass (focus, aria, contrast). → 1.2

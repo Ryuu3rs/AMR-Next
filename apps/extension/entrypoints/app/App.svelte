@@ -1097,6 +1097,9 @@
                     <div class="goal-bar"><div class="goal-fill" style="width:{pct}%"></div></div>
                 </div>
             {/if}
+            <p class="muted">
+                {stats?.achievements.filter(a => a.unlocked).length ?? 0} / {stats?.achievements.length ?? 0} unlocked
+            </p>
             <div class="achievement-list">
                 {#each stats?.achievements ?? [] as a}
                     <div class="achievement" class:unlocked={a.unlocked}>

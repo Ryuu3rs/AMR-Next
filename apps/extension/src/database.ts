@@ -354,6 +354,79 @@ export async function getLocalStats() {
         e => e.type === "completed" && new Date(e.occurredAt).toISOString().slice(0, 10) === todayKey
     ).length
 
+    const ACHIEVEMENT_DEFS = [
+        {
+            id: "first-chapter",
+            title: "First Chapter",
+            description: "Complete one chapter",
+            metric: completedChapters,
+            target: 1
+        },
+        {
+            id: "getting-started",
+            title: "Getting Started",
+            description: "Save three manga",
+            metric: mangaCount,
+            target: 3
+        },
+        {
+            id: "shelf-starter",
+            title: "Shelf Starter",
+            description: "Add five manga",
+            metric: mangaCount,
+            target: 5
+        },
+        {
+            id: "weekly-reader",
+            title: "Weekly Reader",
+            description: "Complete ten chapters in a week",
+            metric: chaptersThisWeek,
+            target: 10
+        },
+        {
+            id: "consistent",
+            title: "Consistent",
+            description: "Keep a three-day reading streak",
+            metric: currentStreak,
+            target: 3
+        },
+        {
+            id: "bookworm",
+            title: "Bookworm",
+            description: "Complete 25 chapters",
+            metric: completedChapters,
+            target: 25
+        },
+        {
+            id: "dedicated",
+            title: "Dedicated",
+            description: "Reach a seven-day reading streak",
+            metric: longestStreak,
+            target: 7
+        },
+        {
+            id: "explorer",
+            title: "Explorer",
+            description: "Read on ten different days",
+            metric: readingDays,
+            target: 10
+        },
+        {
+            id: "page-turner",
+            title: "Page Turner",
+            description: "Complete 100 chapters",
+            metric: completedChapters,
+            target: 100
+        },
+        {
+            id: "marathon",
+            title: "Marathon",
+            description: "Complete 500 chapters",
+            metric: completedChapters,
+            target: 500
+        }
+    ]
+
     return {
         mangaCount,
         completedChapters,
@@ -362,31 +435,13 @@ export async function getLocalStats() {
         longestStreak,
         chaptersThisWeek,
         chaptersToday,
-        achievements: [
-            {
-                id: "first-chapter",
-                title: "First Chapter",
-                description: "Complete one chapter",
-                unlocked: completedChapters >= 1,
-                progress: Math.min(completedChapters, 1),
-                target: 1
-            },
-            {
-                id: "shelf-starter",
-                title: "Shelf Starter",
-                description: "Add five manga",
-                unlocked: mangaCount >= 5,
-                progress: Math.min(mangaCount, 5),
-                target: 5
-            },
-            {
-                id: "page-turner",
-                title: "Page Turner",
-                description: "Complete 100 chapters",
-                unlocked: completedChapters >= 100,
-                progress: Math.min(completedChapters, 100),
-                target: 100
-            }
-        ]
+        achievements: ACHIEVEMENT_DEFS.map(def => ({
+            id: def.id,
+            title: def.title,
+            description: def.description,
+            target: def.target,
+            progress: Math.min(def.metric, def.target),
+            unlocked: def.metric >= def.target
+        }))
     }
 }
