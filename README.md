@@ -10,29 +10,35 @@ for backup sync.
 **Library & tracking**
 
 - Track titles with read / latest chapter numbers that survive mirror domain changes
-- Star ratings, user categories with filtering, reading-history timeline
+- Star ratings, **tags with one-click source-genre suggestions**, user categories with filtering, reading-history timeline
+- **List and grid views** with **per-page pagination** (10/15/20/50/100 items); filter by status (unread/reading/completed/manual)
+- **Grouped reading history** (by title, expandable to chapters reached)
+- **Command palette (Ctrl/Cmd-K)** to jump to any tab or library title
 - Detail view per title; sort by recently read / added / title / latest chapter
-- Bulk actions (multi-select to categorize, mark manual, or remove)
+- Bulk actions (multi-select to categorize, mark manual, add tags, or remove)
 - Duplicate detection + merge
-- Manual / "Do Not Scan" titles with hand-set chapter counts (for dead or
-  hard-to-scrape sources)
+- Manual / "Do Not Scan" titles with hand-set chapter counts (for dead or hard-to-scrape sources)
 - Automatic + per-source update checks, with failures surfaced in the UI
+- **Reading-time estimate** (total + this week) and **activity heatmap** showing daily chapter completion
 
 **Sources & discovery**
 
-- Multi-source search across every supported site at once, showing each mirror's
-  latest hosted chapter
+- Multi-source search across every supported site at once, showing each mirror's latest hosted chapter
+- **Source health indicator** (green/red/grey dots showing live/unreachable/unchecked)
+- **Search skips recently-confirmed-dead sources** within 24h
 - "Check mirrors" — find which supported sites carry a title, freshest first
 - Re-link a title to a new source/mirror without losing progress
-- Generic, config-driven adapters for the **Madara** and **MangaStream/ts** WordPress
-  theme families (adding a site in either is usually a config row, not new code),
-  plus dedicated MangaDex and Mgeko adapters
-- Automatic cover fetching with graceful fallback
+- Generic, config-driven adapters for the **Madara**, **MangaStream/ts**, and **MangaBuddy** WordPress theme families (adding a site is usually a config row, not new code), plus dedicated MangaDex and Mgeko adapters
+- **Automatic cover fetching cached as data URLs** to bypass referer-blocking on source CDNs
+- **Per-title genre suggestions** extracted from source pages (one-click bulk-add to tags)
 
 **Reader**
 
 - Continuous and single-page modes, LTR / RTL / vertical (webtoon) direction
 - Page-fit modes, page-number overlay, configurable preload
+- **Next/Prev chapter nav** resolved from the source + **mark-read-to-latest**
+- **Graceful fallback:** when a source's images won't load (anti-scrape, spoiler pages, CDN blocks), open the chapter on the source site while still recording progress
+- **Offline downloads** for offline reading
 - Or open chapters directly in the source site in your browser (Ctrl/middle-click)
 
 **Backup & sync**
