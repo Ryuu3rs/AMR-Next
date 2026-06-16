@@ -791,6 +791,8 @@ export async function getLocalStats() {
         downloadedChapters,
         sourcesUsed,
         completedSeries,
+        estimatedMinutes: completedChapters * 5,
+        minutesThisWeek: chaptersThisWeek * 5,
         achievements: ACHIEVEMENT_DEFS.map(def => ({
             id: def.id,
             title: def.title,

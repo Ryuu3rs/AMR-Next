@@ -59,6 +59,30 @@ export async function resolveCoverFor(manga: {
     return source.resolveCover(input, createSourceContext(source.manifest.requestRateLimit))
 }
 
+export async function resolveGenresFor(manga: {
+    sourceId: string
+    sourceMangaId?: string
+    mangaUrl?: string
+}): Promise<string[]> {
+    const source = sourceAdapters.find(adapter => adapter.manifest.id === manga.sourceId)
+    if (!source?.resolveGenres) return []
+    const input: { sourceMangaId?: string; url?: URL } = {}
+    if (manga.sourceMangaId) input.sourceMangaId = manga.sourceMangaId
+    if (manga.mangaUrl) {
+        try {
+            input.url = new URL(manga.mangaUrl)
+        } catch {
+            // ignore malformed stored URL
+        }
+    }
+    if (input.sourceMangaId === undefined && input.url === undefined) return []
+    try {
+        return await source.resolveGenres(input, createSourceContext(source.manifest.requestRateLimit))
+    } catch {
+        return []
+    }
+}
+
 export async function resolveChapterUrl(url: string) {
     const parsedUrl = new URL(url)
     const source = findSource(parsedUrl)

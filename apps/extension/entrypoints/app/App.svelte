@@ -14,7 +14,17 @@
         lastPulledAt?: number
     }
 
-    const sections = ["Home", "Library", "Updates", "History", "Achievements", "Sources", "Data", "Settings"] as const
+    const sections = [
+        "Home",
+        "Library",
+        "Tags",
+        "Updates",
+        "History",
+        "Achievements",
+        "Sources",
+        "Data",
+        "Settings"
+    ] as const
     let activeSection = $state<(typeof sections)[number]>("Home")
     let library = $state<LibraryManga[]>([])
     let settings = $state<AppSettings | undefined>()
@@ -46,12 +56,15 @@
     }
 
     async function bulkAddCategory() {
-        const cat = bulkCategory.trim()
-        if (!cat) return
+        const tags = bulkCategory
+            .split(",")
+            .map(s => s.trim())
+            .filter(Boolean)
+        if (tags.length === 0) return
         for (const id of [...selectedIds]) {
             const m = library.find(x => x.id === id)
             if (!m) continue
-            const categories = [...new Set([...(m.categories ?? []), cat])]
+            const categories = [...new Set([...(m.categories ?? []), ...tags])]
             await sendRuntimeMessage({ type: "library:categories", mangaId: id, categories })
             library = library.map(x => applyCategories(x, id, categories))
         }
@@ -133,6 +146,8 @@
         downloadedChapters?: number
         sourcesUsed?: number
         completedSeries?: number
+        estimatedMinutes?: number
+        minutesThisWeek?: number
         achievements: Array<{
             id: string
             title: string
@@ -477,16 +492,69 @@
         return copy
     }
 
-    async function setCategories(manga: LibraryManga, raw: string) {
-        const categories = raw
-            .split(",")
-            .map(s => s.trim())
-            .filter(Boolean)
-        await sendRuntimeMessage({ type: "library:categories", mangaId: manga.id, categories })
-        const next = categories.length > 0 ? categories : undefined
+    async function commitCategories(manga: LibraryManga, categories: string[]) {
+        const deduped = [...new Set(categories.map(c => c.trim()).filter(Boolean))]
+        await sendRuntimeMessage({ type: "library:categories", mangaId: manga.id, categories: deduped })
+        const next = deduped.length > 0 ? deduped : undefined
         library = library.map(m => applyCategories(m, manga.id, next))
         if (detailManga && detailManga.id === manga.id) detailManga = applyCategories(detailManga, manga.id, next)
     }
+
+    // Tags == categories. Add/remove individual tags and bulk-add comma lists.
+    function tagsOf(manga: LibraryManga): string[] {
+        return manga.categories ?? []
+    }
+    async function addTags(manga: LibraryManga, incoming: string[]) {
+        await commitCategories(manga, [...tagsOf(manga), ...incoming])
+    }
+    async function removeTag(manga: LibraryManga, tag: string) {
+        await commitCategories(
+            manga,
+            tagsOf(manga).filter(t => t !== tag)
+        )
+    }
+
+    let tagDraft = $state("")
+    async function addTagDraft(manga: LibraryManga) {
+        const parts = tagDraft
+            .split(",")
+            .map(s => s.trim())
+            .filter(Boolean)
+        if (parts.length === 0) return
+        await addTags(manga, parts)
+        tagDraft = ""
+    }
+
+    // Suggested tags pulled from the source's genre list (best-effort).
+    let genreSuggestions = $state<string[]>([])
+    let genresLoading = $state(false)
+    let genresForId = $state<string | null>(null)
+    async function loadGenres(manga: LibraryManga) {
+        genresForId = manga.id
+        genresLoading = true
+        genreSuggestions = []
+        try {
+            genreSuggestions = await sendRuntimeMessage<string[]>({ type: "manga:genres", mangaId: manga.id })
+        } catch {
+            genreSuggestions = []
+        } finally {
+            genresLoading = false
+        }
+    }
+    $effect(() => {
+        const id = detailManga?.id
+        if (id && genresForId !== id) {
+            genresForId = id
+            if (detailManga) void loadGenres(detailManga)
+        }
+    })
+    // Genre suggestions not already applied as tags.
+    const suggestedTags = $derived.by(() => {
+        const dm = detailManga
+        if (!dm) return []
+        const existing = tagsOf(dm)
+        return genreSuggestions.filter(g => !existing.includes(g))
+    })
 
     async function rate(manga: LibraryManga, value: number) {
         const next = manga.rating === value ? 0 : value
@@ -670,6 +738,41 @@
         [...new Set(library.flatMap(m => m.categories ?? []))].sort((a, b) => a.localeCompare(b))
     )
 
+    // Tag organisation: counts per tag, plus rename/delete across the whole library.
+    const tagCounts = $derived.by(() => {
+        const counts = new Map<string, number>()
+        for (const m of library) for (const tag of m.categories ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+        return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    })
+    let tagBusy = $state(false)
+    async function renameTag(oldTag: string, rawNew: string) {
+        const newTag = rawNew.trim()
+        if (!newTag || newTag === oldTag) return
+        tagBusy = true
+        try {
+            for (const m of library.filter(x => (x.categories ?? []).includes(oldTag))) {
+                await commitCategories(
+                    m,
+                    (m.categories ?? []).map(t => (t === oldTag ? newTag : t))
+                )
+            }
+        } finally {
+            tagBusy = false
+        }
+    }
+    async function deleteTag(tag: string) {
+        tagBusy = true
+        try {
+            for (const m of library.filter(x => (x.categories ?? []).includes(tag))) await removeTag(m, tag)
+        } finally {
+            tagBusy = false
+        }
+    }
+    function filterByTag(tag: string) {
+        categoryFilter = tag
+        activeSection = "Library"
+    }
+
     type LibraryStatus = "unread" | "reading" | "completed"
     function statusOf(m: LibraryManga): LibraryStatus {
         const read = m.lastReadChapterNumber
@@ -783,12 +886,48 @@
         library = library.map(m => (m.id === manga.id ? { ...m, lastReadChapterNumber: latest } : m))
     }
 
-    const unreadPool = $derived(library.filter(m => !isSeedData(m) && statusOf(m) !== "completed"))
+    const unreadPool = $derived(library.filter(m => statusOf(m) !== "completed"))
     function surpriseMe() {
-        const pool = unreadPool.length > 0 ? unreadPool : library.filter(m => !isSeedData(m))
+        const pool = unreadPool.length > 0 ? unreadPool : library
         if (pool.length === 0) return
         const pick = pool[Math.floor(Math.random() * pool.length)]
         if (pick) read(pick)
+    }
+
+    // Command palette (Ctrl/Cmd-K): jump to a tab or a library title.
+    type PaletteItem =
+        | { kind: "tab"; label: string; section: (typeof sections)[number] }
+        | { kind: "manga"; label: string; manga: LibraryManga }
+    let paletteOpen = $state(false)
+    let paletteQuery = $state("")
+    const paletteResults = $derived.by<PaletteItem[]>(() => {
+        const q = paletteQuery.trim().toLowerCase()
+        const tabs: PaletteItem[] = sections
+            .filter(s => !q || s.toLowerCase().includes(q))
+            .map(s => ({ kind: "tab", label: s, section: s }))
+        if (!q) return tabs
+        const titles: PaletteItem[] = library
+            .filter(m => m.title.toLowerCase().includes(q))
+            .slice(0, 8)
+            .map(m => ({ kind: "manga", label: m.title, manga: m }))
+        return [...tabs, ...titles]
+    })
+    function runPalette(item: PaletteItem) {
+        if (item.kind === "tab") activeSection = item.section
+        else read(item.manga)
+        paletteOpen = false
+    }
+    function onGlobalKey(e: KeyboardEvent) {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+            e.preventDefault()
+            paletteOpen = !paletteOpen
+            paletteQuery = ""
+        } else if (e.key === "Escape" && paletteOpen) {
+            paletteOpen = false
+        }
+    }
+    function autofocus(node: HTMLInputElement) {
+        node.focus()
     }
 
     // Per-manga freeform notes (saved from the detail overlay). Writable derived:
@@ -874,6 +1013,8 @@
         if (activeSection === "Sources" && !pingedOnce && sourcesList.length > 0) void pingSources()
     })
 </script>
+
+<svelte:window onkeydown={onGlobalKey} />
 
 <div class="shell">
     <aside>
@@ -1145,7 +1286,7 @@
                         type="button"
                         class="btn-sm"
                         title="Open a random unread title"
-                        disabled={library.filter(m => !isSeedData(m)).length === 0}
+                        disabled={library.length === 0}
                         onclick={surpriseMe}>🎲 Surprise me</button>
                     <div class="view-toggle">
                         <button
@@ -1210,12 +1351,12 @@
             {#if selectMode}
                 <div class="bulk-bar">
                     <span>{selectedIds.size} selected</span>
-                    <input bind:value={bulkCategory} placeholder="Category…" aria-label="Bulk category" />
+                    <input bind:value={bulkCategory} placeholder="Tags (comma-separated)…" aria-label="Bulk tags" />
                     <button
                         type="button"
                         class="btn-sm"
                         disabled={selectedIds.size === 0 || !bulkCategory.trim()}
-                        onclick={() => void bulkAddCategory()}>Add category</button>
+                        onclick={() => void bulkAddCategory()}>Add tags</button>
                     <button
                         type="button"
                         class="btn-sm"
@@ -1420,6 +1561,39 @@
                     </button>
                 </div>
             {/if}
+        {:else if activeSection === "Tags"}
+            <h1>Tags</h1>
+            <p class="muted search-hint">
+                Organise your library with tags. Add tags per title from the ⋯ details panel (with one-click suggestions
+                pulled from the source). Rename or delete a tag here to update every title at once.
+            </p>
+            {#if tagCounts.length === 0}
+                <p class="muted">No tags yet. Open a title's details to add some.</p>
+            {:else}
+                <div class="tag-table">
+                    {#each tagCounts as [tag, count] (tag)}
+                        <div class="tag-row">
+                            <button
+                                type="button"
+                                class="tag-name"
+                                onclick={() => filterByTag(tag)}
+                                title="Filter library">{tag}</button>
+                            <span class="tag-count muted">{count} title{count === 1 ? "" : "s"}</span>
+                            <input
+                                class="tag-rename"
+                                value={tag}
+                                disabled={tagBusy}
+                                aria-label={`Rename ${tag}`}
+                                onchange={e => void renameTag(tag, e.currentTarget.value)} />
+                            <button
+                                type="button"
+                                class="btn-sm confirm-remove-btn"
+                                disabled={tagBusy}
+                                onclick={() => void deleteTag(tag)}>Delete</button>
+                        </div>
+                    {/each}
+                </div>
+            {/if}
         {:else if activeSection === "Updates"}
             <div class="page-head">
                 <h1>Updates</h1>
@@ -1565,6 +1739,19 @@
                 <div class="stat-box"><strong>{stats?.sourcesUsed ?? 0}</strong><span>Sources</span></div>
                 <div class="stat-box"><strong>{stats?.downloadedChapters ?? 0}</strong><span>Offline</span></div>
                 <div class="stat-box"><strong>{stats?.ratedCount ?? 0}</strong><span>Rated</span></div>
+            </div>
+            <div class="stat-row">
+                <div class="stat-box">
+                    <strong>
+                        {#if (stats?.estimatedMinutes ?? 0) >= 60}
+                            {Math.round((stats?.estimatedMinutes ?? 0) / 60)}h
+                        {:else}
+                            {stats?.estimatedMinutes ?? 0}m
+                        {/if}
+                    </strong>
+                    <span>Time read</span>
+                </div>
+                <div class="stat-box"><strong>{stats?.minutesThisWeek ?? 0}m</strong><span>This week</span></div>
             </div>
             {#if settings && settings.dailyGoal > 0}
                 {@const today = stats?.chaptersToday ?? 0}
@@ -2019,14 +2206,70 @@
                             }}>★</button>
                     {/each}
                 </div>
-                <label class="detail-categories">
-                    <span class="muted">Categories (comma-separated)</span>
-                    <input
-                        type="text"
-                        placeholder="e.g. action, favorites"
-                        value={(detailManga.categories ?? []).join(", ")}
-                        onchange={e => detailManga && void setCategories(detailManga, e.currentTarget.value)} />
-                </label>
+                <div class="detail-categories">
+                    <span class="muted">Tags</span>
+                    {#if (detailManga.categories ?? []).length > 0}
+                        <div class="tag-chips">
+                            {#each detailManga.categories ?? [] as tag}
+                                <span class="tag-chip">
+                                    {tag}
+                                    <button
+                                        type="button"
+                                        class="tag-x"
+                                        aria-label={`Remove ${tag}`}
+                                        onclick={() => detailManga && void removeTag(detailManga, tag)}>×</button>
+                                </span>
+                            {/each}
+                        </div>
+                    {:else}
+                        <p class="muted" style="font-size:12px">No tags yet.</p>
+                    {/if}
+
+                    <div class="tag-add">
+                        <input
+                            type="text"
+                            placeholder="Add tags (comma-separated)…"
+                            bind:value={tagDraft}
+                            onkeydown={e => {
+                                if (e.key === "Enter") {
+                                    e.preventDefault()
+                                    if (detailManga) void addTagDraft(detailManga)
+                                }
+                            }} />
+                        <button
+                            type="button"
+                            class="btn-sm"
+                            disabled={!tagDraft.trim()}
+                            onclick={() => detailManga && void addTagDraft(detailManga)}>Add</button>
+                    </div>
+
+                    <div class="tag-suggested">
+                        <span class="muted suggested-label">
+                            {#if genresLoading}
+                                Loading suggested tags…
+                            {:else if suggestedTags.length > 0}
+                                Suggested from source — click to add:
+                            {:else}
+                                Sorry, we couldn't find recommended tags for this title.
+                            {/if}
+                        </span>
+                        {#if suggestedTags.length > 0}
+                            <div class="tag-chips">
+                                {#each suggestedTags as g}
+                                    <button
+                                        type="button"
+                                        class="tag-chip add"
+                                        onclick={() => detailManga && void addTags(detailManga, [g])}>+ {g}</button>
+                                {/each}
+                                <button
+                                    type="button"
+                                    class="btn-sm"
+                                    onclick={() => detailManga && void addTags(detailManga, suggestedTags)}
+                                    >Add all</button>
+                            </div>
+                        {/if}
+                    </div>
+                </div>
                 <label class="menu-toggle">
                     <input
                         type="checkbox"
@@ -2108,6 +2351,46 @@
                     <button type="button" class="btn-outline" onclick={() => (detailManga = null)}>Close</button>
                 </div>
             </div>
+        </div>
+    </div>
+{/if}
+
+{#if paletteOpen}
+    <div
+        class="palette-overlay"
+        role="button"
+        tabindex="0"
+        onclick={() => (paletteOpen = false)}
+        onkeydown={e => {
+            if (e.key === "Escape") paletteOpen = false
+        }}>
+        <div
+            class="palette"
+            role="dialog"
+            aria-label="Command palette"
+            tabindex="-1"
+            onclick={e => e.stopPropagation()}
+            onkeydown={() => {}}>
+            <input
+                use:autofocus
+                class="palette-input"
+                placeholder="Jump to a tab or title…"
+                bind:value={paletteQuery}
+                onkeydown={e => {
+                    if (e.key === "Enter" && paletteResults[0]) runPalette(paletteResults[0])
+                }} />
+            <div class="palette-list">
+                {#each paletteResults.slice(0, 12) as item}
+                    <button type="button" class="palette-item" onclick={() => runPalette(item)}>
+                        <span class="palette-kind">{item.kind === "tab" ? "Tab" : "Title"}</span>
+                        <span class="palette-label">{item.label}</span>
+                    </button>
+                {/each}
+                {#if paletteResults.length === 0}
+                    <p class="muted" style="padding:10px 12px">No matches.</p>
+                {/if}
+            </div>
+            <p class="muted palette-hint">Ctrl/⌘-K to toggle · Enter opens the first result · Esc closes</p>
         </div>
     </div>
 {/if}

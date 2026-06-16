@@ -96,6 +96,30 @@ function extractCoverUrl(html: string): string | undefined {
     return undefined
 }
 
+function extractGenres(html: string): string[] {
+    const blockMatch = html.match(/<[^>]*\bclass=["'][^"']*\bgenres\b[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|ul|p)>/i)
+    const scope = blockMatch ? (captureGroup(blockMatch, 1) ?? "") : html
+    const anchors = [...scope.matchAll(/<a\b[^>]*\bhref="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi)]
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const a of anchors) {
+        const href = captureGroup(a, 1) ?? ""
+        if (!blockMatch && !/\/genre/i.test(href)) continue
+        const text = (captureGroup(a, 2) ?? "")
+            .replace(/<[^>]+>/g, "")
+            .replace(/&amp;/g, "&")
+            .replace(/&#0*39;|&apos;/g, "'")
+            .replace(/&nbsp;/g, " ")
+            .trim()
+        const key = text.toLowerCase()
+        if (text.length < 2 || seen.has(key)) continue
+        seen.add(key)
+        out.push(text)
+        if (out.length >= 15) break
+    }
+    return out
+}
+
 function extractImages(html: string): string[] {
     // Strategy 1: JS array variables (chapImages, chapterImages, imageList, images, pages)
     const jsArrayUrls = extractJsArrayVar(
@@ -224,6 +248,19 @@ export const mgekoAdapter: SourceAdapter = {
             return extractCoverUrl(html)
         } catch {
             return undefined
+        }
+    },
+
+    async resolveGenres(input: { sourceMangaId?: string; url?: URL }, context: SourceContext): Promise<string[]> {
+        const slug = input.sourceMangaId ?? (input.url ? extractMangaSlug(input.url) : undefined)
+        if (!slug) return []
+        try {
+            const html = await context.request.getText(new URL(`${ORIGIN}/comic/${slug}/`), {
+                headers: BROWSER_HEADERS
+            })
+            return extractGenres(html)
+        } catch {
+            return []
         }
     },
 

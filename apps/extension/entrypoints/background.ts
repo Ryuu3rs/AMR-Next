@@ -26,6 +26,7 @@ import {
     listMangaChapters,
     resolveChapterUrl,
     resolveCoverFor,
+    resolveGenresFor,
     searchManga,
     getMangaChapters,
     checkSourcePermission
@@ -520,6 +521,17 @@ export default defineBackground(() => {
                     case "manga:chapters": {
                         const settings = await getSettings()
                         return success(await getMangaChapters(request.mangaId, settings.language))
+                    }
+                    case "manga:genres": {
+                        const manga = await db.manga.get(request.mangaId)
+                        if (!manga) return success([] as string[])
+                        return success(
+                            await resolveGenresFor({
+                                sourceId: manga.sourceId,
+                                ...(manga.sourceMangaId ? { sourceMangaId: manga.sourceMangaId } : {}),
+                                mangaUrl: manga.mangaUrl ?? manga.sourceUrl
+                            })
+                        )
                     }
                     case "source:permission:check":
                         return success(await checkSourcePermission())

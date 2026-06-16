@@ -100,6 +100,9 @@ export interface SourceAdapter {
     // and/or manga page URL. Used to backfill covers for library entries that were
     // added by reading a chapter (which may not carry a reliable cover).
     resolveCover?(input: { sourceMangaId?: string; url?: URL }, context: SourceContext): Promise<string | undefined>
+    // Optional: fetch a title's genre/tag names so the app can suggest tags. Best
+    // effort — adapters return [] rather than throwing when genres aren't available.
+    resolveGenres?(input: { sourceMangaId?: string; url?: URL }, context: SourceContext): Promise<string[]>
     // Optional: search this source for a title. Adapters that can't search omit it.
     search?(query: string, context: SourceContext): Promise<SourceSearchResult[]>
 }

@@ -148,6 +148,25 @@ function extractCoverUrl(html: string): string | undefined {
     return undefined
 }
 
+function extractGenres(html: string): string[] {
+    const mgenMatch = html.match(/<span[^>]*\bclass=["'][^"']*\bmgen\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)
+    const scope = mgenMatch ? (captureGroup(mgenMatch, 1) ?? "") : html
+    const anchors = [...scope.matchAll(/<a\b[^>]*\bhref="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi)]
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const a of anchors) {
+        const href = captureGroup(a, 1) ?? ""
+        if (!mgenMatch && !/\/genres?\//i.test(href)) continue
+        const text = decodeEntities((captureGroup(a, 2) ?? "").replace(/<[^>]+>/g, "")).trim()
+        const key = text.toLowerCase()
+        if (text.length < 2 || seen.has(key)) continue
+        seen.add(key)
+        out.push(text)
+        if (out.length >= 15) break
+    }
+    return out
+}
+
 function extractTitle(html: string, fallbackSlug: string): string {
     const titleMatch = html.match(/<title>([^<]+)<\/title>/)
     const titleText = titleMatch ? captureGroup(titleMatch, 1) : undefined
@@ -317,6 +336,19 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
                 return extractCoverUrl(html)
             } catch {
                 return undefined
+            }
+        },
+
+        async resolveGenres(input: { sourceMangaId?: string; url?: URL }, context: SourceContext): Promise<string[]> {
+            const slug = input.sourceMangaId ?? (input.url ? mangaSlug(input.url) : undefined)
+            if (!slug) return []
+            try {
+                const html = await context.request.getText(new URL(`${config.origin}/${mangaPath}/${slug}/`), {
+                    headers: browserHeaders
+                })
+                return extractGenres(html)
+            } catch {
+                return []
             }
         },
 

@@ -37,7 +37,14 @@ const mangaSchema = z.object({
         status: z.enum(["ongoing", "completed", "hiatus", "cancelled"]).optional(),
         lastChapter: z.string().nullish(),
         createdAt: z.string(),
-        updatedAt: z.string()
+        updatedAt: z.string(),
+        tags: z
+            .array(
+                z.object({
+                    attributes: z.object({ name: localizedStringsSchema }).optional()
+                })
+            )
+            .optional()
     }),
     relationships: z.array(relationshipSchema).optional()
 })
@@ -252,6 +259,23 @@ export const mangadexAdapter: SourceAdapter = {
         if (!id) return undefined
         const manga = await fetchManga(id, context)
         return manga.manga.coverUrl
+    },
+
+    async resolveGenres(input: { sourceMangaId?: string; url?: URL }, context: SourceContext): Promise<string[]> {
+        try {
+            const id = input.sourceMangaId ?? (input.url ? extractId(input.url, "title") : undefined)
+            if (!id) return []
+            const url = new URL(`/manga/${id}`, API_ORIGIN)
+            url.searchParams.append("includes[]", "cover_art")
+            const response = await context.request.getJson(url, mangaResponseSchema)
+            const names = (response.data.attributes.tags ?? [])
+                .map(tag => (tag.attributes ? pickLocalized(tag.attributes.name) : ""))
+                .map(name => name.trim())
+                .filter(Boolean)
+            return [...new Set(names)].slice(0, 15)
+        } catch {
+            return []
+        }
     },
 
     async search(query: string, context: SourceContext): Promise<SourceSearchResult[]> {
