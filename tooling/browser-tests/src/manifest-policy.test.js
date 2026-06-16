@@ -20,6 +20,8 @@ const allowedOptionalHosts = [
     "https://freakscans.com/*",
     "https://kappabeast.com/*",
     "https://mangadex.org/*",
+    "https://mangamirror.com/*",
+    "https://mangapuma.com/*",
     "https://manhuaplus.org/*",
     "https://novelmic.com/*",
     "https://phoenixscans.com/*",

@@ -84,7 +84,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - ✅ C3 (L) Generic template adapters — Madara family (8 sites) AND MangaStream/ts family (6 sites: drakecomic, cypher, thunderscans, kappabeast, phoenix, spider) each via one config-driven factory.
 - C4 (M) Self-hosted sources: Komga / Suwayomi(Tachidesk) with credentials. → 2.0
 - C5 (M) Add-by-URL flow for any supported domain. → 1.1
-- C6 (L) Multi-language chapter selection per manga. → 1.3
+- ✅ C6 (L) Multi-language — a chapter-language preference (16 MangaDex codes) flows into chapter listing + update checks; per-link language still wins.
 - C7 (M) New sources: Weeb Central, Dynasty Scans (roadmap Stage 3). → 1.2-2.0
 
 ### D. Reliability & platform
@@ -133,7 +133,7 @@ These are weighted toward the owner's stated priorities: accurate list/updates o
 - G11 (S) Open chapter in new tab / Ctrl+click / context-menu, in the user's default browser. (community #23) → 0.4
 - G12 (S) Sort by recently added / recently read (local), distinct from source "recently updated". (community #20/#22) → 0.4
 - G13 (S) Bulk-remove broken/disabled-mirror titles to keep large lists fast. (community #109/#110) → 1.2
-- G14 (L) **Android** — package/verify on Firefox-for-Android (extensions supported) so the list + sync + open-in-browser work on phone. (owner bonus) → 2.0
+- 🚧 G14 (L) **Android** — responsive layout pass for phone viewports + Android install docs (docs/ANDROID.md). Runs on Firefox-Android via the same firefox-mv3 build. Needs on-device verification. (owner bonus)
 - G15 (S) Asura/Void-style "unreliable domain" warning banner (dismissible) on known domain-hoppers. (community #25) → 1.x
 - ✅ G16 (M) **Cover system** — covers were unreliable because entries added by _reading_ a chapter didn't always carry one. Added an optional `resolveCover(sourceMangaId/url)` on the adapter contract (MangaDex via cover API; Madara/mgeko via the manga page's og:image), a bounded background backfill for library entries missing a cover (auto-runs on load when permission is granted, plus a "Refresh covers" button), and graceful `onerror` fallback to the title initial so a failed cover never shows blank. Future: store a `PageRecord`-style cover cache + periodic refresh.
 - ✅ G17 (M) **Check mirrors** — from a title's detail, search every supported source and list which mirrors carry it, sorted by latest hosted chapter (freshest first), each openable. Builds on C1/G7; groundwork for automatic mirror comparison (G8).

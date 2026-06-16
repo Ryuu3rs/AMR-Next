@@ -12,6 +12,7 @@ export type AppSettings = {
     preloadPages: number
     openChapterIn: OpenChapterIn
     theme: "dark" | "light" | "system"
+    language: string
     dailyGoal: number
     blurNsfw: boolean
     updateIntervalHours: 0 | 6 | 12 | 24
@@ -28,6 +29,7 @@ export const defaultSettings: AppSettings = {
     preloadPages: 3,
     openChapterIn: "reader",
     theme: "dark",
+    language: "en",
     dailyGoal: 0,
     blurNsfw: true,
     updateIntervalHours: 12

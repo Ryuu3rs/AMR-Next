@@ -1,4 +1,4 @@
-import { madaraOrigins, mangaStreamOrigins } from "@amr/sources"
+import { madaraOrigins, mangaStreamOrigins, mangaBuddyOrigins } from "@amr/sources"
 
 // Single source of truth for source host origins. Consumed by the manifest
 // (wxt.config.ts), the background permission helpers, and every UI grant prompt.
@@ -14,7 +14,12 @@ const BASE_SOURCE_ORIGINS = [
     "*://*.imgsrv4.com/*"
 ] as const
 
-export const SOURCE_ORIGINS: readonly string[] = [...BASE_SOURCE_ORIGINS, ...madaraOrigins, ...mangaStreamOrigins]
+export const SOURCE_ORIGINS: readonly string[] = [
+    ...BASE_SOURCE_ORIGINS,
+    ...madaraOrigins,
+    ...mangaStreamOrigins,
+    ...mangaBuddyOrigins
+]
 
 // GitHub API origin for Gist sync (G5). Separate from source origins — requested
 // only when the user enables sync.

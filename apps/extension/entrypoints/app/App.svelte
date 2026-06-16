@@ -1454,6 +1454,33 @@
                 </div>
                 <div class="settings-row">
                     <div>
+                        <p class="row-label">Chapter language</p>
+                        <p class="muted">Preferred translation language for MangaDex chapter listings.</p>
+                    </div>
+                    <select
+                        aria-label="Chapter language"
+                        value={settings?.language ?? "en"}
+                        onchange={e => void updateSetting({ language: e.currentTarget.value })}>
+                        <option value="en">English</option>
+                        <option value="es">Spanish</option>
+                        <option value="es-la">Spanish (Latin America)</option>
+                        <option value="fr">French</option>
+                        <option value="pt-br">Portuguese (Brazil)</option>
+                        <option value="de">German</option>
+                        <option value="ru">Russian</option>
+                        <option value="id">Indonesian</option>
+                        <option value="it">Italian</option>
+                        <option value="pl">Polish</option>
+                        <option value="ja">Japanese</option>
+                        <option value="ko">Korean</option>
+                        <option value="zh">Chinese</option>
+                        <option value="zh-hk">Chinese (Hong Kong)</option>
+                        <option value="ar">Arabic</option>
+                        <option value="vi">Vietnamese</option>
+                    </select>
+                </div>
+                <div class="settings-row">
+                    <div>
                         <p class="row-label">Daily reading goal</p>
                         <p class="muted">Chapters per day to aim for (0 disables). Shown on the Stats tab.</p>
                     </div>
