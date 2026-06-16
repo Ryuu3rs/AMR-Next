@@ -1530,3 +1530,145 @@ button:disabled {
         grid-template-columns: 1fr;
     }
 }
+
+/* G14: phone viewports — stack the shell, shrink the grid, let controls wrap. */
+@media (max-width: 600px) {
+    .shell {
+        display: flex;
+        flex-direction: column;
+        grid-template-columns: none;
+    }
+
+    aside {
+        position: static;
+        top: auto;
+        height: auto;
+        width: 100%;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+        overflow-x: auto;
+    }
+
+    .brand {
+        padding: 0 8px 0 4px;
+        flex-shrink: 0;
+    }
+
+    nav {
+        flex-direction: row;
+        flex: 1;
+        gap: 4px;
+        overflow-x: auto;
+    }
+
+    nav button {
+        flex-shrink: 0;
+        height: 34px;
+        padding: 0 10px;
+    }
+
+    .sidebar-footer {
+        margin-top: 0;
+        margin-left: auto;
+        padding-top: 0;
+        flex-shrink: 0;
+    }
+
+    .kofi-btn {
+        width: auto;
+        padding: 0 12px;
+        min-height: 32px;
+    }
+
+    main {
+        padding: 20px 14px;
+        max-width: 100%;
+    }
+
+    h1 {
+        margin-bottom: 20px;
+    }
+
+    .poster-grid {
+        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        gap: 12px;
+    }
+
+    .home-feature {
+        grid-template-columns: 1fr;
+        padding: 18px;
+        gap: 14px;
+    }
+
+    .home-feature-cover {
+        width: 90px;
+    }
+
+    .page-head {
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .page-head input {
+        width: 100%;
+    }
+
+    .library-controls {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .library-controls select,
+    .library-controls input {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .stat-row {
+        grid-template-columns: 1fr;
+    }
+
+    .stat-box {
+        padding: 16px;
+    }
+
+    .bulk-bar {
+        flex-wrap: wrap;
+    }
+
+    .bulk-bar input {
+        width: 100%;
+    }
+
+    .source-row,
+    .settings-row,
+    .data-row {
+        flex-wrap: wrap;
+        gap: 12px;
+        padding: 16px 18px;
+    }
+
+    .detail-overlay {
+        padding: 12px;
+        align-items: flex-start;
+    }
+
+    .detail-card {
+        flex-direction: column;
+        gap: 14px;
+        padding: 16px;
+        max-height: 92vh;
+        overflow-y: auto;
+    }
+
+    .detail-cover {
+        flex: 0 0 auto;
+        width: 120px;
+        align-self: center;
+    }
+}

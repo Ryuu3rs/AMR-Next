@@ -93,6 +93,20 @@ npm run check        # format, typecheck, build (both), then tests
 After loading, open the extension and grant source access so it can fetch from the
 manga sites you use.
 
+### Android (Firefox)
+
+Firefox for Android supports extensions, and the same `firefox-mv3` build runs there
+unchanged. The cleanest path is installing the **AMO-signed `.xpi`** once published:
+open the AMO listing (or a Firefox Add-on Collection containing it) in Firefox for
+Android and tap **Add to Firefox**. After install, open the dashboard and grant source
+access so it can fetch from the manga sites you read.
+
+For an unsigned local build you must use remote debugging: enable USB debugging on the
+phone, connect it to a desktop, and use `about:debugging` → **This Firefox** → **Load
+Temporary Add-on** targeting the connected device. Temporary add-ons are cleared when
+Firefox restarts, so the signed XPI is the only persistent option. See
+[docs/ANDROID.md](docs/ANDROID.md) for install options, limitations, and a test checklist.
+
 ## Source triage
 
 `tooling/source-probe/` probes candidate mirror sites for reachability, anti-scrape

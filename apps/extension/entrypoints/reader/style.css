@@ -236,3 +236,68 @@ header.chrome-hidden {
     padding: 0 20px;
     min-height: 40px;
 }
+
+/* G14: phone viewports — wrap the header chrome, fit pages to width, shrink paddings. */
+@media (max-width: 600px) {
+    header {
+        grid-template-columns: auto 1fr;
+        gap: 8px;
+        padding: 6px 10px;
+        min-height: auto;
+    }
+
+    .header-left {
+        grid-row: 1;
+    }
+
+    .header-title {
+        grid-row: 1;
+    }
+
+    .header-right {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding-bottom: 4px;
+    }
+
+    .btn-back {
+        padding: 0 6px;
+        font-size: 12px;
+    }
+
+    .btn-sm {
+        min-height: 32px;
+        padding: 0 8px;
+    }
+
+    .progress-bar {
+        top: auto;
+    }
+
+    main {
+        padding: 4px;
+        gap: 4px;
+    }
+
+    .page img,
+    main.fit-width .page img,
+    main.fit-height .page img,
+    main.fit-contain .page img {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+    }
+
+    .chapter-nav {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 20px 12px 40px;
+    }
+
+    .chapter-nav button,
+    .chapter-nav .nav-primary {
+        flex: 1 1 auto;
+    }
+}
