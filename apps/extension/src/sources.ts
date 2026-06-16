@@ -5,9 +5,9 @@ import {
     type SourceManga,
     type SourceSearchResult
 } from "@amr/source-sdk"
-import { sourceAdapters, madaraOrigins, mangaStreamOrigins, mangaBuddyOrigins } from "@amr/sources"
+import { sourceAdapters } from "@amr/sources"
 import type { LibraryManga } from "./database"
-import { sourceOrigins } from "./permissions"
+import { SOURCE_ORIGINS, sourceOrigins } from "./permissions"
 
 export function findSource(url: URL) {
     return sourceAdapters.find(adapter => adapter.match(url) !== "none")
@@ -16,14 +16,7 @@ export function findSource(url: URL) {
 function createSourceContext(rateLimit?: { requests: number; intervalMs: number }): SourceContext {
     const request = createBoundedRequestClient({
         fetch: (requestUrl, init) => fetch(requestUrl, init),
-        allowedOrigins: [
-            "https://api.mangadex.org",
-            "https://www.mangaread.org",
-            "https://www.mgeko.cc",
-            ...madaraOrigins.map(o => o.replace(/\/\*$/, "")),
-            ...mangaStreamOrigins.map(o => o.replace(/\/\*$/, "")),
-            ...mangaBuddyOrigins.map(o => o.replace(/\/\*$/, ""))
-        ],
+        allowedOrigins: SOURCE_ORIGINS.map(o => o.replace(/\/\*$/, "")),
         maxRequests: 20,
         maxResponseBytes: 10 * 1024 * 1024,
         timeoutMs: 20_000,
