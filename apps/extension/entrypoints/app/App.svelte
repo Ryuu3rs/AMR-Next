@@ -664,7 +664,9 @@
         return read[0] ?? library[0]
     })
     const recentlyAdded = $derived([...library].sort((a, b) => b.addedAt - a.addedAt).slice(0, 12))
-    const missingCoverCount = $derived(library.filter(m => !m.coverUrl && !isSeedData(m)).length)
+    const missingCoverCount = $derived(
+        library.filter(m => !isSeedData(m) && (!m.coverUrl || failedCovers.has(m.id))).length
+    )
 
     // Cap how many posters render so very large libraries don't choke the grid.
     const PAGE_SIZE_LIBRARY = 60

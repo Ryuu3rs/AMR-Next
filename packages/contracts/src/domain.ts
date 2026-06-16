@@ -6,6 +6,21 @@ const httpUrlSchema = z
     .url()
     .refine(value => value.startsWith("http://") || value.startsWith("https://"), "Expected an HTTP(S) URL")
 
+// Covers may be a remote HTTP(S) URL or an inlined data: image (cached locally to
+// dodge hotlink/referer blocks that break <img> loads from the extension origin).
+const coverUrlSchema = z
+    .string()
+    .trim()
+    .min(1)
+    .refine(
+        value =>
+            value.startsWith("http://") ||
+            value.startsWith("https://") ||
+            value.startsWith("data:image/") ||
+            value.startsWith("/"),
+        "Expected an HTTP(S), data:, or bundled image URL"
+    )
+
 export const mangaIdSchema = idSchema
 export type MangaId = z.infer<typeof mangaIdSchema>
 
@@ -20,7 +35,7 @@ export const mangaRecordSchema = z
         id: mangaIdSchema,
         title: z.string().trim().min(1),
         normalizedTitle: z.string().trim().min(1),
-        coverUrl: httpUrlSchema.optional(),
+        coverUrl: coverUrlSchema.optional(),
         description: z.string().optional(),
         rating: z.number().int().min(1).max(5).optional(),
         authors: z.array(z.string().trim().min(1)).default([]),

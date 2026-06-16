@@ -177,9 +177,23 @@ async function captureChapter(url: string) {
         return { supported: true as const, added: false as const }
     }
 
-    const resolved = await resolveChapterUrl(url)
+    let resolved
+    try {
+        resolved = await resolveChapterUrl(url)
+    } catch (error) {
+        // The source's images can't be scraped (anti-scrape / spoiler / dead CDN).
+        // Still add the title and track it by URL so the library follows progress
+        // even when the chapter only reads on the source site.
+        const tracked = await trackExternalChapter({ url, sourceId: source.manifest.id, completed: false })
+        console.debug("[AMR] Captured chapter without scraping", { url, error })
+        await flashAddedBadge()
+        return { supported: true as const, added: true as const, external: true as const, title: tracked.title }
+    }
+
+    const rawCover = resolved.manga.manga.coverUrl
+    const inlinedCover = rawCover ? ((await inlineCover(rawCover)) ?? rawCover) : undefined
     await saveResolvedChapter({
-        manga: resolved.manga.manga,
+        manga: { ...resolved.manga.manga, ...(inlinedCover ? { coverUrl: inlinedCover } : {}) },
         chapter: resolved.chapter,
         sourceLink: {
             mangaId: resolved.manga.manga.id,
@@ -192,11 +206,35 @@ async function captureChapter(url: string) {
         }
     })
 
+    await flashAddedBadge()
+    return { supported: true as const, added: true as const, manga: resolved.manga.manga }
+}
+
+async function flashAddedBadge() {
     await browser.action.setBadgeBackgroundColor({ color: "#2d8a61" })
     await browser.action.setBadgeText({ text: "ADD" })
     setTimeout(() => void browser.action.setBadgeText({ text: "" }), 4000)
+}
 
-    return { supported: true as const, added: true as const, manga: resolved.manga.manga }
+const MAX_COVER_BYTES = 2 * 1024 * 1024
+
+// Fetch a remote cover and inline it as a data: URL so it renders from the
+// extension origin without tripping the source CDN's hotlink/referer checks.
+// Returns undefined on any failure so callers can keep the original URL.
+async function inlineCover(url: string): Promise<string | undefined> {
+    if (url.startsWith("data:")) return url
+    try {
+        const res = await fetch(url)
+        if (!res.ok) return undefined
+        const blob = await res.blob()
+        if (blob.size === 0 || blob.size > MAX_COVER_BYTES || !blob.type.startsWith("image/")) return undefined
+        const bytes = new Uint8Array(await blob.arrayBuffer())
+        let binary = ""
+        for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i] as number)
+        return `data:${blob.type};base64,${btoa(binary)}`
+    } catch {
+        return undefined
+    }
 }
 
 export default defineBackground(() => {
@@ -352,20 +390,33 @@ export default defineBackground(() => {
                     }
                     case "library:covers:backfill": {
                         const all = await db.manga.toArray()
-                        const missing = all.filter(m => !m.coverUrl && !m.id.startsWith("seed-"))
+                        // Targets: titles with no cover, plus titles whose cover is still a
+                        // remote URL (which can fail to render from the extension origin).
+                        // data: and bundled /sample-covers/ URLs already render and are skipped.
+                        const targets = all.filter(
+                            m => !m.id.startsWith("seed-") && (!m.coverUrl || /^https?:\/\//.test(m.coverUrl))
+                        )
                         let updated = 0
-                        for (const m of missing.slice(0, COVER_BACKFILL_BATCH)) {
+                        for (const m of targets.slice(0, COVER_BACKFILL_BATCH)) {
                             try {
-                                const cover = await resolveCoverFor(m)
-                                if (cover) {
-                                    await db.manga.update(m.id, { coverUrl: cover })
+                                const remote =
+                                    m.coverUrl && /^https?:\/\//.test(m.coverUrl)
+                                        ? m.coverUrl
+                                        : await resolveCoverFor(m)
+                                if (!remote) continue
+                                const inlined = await inlineCover(remote)
+                                if (inlined) {
+                                    await db.manga.update(m.id, { coverUrl: inlined })
+                                    updated += 1
+                                } else if (!m.coverUrl) {
+                                    await db.manga.update(m.id, { coverUrl: remote })
                                     updated += 1
                                 }
                             } catch (error) {
                                 console.warn("[AMR] Cover backfill failed", { mangaId: m.id, error })
                             }
                         }
-                        return success({ updated, remaining: Math.max(0, missing.length - COVER_BACKFILL_BATCH) })
+                        return success({ updated, remaining: Math.max(0, targets.length - COVER_BACKFILL_BATCH) })
                     }
                     case "stats:get":
                         return success(await getLocalStats())

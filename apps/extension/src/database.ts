@@ -149,6 +149,7 @@ function humanizeSlug(slug: string): string {
 export async function trackExternalChapter(input: {
     url: string
     sourceId: string
+    completed?: boolean
 }): Promise<{ tracked: boolean; title: string; chapterNumber: number | null }> {
     const now = Date.now()
     const u = new URL(input.url)
@@ -202,7 +203,7 @@ export async function trackExternalChapter(input: {
         chapterId,
         pageIndex: 0,
         pageCount: 1,
-        completed: true,
+        completed: input.completed ?? true,
         updatedAt: now
     })
     return { tracked: true, title: manga.title, chapterNumber: number ?? null }
