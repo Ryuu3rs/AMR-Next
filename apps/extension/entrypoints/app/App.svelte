@@ -6,6 +6,7 @@
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
     import { migrateLegacyImport } from "../../src/legacy-import"
     import ActivityHeatmap from "./ActivityHeatmap.svelte"
+    import ImportReconcile from "./ImportReconcile.svelte"
 
     type SyncStatus = {
         hasToken: boolean
@@ -161,6 +162,7 @@
     }>()
     let dataMessage = $state("")
     let downloadsCount = $state(0)
+    let reconcileIds = $state<string[]>([])
     let updateStatus = $state<{
         checked: number
         updated: number
@@ -644,19 +646,24 @@
     async function importData(file: File) {
         try {
             const raw: unknown = JSON.parse(await file.text())
-            const { envelope, migrated, converted, skipped } = migrateLegacyImport(raw)
+            const { envelope, migrated, converted, skipped, needsAttention } = migrateLegacyImport(raw)
             const result = await sendRuntimeMessage<{ manga: number; chapters: number }>({
                 type: "data:import",
                 envelope
             })
+            await load()
             if (migrated) {
+                reconcileIds = needsAttention
                 dataMessage =
                     `Imported ${converted} manga from old AMR backup.` +
-                    (skipped > 0 ? ` ${skipped} entries skipped (no title or URL).` : "")
+                    (skipped > 0 ? ` ${skipped} entries skipped (no title or URL).` : "") +
+                    (needsAttention.length > 0
+                        ? ` ${needsAttention.length} titles need a live source — see below.`
+                        : "")
+                if (needsAttention.length > 0) activeSection = "Data"
             } else {
                 dataMessage = `Imported ${result.manga} manga and ${result.chapters} chapters.`
             }
-            await load()
         } catch (cause) {
             dataMessage = cause instanceof Error ? cause.message : "The backup could not be imported."
         }
@@ -1910,6 +1917,13 @@
                 </div>
             </div>
             {#if dataMessage}<p class="notice">{dataMessage}</p>{/if}
+
+            <ImportReconcile
+                mangas={library.filter(m => reconcileIds.includes(m.id))}
+                onLinked={id => {
+                    reconcileIds = reconcileIds.filter(rid => rid !== id)
+                    void load()
+                }} />
 
             <h1 style="margin-top:32px">GitHub Gist sync</h1>
             <div class="data-list">

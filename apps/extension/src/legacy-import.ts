@@ -158,15 +158,17 @@ export function migrateLegacyImport(raw: unknown): {
     migrated: boolean
     converted: number
     skipped: number
+    needsAttention: string[]
 } {
     if (!isLegacyExport(raw)) {
-        return { envelope: raw, migrated: false, converted: 0, skipped: 0 }
+        return { envelope: raw, migrated: false, converted: 0, skipped: 0, needsAttention: [] }
     }
 
     const manga: LibraryManga[] = []
     const sourceLinks: SourceLinkRecord[] = []
     const chapters: ChapterRecord[] = []
     const historyEvents: HistoryEvent[] = []
+    const needsAttention: string[] = []
     const seen = new Set<string>()
     let skipped = 0
 
@@ -179,6 +181,7 @@ export function migrateLegacyImport(raw: unknown): {
         if (seen.has(converted.manga.id)) continue
         seen.add(converted.manga.id)
         manga.push(converted.manga)
+        if (converted.manga.manualTracking) needsAttention.push(converted.manga.id)
         if (converted.sourceLink) sourceLinks.push(converted.sourceLink)
         if (converted.chapter) chapters.push(converted.chapter)
         if (converted.history) historyEvents.push(converted.history)
@@ -193,6 +196,7 @@ export function migrateLegacyImport(raw: unknown): {
         },
         migrated: true,
         converted: manga.length,
-        skipped
+        skipped,
+        needsAttention
     }
 }

@@ -372,6 +372,9 @@ export default defineBackground(() => {
                                     : {}),
                                 updatedAt: Date.now()
                             })
+                            await db.manga.update(request.mangaId, {
+                                manualTracking: undefined
+                            } as unknown as Partial<{ manualTracking: boolean }>)
                             await db.sourceLinks.put({
                                 mangaId: request.mangaId,
                                 sourceId: request.sourceId,
