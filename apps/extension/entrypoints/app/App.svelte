@@ -127,6 +127,11 @@
         longestStreak: number
         chaptersThisWeek: number
         chaptersToday: number
+        ratedCount?: number
+        categoriesCount?: number
+        downloadedChapters?: number
+        sourcesUsed?: number
+        completedSeries?: number
         achievements: Array<{
             id: string
             title: string
@@ -134,6 +139,7 @@
             unlocked: boolean
             progress: number
             target: number
+            category?: string
         }>
     }>()
     let dataMessage = $state("")
@@ -146,7 +152,14 @@
         errors?: Array<{ mangaId: string; title: string; message: string }>
     } | null>(null)
     let sourcesList = $state<
-        Array<{ id: string; name: string; domains: string[]; capabilities: string[]; canSearch: boolean }>
+        Array<{
+            id: string
+            name: string
+            domains: string[]
+            capabilities: string[]
+            canSearch: boolean
+            homepage?: string
+        }>
     >([])
     let checkingUpdates = $state(false)
     let confirmingRemove = $state<string | null>(null)
@@ -644,6 +657,57 @@
         }
         return sorted
     })
+
+    // Home: continue-reading = most recently read; recently-added by addedAt.
+    const continueReading = $derived.by(() => {
+        const read = library.filter(m => m.lastReadAt).sort((a, b) => (b.lastReadAt ?? 0) - (a.lastReadAt ?? 0))
+        return read[0] ?? library[0]
+    })
+    const recentlyAdded = $derived([...library].sort((a, b) => b.addedAt - a.addedAt).slice(0, 12))
+    const missingCoverCount = $derived(library.filter(m => !m.coverUrl && !isSeedData(m)).length)
+
+    // Cap how many posters render so very large libraries don't choke the grid.
+    const PAGE_SIZE_LIBRARY = 60
+    let libraryLimit = $state(PAGE_SIZE_LIBRARY)
+    const pagedLibrary = $derived(visibleLibrary.slice(0, libraryLimit))
+    $effect(() => {
+        // Reset paging whenever the filtered view changes.
+        void query
+        void categoryFilter
+        void librarySort
+        libraryLimit = PAGE_SIZE_LIBRARY
+    })
+
+    const UPDATES_INITIAL = 50
+    let updatesLimit = $state(UPDATES_INITIAL)
+    const pagedUpdates = $derived(library.slice(0, updatesLimit))
+
+    // Search results grouped by source, with display name + homepage from the registry.
+    const sourceMeta = $derived(new Map(sourcesList.map(s => [s.id, s])))
+    const searchBySource = $derived.by(() => {
+        const groups = new Map<string, SearchResult[]>()
+        for (const r of searchResults) {
+            const arr = groups.get(r.sourceId) ?? []
+            arr.push(r)
+            groups.set(r.sourceId, arr)
+        }
+        return [...groups.entries()].sort((a, b) => b[1].length - a[1].length)
+    })
+    const achievementsByCategory = $derived.by(() => {
+        const groups = new Map<string, NonNullable<typeof stats>["achievements"]>()
+        for (const a of stats?.achievements ?? []) {
+            const key = a.category ?? "General"
+            const arr = groups.get(key) ?? []
+            arr.push(a)
+            groups.set(key, arr)
+        }
+        return [...groups.entries()]
+    })
+
+    function openSourceSite(src: { homepage?: string; domains: string[] }) {
+        const url = src.homepage ?? (src.domains[0] ? `https://${src.domains[0]}` : undefined)
+        if (url) void browser.tabs.create({ url })
+    }
 </script>
 
 <div class="shell">
@@ -674,7 +738,6 @@
 
     <main>
         {#if activeSection === "Home"}
-            <h1>Home</h1>
             {#if !hasPermission && !onboardingDismissed}
                 <div class="onboarding">
                     <h2>Welcome to AMR Next</h2>
@@ -713,27 +776,46 @@
                     {#if addMessage}<p class="notice">{addMessage}</p>{/if}
                 </div>
             {:else}
-                <div class="home-feature">
-                    <div class="home-feature-cover">
-                        {#if library[0]?.coverUrl && !failedCovers.has(library[0].id)}<img
-                                src={library[0].coverUrl}
-                                alt=""
-                                onerror={() => library[0] && coverFailed(library[0].id)} />{:else}<span
-                                class="cover-initial">{library[0]?.title[0]}</span
-                            >{/if}
+                {#if continueReading}
+                    <div class="home-feature">
+                        <div class="home-feature-cover">
+                            {#if continueReading.coverUrl && !failedCovers.has(continueReading.id)}<img
+                                    src={continueReading.coverUrl}
+                                    alt=""
+                                    class:nsfw-blur={continueReading.nsfw && (settings?.blurNsfw ?? true)}
+                                    onerror={() => continueReading && coverFailed(continueReading.id)} />{:else}<span
+                                    class="cover-initial">{continueReading.title[0]}</span
+                                >{/if}
+                        </div>
+                        <div class="home-feature-body">
+                            <p class="eyebrow">Continue reading</p>
+                            <h2 class="feature-title">{continueReading.title}</h2>
+                            <p class="muted">
+                                {continueReading.sourceId}{#if continueReading.lastReadChapterNumber !== undefined}
+                                    · ch {continueReading.lastReadChapterNumber}{/if}
+                            </p>
+                            <button type="button" onclick={() => continueReading && read(continueReading)}
+                                >Open reader</button>
+                        </div>
                     </div>
-                    <div class="home-feature-body">
-                        <p class="eyebrow">Continue reading</p>
-                        <h2 class="feature-title">{library[0]?.title}</h2>
-                        <p class="muted">{library[0]?.sourceId}</p>
-                        <button type="button" onclick={() => library[0] && read(library[0])}>Open reader</button>
-                    </div>
-                </div>
+                {/if}
 
-                {#if library.length > 1}
+                {#if missingCoverCount > 0 && hasPermission}
+                    <button
+                        type="button"
+                        class="cover-hint"
+                        onclick={() => void backfillCovers()}
+                        disabled={refreshingCovers}>
+                        {refreshingCovers
+                            ? "Fetching covers…"
+                            : `Load ${missingCoverCount} missing cover${missingCoverCount === 1 ? "" : "s"}`}
+                    </button>
+                {/if}
+
+                {#if recentlyAdded.length > 0}
                     <p class="shelf-label">Recently added</p>
                     <div class="poster-grid">
-                        {#each library.slice(1, 7) as manga}
+                        {#each recentlyAdded as manga}
                             <article>
                                 <div class="poster-wrap">
                                     <button
@@ -749,7 +831,7 @@
                                                 class="cover-initial">{manga.title[0]}</span
                                             >{/if}
                                     </button>
-                                    <div class="poster-hover"><span>Continue</span></div>
+                                    <div class="poster-hover"><span>Open</span></div>
                                 </div>
                                 <p class="poster-title">{manga.title}</p>
                             </article>
@@ -871,7 +953,7 @@
                 <p class="muted" style="margin-top:16px">{query ? "No titles match." : "Your library is empty."}</p>
             {:else}
                 <div class="poster-grid">
-                    {#each visibleLibrary as manga}
+                    {#each pagedLibrary as manga}
                         <article class:selected={selectMode && selectedIds.has(manga.id)}>
                             <div class="poster-wrap">
                                 <button
@@ -985,6 +1067,13 @@
                         </article>
                     {/each}
                 </div>
+                {#if visibleLibrary.length > libraryLimit}
+                    <div class="load-more">
+                        <button type="button" class="btn-sm" onclick={() => (libraryLimit += PAGE_SIZE_LIBRARY)}>
+                            Load more ({visibleLibrary.length - libraryLimit} left)
+                        </button>
+                    </div>
+                {/if}
             {/if}
         {:else if activeSection === "Updates"}
             <div class="page-head">
@@ -1027,7 +1116,7 @@
                 <p class="muted">No manga in library to check.</p>
             {:else}
                 <div class="update-list">
-                    {#each library as manga}
+                    {#each pagedUpdates as manga}
                         {@const hasNew = Boolean(
                             manga.latestChapterId &&
                             manga.lastReadChapterId &&
@@ -1054,6 +1143,13 @@
                         </div>
                     {/each}
                 </div>
+                {#if library.length > updatesLimit}
+                    <div class="load-more">
+                        <button type="button" class="btn-sm" onclick={() => (updatesLimit += UPDATES_INITIAL)}>
+                            Load more ({library.length - updatesLimit} left)
+                        </button>
+                    </div>
+                {/if}
             {/if}
         {:else if activeSection === "History"}
             <h1>Reading history</h1>
@@ -1085,6 +1181,12 @@
                 <div class="stat-box"><strong>{stats?.longestStreak ?? 0}</strong><span>Longest streak</span></div>
                 <div class="stat-box"><strong>{stats?.chaptersThisWeek ?? 0}</strong><span>This week</span></div>
             </div>
+            <div class="stat-row">
+                <div class="stat-box"><strong>{stats?.completedSeries ?? 0}</strong><span>Series done</span></div>
+                <div class="stat-box"><strong>{stats?.sourcesUsed ?? 0}</strong><span>Sources</span></div>
+                <div class="stat-box"><strong>{stats?.downloadedChapters ?? 0}</strong><span>Offline</span></div>
+                <div class="stat-box"><strong>{stats?.ratedCount ?? 0}</strong><span>Rated</span></div>
+            </div>
             {#if settings && settings.dailyGoal > 0}
                 {@const today = stats?.chaptersToday ?? 0}
                 {@const pct = Math.min(100, Math.round((today / settings.dailyGoal) * 100))}
@@ -1100,22 +1202,34 @@
             <p class="muted">
                 {stats?.achievements.filter(a => a.unlocked).length ?? 0} / {stats?.achievements.length ?? 0} unlocked
             </p>
-            <div class="achievement-list">
-                {#each stats?.achievements ?? [] as a}
-                    <div class="achievement" class:unlocked={a.unlocked}>
-                        <span class="ach-icon">{a.unlocked ? "★" : "☆"}</span>
-                        <div class="ach-body">
-                            <p class="ach-title">{a.title}</p>
-                            <p class="muted">{a.description}</p>
-                            {#if !a.unlocked}
-                                <div class="progress-track">
-                                    <div class="progress-fill" style="width:{(a.progress / a.target) * 100}%"></div>
-                                </div>
-                            {/if}
+            {#each achievementsByCategory as [category, items]}
+                <p class="shelf-label ach-category">
+                    {category}
+                    <span class="muted">{items.filter(a => a.unlocked).length}/{items.length}</span>
+                </p>
+                <div class="achievement-list">
+                    {#each items as a}
+                        <div class="achievement" class:unlocked={a.unlocked}>
+                            <span class="ach-icon">{a.unlocked ? "★" : "☆"}</span>
+                            <div class="ach-body">
+                                <p class="ach-title">{a.title}</p>
+                                <p class="muted">{a.description}</p>
+                                {#if !a.unlocked}
+                                    <div class="progress-track">
+                                        <div
+                                            class="progress-fill"
+                                            style="width:{a.target > 0
+                                                ? Math.min(100, (a.progress / a.target) * 100)
+                                                : 0}%">
+                                        </div>
+                                    </div>
+                                    <span class="ach-progress muted">{a.progress} / {a.target}</span>
+                                {/if}
+                            </div>
                         </div>
-                    </div>
-                {/each}
-            </div>
+                    {/each}
+                </div>
+            {/each}
         {:else if activeSection === "Sources"}
             <h1>Sources</h1>
 
@@ -1131,60 +1245,24 @@
                 </div>
             {/if}
 
-            <div class="source-list">
-                <div class="source-item">
-                    <div class="source-identity">
-                        <p class="source-name">MangaDex</p>
-                        <span class="badge-active">Browse + Read</span>
-                    </div>
-                    <p class="muted">Search manga, browse chapters, read directly. Full support.</p>
-                    {#if hasPermission}
-                        <form
-                            class="search-bar"
-                            onsubmit={e => {
-                                e.preventDefault()
-                                void doSearch()
-                            }}>
-                            <input
-                                bind:value={browseQuery}
-                                placeholder="Search manga titles..."
-                                aria-label="Search manga" />
-                            <button type="submit" disabled={searchLoading}>
-                                {searchLoading ? "Searching..." : "Search"}
-                            </button>
-                        </form>
-                    {/if}
-                </div>
-                <div class="source-item">
-                    <div class="source-identity">
-                        <p class="source-name">MangaRead.org</p>
-                        <span class="badge-active">Read</span>
-                    </div>
-                    <p class="muted">Paste a chapter URL to read. Supports Madara-theme manga sites.</p>
-                </div>
-                <div class="source-item">
-                    <div class="source-identity">
-                        <p class="source-name">Mgeko.cc</p>
-                        <span class="badge-active">Read</span>
-                    </div>
-                    <p class="muted">Paste a chapter URL to read from Mgeko.</p>
-                </div>
-            </div>
-
-            {#if sourcesList.length > 0}
-                <p class="shelf-label" style="margin-top:24px">All registered adapters ({sourcesList.length})</p>
-                <div class="adapter-grid">
-                    {#each sourcesList as src}
-                        <div class="adapter-chip">
-                            <span class="adapter-name">{src.name}</span>
-                            <span class="muted">
-                                {src.capabilities.join(", ")}{#if src.canSearch}
-                                    · search{/if}
-                            </span>
-                        </div>
-                    {/each}
-                </div>
-            {/if}
+            <form
+                class="search-bar global-search"
+                onsubmit={e => {
+                    e.preventDefault()
+                    void doSearch()
+                }}>
+                <input
+                    bind:value={browseQuery}
+                    placeholder="Search every source for a title…"
+                    aria-label="Search all sources" />
+                <button type="submit" disabled={searchLoading || !browseQuery.trim()}>
+                    {searchLoading ? "Searching…" : "Search"}
+                </button>
+            </form>
+            <p class="muted search-hint">
+                One search across all {sourcesList.length || ""} sources. Results are grouped by site so you can pick a mirror
+                that carries the title.
+            </p>
 
             {#if selectedManga}
                 <div class="chapters-panel">
@@ -1211,26 +1289,58 @@
                         </div>
                     {/if}
                 </div>
+            {:else if searchLoading}
+                <p class="muted">Searching all sources…</p>
             {:else if searchResults.length > 0}
-                <div class="search-results">
-                    {#each searchResults as result}
-                        <div class="search-result">
-                            <div class="result-cover">
-                                {#if result.coverUrl}<img src={result.coverUrl} alt={result.title} />{:else}<span
-                                        >{result.title[0]}</span
-                                    >{/if}
-                            </div>
-                            <div class="result-info">
-                                <p class="result-title">{result.title}</p>
-                                <p class="muted">
-                                    {result.sourceId}{#if result.latestChapter}
-                                        · latest ch {result.latestChapter}{/if}
-                                </p>
-                            </div>
-                            <button type="button" onclick={() => void openResult(result)}>
-                                {result.sourceId === "mangadex" ? "Chapters" : "Open"}
-                            </button>
+                {#each searchBySource as [sourceId, results]}
+                    <div class="source-group">
+                        <div class="source-group-head">
+                            <span class="source-name">{sourceMeta.get(sourceId)?.name ?? sourceId}</span>
+                            <span class="muted">{results.length} result{results.length === 1 ? "" : "s"}</span>
                         </div>
+                        <div class="search-results">
+                            {#each results as result}
+                                <div class="search-result">
+                                    <div class="result-cover">
+                                        {#if result.coverUrl}<img
+                                                src={result.coverUrl}
+                                                alt={result.title} />{:else}<span>{result.title[0]}</span>{/if}
+                                    </div>
+                                    <div class="result-info">
+                                        <p class="result-title">{result.title}</p>
+                                        <p class="muted">
+                                            {#if result.latestChapter}latest ch {result.latestChapter}{:else}—{/if}
+                                        </p>
+                                    </div>
+                                    <button type="button" onclick={() => void openResult(result)}>
+                                        {result.sourceId === "mangadex" ? "Chapters" : "Open"}
+                                    </button>
+                                </div>
+                            {/each}
+                        </div>
+                    </div>
+                {/each}
+            {:else if browseQuery.trim() && !searchLoading}
+                <p class="muted">No results across any source.</p>
+            {/if}
+
+            {#if sourcesList.length > 0}
+                <p class="shelf-label" style="margin-top:24px">Browse a source ({sourcesList.length})</p>
+                <p class="muted search-hint">Click a site to open it in a new tab and find titles to add.</p>
+                <div class="adapter-grid">
+                    {#each sourcesList as src}
+                        <button
+                            type="button"
+                            class="adapter-chip"
+                            onclick={() => openSourceSite(src)}
+                            title={`Open ${src.name}`}>
+                            <span class="adapter-name">{src.name}</span>
+                            <span class="muted">
+                                {src.capabilities.join(", ")}{#if src.canSearch}
+                                    · search{/if}
+                            </span>
+                            <span class="adapter-open">Open site ↗</span>
+                        </button>
                     {/each}
                 </div>
             {/if}

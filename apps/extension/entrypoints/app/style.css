@@ -707,6 +707,33 @@ button:disabled {
     display: grid;
     gap: 2px;
     font-size: 11px;
+    background: var(--surface);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        border-color 0.15s,
+        transform 0.05s;
+}
+
+.adapter-chip:hover {
+    border-color: var(--accent);
+}
+
+.adapter-chip:active {
+    transform: translateY(1px);
+}
+
+.adapter-open {
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.adapter-chip:hover .adapter-open {
+    opacity: 1;
 }
 
 .adapter-name {
@@ -1671,4 +1698,64 @@ button:disabled {
         width: 120px;
         align-self: center;
     }
+}
+
+/* Home cover hint + pagination */
+.cover-hint {
+    margin: 4px 0 16px;
+    padding: 8px 14px;
+    border: 1px dashed var(--accent);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.cover-hint:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.load-more {
+    display: flex;
+    justify-content: center;
+    margin: 18px 0 4px;
+}
+
+/* Sources: global search + grouped results */
+.global-search {
+    margin-top: 4px;
+}
+.search-hint {
+    margin: 6px 0 18px;
+    font-size: 12px;
+}
+.source-group {
+    margin-bottom: 18px;
+}
+.source-group-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+}
+.source-group-head .source-name {
+    font-weight: 700;
+    font-size: 13px;
+}
+
+/* Achievements grouping */
+.ach-category {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-top: 20px;
+}
+.ach-progress {
+    font-size: 11px;
+    margin-top: 2px;
+    display: inline-block;
 }

@@ -21,7 +21,7 @@ test("Chromium loads the extension popup and app", async () => {
 
         const app = await context.newPage()
         await app.goto(`chrome-extension://${extensionId}/app.html`)
-        await expect(app.getByRole("heading", { name: "Home" })).toBeVisible()
+        await expect(app.getByRole("heading", { name: "Your shelf is empty" })).toBeVisible()
         await expect(app.getByRole("navigation", { name: "Main navigation" })).toBeVisible()
     } finally {
         await context.close()
