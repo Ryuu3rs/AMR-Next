@@ -26,14 +26,14 @@ Status: **v0.2.0 released** — rewrite merged to `main`; release-please pipelin
 
 ### 1.2 Architecture / debt
 
-| #   | Issue                                                                                                                                                                                                                       | Notes                                  |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| D1  | Source registry is a **hardcoded array** — no lazy loading, no dynamic/plugin registration (roadmap Stage 1 wanted "lazy loading").                                                                                         | `packages/sources/src/index.ts`        |
-| D2  | **Contract drift**: `packages/contracts` defines `Preferences` (8 fields), `PageRecord`, `SourceHealth` — the extension implements a parallel, smaller `AppSettings` (4 fields) and ignores the rest. Two sources of truth. | `settings.ts` vs `contracts/domain.ts` |
-| ✅ D3 | In-flight GET coalescing added to the bounded client (dedupe concurrent identical GETs). TTL metadata cache still future.                                                         | `mangadex.ts`                          |
-| D4  | No **ESLint** — Prettier only. No unused-import/var detection, no naming rules.                                                                                                                                             | repo-wide                              |
-| D5  | `archive/` (legacy-vue, parity-svelte, platform-prototype) is dead weight in the tree. Fine to keep, but it inflates the repo and confuses search.                                                                          | `archive/`                             |
-| D6  | Version is hardcoded in root `package.json` and read by WXT at build — no automation, no manifest sync step, no changelog generation.                                                                                       | release tooling                        |
+| #     | Issue                                                                                                                                                                                                                       | Notes                                  |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| D1    | Source registry is a **hardcoded array** — no lazy loading, no dynamic/plugin registration (roadmap Stage 1 wanted "lazy loading").                                                                                         | `packages/sources/src/index.ts`        |
+| D2    | **Contract drift**: `packages/contracts` defines `Preferences` (8 fields), `PageRecord`, `SourceHealth` — the extension implements a parallel, smaller `AppSettings` (4 fields) and ignores the rest. Two sources of truth. | `settings.ts` vs `contracts/domain.ts` |
+| ✅ D3 | In-flight GET coalescing added to the bounded client (dedupe concurrent identical GETs). TTL metadata cache still future.                                                                                                   | `mangadex.ts`                          |
+| D4    | No **ESLint** — Prettier only. No unused-import/var detection, no naming rules.                                                                                                                                             | repo-wide                              |
+| D5    | `archive/` (legacy-vue, parity-svelte, platform-prototype) is dead weight in the tree. Fine to keep, but it inflates the repo and confuses search.                                                                          | `archive/`                             |
+| D6    | Version is hardcoded in root `package.json` and read by WXT at build — no automation, no manifest sync step, no changelog generation.                                                                                       | release tooling                        |
 
 ### 1.3 Gaps vs the domain model (defined but unbuilt)
 
