@@ -6,6 +6,7 @@
 - [Roadmap](planning/ROADMAP.md)
 - [Product Specification](product/PRODUCT_SPEC.md)
 - [Technical Architecture](architecture/TECHNICAL_ARCHITECTURE.md)
+- [Source Adapter Authoring Guide](architecture/SOURCE_ADAPTERS.md)
 - [Security, Testing, And Releases](operations/SECURITY_OPERATIONS.md)
 - [Development Guide](development/DEVELOPMENT.md)
 

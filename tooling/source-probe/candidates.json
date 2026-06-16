@@ -113,6 +113,17 @@
             "priority": "community",
             "cmsGuess": "bespoke",
             "note": "mirrors: bato.ac/.bz/.cc/.cx/.day"
-        }
+        },
+        { "url": "https://reaperscans.com/", "name": "Reaper Scans", "priority": "community", "cmsGuess": "bespoke" },
+        { "url": "https://asuracomic.net/", "name": "Asura Comic", "priority": "community", "cmsGuess": "mangastream" },
+        {
+            "url": "https://flamecomics.xyz/",
+            "name": "Flame Comics",
+            "priority": "community",
+            "cmsGuess": "mangastream"
+        },
+        { "url": "https://hivetoon.com/", "name": "HiveToon", "priority": "community", "cmsGuess": "madara" },
+        { "url": "https://templescan.net/", "name": "Temple Scan", "priority": "community", "cmsGuess": "mangastream" },
+        { "url": "https://mangagalaxy.me/", "name": "Manga Galaxy", "priority": "community", "cmsGuess": "madara" }
     ]
 }
