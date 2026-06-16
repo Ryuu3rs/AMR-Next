@@ -39,6 +39,28 @@
     let mirrorLoading = $state(false)
     let mirrorSearched = $state(false)
     let mirrorResults = $state<SearchResult[]>([])
+    let trackMessage = $state("")
+
+    // Open the chapter on its own site and still record it as read — the no-scrape
+    // fallback for sources whose images the in-app reader can't load.
+    async function openOnSiteAndTrack() {
+        if (!chapterUrl) return
+        void browser.tabs.create({ url: chapterUrl })
+        try {
+            const res = await sendRuntimeMessage<{
+                supported: boolean
+                tracked?: boolean
+                title?: string
+                chapterNumber?: number | null
+            }>({ type: "chapter:track", url: chapterUrl })
+            trackMessage =
+                res.supported && res.tracked
+                    ? `Marked ${res.title}${res.chapterNumber != null ? ` ch ${res.chapterNumber}` : ""} as read.`
+                    : "Opened on the source site."
+        } catch {
+            trackMessage = "Opened on the source site."
+        }
+    }
 
     function slugFromUrl(url: string): string {
         try {
@@ -454,9 +476,13 @@
     {#if chapter && !error && !resolving && imagesBroken}
         <div class="mirror-banner">
             <span>Images not loading on this source?</span>
+            <button type="button" class="btn-mirror" onclick={() => void openOnSiteAndTrack()}>
+                Read on the site &amp; mark read
+            </button>
             <button type="button" class="btn-mirror" onclick={() => void findOnAnotherMirror()}>
                 Find another source
             </button>
+            {#if trackMessage}<span class="track-note">{trackMessage}</span>{/if}
         </div>
     {/if}
     {#if error}
@@ -465,10 +491,14 @@
             <p>{error}</p>
             {#if chapterUrl}
                 <button type="button" onclick={() => void loadChapter(chapterUrl)}>Try again</button>
+                <button type="button" class="btn-mirror" onclick={() => void openOnSiteAndTrack()}>
+                    Read on the original site &amp; mark read
+                </button>
             {/if}
             <button type="button" class="btn-mirror" onclick={() => void findOnAnotherMirror()}>
                 Images not loading? Find another source
             </button>
+            {#if trackMessage}<p class="track-note">{trackMessage}</p>{/if}
         </section>
     {:else if resolving}
         <section class="message"><p>Loading chapter…</p></section>
@@ -622,6 +652,12 @@
         padding: 8px 16px;
         border-radius: 6px;
         cursor: pointer;
+    }
+
+    .track-note {
+        margin-top: 10px;
+        font-size: 13px;
+        opacity: 0.85;
     }
 
     .mirror-banner {

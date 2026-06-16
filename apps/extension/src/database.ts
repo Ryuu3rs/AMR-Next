@@ -103,6 +103,111 @@ export async function saveResolvedChapter(input: {
     })
 }
 
+const MANGA_PATH_MARKERS = ["manga", "comic", "comics", "series", "manhwa", "manhua", "title", "read"]
+
+function deriveSlug(u: URL): string {
+    const segments = u.pathname.split("/").filter(Boolean)
+    const markerIndex = segments.findIndex(s => MANGA_PATH_MARKERS.includes(s.toLowerCase()))
+    const afterMarker = markerIndex >= 0 ? segments[markerIndex + 1] : undefined
+    if (afterMarker) return afterMarker
+    const last = segments[segments.length - 1] ?? ""
+    const readerStyle = last.match(/^(.*?)-chapter[-_]/i)
+    if (readerStyle?.[1]) return readerStyle[1]
+    return segments[0] ?? ""
+}
+
+function deriveMangaUrl(u: URL, slug: string): string {
+    const segments = u.pathname.split("/").filter(Boolean)
+    const markerIndex = segments.findIndex(s => MANGA_PATH_MARKERS.includes(s.toLowerCase()))
+    const marker = markerIndex >= 0 ? segments[markerIndex] : undefined
+    if (marker && segments[markerIndex + 1]) return `${u.origin}/${marker.toLowerCase()}/${segments[markerIndex + 1]}/`
+    return slug ? `${u.origin}/manga/${slug}/` : u.origin
+}
+
+function sameHostSlug(a: string, b: string): boolean {
+    try {
+        const ua = new URL(a)
+        const ub = new URL(b)
+        if (ua.hostname !== ub.hostname) return false
+        const sa = deriveSlug(ua)
+        return Boolean(sa) && sa === deriveSlug(ub)
+    } catch {
+        return false
+    }
+}
+
+function humanizeSlug(slug: string): string {
+    return slug
+        .replace(/[-_]+/g, " ")
+        .replace(/\b\w/g, c => c.toUpperCase())
+        .trim()
+}
+
+// Track a chapter the user is reading on the source site directly (used when the
+// in-app reader can't load a site's images). Records progress + history by chapter
+// number without scraping pages, matching an existing library title when possible.
+export async function trackExternalChapter(input: {
+    url: string
+    sourceId: string
+}): Promise<{ tracked: boolean; title: string; chapterNumber: number | null }> {
+    const now = Date.now()
+    const u = new URL(input.url)
+    const numberMatch = input.url.match(/chapter[-_ ]?(\d+(?:\.\d+)?)/i)
+    const number = numberMatch?.[1] !== undefined ? Number(numberMatch[1]) : undefined
+
+    const all = await db.manga.toArray()
+    let manga =
+        all.find(m => m.mangaUrl && input.url.startsWith(m.mangaUrl.replace(/\/$/, ""))) ??
+        all.find(m => m.sourceId === input.sourceId && m.mangaUrl && sameHostSlug(m.mangaUrl, input.url)) ??
+        all.find(m => m.sourceId === input.sourceId && m.sourceUrl && sameHostSlug(m.sourceUrl, input.url))
+
+    if (!manga) {
+        const slug = deriveSlug(u)
+        const title = humanizeSlug(slug) || u.hostname
+        manga = {
+            id: `${input.sourceId}:manga:${slug || u.pathname}`,
+            title,
+            normalizedTitle: title.toLocaleLowerCase("en"),
+            sourceId: input.sourceId,
+            sourceUrl: input.url,
+            mangaUrl: deriveMangaUrl(u, slug),
+            authors: [],
+            status: "unknown",
+            addedAt: now,
+            updatedAt: now
+        }
+        await db.manga.put(manga)
+        await db.sourceLinks.put({
+            mangaId: manga.id,
+            sourceId: input.sourceId,
+            url: manga.mangaUrl ?? input.url,
+            title: manga.title,
+            addedAt: now,
+            updatedAt: now
+        })
+    }
+
+    const chapterKey = number !== undefined ? `ch-${number}` : (u.pathname.split("/").filter(Boolean).pop() ?? "ext")
+    const chapterId = `${manga.id}:ext:${chapterKey}`
+    await db.chapters.put({
+        id: chapterId,
+        mangaId: manga.id,
+        sourceId: input.sourceId,
+        title: number !== undefined ? `Chapter ${number}` : "External chapter",
+        url: input.url,
+        sortKey: number ?? 0
+    })
+    await saveProgress({
+        mangaId: manga.id,
+        chapterId,
+        pageIndex: 0,
+        pageCount: 1,
+        completed: true,
+        updatedAt: now
+    })
+    return { tracked: true, title: manga.title, chapterNumber: number ?? null }
+}
+
 export async function saveProgress(progress: ReadingProgress): Promise<void> {
     await db.transaction("rw", db.progress, db.manga, db.chapters, db.historyEvents, async () => {
         const existing = await db.progress.get(progress.chapterId)

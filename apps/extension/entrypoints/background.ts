@@ -12,6 +12,7 @@ import {
     saveDownload,
     saveProgress,
     saveResolvedChapter,
+    trackExternalChapter,
     seedDatabase
 } from "../src/database"
 import { runtimeRequestSchema, type RuntimeResponse } from "../src/runtime"
@@ -555,6 +556,18 @@ export default defineBackground(() => {
                             downloadedAt: Date.now()
                         })
                         return success({ chapterId: resolved.chapter.id, pageCount: pageBlobs.length })
+                    }
+                    case "chapter:track": {
+                        const parsedUrl = new URL(request.url)
+                        const source = findSource(parsedUrl)
+                        if (!source || source.match(parsedUrl) !== "chapter") {
+                            return success({ supported: false as const })
+                        }
+                        const tracked = await trackExternalChapter({
+                            url: request.url,
+                            sourceId: source.manifest.id
+                        })
+                        return success({ supported: true as const, ...tracked })
                     }
                     case "chapter:download:get":
                         return success((await getDownload(request.chapterId)) ?? null)

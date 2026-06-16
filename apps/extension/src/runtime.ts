@@ -68,6 +68,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         completed: z.boolean()
     }),
     z.object({ type: z.literal("chapter:download"), url: z.url() }),
+    z.object({ type: z.literal("chapter:track"), url: z.url() }),
     z.object({ type: z.literal("chapter:download:get"), chapterId: z.string().min(1) }),
     z.object({ type: z.literal("chapter:download:remove"), chapterId: z.string().min(1) }),
     z.object({ type: z.literal("downloads:list") }),
