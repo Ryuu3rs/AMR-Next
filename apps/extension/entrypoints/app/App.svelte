@@ -4,6 +4,7 @@
     import { onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
+    import ActivityHeatmap from "./ActivityHeatmap.svelte"
 
     type SyncStatus = {
         hasToken: boolean
@@ -257,14 +258,48 @@
     let selectedManga = $state<{ title: string } | null>(null)
     let mangaChapters = $state<Array<{ id: string; title: string; chapter?: string; url: string }>>([])
     let chaptersLoading = $state(false)
-    let history = $state<Array<{ mangaId: string; title: string; type: "started" | "completed"; occurredAt: number }>>(
-        []
-    )
+    type HistoryEntry = {
+        mangaId: string
+        title: string
+        type: "started" | "completed"
+        occurredAt: number
+        chapterNumber?: number | null
+        chapterTitle?: string | null
+    }
+    let history = $state<HistoryEntry[]>([])
     let historyLoaded = $state(false)
+    let expandedHistory = $state<Set<string>>(new Set())
+
+    function toggleHistoryGroup(mangaId: string) {
+        const next = new Set(expandedHistory)
+        if (next.has(mangaId)) next.delete(mangaId)
+        else next.add(mangaId)
+        expandedHistory = next
+    }
+
+    // Group history events by manga, newest activity first; each group keeps its
+    // events sorted newest-first for the expandable chapter list.
+    const historyGroups = $derived.by(() => {
+        const byManga = new Map<string, { mangaId: string; title: string; events: HistoryEntry[]; latest: number }>()
+        for (const event of history) {
+            const group = byManga.get(event.mangaId) ?? {
+                mangaId: event.mangaId,
+                title: event.title,
+                events: [],
+                latest: 0
+            }
+            group.events.push(event)
+            group.latest = Math.max(group.latest, event.occurredAt)
+            byManga.set(event.mangaId, group)
+        }
+        const groups = [...byManga.values()]
+        for (const g of groups) g.events.sort((a, b) => b.occurredAt - a.occurredAt)
+        return groups.sort((a, b) => b.latest - a.latest)
+    })
 
     async function loadHistory() {
         try {
-            history = await sendRuntimeMessage<typeof history>({ type: "history:list" })
+            history = await sendRuntimeMessage<HistoryEntry[]>({ type: "history:list" })
         } catch {
             history = []
         } finally {
@@ -272,8 +307,9 @@
         }
     }
 
+    // Auto-refresh history every time the tab is opened.
     $effect(() => {
-        if (activeSection === "History" && !historyLoaded) void loadHistory()
+        if (activeSection === "History") void loadHistory()
     })
 
     $effect(() => {
@@ -634,11 +670,33 @@
         [...new Set(library.flatMap(m => m.categories ?? []))].sort((a, b) => a.localeCompare(b))
     )
 
+    type LibraryStatus = "unread" | "reading" | "completed"
+    function statusOf(m: LibraryManga): LibraryStatus {
+        const read = m.lastReadChapterNumber
+        const latest = m.latestChapterNumber
+        if (read === undefined) return "unread"
+        if (latest !== undefined && read >= latest) return "completed"
+        return "reading"
+    }
+    function matchesFilter(m: LibraryManga): boolean {
+        switch (libraryFilter) {
+            case "manual":
+                return Boolean(m.manualTracking)
+            case "unread":
+            case "reading":
+            case "completed":
+                return statusOf(m) === libraryFilter
+            default:
+                return true
+        }
+    }
+
     const visibleLibrary = $derived.by(() => {
         const filtered = library.filter(
             m =>
                 m.title.toLowerCase().includes(query.trim().toLowerCase()) &&
-                (!categoryFilter || (m.categories ?? []).includes(categoryFilter))
+                (!categoryFilter || (m.categories ?? []).includes(categoryFilter)) &&
+                matchesFilter(m)
         )
         const sorted = [...filtered]
         switch (librarySort) {
@@ -668,16 +726,99 @@
         library.filter(m => !isSeedData(m) && (!m.coverUrl || failedCovers.has(m.id))).length
     )
 
-    // Cap how many posters render so very large libraries don't choke the grid.
-    const PAGE_SIZE_LIBRARY = 60
-    let libraryLimit = $state(PAGE_SIZE_LIBRARY)
+    // Library view: grid (covers) or list (rows), with a user-set page size so
+    // large libraries don't render everything at once.
+    let libraryView = $state<"grid" | "list">("grid")
+    let libraryFilter = $state<"all" | "unread" | "reading" | "completed" | "manual">("all")
+    const LIBRARY_FILTERS = ["all", "unread", "reading", "completed", "manual"] as const
+    let libraryPageSize = $state(50)
+    let libraryLimit = $state(50)
     const pagedLibrary = $derived(visibleLibrary.slice(0, libraryLimit))
     $effect(() => {
         // Reset paging whenever the filtered view changes.
         void query
         void categoryFilter
         void librarySort
-        libraryLimit = PAGE_SIZE_LIBRARY
+        void libraryFilter
+        libraryLimit = libraryPageSize
+    })
+
+    // Per-row chapter navigation (resolved on demand from the source).
+    let rowBusy = $state<string | null>(null)
+    let rowMessage = $state<{ id: string; text: string } | null>(null)
+
+    async function openAdjacent(manga: LibraryManga, which: "next" | "prev") {
+        rowBusy = manga.id
+        rowMessage = null
+        try {
+            const adj = await sendRuntimeMessage<{
+                current: number | null
+                next: { url: string; title: string; number: number } | null
+                prev: { url: string; title: string; number: number } | null
+            }>({ type: "chapter:adjacent", mangaId: manga.id })
+            const target = which === "next" ? adj.next : adj.prev
+            if (!target) {
+                rowMessage = {
+                    id: manga.id,
+                    text: which === "next" ? "No next chapter found." : "No previous chapter."
+                }
+                return
+            }
+            if (settings?.openChapterIn === "browser") void browser.tabs.create({ url: target.url })
+            else
+                void browser.tabs.create({
+                    url: browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(target.url)}`)
+                })
+        } catch {
+            rowMessage = { id: manga.id, text: "Could not resolve chapters." }
+        } finally {
+            rowBusy = null
+        }
+    }
+
+    async function markCaughtUp(manga: LibraryManga) {
+        const latest = manga.latestChapterNumber
+        if (latest === undefined) return
+        await sendRuntimeMessage({ type: "library:numbers", mangaId: manga.id, lastReadChapterNumber: latest })
+        library = library.map(m => (m.id === manga.id ? { ...m, lastReadChapterNumber: latest } : m))
+    }
+
+    const unreadPool = $derived(library.filter(m => !isSeedData(m) && statusOf(m) !== "completed"))
+    function surpriseMe() {
+        const pool = unreadPool.length > 0 ? unreadPool : library.filter(m => !isSeedData(m))
+        if (pool.length === 0) return
+        const pick = pool[Math.floor(Math.random() * pool.length)]
+        if (pick) read(pick)
+    }
+
+    // Per-manga freeform notes (saved from the detail overlay). Writable derived:
+    // resets when the open title changes, but accepts edits in between.
+    let noteDraft = $derived(detailManga?.notes ?? "")
+    function applyNote<T extends { id: string; notes?: string }>(item: T, id: string, note: string): T {
+        if (item.id !== id) return item
+        const copy = { ...item }
+        if (note) copy.notes = note
+        else delete copy.notes
+        return copy
+    }
+
+    async function saveNote(manga: LibraryManga) {
+        const note = noteDraft.trim()
+        await sendRuntimeMessage({ type: "library:note", mangaId: manga.id, note })
+        library = library.map(m => applyNote(m, manga.id, note))
+        if (detailManga && detailManga.id === manga.id) detailManga = applyNote(detailManga, manga.id, note)
+    }
+
+    // Reading-activity heatmap (Achievements tab).
+    let activity = $state<Array<{ date: string; count: number }>>([])
+    let activityLoaded = $state(false)
+    $effect(() => {
+        if (activeSection === "Achievements" && !activityLoaded) {
+            activityLoaded = true
+            void sendRuntimeMessage<Array<{ date: string; count: number }>>({ type: "activity:get" })
+                .then(d => (activity = d))
+                .catch(() => (activity = []))
+        }
     })
 
     const UPDATES_INITIAL = 50
@@ -1000,8 +1141,47 @@
                             Duplicates ({duplicateGroups.length})
                         </button>
                     {/if}
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        title="Open a random unread title"
+                        disabled={library.filter(m => !isSeedData(m)).length === 0}
+                        onclick={surpriseMe}>🎲 Surprise me</button>
+                    <div class="view-toggle">
+                        <button
+                            type="button"
+                            class="btn-sm"
+                            class:active={libraryView === "grid"}
+                            onclick={() => (libraryView = "grid")}>Grid</button>
+                        <button
+                            type="button"
+                            class="btn-sm"
+                            class:active={libraryView === "list"}
+                            onclick={() => (libraryView = "list")}>List</button>
+                    </div>
                     <input bind:value={query} aria-label="Search library" placeholder="Search titles..." />
                 </div>
+            </div>
+            <div class="filter-bar">
+                <div class="filter-chips">
+                    {#each LIBRARY_FILTERS as f}
+                        <button
+                            type="button"
+                            class="chip"
+                            class:active={libraryFilter === f}
+                            onclick={() => (libraryFilter = f)}>
+                            {f === "all" ? "All" : f[0]?.toUpperCase() + f.slice(1)}
+                        </button>
+                    {/each}
+                </div>
+                <label class="page-size">
+                    <span class="muted">Per page</span>
+                    <select aria-label="Items per page" bind:value={libraryPageSize}>
+                        {#each [10, 15, 20, 50, 100] as n}
+                            <option value={n}>{n}</option>
+                        {/each}
+                    </select>
+                </label>
             </div>
             <form
                 class="url-form"
@@ -1049,8 +1229,10 @@
                 </div>
             {/if}
             {#if visibleLibrary.length === 0}
-                <p class="muted" style="margin-top:16px">{query ? "No titles match." : "Your library is empty."}</p>
-            {:else}
+                <p class="muted" style="margin-top:16px">
+                    {query || libraryFilter !== "all" ? "No titles match." : "Your library is empty."}
+                </p>
+            {:else if libraryView === "grid"}
                 <div class="poster-grid">
                     {#each pagedLibrary as manga}
                         <article class:selected={selectMode && selectedIds.has(manga.id)}>
@@ -1166,13 +1348,77 @@
                         </article>
                     {/each}
                 </div>
-                {#if visibleLibrary.length > libraryLimit}
-                    <div class="load-more">
-                        <button type="button" class="btn-sm" onclick={() => (libraryLimit += PAGE_SIZE_LIBRARY)}>
-                            Load more ({visibleLibrary.length - libraryLimit} left)
-                        </button>
-                    </div>
-                {/if}
+            {:else}
+                <div class="list-view">
+                    {#each pagedLibrary as manga}
+                        {@const status = statusOf(manga)}
+                        <div class="list-row" class:selected={selectMode && selectedIds.has(manga.id)}>
+                            <button
+                                type="button"
+                                class="list-cover"
+                                class:sample={isSeedData(manga)}
+                                onclick={e => read(manga, e)}
+                                onauxclick={e => read(manga, e)}
+                                aria-label={`Open ${manga.title}`}>
+                                {#if manga.coverUrl && !failedCovers.has(manga.id)}<img
+                                        src={manga.coverUrl}
+                                        alt=""
+                                        onerror={() => coverFailed(manga.id)} />{:else}<span class="cover-initial"
+                                        >{manga.title[0]}</span
+                                    >{/if}
+                            </button>
+                            <div class="list-main">
+                                <p class="list-title">{manga.title}</p>
+                                <p class="muted list-meta">
+                                    {manga.sourceId}
+                                    {#if manga.manualTracking}· manual{/if}
+                                    {#if manga.notes}· 📝{/if}
+                                </p>
+                                {#if rowMessage && rowMessage.id === manga.id}
+                                    <p class="muted list-rowmsg">{rowMessage.text}</p>
+                                {/if}
+                            </div>
+                            <span class="list-status status-{status}">{status}</span>
+                            <span class="list-progress">
+                                {manga.lastReadChapterNumber !== undefined
+                                    ? `Ch ${manga.lastReadChapterNumber}`
+                                    : "Unread"}{#if manga.latestChapterNumber !== undefined}<span class="muted">
+                                        / {manga.latestChapterNumber}</span
+                                    >{/if}
+                            </span>
+                            <div class="list-actions">
+                                <button
+                                    type="button"
+                                    class="btn-sm"
+                                    disabled={rowBusy === manga.id}
+                                    title="Previous chapter"
+                                    onclick={() => void openAdjacent(manga, "prev")}>‹ Prev</button>
+                                <button
+                                    type="button"
+                                    class="btn-sm"
+                                    disabled={rowBusy === manga.id}
+                                    title="Next chapter"
+                                    onclick={() => void openAdjacent(manga, "next")}>
+                                    {rowBusy === manga.id ? "…" : "Next ›"}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn-sm"
+                                    disabled={manga.latestChapterNumber === undefined}
+                                    title="Mark read up to the latest chapter"
+                                    onclick={() => void markCaughtUp(manga)}>Mark read</button>
+                                <button type="button" class="btn-sm" onclick={() => (detailManga = manga)}>⋯</button>
+                            </div>
+                        </div>
+                    {/each}
+                </div>
+            {/if}
+            {#if visibleLibrary.length > libraryLimit}
+                <div class="load-more">
+                    <button type="button" class="btn-sm" onclick={() => (libraryLimit += libraryPageSize)}>
+                        Load more ({visibleLibrary.length - libraryLimit} left)
+                    </button>
+                </div>
             {/if}
         {:else if activeSection === "Updates"}
             <div class="page-head">
@@ -1251,19 +1497,53 @@
                 {/if}
             {/if}
         {:else if activeSection === "History"}
-            <h1>Reading history</h1>
+            <div class="page-head">
+                <h1>Reading history</h1>
+                <button type="button" class="btn-sm" onclick={() => void loadHistory()}>Refresh</button>
+            </div>
             {#if !historyLoaded}
                 <p class="muted">Loading…</p>
-            {:else if history.length === 0}
+            {:else if historyGroups.length === 0}
                 <p class="muted">No reading activity yet. Open a chapter to start tracking.</p>
             {:else}
-                <div class="history-list">
-                    {#each history as event}
-                        <div class="history-row">
-                            <span class="history-dot" class:done={event.type === "completed"}></span>
-                            <span class="history-title">{event.title}</span>
-                            <span class="muted">{event.type === "completed" ? "Completed" : "Started"}</span>
-                            <span class="muted history-when">{new Date(event.occurredAt).toLocaleString()}</span>
+                <div class="history-groups">
+                    {#each historyGroups as group (group.mangaId)}
+                        {@const open = expandedHistory.has(group.mangaId)}
+                        {@const last = group.events[0]}
+                        <div class="history-group" class:open>
+                            <button
+                                type="button"
+                                class="history-group-head"
+                                onclick={() => toggleHistoryGroup(group.mangaId)}>
+                                <span class="history-caret">{open ? "▾" : "▸"}</span>
+                                <span class="history-title">{group.title}</span>
+                                <span class="muted history-count">{group.events.length}</span>
+                                <span class="muted history-when">
+                                    {last
+                                        ? `${last.type === "completed" ? "read" : "started"} ${last.chapterNumber != null ? `ch ${last.chapterNumber} · ` : ""}${new Date(group.latest).toLocaleDateString()}`
+                                        : ""}
+                                </span>
+                            </button>
+                            {#if open}
+                                <div class="history-events">
+                                    {#each group.events as event}
+                                        <div class="history-row">
+                                            <span class="history-dot" class:done={event.type === "completed"}></span>
+                                            <span class="history-ev-title">
+                                                {event.chapterNumber != null
+                                                    ? `Chapter ${event.chapterNumber}`
+                                                    : (event.chapterTitle ?? "Chapter")}
+                                            </span>
+                                            <span class="muted">
+                                                {event.type === "completed" ? "Completed" : "Started"}
+                                            </span>
+                                            <span class="muted history-when">
+                                                {new Date(event.occurredAt).toLocaleString()}
+                                            </span>
+                                        </div>
+                                    {/each}
+                                </div>
+                            {/if}
                         </div>
                     {/each}
                 </div>
@@ -1298,7 +1578,10 @@
                     <div class="goal-bar"><div class="goal-fill" style="width:{pct}%"></div></div>
                 </div>
             {/if}
-            <p class="muted">
+            <p class="shelf-label" style="margin-top:24px">Reading activity</p>
+            <ActivityHeatmap data={activity} />
+
+            <p class="muted" style="margin-top:24px">
                 {stats?.achievements.filter(a => a.unlocked).length ?? 0} / {stats?.achievements.length ?? 0} unlocked
             </p>
             {#each achievementsByCategory as [category, items]}
@@ -1750,6 +2033,15 @@
                         checked={detailManga.nsfw ?? false}
                         onchange={e => detailManga && void setNsfw(detailManga, e.currentTarget.checked)} />
                     Mark as NSFW (blurs the cover)
+                </label>
+                <label class="detail-categories">
+                    <span class="muted">Notes</span>
+                    <textarea
+                        class="detail-notes"
+                        rows="3"
+                        placeholder="Private notes about this title…"
+                        bind:value={noteDraft}
+                        onblur={() => detailManga && void saveNote(detailManga)}></textarea>
                 </label>
                 <label class="detail-categories">
                     <span class="muted">Re-link source (paste a chapter URL from a new mirror)</span>

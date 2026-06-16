@@ -4,6 +4,7 @@ import { sourceAdapters } from "@amr/sources"
 import {
     db,
     exportDatabase,
+    getActivityCalendar,
     getDownload,
     getLocalStats,
     importDatabase,
@@ -425,15 +426,67 @@ export default defineBackground(() => {
                         const ids = [...new Set(events.map(e => e.mangaId))]
                         const mangas = await db.manga.bulkGet(ids)
                         const titleById = new Map(ids.map((id, i) => [id, mangas[i]?.title ?? id]))
+                        const chapterIds = [
+                            ...new Set(events.map(e => e.chapterId).filter((c): c is string => Boolean(c)))
+                        ]
+                        const chapters = await db.chapters.bulkGet(chapterIds)
+                        const chapterById = new Map(chapterIds.map((id, i) => [id, chapters[i]]))
                         return success(
-                            events.map(e => ({
-                                mangaId: e.mangaId,
-                                title: titleById.get(e.mangaId) ?? e.mangaId,
-                                type: e.type,
-                                occurredAt: e.occurredAt
-                            }))
+                            events.map(e => {
+                                const chapter = e.chapterId ? chapterById.get(e.chapterId) : undefined
+                                return {
+                                    mangaId: e.mangaId,
+                                    title: titleById.get(e.mangaId) ?? e.mangaId,
+                                    type: e.type,
+                                    occurredAt: e.occurredAt,
+                                    chapterNumber: chapter && Number.isFinite(chapter.sortKey) ? chapter.sortKey : null,
+                                    chapterTitle: chapter?.title ?? null
+                                }
+                            })
                         )
                     }
+                    case "chapter:adjacent": {
+                        const manga = await db.manga.get(request.mangaId)
+                        if (!manga) return success({ current: null, next: null, prev: null })
+                        const current = manga.lastReadChapterNumber ?? null
+                        try {
+                            const chapters = await listChaptersForSource(
+                                manga,
+                                manga.sourceId,
+                                manga.sourceMangaId ?? "",
+                                manga.mangaUrl ?? manga.sourceUrl
+                            )
+                            let next: (typeof chapters)[number] | null = null
+                            let prev: (typeof chapters)[number] | null = null
+                            if (current === null) {
+                                for (const chapter of chapters) {
+                                    if (!next || chapter.sortKey < next.sortKey) next = chapter
+                                }
+                            } else {
+                                for (const chapter of chapters) {
+                                    if (chapter.sortKey > current && (!next || chapter.sortKey < next.sortKey))
+                                        next = chapter
+                                    if (chapter.sortKey < current && (!prev || chapter.sortKey > prev.sortKey))
+                                        prev = chapter
+                                }
+                            }
+                            return success({
+                                current,
+                                next: next ? { url: next.url, title: next.title, number: next.sortKey } : null,
+                                prev: prev ? { url: prev.url, title: prev.title, number: prev.sortKey } : null
+                            })
+                        } catch {
+                            return success({ current: null, next: null, prev: null })
+                        }
+                    }
+                    case "library:note": {
+                        await db.manga.update(request.mangaId, {
+                            notes: request.note.trim() || undefined
+                        } as Partial<{ notes: string }>)
+                        return success(null)
+                    }
+                    case "activity:get":
+                        return success(await getActivityCalendar(request.days ?? 120))
                     case "data:export":
                         return success(await exportDatabase())
                     case "data:import":
@@ -500,7 +553,16 @@ export default defineBackground(() => {
                                 }
                             })
                         )
+                        await browser.storage.local.set({
+                            sourceHealth: Object.fromEntries(
+                                checks.map(c => [c.id, { alive: c.alive, at: Date.now() }])
+                            )
+                        })
                         return success(checks)
+                    }
+                    case "sources:health": {
+                        const stored = await browser.storage.local.get("sourceHealth")
+                        return success(stored["sourceHealth"] ?? {})
                     }
                     case "updates:check":
                         return success(await checkUpdates(request.sourceId))

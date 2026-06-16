@@ -73,7 +73,14 @@ export async function resolveChapterUrl(url: string) {
 // Aggregate search across every adapter that supports it. Sources without
 // granted host permission fail their origin check and are skipped (allSettled).
 export async function searchManga(query: string): Promise<SourceSearchResult[]> {
-    const searchable = sourceAdapters.filter(adapter => adapter.search)
+    const stored = (await browser.storage.local.get("sourceHealth"))["sourceHealth"] as
+        | Record<string, { alive: boolean; at: number }>
+        | undefined
+    const searchable = sourceAdapters.filter(adapter => {
+        if (!adapter.search) return false
+        const health = stored?.[adapter.manifest.id]
+        return !(health && health.alive === false && Date.now() - health.at < 24 * 60 * 60 * 1000)
+    })
     const settled = await Promise.allSettled(
         searchable.map(adapter => adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)))
     )

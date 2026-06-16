@@ -23,6 +23,8 @@ export type LibraryManga = MangaRecord & {
     categories?: string[]
     // User-flagged adult content (covers blurred when the blur setting is on).
     nsfw?: boolean
+    // Free-form per-manga notes the user keeps alongside the title.
+    notes?: string
 }
 
 export type HistoryEvent = {
@@ -799,4 +801,32 @@ export async function getLocalStats() {
             unlocked: def.metric >= def.target
         }))
     }
+}
+
+function localDayKey(d: Date): string {
+    const year = d.getFullYear()
+    const month = `${d.getMonth() + 1}`.padStart(2, "0")
+    const day = `${d.getDate()}`.padStart(2, "0")
+    return `${year}-${month}-${day}`
+}
+
+export async function getActivityCalendar(days = 120): Promise<Array<{ date: string; count: number }>> {
+    const events = await db.historyEvents.where("type").equals("completed").toArray()
+    const perDay = new Map<string, Set<string>>()
+    for (const event of events) {
+        const key = localDayKey(new Date(event.occurredAt))
+        const seen = perDay.get(key)
+        if (seen) seen.add(event.chapterId)
+        else perDay.set(key, new Set([event.chapterId]))
+    }
+    const result: Array<{ date: string; count: number }> = []
+    const cursor = new Date()
+    cursor.setHours(0, 0, 0, 0)
+    cursor.setDate(cursor.getDate() - (days - 1))
+    for (let i = 0; i < days; i += 1) {
+        const key = localDayKey(cursor)
+        result.push({ date: key, count: perDay.get(key)?.size ?? 0 })
+        cursor.setDate(cursor.getDate() + 1)
+    }
+    return result
 }
