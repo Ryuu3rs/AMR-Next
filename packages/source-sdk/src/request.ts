@@ -61,6 +61,10 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
     let requestCount = 0
     let nextAllowedAt = 0
 
+    // Dedupe concurrent identical GETs. Keyed by URL string; the entry lives only
+    // while the underlying fetch is in flight (no time-based caching).
+    const inFlight = new Map<string, Promise<string>>()
+
     async function waitForRateSlot(): Promise<void> {
         if (minIntervalMs <= 0) return
         const now = Date.now()
@@ -120,13 +124,10 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
         }
     }
 
-    async function requestText(
+    async function attemptWithRetries(
         url: URL,
         init: { method: "GET" | "POST"; headers?: Readonly<Record<string, string>>; body?: string }
     ): Promise<string> {
-        if (!allowedOrigins.has(url.origin)) {
-            throw new SourceError("invalid-input", `Request origin is not allowed: ${url.origin}`)
-        }
         let attempt = 0
         for (;;) {
             try {
@@ -140,12 +141,39 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
         }
     }
 
+    async function requestText(
+        url: URL,
+        init: { method: "GET" | "POST"; headers?: Readonly<Record<string, string>>; body?: string },
+        coalescable: boolean
+    ): Promise<string> {
+        if (!allowedOrigins.has(url.origin)) {
+            throw new SourceError("invalid-input", `Request origin is not allowed: ${url.origin}`)
+        }
+        if (!coalescable) {
+            return attemptWithRetries(url, init)
+        }
+        const key = url.toString()
+        const existing = inFlight.get(key)
+        if (existing !== undefined) {
+            return existing
+        }
+        const pending = attemptWithRetries(url, init).finally(() => {
+            inFlight.delete(key)
+        })
+        inFlight.set(key, pending)
+        return pending
+    }
+
     return {
         async getJson<T>(url: URL, schema: ZodType<T>, requestOptions?: SourceRequestOptions): Promise<T> {
-            const body = await requestText(url, {
-                method: "GET",
-                ...(requestOptions?.headers === undefined ? {} : { headers: requestOptions.headers })
-            })
+            const body = await requestText(
+                url,
+                {
+                    method: "GET",
+                    ...(requestOptions?.headers === undefined ? {} : { headers: requestOptions.headers })
+                },
+                true
+            )
             let json: unknown
             try {
                 json = JSON.parse(body)
@@ -166,10 +194,14 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
         },
 
         async getText(url: URL, requestOptions?: SourceRequestOptions): Promise<string> {
-            return requestText(url, {
-                method: "GET",
-                ...(requestOptions?.headers === undefined ? {} : { headers: requestOptions.headers })
-            })
+            return requestText(
+                url,
+                {
+                    method: "GET",
+                    ...(requestOptions?.headers === undefined ? {} : { headers: requestOptions.headers })
+                },
+                true
+            )
         },
 
         async postForm(
@@ -177,14 +209,18 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
             params: Record<string, string>,
             requestOptions?: SourceRequestOptions
         ): Promise<string> {
-            return requestText(url, {
-                method: "POST",
-                body: new URLSearchParams(params).toString(),
-                headers: {
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    ...(requestOptions?.headers ?? {})
-                }
-            })
+            return requestText(
+                url,
+                {
+                    method: "POST",
+                    body: new URLSearchParams(params).toString(),
+                    headers: {
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        ...(requestOptions?.headers ?? {})
+                    }
+                },
+                false
+            )
         }
     }
 }

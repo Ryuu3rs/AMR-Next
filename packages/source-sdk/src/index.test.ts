@@ -150,6 +150,73 @@ describe("createBoundedRequestClient retry + rate limit", () => {
     })
 })
 
+describe("createBoundedRequestClient GET coalescing", () => {
+    it("coalesces concurrent identical GETs into one fetch", async () => {
+        let calls = 0
+        const client = createBoundedRequestClient({
+            fetch: async () => {
+                calls += 1
+                await Promise.resolve()
+                return { ok: true, status: 200, text: async () => "shared-body" }
+            },
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 10,
+            maxResponseBytes: 100,
+            timeoutMs: 100
+        })
+
+        const url = new URL("https://api.example.test/same")
+        const [a, b] = await Promise.all([client.getText(url), client.getText(url)])
+
+        expect(a).toBe("shared-body")
+        expect(b).toBe("shared-body")
+        expect(calls).toBe(1)
+    })
+
+    it("does not coalesce different URLs", async () => {
+        let calls = 0
+        const client = createBoundedRequestClient({
+            fetch: async () => {
+                calls += 1
+                await Promise.resolve()
+                return { ok: true, status: 200, text: async () => "body" }
+            },
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 10,
+            maxResponseBytes: 100,
+            timeoutMs: 100
+        })
+
+        await Promise.all([
+            client.getText(new URL("https://api.example.test/one")),
+            client.getText(new URL("https://api.example.test/two"))
+        ])
+
+        expect(calls).toBe(2)
+    })
+
+    it("sequential GETs after settle are not shared", async () => {
+        let calls = 0
+        const client = createBoundedRequestClient({
+            fetch: async () => {
+                calls += 1
+                await Promise.resolve()
+                return { ok: true, status: 200, text: async () => "body" }
+            },
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 10,
+            maxResponseBytes: 100,
+            timeoutMs: 100
+        })
+
+        const url = new URL("https://api.example.test/same")
+        await client.getText(url)
+        await client.getText(url)
+
+        expect(calls).toBe(2)
+    })
+})
+
 describe("SourceRegistry", () => {
     const adapter = {
         manifest: {
