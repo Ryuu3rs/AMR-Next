@@ -127,6 +127,42 @@ function failure(error: unknown): RuntimeResponse {
     }
 }
 
+function delay(ms: number) {
+    return new Promise<void>(resolve => setTimeout(resolve, ms))
+}
+
+async function fetchPageBlob(url: string): Promise<Blob> {
+    const maxAttempts = 3
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        let res: Response
+        try {
+            res = await fetch(url)
+        } catch (cause) {
+            if (attempt < maxAttempts) {
+                await delay(attempt * 300)
+                continue
+            }
+            throw new SourceError("request-failed", "Failed to download a page", {
+                url,
+                cause: cause instanceof Error ? cause.message : String(cause)
+            })
+        }
+        if (!res.ok) {
+            const expired = res.status === 404 || res.status === 410
+            if (!expired && attempt < maxAttempts) {
+                await delay(attempt * 300)
+                continue
+            }
+            throw new SourceError("request-failed", `Failed to download a page (${res.status})`, {
+                url,
+                status: res.status
+            })
+        }
+        return res.blob()
+    }
+    throw new SourceError("request-failed", "Failed to download a page", { url })
+}
+
 async function captureChapter(url: string) {
     const settings = await getSettings()
     const parsedUrl = new URL(url)
@@ -389,7 +425,8 @@ export default defineBackground(() => {
                                 name: adapter.manifest.name,
                                 domains: adapter.manifest.domains,
                                 capabilities: adapter.manifest.capabilities,
-                                canSearch: Boolean(adapter.search)
+                                canSearch: Boolean(adapter.search),
+                                homepage: adapter.manifest.homepage
                             }))
                         )
                     case "updates:check":
@@ -465,24 +502,29 @@ export default defineBackground(() => {
                     }
                     case "chapter:download": {
                         const resolved = await resolveChapterUrl(request.url)
-                        const pages = resolved.pages.slice(0, 200)
+                        let pages = resolved.pages.slice(0, 200)
                         const pageBlobs: Blob[] = []
-                        for (const p of pages) {
-                            let res: Response
+                        let reResolved = false
+                        for (let index = 0; index < pages.length; index += 1) {
+                            const page = pages[index]
+                            if (!page) continue
+                            let blob: Blob
                             try {
-                                res = await fetch(p.url)
-                            } catch (cause) {
-                                throw new SourceError("request-failed", "Failed to download a page", {
-                                    url: p.url,
-                                    cause: cause instanceof Error ? cause.message : String(cause)
-                                })
+                                blob = await fetchPageBlob(page.url)
+                            } catch (error) {
+                                const expired =
+                                    error instanceof SourceError &&
+                                    (error.details?.["status"] === 404 || error.details?.["status"] === 410)
+                                if (expired && !reResolved) {
+                                    reResolved = true
+                                    const refreshed = await resolveChapterUrl(request.url)
+                                    pages = refreshed.pages.slice(0, 200)
+                                    index -= 1
+                                    continue
+                                }
+                                throw error
                             }
-                            if (!res.ok) {
-                                throw new SourceError("request-failed", `Failed to download a page (${res.status})`, {
-                                    url: p.url
-                                })
-                            }
-                            pageBlobs.push(await res.blob())
+                            pageBlobs.push(blob)
                         }
                         await saveDownload({
                             chapterId: resolved.chapter.id,

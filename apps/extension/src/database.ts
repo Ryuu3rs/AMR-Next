@@ -318,12 +318,25 @@ export async function seedDatabase(): Promise<void> {
 }
 
 export async function getLocalStats() {
-    const [mangaCount, progress, history] = await Promise.all([
-        db.manga.count(),
+    const [manga, progress, history, downloadedChapters] = await Promise.all([
+        db.manga.toArray(),
         db.progress.toArray(),
-        db.historyEvents.orderBy("occurredAt").toArray()
+        db.historyEvents.orderBy("occurredAt").toArray(),
+        db.downloads.count()
     ])
+    const mangaCount = manga.length
     const completedChapters = progress.filter(item => item.completed).length
+
+    const ratedCount = manga.filter(m => m.rating !== undefined).length
+    const categoriesCount = new Set(manga.flatMap(m => m.categories ?? [])).size
+    const sourcesUsed = new Set(manga.map(m => m.sourceId)).size
+    const manualCount = manga.filter(m => m.manualTracking === true).length
+    const completedSeries = manga.filter(
+        m =>
+            m.latestChapterNumber !== undefined &&
+            m.lastReadChapterNumber !== undefined &&
+            m.lastReadChapterNumber >= m.latestChapterNumber
+    ).length
     const dayKeys = [...new Set(history.map(event => new Date(event.occurredAt).toISOString().slice(0, 10)))].sort()
     const readingDays = dayKeys.length
 
@@ -354,76 +367,293 @@ export async function getLocalStats() {
         e => e.type === "completed" && new Date(e.occurredAt).toISOString().slice(0, 10) === todayKey
     ).length
 
-    const ACHIEVEMENT_DEFS = [
+    const ACHIEVEMENT_DEFS: Array<{
+        id: string
+        title: string
+        description: string
+        category: string
+        metric: number
+        target: number
+    }> = [
         {
             id: "first-chapter",
             title: "First Chapter",
             description: "Complete one chapter",
+            category: "Chapters",
             metric: completedChapters,
             target: 1
         },
         {
-            id: "getting-started",
-            title: "Getting Started",
-            description: "Save three manga",
+            id: "chapters-10",
+            title: "Just Warming Up",
+            description: "Complete ten chapters",
+            category: "Chapters",
+            metric: completedChapters,
+            target: 10
+        },
+        {
+            id: "chapters-50",
+            title: "Bookworm",
+            description: "Complete 50 chapters",
+            category: "Chapters",
+            metric: completedChapters,
+            target: 50
+        },
+        {
+            id: "chapters-100",
+            title: "Page Turner",
+            description: "Complete 100 chapters",
+            category: "Chapters",
+            metric: completedChapters,
+            target: 100
+        },
+        {
+            id: "chapters-250",
+            title: "Voracious",
+            description: "Complete 250 chapters",
+            category: "Chapters",
+            metric: completedChapters,
+            target: 250
+        },
+        {
+            id: "chapters-500",
+            title: "Marathon",
+            description: "Complete 500 chapters",
+            category: "Chapters",
+            metric: completedChapters,
+            target: 500
+        },
+        {
+            id: "chapters-1000",
+            title: "Living Library",
+            description: "Complete 1000 chapters",
+            category: "Chapters",
+            metric: completedChapters,
+            target: 1000
+        },
+        {
+            id: "manga-1",
+            title: "First Title",
+            description: "Save your first manga",
+            category: "Library",
             metric: mangaCount,
+            target: 1
+        },
+        {
+            id: "manga-5",
+            title: "Shelf Starter",
+            description: "Save five manga",
+            category: "Library",
+            metric: mangaCount,
+            target: 5
+        },
+        {
+            id: "manga-10",
+            title: "Collector",
+            description: "Save ten manga",
+            category: "Library",
+            metric: mangaCount,
+            target: 10
+        },
+        {
+            id: "manga-25",
+            title: "Curator",
+            description: "Save 25 manga",
+            category: "Library",
+            metric: mangaCount,
+            target: 25
+        },
+        {
+            id: "manga-50",
+            title: "Archivist",
+            description: "Save 50 manga",
+            category: "Library",
+            metric: mangaCount,
+            target: 50
+        },
+        {
+            id: "manga-100",
+            title: "Hoarder",
+            description: "Save 100 manga",
+            category: "Library",
+            metric: mangaCount,
+            target: 100
+        },
+        {
+            id: "streak-3",
+            title: "Consistent",
+            description: "Keep a three-day reading streak",
+            category: "Streaks",
+            metric: longestStreak,
             target: 3
         },
         {
-            id: "shelf-starter",
-            title: "Shelf Starter",
-            description: "Add five manga",
-            metric: mangaCount,
-            target: 5
+            id: "streak-7",
+            title: "Dedicated",
+            description: "Reach a seven-day reading streak",
+            category: "Streaks",
+            metric: longestStreak,
+            target: 7
+        },
+        {
+            id: "streak-14",
+            title: "Committed",
+            description: "Reach a fourteen-day reading streak",
+            category: "Streaks",
+            metric: longestStreak,
+            target: 14
+        },
+        {
+            id: "streak-30",
+            title: "Unstoppable",
+            description: "Reach a thirty-day reading streak",
+            category: "Streaks",
+            metric: longestStreak,
+            target: 30
+        },
+        {
+            id: "streak-60",
+            title: "Relentless",
+            description: "Reach a sixty-day reading streak",
+            category: "Streaks",
+            metric: longestStreak,
+            target: 60
+        },
+        {
+            id: "streak-100",
+            title: "Centurion",
+            description: "Reach a hundred-day reading streak",
+            category: "Streaks",
+            metric: longestStreak,
+            target: 100
+        },
+        {
+            id: "active-days-7",
+            title: "Explorer",
+            description: "Read on seven different days",
+            category: "Activity",
+            metric: readingDays,
+            target: 7
+        },
+        {
+            id: "active-days-30",
+            title: "Regular",
+            description: "Read on 30 different days",
+            category: "Activity",
+            metric: readingDays,
+            target: 30
+        },
+        {
+            id: "active-days-100",
+            title: "Veteran",
+            description: "Read on 100 different days",
+            category: "Activity",
+            metric: readingDays,
+            target: 100
         },
         {
             id: "weekly-reader",
             title: "Weekly Reader",
             description: "Complete ten chapters in a week",
+            category: "Pace",
             metric: chaptersThisWeek,
             target: 10
         },
         {
-            id: "consistent",
-            title: "Consistent",
-            description: "Keep a three-day reading streak",
-            metric: currentStreak,
-            target: 3
+            id: "binge-week",
+            title: "Binge Week",
+            description: "Complete 30 chapters in a week",
+            category: "Pace",
+            metric: chaptersThisWeek,
+            target: 30
         },
         {
-            id: "bookworm",
-            title: "Bookworm",
-            description: "Complete 25 chapters",
-            metric: completedChapters,
-            target: 25
-        },
-        {
-            id: "dedicated",
-            title: "Dedicated",
-            description: "Reach a seven-day reading streak",
-            metric: longestStreak,
-            target: 7
-        },
-        {
-            id: "explorer",
-            title: "Explorer",
-            description: "Read on ten different days",
-            metric: readingDays,
+            id: "day-blitz",
+            title: "Day Blitz",
+            description: "Complete ten chapters in a single day",
+            category: "Pace",
+            metric: chaptersToday,
             target: 10
         },
         {
-            id: "page-turner",
-            title: "Page Turner",
-            description: "Complete 100 chapters",
-            metric: completedChapters,
-            target: 100
+            id: "rate-5",
+            title: "Critic",
+            description: "Rate five titles",
+            category: "Curation",
+            metric: ratedCount,
+            target: 5
         },
         {
-            id: "marathon",
-            title: "Marathon",
-            description: "Complete 500 chapters",
-            metric: completedChapters,
-            target: 500
+            id: "rate-25",
+            title: "Reviewer",
+            description: "Rate 25 titles",
+            category: "Curation",
+            metric: ratedCount,
+            target: 25
+        },
+        {
+            id: "categories-3",
+            title: "Organizer",
+            description: "Create three categories",
+            category: "Curation",
+            metric: categoriesCount,
+            target: 3
+        },
+        {
+            id: "manual-1",
+            title: "Hands On",
+            description: "Mark a title for manual tracking",
+            category: "Curation",
+            metric: manualCount,
+            target: 1
+        },
+        {
+            id: "complete-series-1",
+            title: "The End",
+            description: "Catch up to the latest chapter of a series",
+            category: "Curation",
+            metric: completedSeries,
+            target: 1
+        },
+        {
+            id: "complete-series-5",
+            title: "Caught Up",
+            description: "Catch up on five full series",
+            category: "Curation",
+            metric: completedSeries,
+            target: 5
+        },
+        {
+            id: "offline-5",
+            title: "Going Offline",
+            description: "Download five chapters for offline reading",
+            category: "Offline",
+            metric: downloadedChapters,
+            target: 5
+        },
+        {
+            id: "offline-25",
+            title: "Stocked Up",
+            description: "Download 25 chapters for offline reading",
+            category: "Offline",
+            metric: downloadedChapters,
+            target: 25
+        },
+        {
+            id: "sources-3",
+            title: "Source Hopper",
+            description: "Read from three distinct sources",
+            category: "Sources",
+            metric: sourcesUsed,
+            target: 3
+        },
+        {
+            id: "sources-5",
+            title: "Source Connoisseur",
+            description: "Read from five distinct sources",
+            category: "Sources",
+            metric: sourcesUsed,
+            target: 5
         }
     ]
 
@@ -435,10 +665,16 @@ export async function getLocalStats() {
         longestStreak,
         chaptersThisWeek,
         chaptersToday,
+        ratedCount,
+        categoriesCount,
+        downloadedChapters,
+        sourcesUsed,
+        completedSeries,
         achievements: ACHIEVEMENT_DEFS.map(def => ({
             id: def.id,
             title: def.title,
             description: def.description,
+            category: def.category,
             target: def.target,
             progress: Math.min(def.metric, def.target),
             unlocked: def.metric >= def.target

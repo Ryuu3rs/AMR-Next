@@ -176,7 +176,8 @@ export const mgekoAdapter: SourceAdapter = {
         languages: ["en"],
         capabilities: ["pages"],
         requestRateLimit: { requests: 3, intervalMs: 1000 },
-        fixtureVersion: 1
+        fixtureVersion: 1,
+        homepage: ORIGIN
     },
 
     match(url: URL): SourcePageMatch {

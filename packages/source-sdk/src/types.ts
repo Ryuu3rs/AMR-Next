@@ -16,6 +16,7 @@ export type SourceManifest = {
         intervalMs: number
     }
     fixtureVersion: number
+    homepage?: string
 }
 
 export type SourceManga = {

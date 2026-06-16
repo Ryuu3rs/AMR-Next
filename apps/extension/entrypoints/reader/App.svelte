@@ -24,6 +24,76 @@
     let mangaId = $state("")
     let showHelp = $state(false)
 
+    // Fallback: when a chapter fails to resolve or its page images won't load,
+    // let the user search every source for a working mirror.
+    type SearchResult = {
+        sourceId: string
+        sourceMangaId: string
+        title: string
+        url: string
+        coverUrl?: string
+        latestChapter?: string
+    }
+    let imageErrorCount = $state(0)
+    let mirrorOpen = $state(false)
+    let mirrorLoading = $state(false)
+    let mirrorSearched = $state(false)
+    let mirrorResults = $state<SearchResult[]>([])
+
+    function slugFromUrl(url: string): string {
+        try {
+            const segments = new URL(url).pathname.split("/").filter(Boolean)
+            const candidate = segments.find(s => /[a-z]/i.test(s) && s !== "manga" && s !== "chapter")
+            if (!candidate) return ""
+            return decodeURIComponent(candidate).replace(/[-_]+/g, " ").trim()
+        } catch {
+            return ""
+        }
+    }
+
+    const mirrorQuery = $derived(chapter?.manga.manga.title ?? slugFromUrl(chapterUrl))
+
+    // A failed resolve, a page-count of 0, or images that error out all mean the
+    // current source is broken for this chapter.
+    const imagesBroken = $derived(
+        Boolean(chapter) && (chapter!.pages.length === 0 || imageErrorCount >= chapter!.pages.length)
+    )
+
+    async function findOnAnotherMirror() {
+        mirrorOpen = true
+        if (!mirrorQuery) {
+            mirrorResults = []
+            mirrorSearched = true
+            return
+        }
+        mirrorLoading = true
+        mirrorSearched = false
+        try {
+            const results = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: mirrorQuery })
+            const currentSourceId = chapter?.manga.sourceId
+            mirrorResults = currentSourceId ? results.filter(r => r.sourceId !== currentSourceId) : results
+        } catch {
+            mirrorResults = []
+        } finally {
+            mirrorLoading = false
+            mirrorSearched = true
+        }
+    }
+
+    const mirrorResultsBySource = $derived.by(() => {
+        const groups = new Map<string, SearchResult[]>()
+        for (const result of mirrorResults) {
+            const existing = groups.get(result.sourceId)
+            if (existing) existing.push(result)
+            else groups.set(result.sourceId, [result])
+        }
+        return [...groups.entries()]
+    })
+
+    function openMirror(result: SearchResult) {
+        void browser.tabs.create({ url: result.url })
+    }
+
     // A9: offline downloads. When a chapter has been downloaded, render the
     // stored Blobs via object URLs instead of the remote page URLs.
     let offlinePages = $state<string[]>([])
@@ -145,6 +215,10 @@
         chapter = undefined
         revokeOfflinePages()
         downloaded = false
+        imageErrorCount = 0
+        mirrorOpen = false
+        mirrorSearched = false
+        mirrorResults = []
         try {
             chapter = await sendRuntimeMessage<ResolvedChapter>({ type: "reader:resolve", url })
             void loadSiblings(chapter)
@@ -235,6 +309,7 @@
             img.src = `https://uploads.mangadex.org/data/${match[1]}/${match[2]}`
         } else {
             console.warn("[AMR reader] Image load failed, no fallback pattern matched:", img.src)
+            imageErrorCount += 1
         }
     }
 
@@ -376,6 +451,14 @@
 {/if}
 
 <main class:single={effectiveMode === "single"} class="fit-{effectivePageFit} dir-{direction}">
+    {#if chapter && !error && !resolving && imagesBroken}
+        <div class="mirror-banner">
+            <span>Images not loading on this source?</span>
+            <button type="button" class="btn-mirror" onclick={() => void findOnAnotherMirror()}>
+                Find another source
+            </button>
+        </div>
+    {/if}
     {#if error}
         <section class="message">
             <h1>Chapter could not be loaded</h1>
@@ -383,6 +466,9 @@
             {#if chapterUrl}
                 <button type="button" onclick={() => void loadChapter(chapterUrl)}>Try again</button>
             {/if}
+            <button type="button" class="btn-mirror" onclick={() => void findOnAnotherMirror()}>
+                Images not loading? Find another source
+            </button>
         </section>
     {:else if resolving}
         <section class="message"><p>Loading chapter…</p></section>
@@ -477,3 +563,127 @@
         </div>
     </div>
 {/if}
+
+{#if mirrorOpen}
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div class="help-backdrop" onclick={() => (mirrorOpen = false)}>
+        <div
+            class="help-card mirror-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Find another source"
+            tabindex="-1"
+            onclick={event => event.stopPropagation()}>
+            <div class="help-head">
+                <h2>Find another source</h2>
+                <button type="button" class="help-close" aria-label="Close" onclick={() => (mirrorOpen = false)}
+                    >×</button>
+            </div>
+            {#if mirrorLoading}
+                <p class="muted">Searching other sources…</p>
+            {:else if mirrorSearched && mirrorResults.length === 0}
+                <p class="muted">
+                    {mirrorQuery ? "No other mirror found for this title." : "Couldn't work out a title to search for."}
+                </p>
+            {:else if mirrorResults.length > 0}
+                <p class="help-note">Results for “{mirrorQuery}” from other sources:</p>
+                <div class="mirror-groups">
+                    {#each mirrorResultsBySource as [sourceId, results] (sourceId)}
+                        <div class="mirror-group">
+                            <h3 class="mirror-source">{sourceId}</h3>
+                            {#each results as result (result.url)}
+                                <div class="mirror-result">
+                                    <div class="mirror-meta">
+                                        <span class="mirror-title">{result.title}</span>
+                                        {#if result.latestChapter}
+                                            <span class="muted">Latest: {result.latestChapter}</span>
+                                        {/if}
+                                    </div>
+                                    <button type="button" class="btn-sm" onclick={() => openMirror(result)}>
+                                        Open
+                                    </button>
+                                </div>
+                            {/each}
+                        </div>
+                    {/each}
+                </div>
+            {/if}
+        </div>
+    </div>
+{/if}
+
+<style>
+    .btn-mirror {
+        margin-top: 16px;
+        background: #f59e0b;
+        border: 1px solid #d97706;
+        color: #1a1a1a;
+        font-weight: 600;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+
+    .mirror-banner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 16px auto;
+        padding: 12px 16px;
+        max-width: 560px;
+        border: 1px solid #d97706;
+        border-radius: 8px;
+        background: rgba(245, 158, 11, 0.12);
+        color: #fbbf24;
+    }
+
+    .mirror-banner .btn-mirror {
+        margin-top: 0;
+    }
+
+    .mirror-card {
+        text-align: left;
+    }
+
+    .mirror-groups {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-top: 12px;
+        max-height: 50vh;
+        overflow-y: auto;
+    }
+
+    .mirror-source {
+        margin: 0 0 6px;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        opacity: 0.7;
+    }
+
+    .mirror-result {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .mirror-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+    }
+
+    .mirror-title {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>

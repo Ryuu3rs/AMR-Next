@@ -367,7 +367,8 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             languages: [language],
             capabilities: ["pages", "chapters"],
             requestRateLimit: config.rateLimit ?? { requests: 3, intervalMs: 1000 },
-            fixtureVersion: 1
+            fixtureVersion: 1,
+            homepage: config.origin
         },
 
         match(url: URL): SourcePageMatch {
