@@ -33,6 +33,58 @@ function captureGroup(match: RegExpMatchArray, index: number): string | undefine
     return typeof v === "string" ? v : undefined
 }
 
+// Navigation / widget labels that leak into a whole-page anchor scan. A real
+// search result is a manga title, never one of these control labels.
+const JUNK_TITLES = new Set([
+    "top",
+    "latest",
+    "completed",
+    "ongoing",
+    "popular",
+    "hot",
+    "new",
+    "new titles",
+    "updated",
+    "update",
+    "trending",
+    "recommended",
+    "random",
+    "genres",
+    "genre",
+    "bookmark",
+    "bookmarks",
+    "home",
+    "manga",
+    "manga list",
+    "comics",
+    "all",
+    "view all",
+    "see all",
+    "a-z",
+    "advanced search",
+    "search",
+    "more",
+    "login",
+    "register"
+])
+
+function decodeEntities(value: string): string {
+    return value
+        .replace(/&#0*39;|&apos;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, "&")
+        .replace(/&#0*38;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&#0*(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+        .replace(/&nbsp;/g, " ")
+}
+
+function isJunkTitle(title: string): boolean {
+    const t = title.trim().toLowerCase()
+    return t.length < 2 || JUNK_TITLES.has(t)
+}
+
 function getImgAttr(tag: string, ...attrNames: string[]): string | undefined {
     for (const attr of attrNames) {
         const escaped = attr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -138,20 +190,24 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
         return raw ? raw.replace("-", ".") : "1"
     }
 
+    // MangaStream/Asura render search hits inside `.listupd`; each card is an
+    // anchor carrying a `title` attribute. Scope to that region and require the
+    // title attribute so nav/sidebar links never leak in as fake results.
     function extractSearchResults(html: string): SourceSearchResult[] {
         const originPath = `${escapeRegex(config.origin)}/${escPath}`
-        const linkRe = new RegExp(`<a\\s+href="(${originPath}/([^"/]+)/?)"[^>]*>([\\s\\S]*?)</a>`, "gi")
+        const listIdx = html.search(/class=["'][^"']*\blistupd\b/i)
+        const region = listIdx === -1 ? html : html.slice(listIdx)
+        const itemRe = new RegExp(`<a\\s+href="(${originPath}/([^"/]+)/?)"[^>]*\\stitle="([^"]+)"`, "gi")
         const out: SourceSearchResult[] = []
         const seen = new Set<string>()
-        for (const m of html.matchAll(linkRe)) {
+        for (const m of region.matchAll(itemRe)) {
             const url = captureGroup(m, 1)
             const slug = captureGroup(m, 2)
-            if (!url || !slug || seen.has(slug)) continue
+            const rawTitle = captureGroup(m, 3)
+            if (!url || !slug || !rawTitle || seen.has(slug)) continue
+            const title = decodeEntities(rawTitle).trim()
+            if (isJunkTitle(title)) continue
             seen.add(slug)
-            const inner = captureGroup(m, 3) ?? ""
-            const titleAttr = inner.match(/title="([^"]+)"/)
-            const titleText = (titleAttr ? captureGroup(titleAttr, 1) : undefined) ?? inner.replace(/<[^>]+>/g, "")
-            const title = titleText.trim()
             out.push({
                 sourceId: config.id,
                 sourceMangaId: slug,

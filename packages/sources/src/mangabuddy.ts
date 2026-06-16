@@ -33,6 +33,58 @@ function captureGroup(match: RegExpMatchArray, index: number): string | undefine
     return typeof v === "string" ? v : undefined
 }
 
+// Navigation / widget labels that leak into a whole-page anchor scan. A real
+// search result is a manga title, never one of these control labels.
+const JUNK_TITLES = new Set([
+    "top",
+    "latest",
+    "completed",
+    "ongoing",
+    "popular",
+    "hot",
+    "new",
+    "new titles",
+    "updated",
+    "update",
+    "trending",
+    "recommended",
+    "random",
+    "genres",
+    "genre",
+    "bookmark",
+    "bookmarks",
+    "home",
+    "manga",
+    "manga list",
+    "comics",
+    "all",
+    "view all",
+    "see all",
+    "a-z",
+    "advanced search",
+    "search",
+    "more",
+    "login",
+    "register"
+])
+
+function decodeEntities(value: string): string {
+    return value
+        .replace(/&#0*39;|&apos;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, "&")
+        .replace(/&#0*38;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&#0*(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+        .replace(/&nbsp;/g, " ")
+}
+
+function isJunkTitle(title: string): boolean {
+    const t = title.trim().toLowerCase()
+    return t.length < 2 || JUNK_TITLES.has(t)
+}
+
 // Get an attribute value from an img tag, handles both quote styles and any attribute order.
 function getImgAttr(tag: string, ...attrNames: string[]): string | undefined {
     for (const attr of attrNames) {
@@ -169,13 +221,17 @@ export function createMangaBuddyAdapter(config: MangaBuddyConfig): SourceAdapter
         return raw ? raw.replace("-", ".") : "1"
     }
 
+    // Require an explicit `title` attribute on the anchor: MangaBuddy's result
+    // cards carry one, while the nav/sidebar links that share the manga path do
+    // not — so this keeps control labels out of the results.
     function extractSearchResults(html: string): SourceSearchResult[] {
-        const linkRe = /<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
+        const linkRe = /<a\s+href="([^"]+)"[^>]*\stitle="([^"]+)"[^>]*>/gi
         const out: SourceSearchResult[] = []
         const seen = new Set<string>()
         for (const m of html.matchAll(linkRe)) {
             const href = captureGroup(m, 1)
-            if (!href) continue
+            const rawTitle = captureGroup(m, 2)
+            if (!href || !rawTitle) continue
             let absolute: URL
             try {
                 absolute = new URL(href, config.origin)
@@ -185,11 +241,9 @@ export function createMangaBuddyAdapter(config: MangaBuddyConfig): SourceAdapter
             if (!matchesSourceDomain(absolute.hostname, config.domains)) continue
             const slug = mangaSlug(absolute)
             if (!slug || seen.has(slug)) continue
+            const title = decodeEntities(rawTitle).trim()
+            if (isJunkTitle(title)) continue
             seen.add(slug)
-            const inner = captureGroup(m, 2) ?? ""
-            const titleAttr = inner.match(/title="([^"]+)"/)
-            const titleText = (titleAttr ? captureGroup(titleAttr, 1) : undefined) ?? inner.replace(/<[^>]+>/g, "")
-            const title = titleText.trim()
             out.push({
                 sourceId: config.id,
                 sourceMangaId: slug,

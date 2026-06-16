@@ -216,10 +216,14 @@ export async function seedDatabase(): Promise<void> {
                 id: "seed-md-001",
                 title: "Buried Injustice",
                 normalizedTitle: "buried injustice",
+                coverUrl:
+                    "https://uploads.mangadex.org/covers/62994137-014f-4499-b88a-c219b115fd64/1fa9ebd6-be38-4976-a604-ffbb3fa29580.png.256.jpg",
                 authors: [],
                 status: "ongoing",
                 sourceId: "mangadex",
                 sourceUrl: "https://mangadex.org/chapter/3dff8b5f-844e-4964-abd7-641c34f1f091",
+                sourceMangaId: "62994137-014f-4499-b88a-c219b115fd64",
+                mangaUrl: "https://mangadex.org/title/62994137-014f-4499-b88a-c219b115fd64",
                 addedAt: now - 86400000 * 7,
                 updatedAt: now - 3600000 * 2,
                 latestChapterId: "seed-md-001-ch"
@@ -234,10 +238,14 @@ export async function seedDatabase(): Promise<void> {
                 id: "seed-mr-001",
                 title: "Entomologist In Sichuan Tang Clan",
                 normalizedTitle: "entomologist in sichuan tang clan",
+                coverUrl:
+                    "https://uploads.mangadex.org/covers/ece206e2-1199-48e4-a88c-1f99af3d5378/2266f53d-fafa-4649-9660-f02265050c0f.jpg.256.jpg",
                 authors: [],
                 status: "ongoing",
                 sourceId: "mangaread",
                 sourceUrl: "https://www.mangaread.org/manga/entomologist-in-sichuan-tang-clan/chapter-79/?style=list",
+                sourceMangaId: "entomologist-in-sichuan-tang-clan",
+                mangaUrl: "https://www.mangaread.org/manga/entomologist-in-sichuan-tang-clan/",
                 addedAt: now - 86400000 * 5,
                 updatedAt: now - 3600000 * 5,
                 latestChapterId: "seed-mr-001-ch"
@@ -252,11 +260,15 @@ export async function seedDatabase(): Promise<void> {
                 id: "seed-mr-002",
                 title: "Legendary Youngest Son Of The Marquis House",
                 normalizedTitle: "legendary youngest son of the marquis house",
+                coverUrl:
+                    "https://uploads.mangadex.org/covers/43547c04-8fa2-49ce-84b4-b0424dd98bd6/88ff8ee0-26e4-474a-9e60-90a68b7767ab.jpg.256.jpg",
                 authors: [],
                 status: "ongoing",
                 sourceId: "mangaread",
                 sourceUrl:
                     "https://www.mangaread.org/manga/legendary-youngest-son-of-the-marquis-house/chapter-161/?style=list",
+                sourceMangaId: "legendary-youngest-son-of-the-marquis-house",
+                mangaUrl: "https://www.mangaread.org/manga/legendary-youngest-son-of-the-marquis-house/",
                 addedAt: now - 86400000 * 3,
                 updatedAt: now - 3600000 * 8,
                 latestChapterId: "seed-mr-002-ch"
@@ -272,10 +284,14 @@ export async function seedDatabase(): Promise<void> {
                 id: "seed-mgk-001",
                 title: "Barbarian's Adventure In A Fantasy World",
                 normalizedTitle: "barbarian's adventure in a fantasy world",
+                coverUrl:
+                    "https://uploads.mangadex.org/covers/b2d69804-ea75-402f-9051-40a248bd951c/373c5b40-5395-4525-a4f0-f248481286cf.png.256.jpg",
                 authors: [],
                 status: "ongoing",
                 sourceId: "mgeko",
                 sourceUrl: "https://www.mgeko.cc/reader/en/barbarians-adventure-in-a-fantasy-world-chapter-52-eng-li/",
+                sourceMangaId: "barbarians-adventure-in-a-fantasy-world",
+                mangaUrl: "https://www.mgeko.cc/comic/barbarians-adventure-in-a-fantasy-world/",
                 addedAt: now - 86400000 * 2,
                 updatedAt: now - 3600000 * 12,
                 latestChapterId: "seed-mgk-001-ch"
@@ -299,7 +315,8 @@ export async function seedDatabase(): Promise<void> {
     const seedLinks: import("@amr/contracts").SourceLinkRecord[] = seedEntries.map(e => ({
         mangaId: e.manga.id,
         sourceId: e.sourceId,
-        url: e.chapterUrl,
+        ...(e.manga.sourceMangaId ? { sourceMangaId: e.manga.sourceMangaId } : {}),
+        url: e.manga.mangaUrl ?? e.chapterUrl,
         title: e.manga.title,
         addedAt: e.manga.addedAt,
         updatedAt: e.manga.updatedAt

@@ -52,6 +52,20 @@ describe("createMangaStreamAdapter", () => {
         expect(result.manga.manga.coverUrl).toBe("https://test-stream.example/cover.jpg")
     })
 
+    it("search keeps real cards and drops nav/sidebar junk", async () => {
+        const searchHtml = `<html><body>
+<nav><a href="https://test-stream.example/manga/popular/" title="Popular">Popular</a>
+<a href="https://test-stream.example/manga/latest/" title="Latest">Latest</a></nav>
+<div class="listupd">
+  <div class="bsx"><a href="https://test-stream.example/manga/buried-injustice/" title="Buried Injustice"><img src="x.jpg"/></a></div>
+  <div class="bsx"><a href="https://test-stream.example/manga/sir-dont-show-off/" title="Sir, Don&#039;t Show Off"></a></div>
+</div></body></html>`
+        const context = createContext({ "/": searchHtml })
+        const results = await adapter.search!("anything", context)
+        expect(results.map(r => r.title)).toEqual(["Buried Injustice", "Sir, Don't Show Off"])
+        expect(results.every(r => r.sourceMangaId !== "popular" && r.sourceMangaId !== "latest")).toBe(true)
+    })
+
     it("falls back to #readerarea images", async () => {
         const html = `<html><body><div id="readerarea">
 <img src="https://cdn.example/a.jpg" /><img src="https://cdn.example/b.png" />

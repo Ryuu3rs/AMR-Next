@@ -33,6 +33,58 @@ function captureGroup(match: RegExpMatchArray, index: number): string | undefine
     return typeof v === "string" ? v : undefined
 }
 
+// Navigation / widget labels that leak into a whole-page anchor scan. A real
+// search result is a manga title, never one of these control labels.
+const JUNK_TITLES = new Set([
+    "top",
+    "latest",
+    "completed",
+    "ongoing",
+    "popular",
+    "hot",
+    "new",
+    "new titles",
+    "updated",
+    "update",
+    "trending",
+    "recommended",
+    "random",
+    "genres",
+    "genre",
+    "bookmark",
+    "bookmarks",
+    "home",
+    "manga",
+    "manga list",
+    "comics",
+    "all",
+    "view all",
+    "see all",
+    "a-z",
+    "advanced search",
+    "search",
+    "more",
+    "login",
+    "register"
+])
+
+function decodeEntities(value: string): string {
+    return value
+        .replace(/&#0*39;|&apos;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, "&")
+        .replace(/&#0*38;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&#0*(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+        .replace(/&nbsp;/g, " ")
+}
+
+function isJunkTitle(title: string): boolean {
+    const t = title.trim().toLowerCase()
+    return t.length < 2 || JUNK_TITLES.has(t)
+}
+
 // Get an attribute value from an img tag, handles both quote styles and any attribute order.
 function getImgAttr(tag: string, ...attrNames: string[]): string | undefined {
     for (const attr of attrNames) {
@@ -194,12 +246,13 @@ function extractSearchResults(html: string, config: MadaraConfig, mangaPath: str
     const blocks = [
         ...html.matchAll(/<div[^>]*\bc-tabs-item__content\b[^>]*>([\s\S]*?)(?=<div[^>]*\bc-tabs-item__content\b|$)/gi)
     ].map(m => captureGroup(m, 1) ?? "")
-    const scopes = blocks.length > 0 ? blocks : [html]
+    // No result wrappers means no hits — scanning the whole page only yields nav junk.
+    if (blocks.length === 0) return []
     const linkRe = new RegExp(`<a\\s+href="(${originPath}/([^"/]+)/?)"[^>]*>([\\s\\S]*?)</a>`, "gi")
 
     const out: SourceSearchResult[] = []
     const seen = new Set<string>()
-    for (const block of scopes) {
+    for (const block of blocks) {
         const anchors = [...block.matchAll(linkRe)]
         const first = anchors[0]
         const url = first ? captureGroup(first, 1) : undefined
@@ -209,13 +262,14 @@ function extractSearchResults(html: string, config: MadaraConfig, mangaPath: str
         // The thumbnail anchor has no text; the title anchor does — take the first non-empty.
         let title = ""
         for (const a of anchors) {
-            const text = (captureGroup(a, 3) ?? "").replace(/<[^>]+>/g, "").trim()
+            const text = decodeEntities((captureGroup(a, 3) ?? "").replace(/<[^>]+>/g, "")).trim()
             if (text) {
                 title = text
                 break
             }
         }
         if (!title) title = slug.replace(/-/g, " ")
+        if (isJunkTitle(title)) continue
         const imgTag = block.match(/<img\b[^>]*>/i)
         const coverUrl = imgTag
             ? getImgAttr(captureGroup(imgTag, 0) ?? "", "src", "data-src", "data-lazy-src")
@@ -446,6 +500,45 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
         },
 
         async search(query: string, context: SourceContext): Promise<SourceSearchResult[]> {
+            // Primary: Madara's admin-ajax title search returns just the manga hits,
+            // so it never picks up nav/sidebar links the way a page scrape can.
+            try {
+                const body = await context.request.postForm(
+                    new URL(`${config.origin}/wp-admin/admin-ajax.php`),
+                    { action: "wp-manga-search-manga", title: query },
+                    { headers: browserHeaders }
+                )
+                const parsed = JSON.parse(body) as {
+                    success?: boolean
+                    data?: Array<{ title?: string; url?: string }>
+                }
+                if (parsed?.success && Array.isArray(parsed.data)) {
+                    const out: SourceSearchResult[] = []
+                    const seen = new Set<string>()
+                    for (const item of parsed.data) {
+                        if (!item.url || !item.title) continue
+                        let parsedUrl: URL
+                        try {
+                            parsedUrl = new URL(item.url, config.origin)
+                        } catch {
+                            continue
+                        }
+                        const slug = parsedUrl.pathname.replace(/\/+$/, "").split("/").pop()
+                        const title = decodeEntities(item.title).trim()
+                        if (!slug || seen.has(slug) || isJunkTitle(title)) continue
+                        seen.add(slug)
+                        out.push({
+                            sourceId: config.id,
+                            sourceMangaId: slug,
+                            title,
+                            url: parsedUrl.toString()
+                        })
+                    }
+                    if (out.length > 0) return out
+                }
+            } catch {
+                // fall through to the HTML search page
+            }
             const url = new URL(`${config.origin}/`)
             url.searchParams.set("s", query)
             url.searchParams.set("post_type", "wp-manga")
