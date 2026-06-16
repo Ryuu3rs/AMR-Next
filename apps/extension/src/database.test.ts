@@ -103,6 +103,38 @@ describe("export / import round-trip", () => {
     it("rejects a malformed envelope", async () => {
         await expect(importDatabase({ format: "wrong", version: 9, data: {} })).rejects.toThrow(/invalid/i)
     })
+
+    it("accepts legacy envelope with missing optional tables", async () => {
+        const legacyEnvelope = {
+            format: "all-mangas-reader",
+            version: 1,
+            data: {
+                manga: [
+                    {
+                        id: "legacy-1",
+                        title: "Legacy Manga",
+                        normalizedTitle: "legacy manga",
+                        authors: [],
+                        status: "ongoing",
+                        sourceId: "mangadex",
+                        sourceUrl: "https://mangadex.org/chapter/x",
+                        sourceMangaId: "legacy-src-id",
+                        mangaUrl: "https://mangadex.org/title/legacy-id",
+                        addedAt: Date.now(),
+                        updatedAt: Date.now()
+                    }
+                ]
+                // sourceLinks, chapters, progress, historyEvents intentionally omitted
+            }
+        }
+
+        const result = await importDatabase(legacyEnvelope)
+        expect(result.manga).toBe(1)
+        expect(result.chapters).toBe(0)
+
+        const restored = await db.manga.get("legacy-1")
+        expect(restored?.title).toBe("Legacy Manga")
+    })
 })
 
 describe("seedDatabase", () => {
