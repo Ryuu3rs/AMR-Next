@@ -1759,3 +1759,38 @@ button:disabled {
     margin-top: 2px;
     display: inline-block;
 }
+
+/* Browse-a-source: reachability dot + overflow-safe card */
+.adapter-chip {
+    min-width: 0;
+    overflow: hidden;
+}
+.adapter-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.adapter-caps {
+    overflow-wrap: anywhere;
+    line-height: 1.4;
+}
+.status-dot {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #5b6b7c;
+    box-shadow: 0 0 0 2px rgba(91, 107, 124, 0.15);
+}
+.status-dot.alive {
+    background: var(--success, #10b981);
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+.status-dot.dead {
+    background: #ef4444;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}
+.home-search {
+    margin: 0 0 22px;
+}

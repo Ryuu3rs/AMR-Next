@@ -15,7 +15,6 @@ const allowedOptionalHosts = [
     "https://arvenscans.org/*",
     "https://aryascans.com/*",
     "https://asuracomic.net/*",
-    "https://cypherscans.xyz/*",
     "https://drakecomic.com/*",
     "https://en-thunderscans.com/*",
     "https://flamecomics.xyz/*",

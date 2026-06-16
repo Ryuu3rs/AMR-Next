@@ -708,6 +708,28 @@
         const url = src.homepage ?? (src.domains[0] ? `https://${src.domains[0]}` : undefined)
         if (url) void browser.tabs.create({ url })
     }
+
+    let pingState = $state<Map<string, boolean>>(new Map())
+    let pinging = $state(false)
+    let pingedOnce = $state(false)
+
+    async function pingSources() {
+        if (pinging) return
+        pinging = true
+        try {
+            const res = await sendRuntimeMessage<Array<{ id: string; alive: boolean }>>({ type: "sources:ping" })
+            pingState = new Map(res.map(r => [r.id, r.alive]))
+            pingedOnce = true
+        } catch {
+            // reachability is best-effort
+        } finally {
+            pinging = false
+        }
+    }
+
+    $effect(() => {
+        if (activeSection === "Sources" && !pingedOnce && sourcesList.length > 0) void pingSources()
+    })
 </script>
 
 <div class="shell">
@@ -757,6 +779,81 @@
                     </div>
                 </div>
             {/if}
+
+            <form
+                class="search-bar global-search home-search"
+                onsubmit={e => {
+                    e.preventDefault()
+                    void doSearch()
+                }}>
+                <input
+                    bind:value={browseQuery}
+                    placeholder="Search every source for a title…"
+                    aria-label="Search all sources" />
+                <button type="submit" disabled={searchLoading || !browseQuery.trim()}>
+                    {searchLoading ? "Searching…" : "Search"}
+                </button>
+            </form>
+            {#if selectedManga}
+                <div class="chapters-panel">
+                    <button
+                        type="button"
+                        class="btn-back"
+                        onclick={() => {
+                            selectedManga = null
+                            mangaChapters = []
+                        }}>← Back to search</button>
+                    <h2 class="chapters-title">{selectedManga.title}</h2>
+                    {#if chaptersLoading}
+                        <p class="muted">Loading chapters...</p>
+                    {:else if mangaChapters.length === 0}
+                        <p class="muted">No English chapters found.</p>
+                    {:else}
+                        <div class="chapter-list">
+                            {#each mangaChapters as ch}
+                                <div class="chapter-row">
+                                    <p class="chapter-title">{ch.title}</p>
+                                    <button type="button" onclick={() => void readChapter(ch.url)}>Read</button>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
+                </div>
+            {:else if searchLoading}
+                <p class="muted">Searching all sources…</p>
+            {:else if searchResults.length > 0}
+                {#each searchBySource as [sourceId, results]}
+                    <div class="source-group">
+                        <div class="source-group-head">
+                            <span class="source-name">{sourceMeta.get(sourceId)?.name ?? sourceId}</span>
+                            <span class="muted">{results.length} result{results.length === 1 ? "" : "s"}</span>
+                        </div>
+                        <div class="search-results">
+                            {#each results as result}
+                                <div class="search-result">
+                                    <div class="result-cover">
+                                        {#if result.coverUrl}<img
+                                                src={result.coverUrl}
+                                                alt={result.title} />{:else}<span>{result.title[0]}</span>{/if}
+                                    </div>
+                                    <div class="result-info">
+                                        <p class="result-title">{result.title}</p>
+                                        <p class="muted">
+                                            {#if result.latestChapter}latest ch {result.latestChapter}{:else}—{/if}
+                                        </p>
+                                    </div>
+                                    <button type="button" onclick={() => void openResult(result)}>
+                                        {result.sourceId === "mangadex" ? "Chapters" : "Open"}
+                                    </button>
+                                </div>
+                            {/each}
+                        </div>
+                    </div>
+                {/each}
+            {:else if browseQuery.trim() && !searchLoading}
+                <p class="muted">No results across any source.</p>
+            {/if}
+
             {#if loading}
                 <p class="muted">Loading...</p>
             {:else if library.length === 0}
@@ -1245,97 +1342,39 @@
                 </div>
             {/if}
 
-            <form
-                class="search-bar global-search"
-                onsubmit={e => {
-                    e.preventDefault()
-                    void doSearch()
-                }}>
-                <input
-                    bind:value={browseQuery}
-                    placeholder="Search every source for a title…"
-                    aria-label="Search all sources" />
-                <button type="submit" disabled={searchLoading || !browseQuery.trim()}>
-                    {searchLoading ? "Searching…" : "Search"}
-                </button>
-            </form>
             <p class="muted search-hint">
-                One search across all {sourcesList.length || ""} sources. Results are grouped by site so you can pick a mirror
-                that carries the title.
+                Use the search box on the Home tab to look up a title across every source. Below are all sites you can
+                browse directly.
             </p>
 
-            {#if selectedManga}
-                <div class="chapters-panel">
-                    <button
-                        type="button"
-                        class="btn-back"
-                        onclick={() => {
-                            selectedManga = null
-                            mangaChapters = []
-                        }}>← Back to search</button>
-                    <h2 class="chapters-title">{selectedManga.title}</h2>
-                    {#if chaptersLoading}
-                        <p class="muted">Loading chapters...</p>
-                    {:else if mangaChapters.length === 0}
-                        <p class="muted">No English chapters found.</p>
-                    {:else}
-                        <div class="chapter-list">
-                            {#each mangaChapters as ch}
-                                <div class="chapter-row">
-                                    <p class="chapter-title">{ch.title}</p>
-                                    <button type="button" onclick={() => void readChapter(ch.url)}>Read</button>
-                                </div>
-                            {/each}
-                        </div>
-                    {/if}
-                </div>
-            {:else if searchLoading}
-                <p class="muted">Searching all sources…</p>
-            {:else if searchResults.length > 0}
-                {#each searchBySource as [sourceId, results]}
-                    <div class="source-group">
-                        <div class="source-group-head">
-                            <span class="source-name">{sourceMeta.get(sourceId)?.name ?? sourceId}</span>
-                            <span class="muted">{results.length} result{results.length === 1 ? "" : "s"}</span>
-                        </div>
-                        <div class="search-results">
-                            {#each results as result}
-                                <div class="search-result">
-                                    <div class="result-cover">
-                                        {#if result.coverUrl}<img
-                                                src={result.coverUrl}
-                                                alt={result.title} />{:else}<span>{result.title[0]}</span>{/if}
-                                    </div>
-                                    <div class="result-info">
-                                        <p class="result-title">{result.title}</p>
-                                        <p class="muted">
-                                            {#if result.latestChapter}latest ch {result.latestChapter}{:else}—{/if}
-                                        </p>
-                                    </div>
-                                    <button type="button" onclick={() => void openResult(result)}>
-                                        {result.sourceId === "mangadex" ? "Chapters" : "Open"}
-                                    </button>
-                                </div>
-                            {/each}
-                        </div>
-                    </div>
-                {/each}
-            {:else if browseQuery.trim() && !searchLoading}
-                <p class="muted">No results across any source.</p>
-            {/if}
-
             {#if sourcesList.length > 0}
-                <p class="shelf-label" style="margin-top:24px">Browse a source ({sourcesList.length})</p>
-                <p class="muted search-hint">Click a site to open it in a new tab and find titles to add.</p>
+                <div class="page-head">
+                    <p class="shelf-label" style="margin-bottom:0">Browse a source ({sourcesList.length})</p>
+                    <button type="button" class="btn-sm" onclick={() => void pingSources()} disabled={pinging}>
+                        {pinging ? "Checking…" : "Re-check sites"}
+                    </button>
+                </div>
+                <p class="muted search-hint">
+                    Click a site to open it in a new tab. The dot shows whether the site answered a reachability check
+                    (green = live, red = unreachable, grey = not checked).
+                </p>
                 <div class="adapter-grid">
                     {#each sourcesList as src}
+                        {@const alive = pingState.get(src.id)}
                         <button
                             type="button"
                             class="adapter-chip"
                             onclick={() => openSourceSite(src)}
                             title={`Open ${src.name}`}>
-                            <span class="adapter-name">{src.name}</span>
-                            <span class="muted">
+                            <span class="adapter-head">
+                                <span
+                                    class="status-dot"
+                                    class:alive={alive === true}
+                                    class:dead={alive === false}
+                                    title={alive === undefined ? "Not checked" : alive ? "Live" : "Unreachable"}></span>
+                                <span class="adapter-name">{src.name}</span>
+                            </span>
+                            <span class="adapter-caps muted">
                                 {src.capabilities.join(", ")}{#if src.canSearch}
                                     · search{/if}
                             </span>

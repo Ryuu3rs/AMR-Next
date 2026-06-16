@@ -216,8 +216,7 @@ export async function seedDatabase(): Promise<void> {
                 id: "seed-md-001",
                 title: "Buried Injustice",
                 normalizedTitle: "buried injustice",
-                coverUrl:
-                    "https://uploads.mangadex.org/covers/62994137-014f-4499-b88a-c219b115fd64/1fa9ebd6-be38-4976-a604-ffbb3fa29580.png.256.jpg",
+                coverUrl: "/sample-covers/buried-injustice.jpg",
                 authors: [],
                 status: "ongoing",
                 sourceId: "mangadex",
@@ -238,8 +237,7 @@ export async function seedDatabase(): Promise<void> {
                 id: "seed-mr-001",
                 title: "Entomologist In Sichuan Tang Clan",
                 normalizedTitle: "entomologist in sichuan tang clan",
-                coverUrl:
-                    "https://uploads.mangadex.org/covers/ece206e2-1199-48e4-a88c-1f99af3d5378/2266f53d-fafa-4649-9660-f02265050c0f.jpg.256.jpg",
+                coverUrl: "/sample-covers/entomologist.jpg",
                 authors: [],
                 status: "ongoing",
                 sourceId: "mangaread",
@@ -260,8 +258,7 @@ export async function seedDatabase(): Promise<void> {
                 id: "seed-mr-002",
                 title: "Legendary Youngest Son Of The Marquis House",
                 normalizedTitle: "legendary youngest son of the marquis house",
-                coverUrl:
-                    "https://uploads.mangadex.org/covers/43547c04-8fa2-49ce-84b4-b0424dd98bd6/88ff8ee0-26e4-474a-9e60-90a68b7767ab.jpg.256.jpg",
+                coverUrl: "/sample-covers/legendary-marquis.jpg",
                 authors: [],
                 status: "ongoing",
                 sourceId: "mangaread",
@@ -284,8 +281,7 @@ export async function seedDatabase(): Promise<void> {
                 id: "seed-mgk-001",
                 title: "Barbarian's Adventure In A Fantasy World",
                 normalizedTitle: "barbarian's adventure in a fantasy world",
-                coverUrl:
-                    "https://uploads.mangadex.org/covers/b2d69804-ea75-402f-9051-40a248bd951c/373c5b40-5395-4525-a4f0-f248481286cf.png.256.jpg",
+                coverUrl: "/sample-covers/barbarian-fantasy.jpg",
                 authors: [],
                 status: "ongoing",
                 sourceId: "mgeko",

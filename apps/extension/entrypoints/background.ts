@@ -429,6 +429,27 @@ export default defineBackground(() => {
                                 homepage: adapter.manifest.homepage
                             }))
                         )
+                    case "sources:ping": {
+                        const checks = await Promise.all(
+                            sourceAdapters.map(async adapter => {
+                                const origin =
+                                    adapter.manifest.homepage ??
+                                    (adapter.manifest.domains[0] ? `https://${adapter.manifest.domains[0]}` : undefined)
+                                if (!origin) return { id: adapter.manifest.id, alive: false }
+                                const controller = new AbortController()
+                                const timer = setTimeout(() => controller.abort(), 7000)
+                                try {
+                                    await fetch(origin, { method: "GET", mode: "no-cors", signal: controller.signal })
+                                    return { id: adapter.manifest.id, alive: true }
+                                } catch {
+                                    return { id: adapter.manifest.id, alive: false }
+                                } finally {
+                                    clearTimeout(timer)
+                                }
+                            })
+                        )
+                        return success(checks)
+                    }
                     case "updates:check":
                         return success(await checkUpdates(request.sourceId))
                     case "updates:get": {

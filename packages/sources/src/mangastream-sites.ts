@@ -6,7 +6,6 @@ import { createMangaStreamAdapter, type MangaStreamConfig } from "./mangastream"
 // chapter before relying on any of them; mangaPath is tunable per config.
 const SITES: MangaStreamConfig[] = [
     { id: "drakecomic", name: "Drake Comic", origin: "https://drakecomic.com", domains: ["drakecomic.com"] },
-    { id: "cypherscans", name: "Cypher Scans", origin: "https://cypherscans.xyz", domains: ["cypherscans.xyz"] },
     {
         id: "thunderscans",
         name: "Thunder Scans EN",
