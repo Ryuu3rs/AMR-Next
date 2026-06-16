@@ -661,8 +661,11 @@
                         ? ` ${needsAttention.length} titles need a live source — see below.`
                         : "")
                 if (needsAttention.length > 0) activeSection = "Data"
+                // fire-and-forget: fetch covers for known-adapter entries (MangaDex etc.)
+                void backfillCovers()
             } else {
                 dataMessage = `Imported ${result.manga} manga and ${result.chapters} chapters.`
+                void backfillCovers()
             }
         } catch (cause) {
             dataMessage = cause instanceof Error ? cause.message : "The backup could not be imported."

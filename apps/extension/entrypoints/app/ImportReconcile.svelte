@@ -26,13 +26,18 @@
         searched: boolean
     }
 
-    const state = $state<Record<string, CardState>>({})
+    const cards: Record<string, CardState> = $state({})
+
+    const PAGE_SIZE = 20
+    let visibleCount = $state(PAGE_SIZE)
+    const visible = $derived(mangas.slice(0, visibleCount))
+    const hasMore = $derived(visibleCount < mangas.length)
 
     function cardOf(id: string): CardState {
-        if (!state[id]) {
-            state[id] = { searching: false, results: [], linking: null, message: "", searched: false }
+        if (!cards[id]) {
+            cards[id] = { searching: false, results: [], linking: null, message: "", searched: false }
         }
-        return state[id]!
+        return cards[id]!
     }
 
     function normTitle(s: string): string {
@@ -104,7 +109,7 @@
             link to preserve your progress.
         </p>
         <ul class="reconcile-list">
-            {#each mangas as manga (manga.id)}
+            {#each visible as manga (manga.id)}
                 {@const card = cardOf(manga.id)}
                 <li class="reconcile-card">
                     <div class="reconcile-meta">
@@ -162,6 +167,11 @@
                 </li>
             {/each}
         </ul>
+        {#if hasMore}
+            <button type="button" class="btn-outline show-more" onclick={() => (visibleCount += PAGE_SIZE)}>
+                Show more ({mangas.length - visibleCount} remaining)
+            </button>
+        {/if}
     </section>
 {/if}
 
@@ -283,5 +293,10 @@
     .btn-sm {
         padding: 4px 10px;
         font-size: 0.82rem;
+    }
+
+    .show-more {
+        margin-top: 12px;
+        width: 100%;
     }
 </style>
