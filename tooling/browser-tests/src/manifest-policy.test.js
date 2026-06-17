@@ -33,6 +33,7 @@ const allowedRequiredHosts = [
     "https://hivetoon.com/*",
     "https://kappabeast.com/*",
     "https://lhtranslation.net/*",
+    "https://mangabuddy.com/*",
     "https://mangadex.org/*",
     "https://mangagalaxy.me/*",
     "https://mangamirror.com/*",
