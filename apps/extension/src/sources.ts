@@ -106,30 +106,19 @@ export async function searchManga(query: string): Promise<SourceSearchResult[]> 
 
 export type MangaSearchResult = SourceSearchResult
 
+// Fetch MangaDex chapters for the Home search chapter-list panel.
+// Routes through the bounded request client via the MangaDex adapter (fixes I3).
 export async function getMangaChapters(mangaId: string, language = "en") {
-    const params = new URLSearchParams({
-        limit: "100",
-        "translatedLanguage[]": language,
-        "order[chapter]": "desc"
-    })
-    const res = await fetch(`https://api.mangadex.org/manga/${mangaId}/feed?${params}`)
-    if (!res.ok) throw new Error(`MangaDex chapters failed: ${res.status}`)
-    const json = (await res.json()) as {
-        data: Array<{
-            id: string
-            attributes: { title: string | null; chapter: string | null; volume: string | null }
-        }>
-    }
-    return json.data.map(ch => ({
-        id: ch.id,
-        title:
-            ch.attributes.title && ch.attributes.title.trim()
-                ? ch.attributes.title
-                : `Chapter ${ch.attributes.chapter ?? "?"}`,
-        chapter: ch.attributes.chapter ?? undefined,
-        volume: ch.attributes.volume ?? undefined,
-        url: `https://mangadex.org/chapter/${ch.id}`
-    }))
+    const chapters = await listChaptersBySource("mangadex", mangaId, `https://mangadex.org/title/${mangaId}`)
+    const filtered = language ? chapters.filter(ch => !ch.language || ch.language === language) : chapters
+    return filtered
+        .sort((a, b) => b.sortKey - a.sortKey)
+        .map(ch => ({
+            id: ch.sourceChapterId,
+            title: ch.title,
+            chapter: Number.isFinite(ch.sortKey) ? String(ch.sortKey) : undefined,
+            url: ch.url
+        }))
 }
 
 export type MangaChapter = Awaited<ReturnType<typeof getMangaChapters>>[number]

@@ -1,5 +1,5 @@
 import { defineConfig } from "wxt"
-import { ALL_OPTIONAL_ORIGINS } from "./src/permissions"
+import { ALL_OPTIONAL_ORIGINS, GITHUB_API_ORIGIN } from "./src/permissions"
 
 export default defineConfig({
     manifestVersion: 3,
@@ -8,6 +8,9 @@ export default defineConfig({
         name: "All Mangas Reader",
         description: "Read and track manga from supported websites.",
         permissions: ["alarms", "scripting", "storage", "tabs"],
+        // GitHub API is required (not optional) so the background service worker
+        // can check for updates and push/pull Gist without a prior permission grant.
+        host_permissions: [GITHUB_API_ORIGIN],
         optional_host_permissions: [...ALL_OPTIONAL_ORIGINS],
         icons: {
             32: "/icons/icon_32.png",

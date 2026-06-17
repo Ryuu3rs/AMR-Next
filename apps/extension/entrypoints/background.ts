@@ -36,6 +36,47 @@ const COVER_BACKFILL_BATCH = 12
 
 const updateAlarmName = "check-manga-updates"
 const syncAlarmName = "sync-push"
+const extensionUpdateAlarmName = "check-extension-update"
+
+const EXTENSION_UPDATE_INTERVAL_HOURS = 24
+const GITHUB_RELEASES_URL = "https://api.github.com/repos/Ryuu3rs/AMR-Next/releases/latest"
+
+function isNewerVersion(candidate: string, current: string): boolean {
+    const parts = (v: string) => v.split(".").map(n => parseInt(n, 10) || 0)
+    const [cMaj = 0, cMin = 0, cPatch = 0] = parts(candidate)
+    const [uMaj = 0, uMin = 0, uPatch = 0] = parts(current)
+    if (cMaj !== uMaj) return cMaj > uMaj
+    if (cMin !== uMin) return cMin > uMin
+    return cPatch > uPatch
+}
+
+async function checkExtensionUpdate(): Promise<void> {
+    const stored = (await browser.storage.local.get("extensionUpdate"))["extensionUpdate"] as
+        | { checkedAt: number }
+        | undefined
+    if (stored && Date.now() - stored.checkedAt < EXTENSION_UPDATE_INTERVAL_HOURS * 3_600_000) return
+    try {
+        const response = await fetch(GITHUB_RELEASES_URL, {
+            headers: { Accept: "application/vnd.github.v3+json" }
+        })
+        if (!response.ok) return
+        const json = (await response.json()) as { tag_name?: string; html_url?: string }
+        const latestVersion = (json.tag_name ?? "").replace(/^v/, "")
+        const releaseUrl = json.html_url ?? ""
+        if (!latestVersion) return
+        const currentVersion = browser.runtime.getManifest().version
+        await browser.storage.local.set({
+            extensionUpdate: {
+                available: isNewerVersion(latestVersion, currentVersion),
+                latestVersion,
+                releaseUrl,
+                checkedAt: Date.now()
+            }
+        })
+    } catch {
+        // best-effort
+    }
+}
 
 async function configureUpdateAlarm() {
     const settings = await getSettings()
@@ -243,11 +284,16 @@ export default defineBackground(() => {
     browser.runtime.onInstalled.addListener(() => {
         void configureUpdateAlarm()
         void configureSyncAlarm()
+        void browser.alarms.create(extensionUpdateAlarmName, {
+            periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
+        })
+        void checkExtensionUpdate()
     })
 
     browser.alarms.onAlarm.addListener(alarm => {
         if (alarm.name === updateAlarmName) void checkUpdates()
         if (alarm.name === syncAlarmName) void autoPush()
+        if (alarm.name === extensionUpdateAlarmName) void checkExtensionUpdate()
     })
 
     browser.tabs.onUpdated.addListener((_tabId, changeInfo) => {

@@ -163,6 +163,8 @@
     let dataMessage = $state("")
     let downloadsCount = $state(0)
     let reconcileIds = $state<string[]>([])
+    let extensionUpdate = $state<{ available: boolean; latestVersion: string; releaseUrl: string } | null>(null)
+    let updateBannerDismissed = $state(false)
     let updateStatus = $state<{
         checked: number
         updated: number
@@ -452,6 +454,10 @@
                 sendRuntimeMessage<typeof stats>({ type: "stats:get" }),
                 sendRuntimeMessage<typeof updateStatus>({ type: "updates:get" })
             ])
+            const stored = (await browser.storage.local.get("extensionUpdate"))["extensionUpdate"] as
+                | typeof extensionUpdate
+                | undefined
+            if (stored?.available) extensionUpdate = stored
         } finally {
             loading = false
         }
@@ -1061,6 +1067,21 @@
     </aside>
 
     <main>
+        {#if extensionUpdate?.available && !updateBannerDismissed}
+            <div class="update-banner" role="alert">
+                <span>AMR <strong>v{extensionUpdate.latestVersion}</strong> is available.</span>
+                <button
+                    type="button"
+                    class="btn-sm"
+                    onclick={() => void browser.tabs.create({ url: extensionUpdate!.releaseUrl })}>
+                    View release ↗
+                </button>
+                <button type="button" class="btn-outline btn-sm" onclick={() => (updateBannerDismissed = true)}>
+                    Dismiss
+                </button>
+            </div>
+        {/if}
+
         {#if activeSection === "Home"}
             {#if !hasPermission && !onboardingDismissed}
                 <div class="onboarding">
