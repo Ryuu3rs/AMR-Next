@@ -16,7 +16,10 @@ export function findSource(url: URL) {
 function createSourceContext(rateLimit?: { requests: number; intervalMs: number }): SourceContext {
     const request = createBoundedRequestClient({
         fetch: (requestUrl, init) => fetch(requestUrl, init),
-        allowedOrigins: SOURCE_ORIGINS.map(o => o.replace(/\/\*$/, "")),
+        // Wildcard patterns (e.g. *://*.mangadex.network/*) are manifest permission
+        // entries for image CDNs — not valid URLs. Strip them; only exact origins
+        // are needed by the bounded request client for API/HTML fetches.
+        allowedOrigins: SOURCE_ORIGINS.filter(o => !o.startsWith("*://")).map(o => o.replace(/\/\*$/, "")),
         maxRequests: 20,
         maxResponseBytes: 10 * 1024 * 1024,
         timeoutMs: 20_000,

@@ -34,6 +34,10 @@ import {
 
 const COVER_BACKFILL_BATCH = 20
 
+// IDs attempted this session so covers that can't be inlined don't loop forever.
+// Cleared when a full backfill pass completes (remaining hits 0).
+const coverBackfillAttempted = new Set<string>()
+
 const updateAlarmName = "check-manga-updates"
 const syncAlarmName = "sync-push"
 const extensionUpdateAlarmName = "check-extension-update"
@@ -444,11 +448,16 @@ export default defineBackground(() => {
                         // Targets: titles with no cover, plus titles whose cover is still a
                         // remote URL (which can fail to render from the extension origin).
                         // data: and bundled /sample-covers/ URLs already render and are skipped.
+                        // Already-attempted IDs are excluded so a failed inline doesn't loop forever.
                         const targets = all.filter(
-                            m => !m.id.startsWith("seed-") && (!m.coverUrl || /^https?:\/\//.test(m.coverUrl))
+                            m =>
+                                !m.id.startsWith("seed-") &&
+                                !coverBackfillAttempted.has(m.id) &&
+                                (!m.coverUrl || /^https?:\/\//.test(m.coverUrl))
                         )
                         let updated = 0
                         for (const m of targets.slice(0, COVER_BACKFILL_BATCH)) {
+                            coverBackfillAttempted.add(m.id)
                             try {
                                 const remote =
                                     m.coverUrl && /^https?:\/\//.test(m.coverUrl)
@@ -467,7 +476,9 @@ export default defineBackground(() => {
                                 console.warn("[AMR] Cover backfill failed", { mangaId: m.id, error })
                             }
                         }
-                        return success({ updated, remaining: Math.max(0, targets.length - COVER_BACKFILL_BATCH) })
+                        const remaining = Math.max(0, targets.length - COVER_BACKFILL_BATCH)
+                        if (remaining === 0) coverBackfillAttempted.clear()
+                        return success({ updated, remaining })
                     }
                     case "stats:get":
                         return success(await getLocalStats())
