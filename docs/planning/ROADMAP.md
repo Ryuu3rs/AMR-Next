@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-17
 
-> **Status:** v0.5.0 shipped. Active: 0.6.0 (MangaNato adapter, 8 new Madara sites, E4 update check, I3 raw-fetch fix). See `AUDIT_AND_RELEASE_PLAN.md` §5 for the full phasing plan.
+> **Status:** v0.5.0 shipped. Active: 0.6.x — shipped: MangaNato adapter, 8 new Madara sites, E4 update check, I3 raw-fetch fix, Weeb Central adapter (ULID routing), mangaread.org image extraction (src-first + whitespace trim), wildcard-origins crash fix, infinite cover-backfill loop fix, CSP modulepreload polyfill disabled. See `AUDIT_AND_RELEASE_PLAN.md` §5 for the full phasing plan.
 
 ## Stage 0: Preserve And Scaffold (0.2.0–0.3.0)
 
@@ -116,7 +116,7 @@ Exit (pending):
 - [x] Statistics (0.5.0).
 - [ ] Goals and streaks.
 - [ ] Bookmarks (per-page, 1.2).
-- [ ] Tags system (0.5.0).
+- [x] Tags system (0.5.0).
 - [ ] Local share cards.
 
 ## Stage 5: GitHub Distribution (0.2.0–1.0.0)
