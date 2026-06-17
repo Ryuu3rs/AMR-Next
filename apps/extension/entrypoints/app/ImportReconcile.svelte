@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { LibraryManga } from "../../src/database"
     import { sendRuntimeMessage } from "../../src/runtime"
+    import { untrack } from "svelte"
 
     type SearchResult = {
         title: string
@@ -35,7 +36,11 @@
 
     function cardOf(id: string): CardState {
         if (!cards[id]) {
-            cards[id] = { searching: false, results: [], linking: null, message: "", searched: false }
+            // untrack: lazily initialising a $state property is fine as a side-effect,
+            // but Svelte 5 forbids mutations inside derived/template expressions without it.
+            untrack(() => {
+                cards[id] = { searching: false, results: [], linking: null, message: "", searched: false }
+            })
         }
         return cards[id]!
     }

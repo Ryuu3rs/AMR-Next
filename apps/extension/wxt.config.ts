@@ -4,6 +4,13 @@ import { ALL_OPTIONAL_ORIGINS, GITHUB_API_ORIGIN } from "./src/permissions"
 export default defineConfig({
     manifestVersion: 3,
     modules: ["@wxt-dev/module-svelte"],
+    // Disable Vite 8's modulepreload polyfill — it uses Function() for feature detection
+    // which violates MV3 CSP (unsafe-eval). Extensions use self.importScripts, not link preload.
+    vite: () => ({
+        build: {
+            modulePreload: { polyfill: false }
+        }
+    }),
     manifest: ({ browser }) => ({
         name: "All Mangas Reader",
         description: "Read and track manga from supported websites.",
