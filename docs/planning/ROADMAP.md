@@ -1,8 +1,8 @@
 # AMR Implementation Roadmap
 
-Last updated: 2026-06-16
+Last updated: 2026-06-17
 
-> **Status:** v0.5.0 shipped (tags, command palette, list view, grouped history, source health dots). This roadmap maps to semantic versioning releases; see `AUDIT_AND_RELEASE_PLAN.md` §5 for the full phasing plan.
+> **Status:** v0.5.0 shipped. Active: 0.6.0 (MangaNato adapter, 8 new Madara sites, E4 update check, I3 raw-fetch fix). See `AUDIT_AND_RELEASE_PLAN.md` §5 for the full phasing plan.
 
 ## Stage 0: Preserve And Scaffold (0.2.0–0.3.0)
 
@@ -96,8 +96,11 @@ Exit (pending):
 - [x] Generic Madara template (multiple sites via config, 0.5.0).
 - [x] Generic MangaStream/ts template (0.5.0).
 - [x] Generic MangaBuddy template (0.5.0).
+- [x] MangaNato / ChapMangaNato adapter (0.6.0) — covers chapmanganato.com/to, manganato.com, chapmanganelo.com.
+- [x] 8 additional Madara config rows (0.6.0) — aquascans, lhtranslation, harimanga, manhuaus, s2manga, utoon, mangasushi, manhuatop.
 - [ ] Weeb Central.
 - [ ] Dynasty Scans.
+- [ ] FanFox (fanfox.net — 23 user entries, unique platform).
 - [ ] Komga (self-hosted, 2.0).
 - [ ] Tachidesk (self-hosted, 2.0).
 - [x] Nightly source health checks (0.5.0).
@@ -126,6 +129,6 @@ Exit (pending):
 - [x] GitHub Release workflow (0.2.0).
 - [x] SHA-256 checksums (0.2.0).
 - [x] Release notes (0.2.0).
-- [ ] In-extension GitHub version check (1.0.0).
+- [x] In-extension GitHub version check (0.6.0) — background check + dismissible banner.
 - [ ] Previous-version upgrade tests.
 - [ ] Legacy import tests.
