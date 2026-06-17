@@ -1514,6 +1514,66 @@ button:disabled {
     pointer-events: none;
 }
 
+.added-chip {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    background: #0d9488;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 5px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.updated-chip {
+    position: absolute;
+    top: 26px;
+    left: 6px;
+    background: #7c3aed;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 5px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* List view inline badges */
+.list-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 5px;
+    border-radius: 4px;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+.badge-unread {
+    background: rgba(139, 92, 246, 0.85);
+    color: #fff;
+}
+
+.badge-added {
+    background: #0d9488;
+    color: #fff;
+}
+
+.badge-updated {
+    background: #7c3aed;
+    color: #fff;
+}
+
 @media (max-width: 680px) {
     .shell {
         grid-template-columns: 1fr;

@@ -347,6 +347,17 @@
         return manga.id.startsWith("seed-")
     }
 
+    const DAY_MS = 86_400_000
+
+    function isRecentlyAdded(manga: LibraryManga): boolean {
+        return manga.addedAt > Date.now() - DAY_MS
+    }
+
+    function isRecentlyUpdated(manga: LibraryManga): boolean {
+        if (manga.updatedAt <= Date.now() - DAY_MS) return false
+        return !!(manga.latestChapterId && manga.latestChapterId !== manga.lastReadChapterId)
+    }
+
     onMount(async () => {
         await load()
         hasPermission = await sendRuntimeMessage<boolean>({ type: "source:permission:check" })
@@ -1456,8 +1467,10 @@
                                     {#if isSeedData(manga)}<span class="sample-chip">Sample</span>{/if}
                                     {#if manga.manualTracking}<span class="manual-chip">Manual</span>{/if}
                                     {#if !isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId}
-                                        <span class="new-chip">New</span>
+                                        <span class="new-chip">Unread</span>
                                     {/if}
+                                    {#if isRecentlyAdded(manga)}<span class="added-chip">New</span>{/if}
+                                    {#if isRecentlyUpdated(manga)}<span class="updated-chip">Updated</span>{/if}
                                 </button>
                                 <button
                                     type="button"
@@ -1574,6 +1587,11 @@
                                     {#if manga.manualTracking}· manual{/if}
                                     {#if manga.notes}· 📝{/if}
                                 </p>
+                                {#if !isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId}
+                                    <span class="list-badge badge-unread">Unread</span>
+                                {/if}
+                                {#if isRecentlyAdded(manga)}<span class="list-badge badge-added">New</span>{/if}
+                                {#if isRecentlyUpdated(manga)}<span class="list-badge badge-updated">Updated</span>{/if}
                                 {#if rowMessage && rowMessage.id === manga.id}
                                     <p class="muted list-rowmsg">{rowMessage.text}</p>
                                 {/if}
