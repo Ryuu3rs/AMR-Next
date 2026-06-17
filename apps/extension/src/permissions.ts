@@ -24,9 +24,9 @@ const BASE_SOURCE_ORIGINS = [
     "https://weebcentral.com/*",
     "https://www.weebcentral.com/*",
     "*://*.weebcentral.com/*",
-    // Dynasty Scans — main domain + system/releases image CDN
-    "*://dynasty-scans.com/*",
-    "*://www.dynasty-scans.com/*"
+    // Dynasty Scans — images served from the same origin, no separate CDN
+    "https://dynasty-scans.com/*",
+    "https://www.dynasty-scans.com/*"
 ] as const
 
 export const SOURCE_ORIGINS: readonly string[] = [
