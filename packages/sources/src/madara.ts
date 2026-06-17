@@ -95,12 +95,12 @@ function getImgAttr(tag: string, ...attrNames: string[]): string | undefined {
         const escaped = attr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
         const dq = tag.match(new RegExp(`\\b${escaped}="([^"]*)"`, "i"))
         if (dq) {
-            const v = captureGroup(dq, 1)
+            const v = captureGroup(dq, 1)?.trim()
             if (v && !v.startsWith("data:") && v.startsWith("http")) return v
         }
         const sq = tag.match(new RegExp(`\\b${escaped}='([^']*)'`, "i"))
         if (sq) {
-            const v = captureGroup(sq, 1)
+            const v = captureGroup(sq, 1)?.trim()
             if (v && !v.startsWith("data:") && v.startsWith("http")) return v
         }
     }

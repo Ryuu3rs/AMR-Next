@@ -47,6 +47,19 @@ const srcFirstChapterHtml = `<!DOCTYPE html><html class="postid-888"><head>
 </div>
 <div class="entry-header"></div></body></html>`
 
+// mangaread.org layout: id="image-N" + wp-manga-chapter-img, real URL in src but with leading
+// whitespace/newlines before the URL — the exact live markup mangaread.org emits.
+const whitespaceSourceHtml = `<!DOCTYPE html><html class="postid-119390"><head>
+<title>The Chaebeol's Youngest Son Chapter 195 - Test Madara</title>
+<meta property="og:image" content="https://test-madara.example/cover.jpg" /></head><body>
+<div class="reading-content">
+  <div class="page-break no-gaps"><img id="image-0" src="
+			https://cdn.example/ws1.jpg" class="wp-manga-chapter-img"></div>
+  <div class="page-break no-gaps"><img id="image-1" src="
+			https://cdn.example/ws2.jpg" class="wp-manga-chapter-img"></div>
+</div>
+<div class="entry-header"></div></body></html>`
+
 // Standard lazy-load layout: data-src = real URL, src = base64 placeholder (most Madara sites).
 const lazyLoadChapterHtml = `<!DOCTYPE html><html class="postid-777"><head>
 <title>Cool Manga - Chapter 12 - Test Madara</title>
@@ -126,6 +139,14 @@ describe("createMadaraAdapter", () => {
         expect(result.chapter.sortKey).toBe(12)
         expect(result.manga.manga.coverUrl).toBe("https://test-madara.example/cover.jpg")
         expect(result.manga.sourceMangaId).toBe("cool-manga")
+    })
+
+    it("resolves a chapter via Strategy 0 when src has leading whitespace (mangaread.org live markup)", async () => {
+        // mangaread.org emits src="   \n\t\thttps://..." with tabs/newlines before the URL.
+        // getImgAttr must trim the captured value or startsWith("http") will fail.
+        const context = createContext({ "/series/cool-manga/ch-12/": whitespaceSourceHtml })
+        const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)
+        expect(result.pages.map(p => p.url)).toEqual(["https://cdn.example/ws1.jpg", "https://cdn.example/ws2.jpg"])
     })
 
     it("resolves a chapter via Strategy 1 with preferSrcAttribute=true (mangaread.org anti-scraping)", async () => {
