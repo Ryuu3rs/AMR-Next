@@ -2,9 +2,7 @@
 
 Last updated: 2026-06-17
 Branch at time of writing: `main`
-Status: **v0.5.0 released** (release-please). Active work targets **0.6.x** patch series (MangaNato adapter, 8 Madara config rows, GitHub version-check banner, cover backfill loop fix). Foundation phase done; reader + library + multi-source fully functional. Path to 1.0.0 needs: AMO secrets in GitHub (user action) + Release PR merge.
-
-> Scope note: the mangaread.org / Madara anti-scraping problem is **deliberately deferred**. It needs a multi-angle approach (content-script extraction in page context, alternate Madara endpoints, optional headless fetch) and is tracked separately under "Deferred — Source Hardening". Nothing in this plan depends on solving it.
+Status: **v0.5.0 released** (release-please). Active work on **0.6.x** patch series (MangaNato adapter, 8 Madara config rows, Weeb Central adapter, mangaread.org image-extraction fix, wildcard-origins crash fix, Madara chapterRe trailing-slash fix, CSP modulepreload polyfill fix, cover backfill loop fix). Foundation phase done; reader + library + multi-source fully functional. mangaread.org is now working end-to-end. Path to 1.0.0 needs: AMO secrets in GitHub (user action) + Release PR merge.
 
 ---
 
@@ -12,17 +10,17 @@ Status: **v0.5.0 released** (release-please). Active work targets **0.6.x** patc
 
 ### 1.1 Correctness / risk (fix first)
 
-| #   | Issue                                                                                                                                                                                        | Location                                     | Impact                                  |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------- |
-| I1  | `importDatabase()` accepts `unknown` and hand-casts the envelope — no Zod validation. A malformed/old export can corrupt the DB or throw mid-transaction.                                    | `apps/extension/src/database.ts` (~L112-138) | Data loss on import                     |
-| I2  | Permission origin lists are **duplicated in 3 places** (`sources.ts`, `app/App.svelte`, `popup/App.svelte`). They already drifted once (the mangaread bug).                                  | 3 files                                      | Recurring permission bugs               |
-| I3  | `search()` is **not part of the `SourceAdapter` contract**. Search is hardcoded to MangaDex via a direct `fetch()` in `sources.ts`, bypassing the bounded request client + origin allowlist. | `apps/extension/src/sources.ts` L39-92       | No multi-source search; unbounded fetch |
-| I4  | `listChapters()` **throws "not supported"** for mangaread + mgeko. Library update checks silently count these as failures forever.                                                           | `mangaread.ts` L303, `mgeko.ts` L197         | Updates never work for 2/3 sources      |
-| I5  | Rate limit is **declared in the manifest but never enforced**. `requestRateLimit` is decorative; no queue/backoff. Bulk update checks can hammer a host.                                     | `source-sdk/src/request.ts`                  | Risk of IP bans / source blocks         |
-| I6  | No retry / backoff on transient failures (timeouts, 5xx). One blip = hard fail surfaced to user.                                                                                             | `source-sdk/src/request.ts`                  | Fragile UX                              |
-| I7  | Update-check + auto-capture failures are `console.warn`-only; never surfaced in UI. User sees nothing when a source breaks.                                                                  | `background.ts` L64, L138                    | Silent failures                         |
-| I8  | Reader image fallback regex is MangaDex-specific and brittle; non-MangaDex failures just warn with no recovery.                                                                              | `reader/App.svelte` L69-75                   | Dead images, no retry                   |
-| I9  | `--passWithNoTests` masks the fact that database, background handlers, UI, and 2/3 adapters have **zero tests**. CI is green over ~85% untested production code.                             | root `test` script                           | False confidence                        |
+| #     | Issue                                                                                                                                                                                                  | Location                                     | Impact                                  |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- | --------------------------------------- |
+| I1    | `importDatabase()` accepts `unknown` and hand-casts the envelope — no Zod validation. A malformed/old export can corrupt the DB or throw mid-transaction.                                              | `apps/extension/src/database.ts` (~L112-138) | Data loss on import                     |
+| I2    | Permission origin lists are **duplicated in 3 places** (`sources.ts`, `app/App.svelte`, `popup/App.svelte`). They already drifted once (the mangaread bug).                                            | 3 files                                      | Recurring permission bugs               |
+| I3    | `search()` is **not part of the `SourceAdapter` contract**. Search is hardcoded to MangaDex via a direct `fetch()` in `sources.ts`, bypassing the bounded request client + origin allowlist.           | `apps/extension/src/sources.ts` L39-92       | No multi-source search; unbounded fetch |
+| ✅ I4 | `listChapters()` **throws "not supported"** for mangaread + mgeko — **resolved for mangaread** (generic Madara adapter now handles chapter listing and image extraction). mgeko listing still pending. | `mgeko.ts` L197                              | Updates never work for mgeko            |
+| I5    | Rate limit is **declared in the manifest but never enforced**. `requestRateLimit` is decorative; no queue/backoff. Bulk update checks can hammer a host.                                               | `source-sdk/src/request.ts`                  | Risk of IP bans / source blocks         |
+| I6    | No retry / backoff on transient failures (timeouts, 5xx). One blip = hard fail surfaced to user.                                                                                                       | `source-sdk/src/request.ts`                  | Fragile UX                              |
+| I7    | Update-check + auto-capture failures are `console.warn`-only; never surfaced in UI. User sees nothing when a source breaks.                                                                            | `background.ts` L64, L138                    | Silent failures                         |
+| I8    | Reader image fallback regex is MangaDex-specific and brittle; non-MangaDex failures just warn with no recovery.                                                                                        | `reader/App.svelte` L69-75                   | Dead images, no retry                   |
+| I9    | `--passWithNoTests` masks the fact that database, background handlers, UI, and 2/3 adapters have **zero tests**. CI is green over ~85% untested production code.                                       | root `test` script                           | False confidence                        |
 
 ### 1.2 Architecture / debt
 
@@ -85,7 +83,7 @@ Grouped by theme, each tagged with a rough size (S/M/L) and the target release w
 - C4 (M) Self-hosted sources: Komga / Suwayomi(Tachidesk) with credentials. → 2.0
 - C5 (M) Add-by-URL flow for any supported domain. → 1.1
 - ✅ C6 (L) Multi-language — a chapter-language preference (16 MangaDex codes) flows into chapter listing + update checks; per-link language still wins.
-- C7 (M) New sources: Weeb Central, Dynasty Scans (roadmap Stage 3). → 1.2-2.0
+- ✅ C7 (M) Weeb Central (0.6.0) — ULID-based IDs, series + chapter page + images endpoint. Dynasty Scans still pending → 1.2+
 
 ### D. Reliability & platform
 
@@ -237,7 +235,7 @@ Augment `.github/workflows/release.yml`:
 - ✅ **0.3.0 — Reader & reliability** (shipped) — A1–A4, B10, D1/D2, A7/A8, E1, E3.
 - ✅ **0.4.0 — Library depth** (shipped) — B1, B4, B9, C5, D6, A5, A6, F7, F8. Detail pages, history, diagnostics, up-next, search autocomplete.
 - ✅ **0.5.0 — Source breadth + polish** (shipped) — C1/C2/C3 generic adapters (Madara × 8 sites, MangaStream × 6, MangaBuddy), multi-source search, tags, grouped history, source health, achievements, stats, bulk actions, NSFW, covers, command palette, list view.
-- 🚧 **0.6.x — New sources + fixes** (active patch series) — MangaNato/ChapMangaNato adapter (145 import entries), 8 additional Madara config rows, GitHub version-check banner (E4), cover backfill loop fix. FanFox (23 entries) pending viability check.
+- 🚧 **0.6.x — New sources + fixes** (active patch series) — MangaNato/ChapMangaNato adapter (145 import entries), 8 additional Madara config rows, Weeb Central adapter (ULID-based routing), mangaread.org image-extraction fix (whitespace trim + `preferSrcAttribute` + `?style=list`), Madara `chapterRe` trailing-slash fix (`(?:/|$)`), wildcard origins crash fix (`*://*.mangadex.network/*` filter), CSP modulepreload polyfill fix (`modulePreload: { polyfill: false }`), cover backfill loop fix (module-level `coverBackfillAttempted` Set). GitHub version-check banner (E4) still pending. FanFox (23 entries) pending viability check.
 - **1.0.0 — Public stable** — Requires: ① AMO secrets (`AMO_JWT_ISSUER` / `AMO_JWT_SECRET`) added to GitHub repo secrets by owner → Release PR merge → signed Firefox XPI attached to release. Code requirements already met as of 0.6.x.
 - **1.x** — B3/B6/B8/B11/B12/B13, C6, D3/D4, E5, F1/F5/F6/F7/F8, G6/G8/G10/G11/G12/G13/G15. Advanced filters, collections, bookmarks, timed backups, mirror compare.
 - **2.0** — A9 offline/downloads, C4 self-hosted (Komga/Suwayomi), F1 scanlation clustering, F2 migration wizard, F6 recommendations, G9/G14 Android. Data-model bump justifies major.
@@ -248,22 +246,19 @@ Augment `.github/workflows/release.yml`:
 
 ## 6. Immediate next actions (this/next session)
 
-1. **Centralize permission origins** into one exported constant (`SOURCE_ORIGINS`) consumed by `sources.ts`, both Svelte apps, and `wxt.config.ts` — kills I2 and the class of bug behind the mangaread regression.
-2. **Zod-validate `importDatabase()`** against the export envelope schema in `contracts` — fixes I1.
-3. **Stand up release-please + commitlint** and cut **0.2.0** as the first automated release (proves the pipeline end-to-end).
-4. **Add mangaread + mgeko fixture tests** to lock in the image-extraction fix before touching the scraper again.
-5. Reconcile `ROADMAP.md` checkboxes with shipped reality (Stages 1-2 mostly done).
+1. **Dynasty Scans adapter** — Stage 3 remaining new source; add as config row or bespoke adapter.
+2. **FanFox viability** — 23 user entries; `chapterfun.ashx` is encrypted, making image extraction hard. Confirm whether to implement or permanently defer.
+3. **Add AMO secrets to GitHub** — owner must add `AMO_JWT_ISSUER` + `AMO_JWT_SECRET` to repo secrets to enable the AMO signing step in `release.yml`.
+4. **Merge Release PR** to cut `1.0.0` — code requirements already met as of 0.6.x; pending only the AMO secrets above.
+5. **Add mangaread + mgeko fixture tests** to lock in the whitespace-trim and `preferSrcAttribute` fixes before touching the scraper again.
 
 ---
 
 ## Deferred — Source Hardening (tracked, not in this plan)
 
-The mangaread.org / Madara anti-scraping issue. Approaches to evaluate together later:
+**mangaread.org is resolved.** The `preferSrcAttribute` flag (src-first attribute priority), forced `?style=list` query param, AJAX fallback, and whitespace-trim fix (`getImgAttr` now calls `.trim()` before the `startsWith("http")` check) together covered the anti-scraping pattern mangaread.org used. No content-script extraction or headless fetch was needed.
 
-- Content-script extraction **in page context** (real `src` + executed lazy-load JS, full cookies).
-- Alternate Madara endpoints / nonce acquisition strategies.
-- Optional user-opt-in headless fetch.
-- Per-source "extraction mode" flag in the adapter manifest.
+The remaining concern is sites using **Canvas/SVG rendering**, **hard Cloudflare challenges (Turnstile/managed challenge)**, or **DDoS-Guard** — these are still future/deferred and are the "red" tier in the source probe policy. The Suwayomi route (G9/C4) is the recommended approach for those.
 
 ---
 
