@@ -285,6 +285,7 @@ button:disabled {
 }
 
 .poster-grid article {
+    position: relative;
     display: grid;
     gap: 6px;
 }
@@ -404,8 +405,9 @@ button:disabled {
     padding: 16px;
     background: rgba(8, 11, 18, 0.95);
     backdrop-filter: blur(8px);
-    z-index: 4;
+    z-index: 20;
     border-radius: 10px;
+    overflow-y: auto;
 }
 
 .poster-confirm p {
