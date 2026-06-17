@@ -1481,61 +1481,6 @@
                                         detailManga = manga
                                     }}>⋯</button>
                             </div>
-                            {#if confirmingRemove === manga.id}
-                                <div class="poster-confirm">
-                                    <label class="menu-toggle">
-                                        <input
-                                            type="checkbox"
-                                            checked={manga.manualTracking ?? false}
-                                            onchange={e => void setManual(manga, e.currentTarget.checked)} />
-                                        Manual tracking (skip auto-scan)
-                                    </label>
-                                    <label class="menu-num">
-                                        Read ch
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            step="0.1"
-                                            value={manga.lastReadChapterNumber ?? ""}
-                                            onchange={e =>
-                                                void setNumber(
-                                                    manga,
-                                                    "lastReadChapterNumber",
-                                                    e.currentTarget.value
-                                                )} />
-                                    </label>
-                                    <label class="menu-num">
-                                        Latest ch
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            step="0.1"
-                                            value={manga.latestChapterNumber ?? ""}
-                                            onchange={e =>
-                                                void setNumber(manga, "latestChapterNumber", e.currentTarget.value)} />
-                                    </label>
-                                    <div class="poster-confirm-actions">
-                                        <button
-                                            type="button"
-                                            class="confirm-cancel-btn"
-                                            onclick={() => {
-                                                detailManga = manga
-                                                confirmingRemove = null
-                                            }}>Details</button>
-                                        <button
-                                            type="button"
-                                            class="confirm-remove-btn"
-                                            onclick={() => {
-                                                void remove(manga.id)
-                                                confirmingRemove = null
-                                            }}>Remove</button>
-                                        <button
-                                            type="button"
-                                            class="confirm-cancel-btn"
-                                            onclick={() => (confirmingRemove = null)}>Close</button>
-                                    </div>
-                                </div>
-                            {/if}
                             <p class="poster-title">{manga.title}</p>
                             <p class="poster-sub">{manga.sourceId}</p>
                             {#if manga.lastReadChapterNumber !== undefined || manga.latestChapterNumber !== undefined}
