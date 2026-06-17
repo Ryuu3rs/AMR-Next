@@ -99,7 +99,7 @@ Exit (pending):
 - [x] MangaNato / ChapMangaNato adapter (0.6.0) — covers chapmanganato.com/to, manganato.com, chapmanganelo.com.
 - [x] 8 additional Madara config rows (0.6.0) — aquascans, lhtranslation, harimanga, manhuaus, s2manga, utoon, mangasushi, manhuatop.
 - [x] Weeb Central (0.6.0) — ULID-based IDs, series + chapter page + images endpoint.
-- [ ] Dynasty Scans.
+- [x] Dynasty Scans (0.6.x) — bespoke adapter, `var pages = [...]` JSON extraction, search support.
 - [ ] FanFox (fanfox.net — 23 user entries, deferred: encrypted chapter pages via chapterfun.ashx).
 - [ ] Komga (self-hosted, 2.0).
 - [ ] Tachidesk (self-hosted, 2.0).

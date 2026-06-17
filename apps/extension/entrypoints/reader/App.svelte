@@ -325,14 +325,17 @@
         const img = e.currentTarget as HTMLImageElement
         console.warn("[AMR reader] Image error:", img.src)
         if (img.dataset.didFallback) return
-        const match = img.src.match(/\/data\/([a-fA-F0-9]+)\/(.+?)(?:\?.*)?$/)
-        if (match && match[1] && match[2]) {
-            img.dataset.didFallback = "1"
-            img.src = `https://uploads.mangadex.org/data/${match[1]}/${match[2]}`
-        } else {
-            console.warn("[AMR reader] Image load failed, no fallback pattern matched:", img.src)
-            imageErrorCount += 1
+        const isMangaDex = chapterUrl?.includes("mangadex.org") ?? false
+        if (isMangaDex) {
+            const match = img.src.match(/\/data\/([a-fA-F0-9]+)\/(.+?)(?:\?.*)?$/)
+            if (match && match[1] && match[2]) {
+                img.dataset.didFallback = "1"
+                img.src = `https://uploads.mangadex.org/data/${match[1]}/${match[2]}`
+                return
+            }
         }
+        console.warn("[AMR reader] Image load failed, no fallback pattern matched:", img.src)
+        imageErrorCount += 1
     }
 
     async function goToApp() {

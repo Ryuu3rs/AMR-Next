@@ -12,14 +12,14 @@ Status: **v0.6.x active** (release-please). 0.6.x patch series complete: MangaNa
 
 | #     | Issue                                                                                                                                                                                                  | Location                                     | Impact                       |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- | ---------------------------- |
-| I1    | `importDatabase()` accepts `unknown` and hand-casts the envelope — no Zod validation. A malformed/old export can corrupt the DB or throw mid-transaction.                                              | `apps/extension/src/database.ts` (~L112-138) | Data loss on import          |
+| ✅ I1 | `importDatabase()` validates via `exportEnvelopeSchema.safeParse(value)` — throws a human-readable error on schema mismatch before touching the DB.                                                    | `apps/extension/src/database.ts` (~L112-138) | Data loss on import          |
 | ✅ I2 | Permission origins centralized in `permissions.ts` (`SOURCE_ORIGINS`); both `app/App.svelte` and `popup/App.svelte` import `sourceOrigins()` — no duplication.                                         | `apps/extension/src/permissions.ts`          | Resolved                     |
 | ✅ I3 | `search()` added to `SourceAdapter` contract as optional method; MangaDex + Madara implement it; extension aggregates across all searchable sources.                                                   | `packages/source-sdk/src/types.ts`           | Resolved                     |
 | ✅ I4 | `listChapters()` **throws "not supported"** for mangaread + mgeko — **resolved for mangaread** (generic Madara adapter now handles chapter listing and image extraction). mgeko listing still pending. | `mgeko.ts` L197                              | Updates never work for mgeko |
 | ✅ I5 | Rate limiting enforced: `waitForRateSlot()` spaces requests using `minIntervalMs` from manifest; no unbounded bursts.                                                                                  | `packages/source-sdk/src/request.ts`         | Resolved                     |
 | ✅ I6 | Retry with exponential backoff implemented: `attemptWithRetries()` retries 429/5xx/timeouts with `retryBaseDelayMs * 2^attempt + jitter`.                                                              | `packages/source-sdk/src/request.ts`         | Resolved                     |
 | ✅ I7 | Update failures surfaced in the Updates tab: `updateStatus?.errors` shows failed title names + reasons (were `console.warn`-only).                                                                     | `apps/extension/entrypoints/app/App.svelte`  | Resolved                     |
-| I8    | Reader image fallback regex is MangaDex-specific and brittle; non-MangaDex failures just warn with no recovery.                                                                                        | `reader/App.svelte` L69-75                   | Dead images, no retry        |
+| ✅ I8 | Reader fallback guarded behind `isMangaDex` check — non-MangaDex image errors now cleanly increment `imageErrorCount` instead of attempting a bad URL swap.                                            | `reader/App.svelte` L69-75                   | Dead images, no retry        |
 | ✅ I9 | `--passWithNoTests` removed from root `test` script; 45 adapter tests pass cleanly.                                                                                                                    | root `package.json`                          | Resolved                     |
 
 ### 1.2 Architecture / debt
@@ -29,7 +29,7 @@ Status: **v0.6.x active** (release-please). 0.6.x patch series complete: MangaNa
 | D1    | Source registry is a **hardcoded array** — no lazy loading, no dynamic/plugin registration (roadmap Stage 1 wanted "lazy loading").                                                                                         | `packages/sources/src/index.ts`        |
 | D2    | **Contract drift**: `packages/contracts` defines `Preferences` (8 fields), `PageRecord`, `SourceHealth` — the extension implements a parallel, smaller `AppSettings` (4 fields) and ignores the rest. Two sources of truth. | `settings.ts` vs `contracts/domain.ts` |
 | ✅ D3 | In-flight GET coalescing added to the bounded client (dedupe concurrent identical GETs). TTL metadata cache still future.                                                                                                   | `mangadex.ts`                          |
-| D4    | No **ESLint** — Prettier only. No unused-import/var detection, no naming rules.                                                                                                                                             | repo-wide                              |
+| ✅ D4 | ESLint installed (`eslint.config.js` at root, typescript-eslint + svelte plugin) wired into `npm run check`.                                                                                                                | repo-wide                              |
 | D5    | `archive/` (legacy-vue, parity-svelte, platform-prototype) is dead weight in the tree. Fine to keep, but it inflates the repo and confuses search.                                                                          | `archive/`                             |
 | ✅ D6 | Version automation via release-please: bumps `package.json`, generates `CHANGELOG.md`, tags on Release PR merge. Already cut `0.5.0`.                                                                                       | release tooling                        |
 
@@ -141,7 +141,7 @@ These are weighted toward the owner's stated priorities: accurate list/updates o
 ## 3. Testing & Quality Plan (prerequisite for trustworthy releases)
 
 1. ✅ **Drop `--passWithNoTests`** — removed from root `test` script; 45 adapter tests run cleanly.
-2. 🚧 **Adapter fixture tests** — mangaread done (`whitespaceSourceHtml` + `preferSrcAttribute` regression tests in `madara.test.ts`, 45 tests total). mgeko chapter-listing fixture tests still needed.
+2. ✅ **Adapter fixture tests** — mangaread done (`whitespaceSourceHtml` + `preferSrcAttribute` in `madara.test.ts`); mgeko done (`mgeko.test.ts` + `__fixtures__/mgeko.ts`). 45 tests pass across 8 source files.
 3. **Database tests** (fake-indexeddb): save/resolve round-trip, `saveProgress` history events, **export→import→export integrity**, seed cleanup.
 4. **Background handler tests**: cascading delete on `library:remove`, `updates:check` detection, alarm reconfig on settings change.
 5. **Add ESLint** (typescript-eslint + svelte plugin) wired into `npm run check` and CI.
@@ -244,13 +244,23 @@ Augment `.github/workflows/release.yml`:
 
 ---
 
-## 6. Immediate next actions (this/next session)
+## 6. Remaining work (priority order)
 
-1. **Dynasty Scans adapter** — Stage 3 remaining new source; add as config row or bespoke adapter.
-2. **FanFox viability** — 23 user entries; `chapterfun.ashx` is encrypted, making image extraction hard. Confirm whether to implement or permanently defer.
-3. **Add AMO secrets to GitHub** — owner must add `AMO_JWT_ISSUER` + `AMO_JWT_SECRET` to repo secrets to enable the AMO signing step in `release.yml`.
-4. **Merge Release PR** to cut `1.0.0` — code requirements already met as of 0.6.x; pending only the AMO secrets above.
-5. **Add mgeko fixture tests** — mangaread tests done (`madara.test.ts` covers whitespace-trim + `preferSrcAttribute`); mgeko chapter-listing still needs a fixture test.
+### User actions (unblock 1.0.0)
+
+1. **Add AMO secrets to GitHub** — `AMO_JWT_ISSUER` + `AMO_JWT_SECRET` in repo Settings → Secrets → Actions. Unblocks the `web-ext sign` step in `release.yml`.
+2. **Merge the Release PR** — code requirements met as of 0.6.x; waiting on AMO secrets above, then merge triggers tag + signed XPI.
+
+### Code (in progress / next session)
+
+3. ✅ **Dynasty Scans adapter** — `packages/sources/src/dynasty-scans.ts`; series + chapter HTML parsing, `var pages = [...]` JSON extraction, search via `?q=&classes[]=Series`. Registered in `index.ts`, origin in `permissions.ts`.
+4. ✅ **mgeko fixture tests** — `mgeko.test.ts` + `__fixtures__/mgeko.ts` already existed; `chapImages` JS array pattern covered.
+5. ✅ **I8 reader image fallback** — `handleImageError` in `reader/App.svelte` now guards the MangaDex CDN swap behind `isMangaDex` check; non-MangaDex errors cleanly increment `imageErrorCount`.
+6. **DB + background handler tests** (§3 items 3–4) — fake-indexeddb round-trip, export→import→export integrity, cascading delete on `library:remove`, alarm reconfig on settings change.
+
+### Decisions needed
+
+7. **FanFox viability** — 23 user entries, `chapterfun.ashx` encrypted. Options: (a) reverse-engineer JS decrypt + implement, (b) permanently defer to Suwayomi route, (c) mark as manual-only. Owner decides.
 
 ---
 

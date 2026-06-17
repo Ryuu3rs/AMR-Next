@@ -23,7 +23,10 @@ const BASE_SOURCE_ORIGINS = [
     // Weeb Central (MangaSee successor) — main domain + image CDN subdomains
     "https://weebcentral.com/*",
     "https://www.weebcentral.com/*",
-    "*://*.weebcentral.com/*"
+    "*://*.weebcentral.com/*",
+    // Dynasty Scans — main domain + system/releases image CDN
+    "*://dynasty-scans.com/*",
+    "*://www.dynasty-scans.com/*"
 ] as const
 
 export const SOURCE_ORIGINS: readonly string[] = [
