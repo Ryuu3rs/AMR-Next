@@ -1,8 +1,8 @@
 # AMR — Codebase Audit, Feature Backlog & Release/Versioning Plan
 
-Last updated: 2026-06-14
-Branch at time of writing: `main` (rewrite merged)
-Status: **v0.2.0 released** — rewrite merged to `main`; release-please pipeline live and proven end-to-end (CI fixes, version-sync, AMO-signing hook in place). Foundation phase (§1.1 I1/I2/I5/I6, §3 test baseline, §4 release automation) is done. Stage 1 (Reader) and most of Stage 2 (Local Product) are functionally complete. This document reconciles reality with the roadmap and plans the path to public stable.
+Last updated: 2026-06-17
+Branch at time of writing: `main`
+Status: **v0.5.0 released** (release-please). Active work targets **0.6.x** patch series (MangaNato adapter, 8 Madara config rows, GitHub version-check banner, cover backfill loop fix). Foundation phase done; reader + library + multi-source fully functional. Path to 1.0.0 needs: AMO secrets in GitHub (user action) + Release PR merge.
 
 > Scope note: the mangaread.org / Madara anti-scraping problem is **deliberately deferred**. It needs a multi-angle approach (content-script extraction in page context, alternate Madara endpoints, optional headless fetch) and is tracked separately under "Deferred — Source Hardening". Nothing in this plan depends on solving it.
 
@@ -233,13 +233,14 @@ Augment `.github/workflows/release.yml`:
 
 > Each phase ends in a tagged release. Issues from §1.1 are folded into the earliest phases.
 
-- ✅ **0.2.0 — Foundation & trust** (shipped) — I1, I2, I5, I6 done; adapter test baseline; release-please + PR-title lint + AMO-signing hook; version-sync. (I7/D5/D7-conflict-resolution/E4 carried forward.)
-- 🚧 **0.3.0 — Reader & reliability** (in Release PR) — ✅ A1–A4 (reading direction, page fit, page number, preload), ✅ B10 (star rating, pulled earlier), ✅ D1/D2 (rate-limit/retry, shipped in 0.2.0). Remaining: A7/A8 (blocked by C2), E1 (theme), E3 (onboarding).
-- **0.4.0 — Library depth** (B1, B4, B9, ~~B10~~✅, C5, D6, A5, A6, F7, F8). Detail pages, history, diagnostics, up-next, search autocomplete.
-- **0.5.0 — Source breadth** (C1 contract + C2 listChapters + C7 new sources; pairs with deferred scraper hardening). Search across sources; updates work everywhere.
-- **1.0.0 — Public stable** (Firefox AMO signing automation live, in-extension update check, full test floor, docs/runbook complete, ≥3 sources solid). Reclaim the roadmap Stage 5 checkboxes.
-- **1.x** — B2/B3/B5/B6/B7/B8/B11/B12/B13, C6, D3/D4, E2/E5, A10, F3/F4/F5. Advanced filters, collections, bulk actions, duplicate merge, NSFW.
-- **2.0** — A9 offline/downloads, C3 Madara template, C4 self-hosted (Komga/Suwayomi), **F1 scanlation clustering**, **F2 migration wizard**, F6 recommendations. Data-model bump justifies major.
+- ✅ **0.2.0 — Foundation & trust** (shipped) — I1, I2, I5, I6 done; adapter test baseline; release-please + PR-title lint + AMO-signing hook; version-sync.
+- ✅ **0.3.0 — Reader & reliability** (shipped) — A1–A4, B10, D1/D2, A7/A8, E1, E3.
+- ✅ **0.4.0 — Library depth** (shipped) — B1, B4, B9, C5, D6, A5, A6, F7, F8. Detail pages, history, diagnostics, up-next, search autocomplete.
+- ✅ **0.5.0 — Source breadth + polish** (shipped) — C1/C2/C3 generic adapters (Madara × 8 sites, MangaStream × 6, MangaBuddy), multi-source search, tags, grouped history, source health, achievements, stats, bulk actions, NSFW, covers, command palette, list view.
+- 🚧 **0.6.x — New sources + fixes** (active patch series) — MangaNato/ChapMangaNato adapter (145 import entries), 8 additional Madara config rows, GitHub version-check banner (E4), cover backfill loop fix. FanFox (23 entries) pending viability check.
+- **1.0.0 — Public stable** — Requires: ① AMO secrets (`AMO_JWT_ISSUER` / `AMO_JWT_SECRET`) added to GitHub repo secrets by owner → Release PR merge → signed Firefox XPI attached to release. Code requirements already met as of 0.6.x.
+- **1.x** — B3/B6/B8/B11/B12/B13, C6, D3/D4, E5, F1/F5/F6/F7/F8, G6/G8/G10/G11/G12/G13/G15. Advanced filters, collections, bookmarks, timed backups, mirror compare.
+- **2.0** — A9 offline/downloads, C4 self-hosted (Komga/Suwayomi), F1 scanlation clustering, F2 migration wizard, F6 recommendations, G9/G14 Android. Data-model bump justifies major.
 
 **Contract impact of the new features.** Several need additive `MangaRecord` fields (a `MINOR`, non-breaking schema bump): `rating?` (1–5, B10), `nsfw?` (F4), `notes?` (B12), and a cluster/group key for F1. Tags/collections (B2/B13) need a tags table or array. Plan these into the `0.4.0` contract change so later features don't each re-migrate the DB.
 
