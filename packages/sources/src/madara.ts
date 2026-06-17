@@ -26,6 +26,10 @@ export type MadaraConfig = {
     chapterPrefix?: string
     language?: string
     rateLimit?: { requests: number; intervalMs: number }
+    // When true, read src before data-src in image strategies. Use for sites that put
+    // the real image URL in src and an anti-scraping decoy in data-src (e.g. mangaread.org).
+    // Matches the legacy Madara adapter's img_src:"src" default.
+    preferSrcAttribute?: boolean
 }
 
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
@@ -109,7 +113,7 @@ function isLikelyPageImage(url: string): boolean {
     return true
 }
 
-export function extractImagesFromHtml(html: string): string[] {
+export function extractImagesFromHtml(html: string, preferSrc = false): string[] {
     // Narrow to reading-content (gallery-dl confirmed: excludes sidebar/header junk).
     const readingMatch = html.match(
         /<div[^>]*\breading-content\b[^>]*>([\s\S]*?)(?:<div[^>]*\bentry-header\b|<\/div>\s*<div[^>]*\bentry-content\b)/i
@@ -118,7 +122,7 @@ export function extractImagesFromHtml(html: string): string[] {
 
     const imgTags = [...scope.matchAll(/<img\b[^>]*>/gi)].map(m => captureGroup(m, 0) ?? "").filter(Boolean)
 
-    // Strategy 0: id="image-N" + read src first (real URL in src, junk in data-src).
+    // Strategy 0: id="image-N" — always reads src first (real URL in src, decoy in data-src).
     const imageIdTags = imgTags.filter(t => /\bid="image-\d+"/.test(t))
     if (imageIdTags.length > 0) {
         const urls = imageIdTags
@@ -127,11 +131,17 @@ export function extractImagesFromHtml(html: string): string[] {
         if (urls.length > 0) return urls
     }
 
+    // Attribute order for Strategies 1 & 3. Standard Madara lazy-loads into data-src; sites
+    // that put the real URL in src instead (e.g. mangaread.org anti-scraping) set preferSrc.
+    const lazyAttrs = preferSrc
+        ? (["src", "data-src", "data-lazy-src"] as const)
+        : (["data-src", "data-lazy-src", "src"] as const)
+
     // Strategy 1: wp-manga-chapter-img class.
     const chapterTags = imgTags.filter(t => /\bwp-manga-chapter-img\b/.test(t))
     if (chapterTags.length > 0) {
         const urls = chapterTags
-            .map(t => getImgAttr(t, "data-src", "data-lazy-src", "src"))
+            .map(t => getImgAttr(t, ...lazyAttrs))
             .filter((u): u is string => u !== undefined && isLikelyPageImage(u))
         if (urls.length > 0) return urls
     }
@@ -158,7 +168,7 @@ export function extractImagesFromHtml(html: string): string[] {
             const block = captureGroup(m, 1) ?? ""
             const blockTags = [...block.matchAll(/<img\b[^>]*>/gi)].map(t => captureGroup(t, 0) ?? "").filter(Boolean)
             return blockTags
-                .map(t => getImgAttr(t, "data-src", "data-lazy-src", "src"))
+                .map(t => getImgAttr(t, ...lazyAttrs))
                 .filter((u): u is string => u !== undefined && isLikelyPageImage(u))
         })
         if (urls.length > 0) return urls
@@ -587,14 +597,19 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             const slugs = extractChapterSlugs(input.url)
             if (!slugs) throw new SourceError("unsupported-url", "This chapter URL is not supported")
 
-            const html = await context.request.getText(input.url, { headers: browserHeaders })
+            // Force Madara's scroll/list mode so the server renders ALL pages as page-break
+            // divs in static HTML. Legacy adapter always did this (add_list_to_chapter_url:true).
+            // Without it, paged mode may load images only via JavaScript after the page renders.
+            const chapterFetchUrl = new URL(input.url.toString())
+            chapterFetchUrl.searchParams.set("style", "list")
+            const html = await context.request.getText(chapterFetchUrl, { headers: browserHeaders })
 
             // AJAX first: bypasses anti-scraping data-src traps in static HTML.
             const ajaxResult = await fetchAjaxImages(html, context)
             let imageUrls = ajaxResult.urls
             context.logger.debug(`${config.name} AJAX result`, { debug: ajaxResult.debug, count: imageUrls.length })
 
-            if (imageUrls.length === 0) imageUrls = extractImagesFromHtml(html)
+            if (imageUrls.length === 0) imageUrls = extractImagesFromHtml(html, config.preferSrcAttribute)
 
             if (imageUrls.length === 0) {
                 const hasCf = /cf-browser-verification|cf_chl_jschl|__cf_chl_captcha/.test(html)
