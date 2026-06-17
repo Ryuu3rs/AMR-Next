@@ -223,6 +223,16 @@ button:disabled {
     background: var(--surface);
 }
 
+.btn-danger {
+    background: rgba(239, 68, 68, 0.75);
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: rgb(239, 68, 68);
+}
+
 .home-feature {
     display: grid;
     grid-template-columns: 110px 1fr;
@@ -732,24 +742,28 @@ button:disabled {
 
 .detail-card {
     display: flex;
-    gap: 18px;
-    max-width: 560px;
+    gap: 20px;
+    max-width: 580px;
     width: 100%;
+    max-height: calc(100vh - 48px);
     padding: 20px;
     border-radius: 14px;
     background: var(--panel, #11161d);
     border: 1px solid var(--border, #29313b);
+    overflow: hidden;
 }
 
 .detail-cover {
-    flex: 0 0 140px;
-    aspect-ratio: 2 / 3;
+    flex: 0 0 130px;
+    width: 130px;
+    height: 195px;
     border-radius: 10px;
     overflow: hidden;
     background: #1c232c;
     display: flex;
     align-items: center;
     justify-content: center;
+    align-self: flex-start;
 }
 
 .detail-cover img {
@@ -759,13 +773,24 @@ button:disabled {
 }
 
 .detail-body {
-    display: grid;
-    gap: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
     align-content: start;
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding-right: 4px;
 }
 
 .detail-body h2 {
-    margin: 0;
+    margin: 0 0 4px;
+    font-size: 16px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 .detail-meta {
@@ -921,11 +946,52 @@ button:disabled {
     flex: 1;
 }
 
+.detail-ch-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.detail-next-ch {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+}
+
+.detail-section {
+    padding-top: 10px;
+    margin-top: 6px;
+    border-top: 1px solid var(--border);
+}
+
+.detail-options-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.detail-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 120px;
+}
+
 .detail-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    align-items: center;
+}
+
+.detail-actions-spacer {
+    flex: 1;
 }
 
 .detail-ch-row {
@@ -1744,6 +1810,8 @@ button:disabled {
     .detail-cover {
         flex: 0 0 auto;
         width: 120px;
+        height: auto;
+        aspect-ratio: 2 / 3;
         align-self: center;
     }
 }

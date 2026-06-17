@@ -2235,7 +2235,7 @@
                             }}>★</button>
                     {/each}
                 </div>
-                <div class="detail-categories">
+                <div class="detail-categories detail-section">
                     <span class="muted">Tags</span>
                     {#if (detailManga.categories ?? []).length > 0}
                         <div class="tag-chips">
@@ -2299,50 +2299,67 @@
                         {/if}
                     </div>
                 </div>
-                <label class="menu-toggle">
-                    <input
-                        type="checkbox"
-                        checked={detailManga.manualTracking ?? false}
-                        onchange={e => detailManga && void setManual(detailManga, e.currentTarget.checked)} />
-                    Manual tracking (skip auto-scan)
-                </label>
-                <div class="detail-ch-row">
-                    <label class="menu-num">
-                        Read ch
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={detailManga.lastReadChapterNumber ?? ""}
-                            onchange={e =>
-                                detailManga &&
-                                void setNumber(detailManga, "lastReadChapterNumber", e.currentTarget.value)} />
-                    </label>
-                    <label class="menu-num">
-                        Latest ch
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={detailManga.latestChapterNumber ?? ""}
-                            onchange={e =>
-                                detailManga &&
-                                void setNumber(detailManga, "latestChapterNumber", e.currentTarget.value)} />
-                    </label>
+                <div class="detail-section">
+                    <div class="detail-options-row">
+                        <div class="detail-toggles">
+                            <label class="menu-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={detailManga.manualTracking ?? false}
+                                    onchange={e =>
+                                        detailManga && void setManual(detailManga, e.currentTarget.checked)} />
+                                Manual tracking
+                            </label>
+                            <label class="menu-toggle">
+                                <input
+                                    type="checkbox"
+                                    checked={detailManga.nsfw ?? false}
+                                    onchange={e => detailManga && void setNsfw(detailManga, e.currentTarget.checked)} />
+                                NSFW (blur cover)
+                            </label>
+                        </div>
+                        <div>
+                            <div class="detail-ch-row">
+                                <label class="menu-num">
+                                    Read ch
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.1"
+                                        value={detailManga.lastReadChapterNumber ?? ""}
+                                        onchange={e =>
+                                            detailManga &&
+                                            void setNumber(
+                                                detailManga,
+                                                "lastReadChapterNumber",
+                                                e.currentTarget.value
+                                            )} />
+                                </label>
+                                <label class="menu-num">
+                                    Latest ch
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.1"
+                                        value={detailManga.latestChapterNumber ?? ""}
+                                        onchange={e =>
+                                            detailManga &&
+                                            void setNumber(
+                                                detailManga,
+                                                "latestChapterNumber",
+                                                e.currentTarget.value
+                                            )} />
+                                </label>
+                            </div>
+                            {#if detailManga.latestChapterNumber !== undefined && detailManga.lastReadChapterNumber !== undefined && detailManga.latestChapterNumber > detailManga.lastReadChapterNumber}
+                                <p class="detail-next-ch">
+                                    Next: Ch {detailManga.lastReadChapterNumber + 1} of {detailManga.latestChapterNumber}
+                                </p>
+                            {/if}
+                        </div>
+                    </div>
                 </div>
-                {#if detailManga.latestChapterNumber !== undefined && detailManga.lastReadChapterNumber !== undefined && detailManga.latestChapterNumber > detailManga.lastReadChapterNumber}
-                    <p class="detail-next-ch">
-                        Next: Ch {detailManga.lastReadChapterNumber + 1} of {detailManga.latestChapterNumber}
-                    </p>
-                {/if}
-                <label class="menu-toggle">
-                    <input
-                        type="checkbox"
-                        checked={detailManga.nsfw ?? false}
-                        onchange={e => detailManga && void setNsfw(detailManga, e.currentTarget.checked)} />
-                    Mark as NSFW (blurs the cover)
-                </label>
-                <label class="detail-categories">
+                <label class="detail-categories detail-section">
                     <span class="muted">Notes</span>
                     <textarea
                         class="detail-notes"
@@ -2351,7 +2368,7 @@
                         bind:value={noteDraft}
                         onblur={() => detailManga && void saveNote(detailManga)}></textarea>
                 </label>
-                <label class="detail-categories">
+                <label class="detail-categories detail-section">
                     <span class="muted">Re-link source (paste a chapter URL from a new mirror)</span>
                     <div class="sync-token">
                         <input
@@ -2413,6 +2430,7 @@
                     <button type="button" class="btn-outline" onclick={() => detailManga && openInBrowser(detailManga)}>
                         Open source
                     </button>
+                    <div class="detail-actions-spacer"></div>
                     <button
                         type="button"
                         class="btn-danger"
