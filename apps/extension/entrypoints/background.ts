@@ -3,6 +3,7 @@ import { SourceError } from "@amr/source-sdk"
 import { sourceAdapters } from "@amr/sources"
 import {
     db,
+    cacheCover,
     exportDatabase,
     getActivityCalendar,
     getDownload,
@@ -471,6 +472,17 @@ export default defineBackground(() => {
                                 } else if (!m.coverUrl) {
                                     await db.manga.update(m.id, { coverUrl: remote })
                                     updated += 1
+                                }
+                                // Cache the raw blob so the UI can serve it from IndexedDB
+                                // without re-fetching. Non-fatal: the URL is already stored.
+                                try {
+                                    const imgResp = await fetch(remote)
+                                    if (imgResp.ok) {
+                                        const blob = await imgResp.blob()
+                                        if (blob.size > 0) await cacheCover(m.id, blob)
+                                    }
+                                } catch {
+                                    /* non-fatal */
                                 }
                             } catch (error) {
                                 console.warn("[AMR] Cover backfill failed", { mangaId: m.id, error })

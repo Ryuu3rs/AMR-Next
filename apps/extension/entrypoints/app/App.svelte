@@ -5,6 +5,7 @@
     import { sendRuntimeMessage } from "../../src/runtime"
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
     import { migrateLegacyImport } from "../../src/legacy-import"
+    import { getCachedCover } from "../../src/database"
     import ActivityHeatmap from "./ActivityHeatmap.svelte"
     import ImportReconcile from "./ImportReconcile.svelte"
 
@@ -120,7 +121,14 @@
         await load()
     }
     let failedCovers = $state<Set<string>>(new Set())
+    let coverSrcs = $state<Record<string, string>>({})
     let refreshingCovers = $state(false)
+
+    // Revoke object URLs when they change to avoid memory leaks.
+    $effect(() => {
+        const urls = Object.values(coverSrcs)
+        return () => urls.forEach(u => URL.revokeObjectURL(u))
+    })
     let syncStatus = $state<SyncStatus | undefined>()
     let syncToken = $state("")
     let syncGistId = $state("")
@@ -362,7 +370,18 @@
         } catch {
             // optional
         }
+        // Load cached cover blobs from IndexedDB and create object URLs.
+        void loadCachedCovers()
     })
+
+    async function loadCachedCovers() {
+        const next: Record<string, string> = {}
+        for (const m of library) {
+            const blob = await getCachedCover(m.id)
+            if (blob) next[m.id] = URL.createObjectURL(blob)
+        }
+        coverSrcs = next
+    }
 
     async function loadSyncStatus() {
         try {
@@ -466,6 +485,7 @@
         } finally {
             loading = false
         }
+        void loadCachedCovers()
     }
 
     function openInBrowser(manga: LibraryManga, active = true) {
@@ -1204,8 +1224,8 @@
                 {#if continueReading}
                     <div class="home-feature">
                         <div class="home-feature-cover">
-                            {#if continueReading.coverUrl && !failedCovers.has(continueReading.id)}<img
-                                    src={continueReading.coverUrl}
+                            {#if (coverSrcs[continueReading.id] ?? continueReading.coverUrl) && !failedCovers.has(continueReading.id)}<img
+                                    src={coverSrcs[continueReading.id] ?? continueReading.coverUrl}
                                     alt=""
                                     class:nsfw-blur={continueReading.nsfw && (settings?.blurNsfw ?? true)}
                                     onerror={() => continueReading && coverFailed(continueReading.id)} />{:else}<span
@@ -1248,8 +1268,8 @@
                                         class="poster"
                                         onclick={e => read(manga, e)}
                                         onauxclick={e => read(manga, e)}>
-                                        {#if manga.coverUrl && !failedCovers.has(manga.id)}<img
-                                                src={manga.coverUrl}
+                                        {#if (coverSrcs[manga.id] ?? manga.coverUrl) && !failedCovers.has(manga.id)}<img
+                                                src={coverSrcs[manga.id] ?? manga.coverUrl}
                                                 alt={manga.title}
                                                 class:nsfw-blur={manga.nsfw && (settings?.blurNsfw ?? true)}
                                                 onerror={() => coverFailed(manga.id)} />{:else}<span
@@ -1428,8 +1448,8 @@
                                     class:sample={isSeedData(manga)}
                                     onclick={e => read(manga, e)}
                                     onauxclick={e => read(manga, e)}>
-                                    {#if manga.coverUrl && !failedCovers.has(manga.id)}<img
-                                            src={manga.coverUrl}
+                                    {#if (coverSrcs[manga.id] ?? manga.coverUrl) && !failedCovers.has(manga.id)}<img
+                                            src={coverSrcs[manga.id] ?? manga.coverUrl}
                                             alt={manga.title}
                                             onerror={() => coverFailed(manga.id)} />{:else}<span class="cover-initial"
                                             >{manga.title[0]}</span
@@ -1545,8 +1565,8 @@
                                 onclick={e => read(manga, e)}
                                 onauxclick={e => read(manga, e)}
                                 aria-label={`Open ${manga.title}`}>
-                                {#if manga.coverUrl && !failedCovers.has(manga.id)}<img
-                                        src={manga.coverUrl}
+                                {#if (coverSrcs[manga.id] ?? manga.coverUrl) && !failedCovers.has(manga.id)}<img
+                                        src={coverSrcs[manga.id] ?? manga.coverUrl}
                                         alt=""
                                         onerror={() => coverFailed(manga.id)} />{:else}<span class="cover-initial"
                                         >{manga.title[0]}</span
@@ -1688,9 +1708,9 @@
                         {@const neverRead = Boolean(manga.latestChapterId && !manga.lastReadChapterId)}
                         <div class="update-row">
                             <div class="update-cover">
-                                {#if manga.coverUrl}<img src={manga.coverUrl} alt={manga.title} />{:else}<span
-                                        >{manga.title[0]}</span
-                                    >{/if}
+                                {#if coverSrcs[manga.id] ?? manga.coverUrl}<img
+                                        src={coverSrcs[manga.id] ?? manga.coverUrl}
+                                        alt={manga.title} />{:else}<span>{manga.title[0]}</span>{/if}
                             </div>
                             <div class="update-info">
                                 <p class="update-title">{manga.title}</p>
@@ -2222,8 +2242,8 @@
             onclick={e => e.stopPropagation()}
             onkeydown={() => {}}>
             <div class="detail-cover">
-                {#if detailManga.coverUrl && !failedCovers.has(detailManga.id)}<img
-                        src={detailManga.coverUrl}
+                {#if (coverSrcs[detailManga.id] ?? detailManga.coverUrl) && !failedCovers.has(detailManga.id)}<img
+                        src={coverSrcs[detailManga.id] ?? detailManga.coverUrl}
                         alt=""
                         onerror={() => detailManga && coverFailed(detailManga.id)} />{:else}<span class="cover-initial"
                         >{detailManga.title[0]}</span

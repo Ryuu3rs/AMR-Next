@@ -1,6 +1,12 @@
 import type { ChapterRecord, MangaRecord, ReadingProgress, SourceLinkRecord } from "@amr/contracts"
-import Dexie, { type EntityTable } from "dexie"
+import Dexie, { type EntityTable, type Table } from "dexie"
 import { exportEnvelopeSchema } from "./schema"
+
+export interface CoverCacheRecord {
+    mangaId: string
+    blob: Blob
+    cachedAt: number
+}
 
 export type LibraryManga = MangaRecord & {
     sourceId: string
@@ -50,6 +56,7 @@ export class AmrDatabase extends Dexie {
     progress!: EntityTable<ReadingProgress, "chapterId">
     historyEvents!: EntityTable<HistoryEvent, "id">
     downloads!: EntityTable<ChapterDownload, "chapterId">
+    covers!: Table<CoverCacheRecord, string>
 
     constructor() {
         super("all-mangas-reader")
@@ -73,10 +80,27 @@ export class AmrDatabase extends Dexie {
             historyEvents: "++id, mangaId, chapterId, type, occurredAt",
             downloads: "chapterId, mangaId, downloadedAt"
         })
+        this.version(4).stores({
+            manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+            sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+            chapters: "id, mangaId, sourceId, sortKey",
+            progress: "chapterId, mangaId, updatedAt, completed",
+            historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+            downloads: "chapterId, mangaId, downloadedAt",
+            covers: "mangaId"
+        })
     }
 }
 
 export const db = new AmrDatabase()
+
+export async function cacheCover(mangaId: string, blob: Blob): Promise<void> {
+    await db.covers.put({ mangaId, blob, cachedAt: Date.now() })
+}
+
+export async function getCachedCover(mangaId: string): Promise<Blob | undefined> {
+    return (await db.covers.get(mangaId))?.blob
+}
 
 export async function saveResolvedChapter(input: {
     manga: MangaRecord
