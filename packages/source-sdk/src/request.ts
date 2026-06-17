@@ -89,7 +89,7 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
             const response = await options.fetch(url.toString(), {
                 method: init.method,
                 signal: controller.signal,
-                credentials: "include",
+                credentials: "omit",
                 ...(init.body === undefined ? {} : { body: init.body }),
                 ...(init.headers === undefined ? {} : { headers: init.headers })
             })
