@@ -191,7 +191,6 @@
         }>
     >([])
     let checkingUpdates = $state(false)
-    let confirmingRemove = $state<string | null>(null)
     let detailManga = $state<LibraryManga | null>(null)
     let relinkUrl = $state("")
     let relinkMessage = $state("")
@@ -1466,7 +1465,7 @@
                                     aria-label="Options"
                                     onclick={e => {
                                         e.stopPropagation()
-                                        confirmingRemove = confirmingRemove === manga.id ? null : manga.id
+                                        detailManga = manga
                                     }}>⋯</button>
                             </div>
                             {#if confirmingRemove === manga.id}
@@ -2340,6 +2339,42 @@
                 <label class="menu-toggle">
                     <input
                         type="checkbox"
+                        checked={detailManga.manualTracking ?? false}
+                        onchange={e => detailManga && void setManual(detailManga, e.currentTarget.checked)} />
+                    Manual tracking (skip auto-scan)
+                </label>
+                <div class="detail-ch-row">
+                    <label class="menu-num">
+                        Read ch
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={detailManga.lastReadChapterNumber ?? ""}
+                            onchange={e =>
+                                detailManga &&
+                                void setNumber(detailManga, "lastReadChapterNumber", e.currentTarget.value)} />
+                    </label>
+                    <label class="menu-num">
+                        Latest ch
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={detailManga.latestChapterNumber ?? ""}
+                            onchange={e =>
+                                detailManga &&
+                                void setNumber(detailManga, "latestChapterNumber", e.currentTarget.value)} />
+                    </label>
+                </div>
+                {#if detailManga.latestChapterNumber !== undefined && detailManga.lastReadChapterNumber !== undefined && detailManga.latestChapterNumber > detailManga.lastReadChapterNumber}
+                    <p class="detail-next-ch">
+                        Next: Ch {detailManga.lastReadChapterNumber + 1} of {detailManga.latestChapterNumber}
+                    </p>
+                {/if}
+                <label class="menu-toggle">
+                    <input
+                        type="checkbox"
                         checked={detailManga.nsfw ?? false}
                         onchange={e => detailManga && void setNsfw(detailManga, e.currentTarget.checked)} />
                     Mark as NSFW (blurs the cover)
@@ -2415,6 +2450,15 @@
                     <button type="button" class="btn-outline" onclick={() => detailManga && openInBrowser(detailManga)}>
                         Open source
                     </button>
+                    <button
+                        type="button"
+                        class="btn-danger"
+                        onclick={() => {
+                            if (detailManga) {
+                                void remove(detailManga.id)
+                                detailManga = null
+                            }
+                        }}>Remove</button>
                     <button type="button" class="btn-outline" onclick={() => (detailManga = null)}>Close</button>
                 </div>
             </div>

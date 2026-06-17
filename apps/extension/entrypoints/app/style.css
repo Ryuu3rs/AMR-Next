@@ -394,37 +394,6 @@ button:disabled {
     background: rgba(0, 0, 0, 0.85);
 }
 
-.poster-confirm {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 16px;
-    background: rgba(8, 11, 18, 0.95);
-    backdrop-filter: blur(8px);
-    z-index: 20;
-    border-radius: 10px;
-    overflow-y: auto;
-}
-
-.poster-confirm p {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text);
-    text-align: center;
-    line-height: 1.4;
-}
-
-.poster-confirm-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    width: 100%;
-}
-
 .menu-toggle {
     display: flex;
     align-items: center;
@@ -462,34 +431,6 @@ button:disabled {
     background: rgba(245, 177, 74, 0.92);
     color: #1a1205;
     z-index: 3;
-}
-
-.confirm-remove-btn {
-    min-height: 30px;
-    padding: 0 12px;
-    font-size: 12px;
-    background: rgba(239, 68, 68, 0.75);
-    border: 1px solid rgba(239, 68, 68, 0.5);
-    border-radius: 6px;
-    color: #fff;
-}
-
-.confirm-remove-btn:hover:not(:disabled) {
-    background: rgb(239, 68, 68);
-}
-
-.confirm-cancel-btn {
-    min-height: 30px;
-    padding: 0 12px;
-    font-size: 12px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    color: #9aa5b4;
-}
-
-.confirm-cancel-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.1);
 }
 
 .sample-chip {
@@ -985,6 +926,35 @@ button:disabled {
     flex-wrap: wrap;
     gap: 8px;
     margin-top: 8px;
+}
+
+.detail-ch-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.detail-next-ch {
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0;
+}
+
+.btn-danger {
+    background: #c0392b;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.btn-danger:hover {
+    background: #e74c3c;
 }
 
 .sync-token input,
