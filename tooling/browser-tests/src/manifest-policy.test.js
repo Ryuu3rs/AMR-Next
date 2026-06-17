@@ -5,36 +5,58 @@ import test from "node:test"
 import { chromiumExtension, firefoxExtension } from "./paths.js"
 
 const allowedPermissions = ["alarms", "scripting", "storage", "tabs"]
-const allowedOptionalHosts = [
+
+// All source origins + GitHub API are required (granted at install, no per-source grant step).
+const allowedRequiredHosts = [
     "*://*.imgsrv4.com/*",
     "*://*.mangadex.network/*",
+    "*://*.mkklcdnv6temp.com/*",
+    "*://*.mkklcdnv6tempv3.com/*",
+    "*://*.weebcentral.com/*",
     "https://agrcomics.com/*",
     "https://api.github.com/*",
     "https://api.mangadex.org/*",
+    "https://aquascans.com/*",
     "https://arvencomics.com/*",
     "https://arvenscans.org/*",
     "https://aryascans.com/*",
     "https://asuracomic.net/*",
+    "https://chapmanganato.com/*",
+    "https://chapmanganato.to/*",
+    "https://chapmanganelo.com/*",
     "https://drakecomic.com/*",
+    "https://dynasty-scans.com/*",
     "https://en-thunderscans.com/*",
     "https://flamecomics.xyz/*",
     "https://freakscans.com/*",
+    "https://harimanga.me/*",
     "https://hivetoon.com/*",
     "https://kappabeast.com/*",
+    "https://lhtranslation.net/*",
     "https://mangadex.org/*",
     "https://mangagalaxy.me/*",
     "https://mangamirror.com/*",
+    "https://manganato.com/*",
     "https://mangapuma.com/*",
+    "https://mangasushi.org/*",
     "https://manhuaplus.org/*",
+    "https://manhuatop.org/*",
+    "https://manhuaus.com/*",
     "https://novelmic.com/*",
     "https://phoenixscans.com/*",
     "https://rawkuma.com/*",
+    "https://s2manga.com/*",
     "https://spiderscans.xyz/*",
     "https://templescan.net/*",
     "https://uploads.mangadex.org/*",
+    "https://utoon.net/*",
+    "https://weebcentral.com/*",
+    "https://www.dynasty-scans.com/*",
+    "https://www.manganato.com/*",
     "https://www.mangaread.org/*",
     "https://www.mgeko.cc/*",
-    "https://www.phoenixscans.com/*"
+    "https://www.phoenixscans.com/*",
+    "https://www.weebcentral.com/*"
 ]
 
 async function readManifest(extensionDirectory) {
@@ -60,8 +82,8 @@ for (const [browserName, extensionDirectory] of [
 
         assert.equal(manifest.manifest_version, 3)
         assert.deepEqual([...manifest.permissions].sort(), allowedPermissions)
-        assert.deepEqual([...manifest.optional_host_permissions].sort(), allowedOptionalHosts)
-        assert.equal(manifest.host_permissions, undefined)
+        assert.deepEqual([...manifest.host_permissions].sort(), allowedRequiredHosts)
+        assert.equal(manifest.optional_host_permissions, undefined)
         assert.equal(manifest.content_scripts, undefined)
         assert.equal(manifest.externally_connectable, undefined)
 

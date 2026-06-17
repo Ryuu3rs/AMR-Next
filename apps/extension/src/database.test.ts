@@ -6,6 +6,7 @@ import {
     exportDatabase,
     getLocalStats,
     importDatabase,
+    removeManga,
     saveProgress,
     saveResolvedChapter,
     seedDatabase
@@ -44,7 +45,9 @@ beforeEach(async () => {
         db.sourceLinks.clear(),
         db.chapters.clear(),
         db.progress.clear(),
-        db.historyEvents.clear()
+        db.historyEvents.clear(),
+        db.downloads.clear(),
+        db.covers.clear()
     ])
 })
 
@@ -160,5 +163,71 @@ describe("getLocalStats", () => {
         const stats = await getLocalStats()
         expect(stats.readingDays).toBe(3)
         expect(stats.longestStreak).toBe(3)
+    })
+})
+
+describe("removeManga", () => {
+    it("cascades delete to chapters, progress, history events, and source link", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await saveProgress({
+            mangaId: manga.id,
+            chapterId: chapter.id,
+            pageIndex: 9,
+            pageCount: 10,
+            completed: true,
+            updatedAt: 1_700_000_000_000
+        })
+
+        await removeManga(manga.id)
+
+        expect(await db.manga.get(manga.id)).toBeUndefined()
+        expect(await db.sourceLinks.get(manga.id)).toBeUndefined()
+        expect(await db.chapters.where("mangaId").equals(manga.id).count()).toBe(0)
+        expect(await db.progress.where("mangaId").equals(manga.id).count()).toBe(0)
+        expect(await db.historyEvents.where("mangaId").equals(manga.id).count()).toBe(0)
+    })
+
+    it("does not remove other manga's data", async () => {
+        const manga2: MangaRecord = {
+            ...manga,
+            id: "mangadex:manga:xyz",
+            title: "Other Manga",
+            normalizedTitle: "other manga"
+        }
+        const chapter2: ChapterRecord = { ...chapter, id: "mangadex:chapter:2", mangaId: manga2.id }
+        const sourceLink2: SourceLinkRecord = { ...sourceLink, mangaId: manga2.id }
+
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await saveResolvedChapter({ manga: manga2, chapter: chapter2, sourceLink: sourceLink2 })
+
+        await removeManga(manga.id)
+
+        expect(await db.manga.get(manga2.id)).toBeDefined()
+        expect(await db.chapters.where("mangaId").equals(manga2.id).count()).toBe(1)
+        expect(await db.sourceLinks.get(manga2.id)).toBeDefined()
+    })
+})
+
+describe("export / import integrity", () => {
+    it("export→import→export produces identical data", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await db.manga.update(manga.id, { rating: 4, categories: ["action"], lastReadChapterNumber: 3 })
+
+        const first = await exportDatabase()
+
+        await db.manga.clear()
+        await db.chapters.clear()
+        await db.sourceLinks.clear()
+        await db.progress.clear()
+        await db.historyEvents.clear()
+
+        await importDatabase(first)
+        const second = await exportDatabase()
+
+        expect(second.data.manga).toEqual(first.data.manga)
+        expect(second.data.chapters).toEqual(first.data.chapters)
+        expect(second.data.sourceLinks).toEqual(first.data.sourceLinks)
+        expect(second.data.progress).toEqual(first.data.progress)
+        expect(second.data.historyEvents).toEqual(first.data.historyEvents)
     })
 })

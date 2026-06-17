@@ -11,6 +11,7 @@ import {
     importDatabase,
     listDownloads,
     removeDownload,
+    removeManga,
     saveDownload,
     saveProgress,
     saveResolvedChapter,
@@ -20,6 +21,7 @@ import {
 import { runtimeRequestSchema, type RuntimeResponse } from "../src/runtime"
 import { getSettings, updateSettings } from "../src/settings"
 import { getSyncConfig, getSyncStatus, pullFromGist, pushToGist, setSyncConfig } from "../src/sync"
+import { isNewerVersion } from "../src/update-check"
 import {
     findSource,
     listChaptersBySource,
@@ -45,15 +47,6 @@ const extensionUpdateAlarmName = "check-extension-update"
 
 const EXTENSION_UPDATE_INTERVAL_HOURS = 24
 const GITHUB_RELEASES_URL = "https://api.github.com/repos/Ryuu3rs/AMR-Next/releases/latest"
-
-function isNewerVersion(candidate: string, current: string): boolean {
-    const parts = (v: string) => v.split(".").map(n => parseInt(n, 10) || 0)
-    const [cMaj = 0, cMin = 0, cPatch = 0] = parts(candidate)
-    const [uMaj = 0, uMin = 0, uPatch = 0] = parts(current)
-    if (cMaj !== uMaj) return cMaj > uMaj
-    if (cMin !== uMin) return cMin > uMin
-    return cPatch > uPatch
-}
 
 async function checkExtensionUpdate(): Promise<void> {
     const stored = (await browser.storage.local.get("extensionUpdate"))["extensionUpdate"] as
@@ -317,18 +310,7 @@ export default defineBackground(() => {
                     case "library:list":
                         return success(await db.manga.orderBy("updatedAt").reverse().toArray())
                     case "library:remove":
-                        await db.transaction(
-                            "rw",
-                            [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.downloads],
-                            async () => {
-                                await db.manga.delete(request.mangaId)
-                                await db.sourceLinks.delete(request.mangaId)
-                                await db.chapters.where("mangaId").equals(request.mangaId).delete()
-                                await db.progress.where("mangaId").equals(request.mangaId).delete()
-                                await db.historyEvents.where("mangaId").equals(request.mangaId).delete()
-                                await db.downloads.where("mangaId").equals(request.mangaId).delete()
-                            }
-                        )
+                        await removeManga(request.mangaId)
                         return success(null)
                     case "library:rate": {
                         const rating = request.rating === 0 ? undefined : request.rating

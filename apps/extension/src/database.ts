@@ -102,6 +102,21 @@ export async function getCachedCover(mangaId: string): Promise<Blob | undefined>
     return (await db.covers.get(mangaId))?.blob
 }
 
+export async function removeManga(mangaId: string): Promise<void> {
+    await db.transaction(
+        "rw",
+        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.downloads],
+        async () => {
+            await db.manga.delete(mangaId)
+            await db.sourceLinks.delete(mangaId)
+            await db.chapters.where("mangaId").equals(mangaId).delete()
+            await db.progress.where("mangaId").equals(mangaId).delete()
+            await db.historyEvents.where("mangaId").equals(mangaId).delete()
+            await db.downloads.where("mangaId").equals(mangaId).delete()
+        }
+    )
+}
+
 export async function saveResolvedChapter(input: {
     manga: MangaRecord
     chapter: ChapterRecord
