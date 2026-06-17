@@ -2,6 +2,7 @@ import { SourceRegistry, type SourceAdapter } from "@amr/source-sdk"
 import { mangadexAdapter } from "./mangadex"
 import { mangareadAdapter } from "./mangaread"
 import { mgekoAdapter } from "./mgeko"
+import { manganatoAdapter } from "./manganato"
 import { madaraAdapters } from "./madara-sites"
 import { mangaStreamAdapters } from "./mangastream-sites"
 import { mangaBuddyAdapters } from "./mangabuddy-sites"
@@ -9,6 +10,7 @@ import { mangaBuddyAdapters } from "./mangabuddy-sites"
 export { mangadexAdapter } from "./mangadex"
 export { mangareadAdapter } from "./mangaread"
 export { mgekoAdapter } from "./mgeko"
+export { manganatoAdapter } from "./manganato"
 export { createMadaraAdapter, type MadaraConfig } from "./madara"
 export { madaraAdapters, madaraOrigins } from "./madara-sites"
 export { createMangaStreamAdapter, type MangaStreamConfig } from "./mangastream"
@@ -20,6 +22,7 @@ export const sourceAdapters: readonly SourceAdapter[] = [
     mangadexAdapter,
     mangareadAdapter,
     mgekoAdapter,
+    manganatoAdapter,
     ...madaraAdapters,
     ...mangaStreamAdapters,
     ...mangaBuddyAdapters

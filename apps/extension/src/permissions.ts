@@ -11,7 +11,15 @@ const BASE_SOURCE_ORIGINS = [
     "*://*.mangadex.network/*",
     "https://www.mangaread.org/*",
     "https://www.mgeko.cc/*",
-    "*://*.imgsrv4.com/*"
+    "*://*.imgsrv4.com/*",
+    // MangaNato family — all four domains + image CDNs
+    "https://chapmanganato.to/*",
+    "https://chapmanganato.com/*",
+    "https://manganato.com/*",
+    "https://www.manganato.com/*",
+    "https://chapmanganelo.com/*",
+    "*://*.mkklcdnv6tempv3.com/*",
+    "*://*.mkklcdnv6temp.com/*"
 ] as const
 
 export const SOURCE_ORIGINS: readonly string[] = [

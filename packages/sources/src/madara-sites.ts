@@ -16,7 +16,23 @@ const SITES: MadaraConfig[] = [
     { id: "rawkuma", name: "Rawkuma", origin: "https://rawkuma.com", domains: ["rawkuma.com"] },
     // Probe-green by homepage; needs live chapter confirmation (mangaPath/chapterPrefix may need tuning per site).
     { id: "hivetoon", name: "HiveToon", origin: "https://hivetoon.com", domains: ["hivetoon.com"] },
-    { id: "mangagalaxy", name: "Manga Galaxy", origin: "https://mangagalaxy.me", domains: ["mangagalaxy.me"] }
+    { id: "mangagalaxy", name: "Manga Galaxy", origin: "https://mangagalaxy.me", domains: ["mangagalaxy.me"] },
+    // User-import confirmed Madara sites (/manga/<slug>/chapter-N?style=list pattern)
+    { id: "aquascans", name: "Aqua Scans", origin: "https://aquascans.com", domains: ["aquascans.com"] },
+    { id: "lhtranslation", name: "LHTranslation", origin: "https://lhtranslation.net", domains: ["lhtranslation.net"] },
+    { id: "harimanga", name: "HariManga", origin: "https://harimanga.me", domains: ["harimanga.me"] },
+    { id: "manhuaus", name: "ManhuaUS", origin: "https://manhuaus.com", domains: ["manhuaus.com"] },
+    { id: "s2manga", name: "S2Manga", origin: "https://s2manga.com", domains: ["s2manga.com"] },
+    { id: "utoon", name: "UToon", origin: "https://utoon.net", domains: ["utoon.net"] },
+    { id: "mangasushi", name: "MangaSushi", origin: "https://mangasushi.org", domains: ["mangasushi.org"] },
+    // manhuatop uses /manhua/ path prefix instead of /manga/
+    {
+        id: "manhuatop",
+        name: "ManhuaTop",
+        origin: "https://manhuatop.org",
+        domains: ["manhuatop.org"],
+        mangaPath: "manhua"
+    }
 ]
 
 export const madaraAdapters: readonly SourceAdapter[] = SITES.map(createMadaraAdapter)
