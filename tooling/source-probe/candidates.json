@@ -85,7 +85,20 @@
             "priority": "community",
             "cmsGuess": "mangastream"
         },
-        { "url": "https://weebcentral.com/", "name": "Weeb Central", "priority": "community", "cmsGuess": "bespoke" },
+        {
+            "url": "https://weebcentral.com/",
+            "name": "Weeb Central",
+            "priority": "community",
+            "cmsGuess": "bespoke",
+            "note": "MangaSee successor; ULID-based IDs; /chapters/{id}/images API returns image list; feasible"
+        },
+        {
+            "url": "https://fanfox.net/",
+            "name": "FanFox",
+            "priority": "community",
+            "cmsGuess": "bespoke",
+            "note": "23 user import entries. Pages loaded via chapterfun.ashx AJAX returning encrypted URLs — requires JS eval or content-script extraction. Medium CF. Deferred until content-script mode is supported."
+        },
         { "url": "https://aryascans.com/", "name": "Arya Scans", "priority": "community", "cmsGuess": "madara" },
         { "url": "https://novelmic.com/", "name": "Novelmic", "priority": "community", "cmsGuess": "madara" },
         {

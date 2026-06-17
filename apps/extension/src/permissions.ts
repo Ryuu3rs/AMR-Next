@@ -19,7 +19,11 @@ const BASE_SOURCE_ORIGINS = [
     "https://www.manganato.com/*",
     "https://chapmanganelo.com/*",
     "*://*.mkklcdnv6tempv3.com/*",
-    "*://*.mkklcdnv6temp.com/*"
+    "*://*.mkklcdnv6temp.com/*",
+    // Weeb Central (MangaSee successor) — main domain + image CDN subdomains
+    "https://weebcentral.com/*",
+    "https://www.weebcentral.com/*",
+    "*://*.weebcentral.com/*"
 ] as const
 
 export const SOURCE_ORIGINS: readonly string[] = [
