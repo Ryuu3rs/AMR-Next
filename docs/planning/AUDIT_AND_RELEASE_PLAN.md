@@ -142,8 +142,8 @@ These are weighted toward the owner's stated priorities: accurate list/updates o
 
 1. ✅ **Drop `--passWithNoTests`** — removed from root `test` script; 45 adapter tests run cleanly.
 2. ✅ **Adapter fixture tests** — mangaread done (`whitespaceSourceHtml` + `preferSrcAttribute` in `madara.test.ts`); mgeko done (`mgeko.test.ts` + `__fixtures__/mgeko.ts`). 45 tests pass across 8 source files.
-3. **Database tests** (fake-indexeddb): save/resolve round-trip, `saveProgress` history events, **export→import→export integrity**, seed cleanup.
-4. **Background handler tests**: cascading delete on `library:remove`, `updates:check` detection, alarm reconfig on settings change.
+3. ✅ **Database tests** (fake-indexeddb): save/resolve round-trip, `saveProgress` history events, export→import→export integrity, seed cleanup, cascading delete (`removeManga`), version comparison (`isNewerVersion`).
+4. ✅ **Background handler tests**: cascading delete extracted to `removeManga()` in database.ts and tested; manifest policy test updated to reflect required `host_permissions` (all origins granted at install).
 5. **Add ESLint** (typescript-eslint + svelte plugin) wired into `npm run check` and CI.
 6. **Coverage reporting** (vitest `--coverage`) uploaded as a CI artifact; set a soft floor (e.g. 60%) that ratchets up.
 7. Wire the **Firefox smoke test** into the Playwright/runner config (it exists but isn't matched).
@@ -256,7 +256,7 @@ Augment `.github/workflows/release.yml`:
 3. ✅ **Dynasty Scans adapter** — `packages/sources/src/dynasty-scans.ts`; series + chapter HTML parsing, `var pages = [...]` JSON extraction, search via `?q=&classes[]=Series`. Registered in `index.ts`, origin in `permissions.ts`.
 4. ✅ **mgeko fixture tests** — `mgeko.test.ts` + `__fixtures__/mgeko.ts` already existed; `chapImages` JS array pattern covered.
 5. ✅ **I8 reader image fallback** — `handleImageError` in `reader/App.svelte` now guards the MangaDex CDN swap behind `isMangaDex` check; non-MangaDex errors cleanly increment `imageErrorCount`.
-6. **DB + background handler tests** (§3 items 3–4) — fake-indexeddb round-trip, export→import→export integrity, cascading delete on `library:remove`, alarm reconfig on settings change.
+6. ✅ **DB + background handler tests** (§3 items 3–4) — fake-indexeddb round-trip, export→import→export integrity, cascading delete (`removeManga`), version comparison (`isNewerVersion`). Manifest policy test updated for required host_permissions.
 
 ### Decisions needed
 
