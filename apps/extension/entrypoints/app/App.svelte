@@ -431,12 +431,17 @@
         if (refreshingCovers) return
         refreshingCovers = true
         try {
-            const res = await sendRuntimeMessage<{ updated: number; remaining: number }>({
-                type: "library:covers:backfill"
-            })
-            if (res.updated > 0) {
-                failedCovers = new Set()
-                await load()
+            for (;;) {
+                const res = await sendRuntimeMessage<{ updated: number; remaining: number }>({
+                    type: "library:covers:backfill"
+                })
+                if (res.updated > 0) {
+                    failedCovers = new Set()
+                    void load()
+                }
+                if (res.remaining === 0) break
+                // Brief pause between batches so the service worker doesn't timeout
+                await new Promise<void>(r => setTimeout(r, 300))
             }
         } catch {
             // covers are best-effort

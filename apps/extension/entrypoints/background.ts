@@ -32,7 +32,7 @@ import {
     checkSourcePermission
 } from "../src/sources"
 
-const COVER_BACKFILL_BATCH = 12
+const COVER_BACKFILL_BATCH = 20
 
 const updateAlarmName = "check-manga-updates"
 const syncAlarmName = "sync-push"
