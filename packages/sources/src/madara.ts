@@ -367,7 +367,7 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
     const language = config.language ?? "en"
     const escapedPath = mangaPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     const escapedPrefix = chapterPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    const chapterRe = new RegExp(`^/${escapedPath}/([^/]+)/(${escapedPrefix}[^/]+)/`)
+    const chapterRe = new RegExp(`^/${escapedPath}/([^/]+)/(${escapedPrefix}[^/]+)(?:/|$)`)
     const mangaRe = new RegExp(`^/${escapedPath}/([^/]+)/?$`)
     const chapterNumberRe = new RegExp(`${escapedPrefix}-(\\d+(?:\\.\\d+)?)`, "i")
 

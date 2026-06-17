@@ -84,7 +84,7 @@ export async function resolveChapterUrl(url: string) {
     const source = findSource(parsedUrl)
 
     if (!source || source.match(parsedUrl) !== "chapter") {
-        throw new Error("This chapter is not supported")
+        throw new Error(`This chapter is not supported (${parsedUrl.hostname}${parsedUrl.pathname})`)
     }
 
     return source.resolveChapter({ url: parsedUrl }, createSourceContext(source.manifest.requestRateLimit))
