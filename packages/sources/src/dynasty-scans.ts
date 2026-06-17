@@ -36,8 +36,10 @@ const BROWSER_HEADERS = {
 const PAGES_JSON_RE = /var\s+pages\s*=\s*(\[[\s\S]*?\]);/
 
 type DynastyPage = {
-    url: string
+    image: string
     name?: string
+    width?: number
+    height?: number
 }
 
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
@@ -52,8 +54,14 @@ function decodeEntities(value: string): string {
         .replace(/&amp;/g, "&")
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&raquo;/g, "»")
+        .replace(/&laquo;/g, "«")
+        .replace(/&mdash;/g, "—")
+        .replace(/&ndash;/g, "–")
+        .replace(/&hellip;/g, "…")
         .replace(/&#0*(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-        .replace(/&nbsp;/g, " ")
+        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
         .trim()
 }
 
@@ -171,7 +179,7 @@ function extractPages(html: string): string[] {
         const parsed = JSON.parse(raw) as DynastyPage[]
         return parsed
             .map(p => {
-                const u = p.url ?? ""
+                const u = p.image ?? ""
                 // Relative URLs like /system/releases/... need the origin prepended
                 if (u.startsWith("http")) return u
                 if (u.startsWith("//")) return `https:${u}`
