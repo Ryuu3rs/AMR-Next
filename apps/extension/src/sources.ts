@@ -90,6 +90,43 @@ export async function resolveChapterUrl(url: string) {
     return source.resolveChapter({ url: parsedUrl }, createSourceContext(source.manifest.requestRateLimit))
 }
 
+// Resolve a chapter using pre-fetched HTML (tab injection fallback for bot-blocked sites).
+// The chapter URL is served from `html`; any secondary requests use a limited normal client.
+export async function resolveChapterFromHtml(urlStr: string, html: string) {
+    const parsedUrl = new URL(urlStr)
+    const source = findSource(parsedUrl)
+    if (!source || source.match(parsedUrl) !== "chapter") {
+        throw new Error(`This chapter is not supported (${parsedUrl.hostname}${parsedUrl.pathname})`)
+    }
+
+    const fallbackClient = createBoundedRequestClient({
+        fetch: (requestUrl, init) => fetch(requestUrl, init),
+        allowedOrigins: SOURCE_ORIGINS.filter(o => !o.startsWith("*://")).map(o => o.replace(/\/\*$/, "")),
+        maxRequests: 5,
+        maxResponseBytes: 5 * 1024 * 1024,
+        timeoutMs: 15_000
+    })
+
+    const chapterUrlStr = parsedUrl.toString()
+    const context: SourceContext = {
+        request: {
+            getText: async (url, opts) => {
+                if (url.toString() === chapterUrlStr) return html
+                return fallbackClient.getText(url, opts)
+            },
+            getJson: (url, schema, opts) => fallbackClient.getJson(url, schema, opts),
+            postForm: (url, params, opts) => fallbackClient.postForm(url, params, opts)
+        },
+        now: () => Date.now(),
+        logger: {
+            debug: (message, details) => console.debug(`[AMR source tab] ${message}`, details),
+            warn: (message, details) => console.warn(`[AMR source tab] ${message}`, details)
+        }
+    }
+
+    return source.resolveChapter({ url: parsedUrl }, context)
+}
+
 // Aggregate search across every adapter that supports it. Sources without
 // granted host permission fail their origin check and are skipped (allSettled).
 export async function searchManga(query: string): Promise<SourceSearchResult[]> {

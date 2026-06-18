@@ -1,5 +1,5 @@
 import type { ReadingProgress } from "@amr/contracts"
-import { SourceError } from "@amr/source-sdk"
+import { SourceError, SourceRequestError } from "@amr/source-sdk"
 import { sourceAdapters } from "@amr/sources"
 import {
     db,
@@ -28,6 +28,7 @@ import {
     listChaptersForSource,
     listMangaChapters,
     resolveChapterUrl,
+    resolveChapterFromHtml,
     resolveCoverFor,
     resolveGenresFor,
     searchManga,
@@ -171,6 +172,45 @@ function failure(error: unknown): RuntimeResponse {
 
 function delay(ms: number) {
     return new Promise<void>(resolve => setTimeout(resolve, ms))
+}
+
+// Open a background tab, wait for it to fully load, then extract the page HTML.
+// Used as a fallback when direct fetch is blocked by bot-detection (5xx, 403).
+// The tab uses the user's real browser session (cookies, TLS fingerprint).
+async function fetchChapterHtmlViaTab(url: string): Promise<string> {
+    const tab = await browser.tabs.create({ url, active: false })
+    const tabId = tab.id
+    if (!tabId) throw new Error("Tab creation failed")
+    try {
+        await new Promise<void>((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                reject(new Error("Tab load timed out"))
+            }, 25_000)
+            const listener = (changedId: number, info: { status?: string }) => {
+                if (changedId === tabId && info.status === "complete") {
+                    clearTimeout(timeoutId)
+                    browser.tabs.onUpdated.removeListener(listener)
+                    resolve()
+                }
+            }
+            browser.tabs.onUpdated.addListener(listener)
+        })
+        const results = await browser.scripting.executeScript({
+            target: { tabId },
+            func: () => document.documentElement.outerHTML
+        })
+        const html = results[0]?.result
+        return typeof html === "string" ? html : ""
+    } finally {
+        await browser.tabs.remove(tabId).catch(() => {})
+    }
+}
+
+function isBotBlocked(error: unknown): boolean {
+    if (!(error instanceof SourceRequestError)) return false
+    const { status } = error
+    // Retry via tab for: bot-blocked (403, 502, 503), network errors (undefined status)
+    return status === 403 || status === 502 || status === 503 || status === undefined
 }
 
 async function fetchPageBlob(url: string): Promise<Blob> {
@@ -658,7 +698,17 @@ export default defineBackground(() => {
                     case "page:capture":
                         return success(await captureChapter(request.url))
                     case "reader:resolve": {
-                        const resolved = await resolveChapterUrl(request.url)
+                        let resolved
+                        try {
+                            resolved = await resolveChapterUrl(request.url)
+                        } catch (fetchError) {
+                            if (isBotBlocked(fetchError)) {
+                                const html = await fetchChapterHtmlViaTab(request.url)
+                                resolved = await resolveChapterFromHtml(request.url, html)
+                            } else {
+                                throw fetchError
+                            }
+                        }
                         // Backfill coverUrl into library entry if missing
                         if (resolved.manga.manga.coverUrl) {
                             const existing = await db.manga.get(resolved.manga.manga.id)
