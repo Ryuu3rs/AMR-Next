@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.6.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.5.0...v0.6.0) (2026-06-18)
+
+
+### Features
+
+* add Dynasty Scans adapter and fix reader image fallback ([72a960c](https://github.com/Ryuu3rs/AMR-Next/commit/72a960c029eaf7d28ca20611c41a6953bdd98a85))
+* add ephemeral New/Updated badges to library cards (24h auto-expire) ([69ecffb](https://github.com/Ryuu3rs/AMR-Next/commit/69ecffb67678a027db5b3510b0bede67dcffa3f5))
+* add mangabuddy.com to buddy source adapter registry ([46bb805](https://github.com/Ryuu3rs/AMR-Next/commit/46bb805281f492befef397f1a9869bb039c63aba))
+* add MangaNato adapter and Madara config rows for user import sources ([b82d546](https://github.com/Ryuu3rs/AMR-Next/commit/b82d54691334fcbc3a593b079b4a617a91bb066e))
+* add MangaPark source adapter (mangapark.net) ([2a4ec7e](https://github.com/Ryuu3rs/AMR-Next/commit/2a4ec7e5a73b2ad60af1b644771f9965d078e9b8))
+* add Weeb Central adapter with ULID-based series/chapter routing ([48ce7c7](https://github.com/Ryuu3rs/AMR-Next/commit/48ce7c701f3a4b581a9ed0fef9d19d42aca285c2))
+* cache cover images in IndexedDB to avoid repeated network fetches ([2b9bfc2](https://github.com/Ryuu3rs/AMR-Next/commit/2b9bfc296a044526b4256e58647ff80a5115732f))
+* in-extension update check banner and fix raw fetch in getMangaChapters ([2e5f7d2](https://github.com/Ryuu3rs/AMR-Next/commit/2e5f7d2ffb9dec7f602317f086c2320b4ca6b9c3))
+* migrate old AMR export format on import ([2452e2b](https://github.com/Ryuu3rs/AMR-Next/commit/2452e2b30cf5dd6f78e54138bfbc12790eace9dc))
+* move all source origins to required host_permissions — no manual grant needed ([759fdcd](https://github.com/Ryuu3rs/AMR-Next/commit/759fdcd4688b126d6af54b12fccc039b13a9074b))
+* post-import reconciliation for dead sources ([d2b0a2a](https://github.com/Ryuu3rs/AMR-Next/commit/d2b0a2a879041cce20eebb1e488aa419b5bca1e5))
+* support legacy imports with optional tables ([041d5f3](https://github.com/Ryuu3rs/AMR-Next/commit/041d5f34b0d9baf50f7e06dd1d9f37262d7b1d27))
+* tab injection fallback for bot-blocked chapter fetches (403/502/503) ([be80456](https://github.com/Ryuu3rs/AMR-Next/commit/be80456ed2e33042dd2dd42da242c054089b9820))
+* unify poster menu to detail modal and add manual tracking controls ([62b15e8](https://github.com/Ryuu3rs/AMR-Next/commit/62b15e846783890243517152659903b9f1bfd30a))
+
+
+### Bug Fixes
+
+* dynasty-scans image key is 'image' not 'url', decode &raquo; and other named entities ([742f0e0](https://github.com/Ryuu3rs/AMR-Next/commit/742f0e0cca7cc4019e4512668040fadf10634b76))
+* include URL in unsupported-chapter error and relax madara trailing-slash ([02c1a6e](https://github.com/Ryuu3rs/AMR-Next/commit/02c1a6e73f9dacecf5896a7902d7848b91abb8e6))
+* loop cover backfill until all missing covers are processed ([b7ad0c2](https://github.com/Ryuu3rs/AMR-Next/commit/b7ad0c2c15c1e2271bc49f2c57e640e358636c1d))
+* mangaread.org chapter images missing — ?style=list and src-first attr priority ([782391f](https://github.com/Ryuu3rs/AMR-Next/commit/782391f18f050394eab096762e836cd5f37f8173))
+* move poster menu panel outside overflow:hidden wrap so it renders over the card ([a36260d](https://github.com/Ryuu3rs/AMR-Next/commit/a36260df2fdaa39360caa9ce4cf97db945fb2bef))
+* paginate reconcile panel and auto-backfill covers after import ([cd5d9fd](https://github.com/Ryuu3rs/AMR-Next/commit/cd5d9fdd3770d97a619f95a0f12d3a6005bce28a))
+* remove leftover poster-confirm dead block after menu unification ([4d105c6](https://github.com/Ryuu3rs/AMR-Next/commit/4d105c6222857115da5f72ad0bfec366e908ca28))
+* rework detail modal layout — fix cover stretch, compact options, section dividers ([f550853](https://github.com/Ryuu3rs/AMR-Next/commit/f5508535caefbf82a20a0c26f67d20b400eafaf8))
+* **sources:** use centralized SOURCE_ORIGINS instead of hardcoding ([2e4eb04](https://github.com/Ryuu3rs/AMR-Next/commit/2e4eb04ceaa67d93c684c27a0c4f2e476a0b3063))
+* state_unsafe_mutation in ImportReconcile and CSP eval from modulepreload polyfill ([f1cd771](https://github.com/Ryuu3rs/AMR-Next/commit/f1cd7717808dedafe3828577d2cc5b92fa6dd974))
+* trim whitespace from img attribute values in madara extractor ([26cfc4a](https://github.com/Ryuu3rs/AMR-Next/commit/26cfc4ae6e95dec1ff798b1e70c79b1f0f89bc78))
+* use credentials omit for cross-origin fetches to avoid Firefox CORS enforcement ([b0b76a0](https://github.com/Ryuu3rs/AMR-Next/commit/b0b76a0f97dedf165546ce3ba272da224a4b4a5d))
+* use https:// prefix for dynasty-scans origins so bounded request client allows fetches ([76ff50b](https://github.com/Ryuu3rs/AMR-Next/commit/76ff50bb312e6a5c4be3578633ada064193b1925))
+* wildcard origins crash request client and cover backfill loops forever ([b2fe4cf](https://github.com/Ryuu3rs/AMR-Next/commit/b2fe4cfc58447884eec980fccbdff8c9cf6e7e0f))
+
 ## [0.5.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.4.0...v0.5.0) (2026-06-16)
 
 
