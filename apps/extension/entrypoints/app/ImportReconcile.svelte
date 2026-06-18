@@ -24,6 +24,7 @@
         results: SearchResult[]
         linking: string | null
         message: string
+        error: boolean
         searched: boolean
     }
 
@@ -39,7 +40,7 @@
             // untrack: lazily initialising a $state property is fine as a side-effect,
             // but Svelte 5 forbids mutations inside derived/template expressions without it.
             untrack(() => {
-                cards[id] = { searching: false, results: [], linking: null, message: "", searched: false }
+                cards[id] = { searching: false, results: [], linking: null, message: "", error: false, searched: false }
             })
         }
         return cards[id]!
@@ -56,6 +57,7 @@
         const card = cardOf(manga.id)
         card.searching = true
         card.message = ""
+        card.error = false
         try {
             const all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
             const want = normTitle(manga.title)
@@ -68,6 +70,7 @@
             card.searched = true
             if (card.results.length === 0) card.message = "No live source found for this title."
         } catch (cause) {
+            card.error = true
             card.message = cause instanceof Error ? cause.message : "Search failed."
         } finally {
             card.searching = false
@@ -78,6 +81,7 @@
         const card = cardOf(manga.id)
         card.linking = result.sourceId
         card.message = ""
+        card.error = false
         try {
             await sendRuntimeMessage({
                 type: "library:switch",
@@ -89,7 +93,8 @@
             await sendRuntimeMessage({ type: "library:covers:backfill" })
             onLinked(manga.id)
         } catch (cause) {
-            card.message = cause instanceof Error ? cause.message : "Link failed."
+            card.error = true
+            card.message = cause instanceof Error ? cause.message : "Link failed — the source may be unreachable."
             card.linking = null
         }
     }
@@ -137,7 +142,7 @@
                             </button>
                         {/if}
                         {#if card.message}
-                            <p class="reconcile-msg muted">{card.message}</p>
+                            <p class="reconcile-msg" class:reconcile-error={card.error}>{card.message}</p>
                         {/if}
                         {#if card.results.length > 0}
                             <ul class="mirror-results">
@@ -242,6 +247,12 @@
     .reconcile-msg {
         font-size: 0.82rem;
         margin: 0;
+        color: var(--text-muted, #888);
+    }
+
+    .reconcile-error {
+        color: var(--error, #ef4444);
+        font-weight: 500;
     }
 
     .mirror-results {

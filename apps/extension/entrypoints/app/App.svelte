@@ -492,6 +492,16 @@
                 | typeof extensionUpdate
                 | undefined
             if (stored?.available) extensionUpdate = stored
+            // Persist broken-link panel across page opens. Entries with manualTracking
+            // and a hostname-style sourceId (contains ".") were imported from an unknown
+            // source. Adapter IDs like "madara"/"mangadex" never contain dots, so this
+            // correctly skips titles the user deliberately marked manual.
+            const libraryNeedsAttention = library
+                .filter(m => m.manualTracking && m.sourceId.includes("."))
+                .map(m => m.id)
+            if (libraryNeedsAttention.length > 0) {
+                reconcileIds = [...new Set([...reconcileIds, ...libraryNeedsAttention])]
+            }
         } finally {
             loading = false
         }
