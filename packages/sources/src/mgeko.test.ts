@@ -1,6 +1,17 @@
 import { createBoundedRequestClient, type FetchFunction, type SourceContext } from "@amr/source-sdk"
 import { describe, expect, it } from "vitest"
-import { CHAPTER_PATH, CHAPTER_SLUG, CHAPTER_URL, chapterHtml, COVER_URL, PAGE_URLS } from "./__fixtures__/mgeko"
+import {
+    CHAPTER_PATH,
+    CHAPTER_SLUG,
+    CHAPTER_URL,
+    chapterHtml,
+    COVER_URL,
+    MANGA_PATH,
+    MANGA_SLUG,
+    MANGA_URL,
+    mangaHtml,
+    PAGE_URLS
+} from "./__fixtures__/mgeko"
 import { mgekoAdapter } from "./mgeko"
 
 function createContext(fixtures: Readonly<Record<string, string>>, requests: string[]): SourceContext {
@@ -27,11 +38,54 @@ function createContext(fixtures: Readonly<Record<string, string>>, requests: str
     }
 }
 
+function makeMangaStub(sourceMangaId: string) {
+    return {
+        manga: {
+            id: `mgeko:manga:${sourceMangaId}`,
+            title: "Test",
+            normalizedTitle: "test",
+            authors: [],
+            status: "unknown" as const,
+            addedAt: 0,
+            updatedAt: 0
+        },
+        sourceId: "mgeko",
+        sourceMangaId,
+        url: MANGA_URL
+    }
+}
+
 describe("mgekoAdapter.match", () => {
     it("classifies reader, comic, and foreign URLs", () => {
         expect(mgekoAdapter.match(new URL(CHAPTER_URL))).toBe("chapter")
         expect(mgekoAdapter.match(new URL("https://www.mgeko.cc/comic/some-comic/"))).toBe("manga")
         expect(mgekoAdapter.match(new URL("https://not-mgeko.cc/reader/en/x/"))).toBe("none")
+    })
+})
+
+describe("mgekoAdapter.listChapters", () => {
+    it("parses chapter list from manga page, sorted newest first", async () => {
+        const requests: string[] = []
+        const context = createContext({ [MANGA_PATH]: mangaHtml }, requests)
+        const manga = makeMangaStub(MANGA_SLUG)
+
+        const chapters = await mgekoAdapter.listChapters({ manga, limit: 500 }, context)
+
+        expect(chapters).toHaveLength(3)
+        expect(chapters[0].sortKey).toBe(52)
+        expect(chapters[0].title).toBe("Chapter 52")
+        expect(chapters[0].url).toBe(`https://www.mgeko.cc/reader/en/${MANGA_SLUG}-chapter-52-eng-li/`)
+        expect(chapters[2].sortKey).toBe(1)
+        expect(requests).toEqual([`GET https://www.mgeko.cc${MANGA_PATH}`])
+    })
+
+    it("returns empty array when no matching chapter links found", async () => {
+        const requests: string[] = []
+        const context = createContext({ [MANGA_PATH]: "<html><body>no chapters</body></html>" }, requests)
+        const manga = makeMangaStub(MANGA_SLUG)
+
+        const chapters = await mgekoAdapter.listChapters({ manga, limit: 500 }, context)
+        expect(chapters).toHaveLength(0)
     })
 })
 

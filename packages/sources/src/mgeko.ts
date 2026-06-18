@@ -120,6 +120,36 @@ function extractGenres(html: string): string[] {
     return out
 }
 
+function extractChapterList(html: string, mangaSlug: string): SourceChapter[] {
+    const mangaId = `${SOURCE_ID}:manga:${mangaSlug}`
+    const linkRe = /href="\/reader\/en\/([^"]+?)(?:\/)?"/gi
+    const seen = new Set<string>()
+    const chapters: SourceChapter[] = []
+
+    for (const m of html.matchAll(linkRe)) {
+        const chapterSlug = m[1]
+        if (!chapterSlug || seen.has(chapterSlug)) continue
+        if (!chapterSlug.startsWith(`${mangaSlug}-chapter-`)) continue
+        seen.add(chapterSlug)
+
+        const { chapterNumber } = parseChapterSlug(chapterSlug)
+        const chapterId = `${SOURCE_ID}:chapter:${chapterSlug}`
+
+        chapters.push({
+            id: chapterId,
+            mangaId,
+            sourceId: SOURCE_ID,
+            sourceChapterId: chapterSlug,
+            title: `Chapter ${chapterNumber}`,
+            url: `${ORIGIN}/reader/en/${chapterSlug}/`,
+            sortKey: parseFloat(chapterNumber) || 0,
+            language: "en"
+        })
+    }
+
+    return chapters.sort((a, b) => b.sortKey - a.sortKey)
+}
+
 function extractImages(html: string): string[] {
     // Strategy 1: JS array variables (chapImages, chapterImages, imageList, images, pages)
     const jsArrayUrls = extractJsArrayVar(
@@ -198,7 +228,7 @@ export const mgekoAdapter: SourceAdapter = {
         name: "Mgeko",
         domains: DOMAINS,
         languages: ["en"],
-        capabilities: ["pages"],
+        capabilities: ["chapters", "pages"],
         requestRateLimit: { requests: 3, intervalMs: 1000 },
         fixtureVersion: 1,
         homepage: ORIGIN
@@ -231,8 +261,13 @@ export const mgekoAdapter: SourceAdapter = {
         }
     },
 
-    async listChapters(_input: ListChaptersInput, _context: SourceContext): Promise<SourceChapter[]> {
-        throw new SourceError("invalid-input", "Mgeko chapter listing is not supported")
+    async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
+        const slug = input.manga.sourceMangaId
+        if (!slug) throw new SourceError("invalid-input", "A valid Mgeko manga URL is required")
+        const html = await context.request.getText(new URL(`${ORIGIN}/comic/${slug}/`), {
+            headers: BROWSER_HEADERS
+        })
+        return extractChapterList(html, slug)
     },
 
     async resolveCover(
