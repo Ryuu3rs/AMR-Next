@@ -26,7 +26,11 @@ const BASE_SOURCE_ORIGINS = [
     "*://*.weebcentral.com/*",
     // Dynasty Scans — images served from the same origin, no separate CDN
     "https://dynasty-scans.com/*",
-    "https://www.dynasty-scans.com/*"
+    "https://www.dynasty-scans.com/*",
+    // MangaPark — images served from xfs subdomain CDN
+    "https://mangapark.net/*",
+    "*://*.mangapark.net/*",
+    "*://*.mangapark.me/*"
 ] as const
 
 export const SOURCE_ORIGINS: readonly string[] = [

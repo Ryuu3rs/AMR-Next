@@ -10,6 +10,8 @@ const allowedPermissions = ["alarms", "scripting", "storage", "tabs"]
 const allowedRequiredHosts = [
     "*://*.imgsrv4.com/*",
     "*://*.mangadex.network/*",
+    "*://*.mangapark.me/*",
+    "*://*.mangapark.net/*",
     "*://*.mkklcdnv6temp.com/*",
     "*://*.mkklcdnv6tempv3.com/*",
     "*://*.weebcentral.com/*",
@@ -38,6 +40,7 @@ const allowedRequiredHosts = [
     "https://mangagalaxy.me/*",
     "https://mangamirror.com/*",
     "https://manganato.com/*",
+    "https://mangapark.net/*",
     "https://mangapuma.com/*",
     "https://mangasushi.org/*",
     "https://manhuaplus.org/*",

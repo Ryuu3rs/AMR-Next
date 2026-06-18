@@ -8,6 +8,7 @@ import { dynastyScansAdapter } from "./dynasty-scans"
 import { madaraAdapters } from "./madara-sites"
 import { mangaStreamAdapters } from "./mangastream-sites"
 import { mangaBuddyAdapters } from "./mangabuddy-sites"
+import { mangaparkAdapter } from "./mangapark"
 
 export { mangadexAdapter } from "./mangadex"
 export { mangareadAdapter } from "./mangaread"
@@ -21,6 +22,7 @@ export { createMangaStreamAdapter, type MangaStreamConfig } from "./mangastream"
 export { mangaStreamAdapters, mangaStreamOrigins } from "./mangastream-sites"
 export { createMangaBuddyAdapter, type MangaBuddyConfig } from "./mangabuddy"
 export { mangaBuddyAdapters, mangaBuddyOrigins } from "./mangabuddy-sites"
+export { mangaparkAdapter } from "./mangapark"
 
 export const sourceAdapters: readonly SourceAdapter[] = [
     mangadexAdapter,
@@ -31,6 +33,7 @@ export const sourceAdapters: readonly SourceAdapter[] = [
     dynastyScansAdapter,
     ...madaraAdapters,
     ...mangaStreamAdapters,
-    ...mangaBuddyAdapters
+    ...mangaBuddyAdapters,
+    mangaparkAdapter
 ]
 export const sourceRegistry = new SourceRegistry(sourceAdapters)
