@@ -10,7 +10,10 @@ import {
     MANGA_SLUG,
     MANGA_URL,
     mangaHtml,
-    PAGE_URLS
+    PAGE_URLS,
+    SEARCH_PATH,
+    SEARCH_QUERY,
+    searchHtml
 } from "./__fixtures__/mgeko"
 import { mgekoAdapter } from "./mgeko"
 
@@ -86,6 +89,30 @@ describe("mgekoAdapter.listChapters", () => {
 
         const chapters = await mgekoAdapter.listChapters({ manga, limit: 500 }, context)
         expect(chapters).toHaveLength(0)
+    })
+})
+
+describe("mgekoAdapter.search", () => {
+    it("returns results parsed from search page, skipping junk slugs", async () => {
+        const requests: string[] = []
+        const context = createContext({ [SEARCH_PATH]: searchHtml }, requests)
+
+        const results = await mgekoAdapter.search(SEARCH_QUERY, context)
+
+        expect(results).toHaveLength(2)
+        expect(results[0].sourceMangaId).toBe(MANGA_SLUG)
+        expect(results[0].title).toBe("Barbarian's Adventure in a Fantasy World")
+        expect(results[0].coverUrl).toBe(COVER_URL)
+        expect(results[1].sourceMangaId).toBe("barbarian-quest")
+        expect(requests[0]).toContain("?s=barbarian")
+    })
+
+    it("returns empty array for blank query", async () => {
+        const requests: string[] = []
+        const context = createContext({}, requests)
+        const results = await mgekoAdapter.search("   ", context)
+        expect(results).toHaveLength(0)
+        expect(requests).toHaveLength(0)
     })
 })
 

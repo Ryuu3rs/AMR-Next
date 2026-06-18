@@ -27,6 +27,33 @@ export const mangaHtml = `<!DOCTYPE html>
 </body>
 </html>`
 
+export const SEARCH_PATH = "/"
+export const SEARCH_QUERY = "barbarian"
+
+export const searchHtml = `<!DOCTYPE html>
+<html>
+<head><title>Search results for "barbarian" - Mgeko</title></head>
+<body>
+<div class="manga-list">
+  <div class="manga-item">
+    <a href="/comic/barbarians-adventure-in-a-fantasy-world/">
+      <img src="${COVER_URL}" alt="cover" />
+      <span class="manga-title">Barbarian's Adventure in a Fantasy World</span>
+    </a>
+  </div>
+  <div class="manga-item">
+    <a href="/comic/barbarian-quest/">
+      <img src="https://www.mgeko.cc/uploads/cover-bq.jpg" alt="cover" />
+      <span class="manga-title">Barbarian Quest</span>
+    </a>
+  </div>
+  <div class="manga-item">
+    <a href="/comic/"><!-- junk: no slug --></a>
+  </div>
+</div>
+</body>
+</html>`
+
 // Mgeko ships page URLs in a single-quoted JS array (chapImages).
 export const chapterHtml = `<!DOCTYPE html>
 <html>

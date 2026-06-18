@@ -9,7 +9,8 @@ import {
     type SourceChapter,
     type SourceContext,
     type SourceManga,
-    type SourcePageMatch
+    type SourcePageMatch,
+    type SourceSearchResult
 } from "@amr/source-sdk"
 
 const SOURCE_ID = "mgeko"
@@ -148,6 +149,36 @@ function extractChapterList(html: string, mangaSlug: string): SourceChapter[] {
     }
 
     return chapters.sort((a, b) => b.sortKey - a.sortKey)
+}
+
+function extractSearchResults(html: string): SourceSearchResult[] {
+    const out: SourceSearchResult[] = []
+    const seen = new Set<string>()
+    for (const m of html.matchAll(/<a\b[^>]*\bhref="(\/comic\/([^/"]+)\/)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+        const href = m[1]
+        const slug = m[2]
+        const inner = m[3] ?? ""
+        if (!slug || seen.has(slug)) continue
+        seen.add(slug)
+        const title = inner
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&amp;/g, "&")
+            .replace(/&#0*39;|&apos;/g, "'")
+            .replace(/&nbsp;/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+        if (title.length < 2) continue
+        const imgMatch = inner.match(/\bsrc="(https?:\/\/[^"]+)"/)
+        const coverUrl = imgMatch?.[1]
+        out.push({
+            sourceId: SOURCE_ID,
+            sourceMangaId: slug,
+            title,
+            url: `${ORIGIN}${href}`,
+            ...(coverUrl ? { coverUrl } : {})
+        })
+    }
+    return out
 }
 
 function extractImages(html: string): string[] {
@@ -294,6 +325,18 @@ export const mgekoAdapter: SourceAdapter = {
                 headers: BROWSER_HEADERS
             })
             return extractGenres(html)
+        } catch {
+            return []
+        }
+    },
+
+    async search(query: string, context: SourceContext): Promise<SourceSearchResult[]> {
+        if (!query.trim()) return []
+        try {
+            const url = new URL(ORIGIN)
+            url.searchParams.set("s", query)
+            const html = await context.request.getText(url, { headers: BROWSER_HEADERS })
+            return extractSearchResults(html)
         } catch {
             return []
         }
