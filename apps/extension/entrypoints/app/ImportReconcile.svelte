@@ -53,6 +53,22 @@
             .trim()
     }
 
+    async function dismissManual(manga: LibraryManga) {
+        const card = cardOf(manga.id)
+        card.searching = true
+        card.error = false
+        card.message = ""
+        try {
+            await sendRuntimeMessage({ type: "library:dismiss", mangaId: manga.id })
+            onLinked(manga.id)
+        } catch (cause) {
+            card.error = true
+            card.message = cause instanceof Error ? cause.message : "Failed to dismiss."
+        } finally {
+            card.searching = false
+        }
+    }
+
     async function findSources(manga: LibraryManga) {
         const card = cardOf(manga.id)
         card.searching = true
@@ -133,13 +149,22 @@
                     </div>
                     <div class="reconcile-actions">
                         {#if !card.searched}
-                            <button
-                                type="button"
-                                class="btn-outline btn-sm"
-                                disabled={card.searching}
-                                onclick={() => findSources(manga)}>
-                                {card.searching ? "Searching…" : "Find on other sources"}
-                            </button>
+                            <div class="reconcile-btns">
+                                <button
+                                    type="button"
+                                    class="btn-outline btn-sm"
+                                    disabled={card.searching}
+                                    onclick={() => findSources(manga)}>
+                                    {card.searching ? "Searching…" : "Find on other sources"}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn-ghost btn-sm"
+                                    disabled={card.searching}
+                                    onclick={() => dismissManual(manga)}>
+                                    Mark as manual
+                                </button>
+                            </div>
                         {/if}
                         {#if card.message}
                             <p class="reconcile-msg" class:reconcile-error={card.error}>{card.message}</p>
@@ -242,6 +267,23 @@
         display: flex;
         flex-direction: column;
         gap: 8px;
+    }
+
+    .reconcile-btns {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .btn-ghost {
+        background: none;
+        border: none;
+        color: var(--text-muted, #888);
+        cursor: pointer;
+    }
+
+    .btn-ghost:hover:not(:disabled) {
+        color: var(--text, inherit);
     }
 
     .reconcile-msg {

@@ -363,6 +363,18 @@ export default defineBackground(() => {
                         } as Partial<{ manualTracking: boolean }>)
                         return success(null)
                     }
+                    case "library:dismiss": {
+                        // Clear the hostname-style sourceId that flags this as a broken import
+                        // so it no longer appears in the reconcile panel.
+                        const target = await db.manga.get(request.mangaId)
+                        if (target && target.sourceId.includes(".")) {
+                            await db.manga.update(request.mangaId, {
+                                sourceId: "manual",
+                                manualTracking: true
+                            } as Partial<{ sourceId: string; manualTracking: boolean }>)
+                        }
+                        return success(null)
+                    }
                     case "library:numbers": {
                         const patch: Record<string, number | undefined> = {}
                         if (request.latestChapterNumber !== undefined)
