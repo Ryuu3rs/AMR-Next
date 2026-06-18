@@ -28,7 +28,7 @@ for backup sync.
 - **Search skips recently-confirmed-dead sources** within 24h
 - "Check mirrors" — find which supported sites carry a title, freshest first
 - Re-link a title to a new source/mirror without losing progress
-- Generic, config-driven adapters for the **Madara**, **MangaStream/ts**, and **MangaBuddy** WordPress theme families (adding a site is usually a config row, not new code), plus dedicated MangaDex and Mgeko adapters
+- Generic, config-driven adapters for the **Madara**, **MangaStream/ts**, and **MangaBuddy** WordPress theme families (adding a site is usually a config row, not new code), plus dedicated adapters for MangaDex, MangaPark, and Mgeko
 - **Automatic cover fetching cached as data URLs** to bypass referer-blocking on source CDNs
 - **Per-title genre suggestions** extracted from source pages (one-click bulk-add to tags)
 
@@ -51,7 +51,7 @@ for backup sync.
 - `apps/extension/` — the WXT + Svelte 5 extension (MV3)
 - `packages/` — shared contracts, the source SDK, and source adapters
 - `tooling/` — browser tests and the source-probe triage tool
-- `docs/` — product and engineering plans (see `docs/planning/AUDIT_AND_RELEASE_PLAN.md`)
+- `docs/` — architecture and development docs (see [docs/README.md](docs/README.md))
 - `archive/` — previous implementations (not built)
 
 ## Requirements
@@ -113,6 +113,26 @@ Temporary Add-on** targeting the connected device. Temporary add-ons are cleared
 Firefox restarts, so the signed XPI is the only persistent option. See
 [docs/ANDROID.md](docs/ANDROID.md) for install options, limitations, and a test checklist.
 
+## Supported sources
+
+Built-in adapters cover:
+
+- **MangaDex** — full API, multi-language
+- **MangaPark** — chapter and series browsing
+- **MangaBuddy / MangaPuma / MangaMirror** — shared theme adapter
+- **Mgeko** — Mgeko and mirrors
+- **Madara family** — dozens of WordPress Madara sites (config-driven)
+- **MangaStream / ts family** — additional WordPress template family
+
+Add a new site in the appropriate family by adding a single config row in `packages/sources/src/`. See [docs/architecture/SOURCE_ADAPTERS.md](docs/architecture/SOURCE_ADAPTERS.md).
+
+## Contributing
+
+1. Fork → branch from `main` → open a PR
+2. Run `npm run check` (format + typecheck + build + tests) before submitting
+3. Adapters: one file per site family, config-driven where possible
+4. Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, etc.) — releases are automated from commit messages
+
 ## Source triage
 
 `tooling/source-probe/` probes candidate mirror sites for reachability, anti-scrape
@@ -131,8 +151,7 @@ newer version but never downloads or executes update code automatically.
 
 ## Documentation
 
-Start with [docs/README.md](docs/README.md). The living roadmap and feature status
-is in [docs/planning/AUDIT_AND_RELEASE_PLAN.md](docs/planning/AUDIT_AND_RELEASE_PLAN.md).
+See [docs/README.md](docs/README.md) for architecture, source adapter authoring, and development guides.
 
 ## License
 

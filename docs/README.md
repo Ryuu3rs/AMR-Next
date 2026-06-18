@@ -1,20 +1,15 @@
 # Documentation
 
-## Active
+## Developer Guides
 
-- [Project Plan](planning/PROJECT_PLAN.md)
-- [Roadmap](planning/ROADMAP.md)
-- [Product Specification](product/PRODUCT_SPEC.md)
 - [Technical Architecture](architecture/TECHNICAL_ARCHITECTURE.md)
 - [Source Adapter Authoring Guide](architecture/SOURCE_ADAPTERS.md)
-- [Security, Testing, And Releases](operations/SECURITY_OPERATIONS.md)
 - [Development Guide](development/DEVELOPMENT.md)
+- [Image Extraction Techniques](IMAGE_EXTRACTION_TECHNIQUES.md)
 
-## Future
+## User Guides
 
-- [Hosted And Social Platform](future/HOSTED_PLATFORM.md)
-
-Future documents are not active implementation work.
+- [Android Installation](ANDROID.md)
 
 ## Historical
 

@@ -58,3 +58,9 @@ Thumbs.db
 test/
 distfinal/
 src/mirrors/register_implementations.js
+
+# Internal planning docs (kept local only)
+docs/planning/
+docs/product/
+docs/future/
+docs/operations/
