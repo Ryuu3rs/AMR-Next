@@ -6,7 +6,6 @@ import { createMadaraAdapter, type MadaraConfig } from "./madara"
 // (reachable, Madara template) by the source-probe; confirm a live chapter before
 // relying on any of them, and tune mangaPath/chapterPrefix if a site differs.
 const SITES: MadaraConfig[] = [
-    { id: "freakscans", name: "Freak Scans", origin: "https://freakscans.com", domains: ["freakscans.com"] },
     { id: "arvenscans", name: "Arven Scans", origin: "https://arvenscans.org", domains: ["arvenscans.org"] },
     { id: "arvencomics", name: "Arven Comics", origin: "https://arvencomics.com", domains: ["arvencomics.com"] },
     { id: "novelmic", name: "Novelmic", origin: "https://novelmic.com", domains: ["novelmic.com"] },
@@ -14,15 +13,9 @@ const SITES: MadaraConfig[] = [
     { id: "agrcomics", name: "AGR Comics", origin: "https://agrcomics.com", domains: ["agrcomics.com"] },
     { id: "manhuaplus", name: "ManhuaPlus", origin: "https://manhuaplus.org", domains: ["manhuaplus.org"] },
     { id: "rawkuma", name: "Rawkuma", origin: "https://rawkuma.com", domains: ["rawkuma.com"] },
-    // Probe-green by homepage; needs live chapter confirmation (mangaPath/chapterPrefix may need tuning per site).
     { id: "hivetoon", name: "HiveToon", origin: "https://hivetoon.com", domains: ["hivetoon.com"] },
-    { id: "mangagalaxy", name: "Manga Galaxy", origin: "https://mangagalaxy.me", domains: ["mangagalaxy.me"] },
-    // User-import confirmed Madara sites (/manga/<slug>/chapter-N?style=list pattern)
-    { id: "aquascans", name: "Aqua Scans", origin: "https://aquascans.com", domains: ["aquascans.com"] },
     { id: "lhtranslation", name: "LHTranslation", origin: "https://lhtranslation.net", domains: ["lhtranslation.net"] },
     { id: "harimanga", name: "HariManga", origin: "https://harimanga.me", domains: ["harimanga.me"] },
-    { id: "manhuaus", name: "ManhuaUS", origin: "https://manhuaus.com", domains: ["manhuaus.com"] },
-    { id: "s2manga", name: "S2Manga", origin: "https://s2manga.com", domains: ["s2manga.com"] },
     { id: "utoon", name: "UToon", origin: "https://utoon.net", domains: ["utoon.net"] },
     { id: "mangasushi", name: "MangaSushi", origin: "https://mangasushi.org", domains: ["mangasushi.org"] },
     // manhuatop uses /manhua/ path prefix instead of /manga/
@@ -32,10 +25,40 @@ const SITES: MadaraConfig[] = [
         origin: "https://manhuatop.org",
         domains: ["manhuatop.org"],
         mangaPath: "manhua"
-    }
+    },
+    // Replacements for dead sites + new user-requested sources
+    { id: "saucemanhwa", name: "SauceManhwa", origin: "https://saucemanhwa.org", domains: ["saucemanhwa.org"] },
+    {
+        id: "mangadistrict",
+        name: "Manga District",
+        origin: "https://mangadistrict.com",
+        domains: ["mangadistrict.com"]
+    },
+    { id: "manytoon", name: "ManyToon", origin: "https://manytoon.com", domains: ["manytoon.com"] },
+    { id: "omegascans", name: "Omega Scans", origin: "https://omegascans.org", domains: ["omegascans.org"] },
+    { id: "kunmanga", name: "KunManga", origin: "https://kunmanga.com", domains: ["kunmanga.com"] },
+    { id: "vortexscans", name: "Vortex Scans", origin: "https://vortexscans.org", domains: ["vortexscans.org"] },
+    { id: "casacomic", name: "Casa Comic", origin: "https://casacomic.com", domains: ["casacomic.com"] },
+    {
+        id: "natomanga",
+        name: "NatoManga",
+        origin: "https://www.natomanga.com",
+        domains: ["natomanga.com", "www.natomanga.com"]
+    },
+    { id: "hentairead", name: "HentaiRead", origin: "https://hentairead.com", domains: ["hentairead.com"] },
+    { id: "hentai20", name: "Hentai20", origin: "https://hentai20.io", domains: ["hentai20.io"] },
+    {
+        id: "oppaistream",
+        name: "Oppai Stream",
+        origin: "https://read.oppai.stream",
+        domains: ["read.oppai.stream"]
+    },
+    { id: "eahentai", name: "EA Hentai", origin: "https://eahentai.com", domains: ["eahentai.com"] },
+    { id: "hentalk", name: "HenTalk", origin: "https://hentalk.pw", domains: ["hentalk.pw"] }
 ]
 
 export const madaraAdapters: readonly SourceAdapter[] = SITES.map(createMadaraAdapter)
 
-// Origins for these sites, for the extension's request allowlist + host permissions.
-export const madaraOrigins: readonly string[] = SITES.map(s => `${s.origin}/*`)
+// Origins for these sites — flatMap over all domains so multi-domain configs
+// (e.g. natomanga.com + www.natomanga.com) all get host_permissions entries.
+export const madaraOrigins: readonly string[] = SITES.flatMap(s => s.domains.map(d => `https://${d}/*`))
