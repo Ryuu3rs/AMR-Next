@@ -27,6 +27,7 @@ import { runtimeRequestSchema, type RuntimeResponse } from "../src/runtime"
 import { getSettings, updateSettings } from "../src/settings"
 import { getSyncConfig, getSyncStatus, pullFromGist, pushToGist, setSyncConfig } from "../src/sync"
 import { isNewerVersion } from "../src/update-check"
+import { SOURCE_ORIGINS } from "../src/permissions"
 import {
     findSource,
     listChaptersBySource,
@@ -188,9 +189,6 @@ async function fetchChapterHtmlViaTab(url: string): Promise<string> {
     if (!tabId) throw new Error("Tab creation failed")
     try {
         await new Promise<void>((resolve, reject) => {
-            const timeoutId = setTimeout(() => {
-                reject(new Error("Tab load timed out"))
-            }, 25_000)
             const listener = (changedId: number, info: { status?: string }) => {
                 if (changedId === tabId && info.status === "complete") {
                     clearTimeout(timeoutId)
@@ -198,6 +196,10 @@ async function fetchChapterHtmlViaTab(url: string): Promise<string> {
                     resolve()
                 }
             }
+            const timeoutId = setTimeout(() => {
+                browser.tabs.onUpdated.removeListener(listener)
+                reject(new Error("Tab load timed out"))
+            }, 25_000)
             browser.tabs.onUpdated.addListener(listener)
         })
         const results = await browser.scripting.executeScript({
@@ -424,33 +426,48 @@ export default defineBackground(() => {
         void checkExtensionUpdate()
     })
 
+    // Re-arm alarms on browser startup in case they were cleared (profile wipe,
+    // browser crash, edge-case alarm storage corruption). onInstalled only fires
+    // on install/update, so without this, a lost alarm silently breaks until the
+    // next extension update.
+    browser.runtime.onStartup.addListener(() => {
+        void configureUpdateAlarm()
+        void configureSyncAlarm()
+    })
+
     browser.alarms.onAlarm.addListener(alarm => {
         if (alarm.name === updateAlarmName) void checkUpdates()
         if (alarm.name === syncAlarmName) void autoPush()
         if (alarm.name === extensionUpdateAlarmName) void checkExtensionUpdate()
     })
 
-    browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-        if (changeInfo.url) {
-            void captureChapter(changeInfo.url).catch(error => {
-                console.warn("[AMR] Automatic chapter capture failed", error)
-            })
-        }
-        if (changeInfo.status === "complete" && tab.url) {
-            let parsedUrl: URL
-            try {
-                parsedUrl = new URL(tab.url)
-            } catch {
-                return
+    // Filter to source URLs only so the MV3 service worker is not woken up for
+    // every tab navigation (YouTube, Google, etc.) — unfiltered onUpdated is the
+    // most common cause of excessive SW restarts and subsequent throttling.
+    browser.tabs.onUpdated.addListener(
+        (tabId, changeInfo, tab) => {
+            if (changeInfo.url) {
+                void captureChapter(changeInfo.url).catch(error => {
+                    console.warn("[AMR] Automatic chapter capture failed", error)
+                })
             }
-            const source = findSource(parsedUrl)
-            if (source?.match(parsedUrl) === "chapter") {
-                void browser.scripting
-                    .executeScript({ target: { tabId }, func: injectChapterPrompt, args: [tab.url] })
-                    .catch(() => {})
+            if (changeInfo.status === "complete" && tab.url) {
+                let parsedUrl: URL
+                try {
+                    parsedUrl = new URL(tab.url)
+                } catch {
+                    return
+                }
+                const source = findSource(parsedUrl)
+                if (source?.match(parsedUrl) === "chapter") {
+                    void browser.scripting
+                        .executeScript({ target: { tabId }, func: injectChapterPrompt, args: [tab.url] })
+                        .catch(() => {})
+                }
             }
-        }
-    })
+        },
+        { urls: [...SOURCE_ORIGINS] }
+    )
 
     browser.runtime.onMessage.addListener((message, sender) => {
         return (async () => {
