@@ -53,10 +53,6 @@ const coverBackfillAttempted = new Set<string>()
 // and race against the in-flight tab fetch.
 const internalTabIds = new Set<number>()
 
-// Cache the most recently tab-fetched HTML so reader:ads can reuse it
-// instead of re-fetching the page. Cleared on SW restart (in-memory only).
-let lastHtmlCache: { url: string; html: string; at: number } | undefined
-
 // URLs currently being captured — deduplicate concurrent calls for the same URL
 // (e.g. rapid navigation events or the same URL from multiple listener paths).
 const capturingUrls = new Set<string>()
@@ -221,49 +217,11 @@ async function fetchChapterHtmlViaTab(url: string): Promise<string> {
             func: () => document.documentElement.outerHTML
         })
         const html = results[0]?.result
-        const htmlStr = typeof html === "string" ? html : ""
-        if (htmlStr) lastHtmlCache = { url, html: htmlStr, at: Date.now() }
-        return htmlStr
+        return typeof html === "string" ? html : ""
     } finally {
         internalTabIds.delete(tabId)
         await browser.tabs.remove(tabId).catch(() => {})
     }
-}
-
-// Extract static ad banner image URLs from raw chapter HTML. Works best on
-// tab-fetched HTML (fully rendered DOM). Direct-fetched HTML may be empty if
-// the site renders ads via JavaScript after page load.
-function extractAdBanners(html: string): string[] {
-    const seen = new Set<string>()
-    const out: string[] = []
-
-    function tryAdd(src: string) {
-        if (out.length >= 4) return
-        if (!src || seen.has(src) || src.startsWith("data:") || src.length > 600) return
-        seen.add(src)
-        out.push(src)
-    }
-
-    // Strategy 1: img tags inside elements whose class/id contains ad-related words
-    const blockRe =
-        /<(?:div|aside|section|ins)\b[^>]*(?:class|id)="[^"]*\b(?:ads?|advert(?:isement)?|adsense|dfp|ad-unit|banner|sponsor)\b[^"]*"[^>]*>([\s\S]{0,5000}?)<\/(?:div|aside|section|ins)>/gi
-    for (const block of html.matchAll(blockRe)) {
-        for (const img of (block[1] ?? "").matchAll(/<img\b[^>]*\bsrc="(https?:\/\/[^"]+)"[^>]*/gi)) {
-            tryAdd(img[1] ?? "")
-        }
-        if (out.length >= 4) break
-    }
-
-    // Strategy 2: images served from known ad network CDNs
-    if (out.length < 4) {
-        const adCdnRe =
-            /<img\b[^>]*\bsrc="(https?:\/\/[^"]*(?:doubleclick\.net|googlesyndication\.com|media\.net|adsrvr\.org|adnxs\.com)[^"]*)"[^>]*/gi
-        for (const img of html.matchAll(adCdnRe)) {
-            tryAdd(img[1] ?? "")
-        }
-    }
-
-    return out
 }
 
 function isBotBlocked(error: unknown): boolean {
@@ -394,88 +352,159 @@ function injectChapterPrompt(chapterUrl: string): void {
     const BANNER_ID = "__amr-chapter-prompt__"
     if (document.getElementById(BANNER_ID)) return
 
+    // Auto-detect light background and switch to dark for comfortable reading.
+    function parseLuminance(css: string): number {
+        const m = css.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+        if (!m) return -1
+        const r = parseInt(m[1]) / 255,
+            g = parseInt(m[2]) / 255,
+            b = parseInt(m[3]) / 255
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const bgCss =
+        getComputedStyle(document.documentElement).backgroundColor || getComputedStyle(document.body).backgroundColor
+    const isLight = parseLuminance(bgCss) > 0.5
+
+    let darkModeActive = false
+    let darkStyleEl: HTMLStyleElement | null = null
+
+    function applyDark() {
+        if (darkStyleEl) return
+        darkStyleEl = document.createElement("style")
+        darkStyleEl.id = "__amr-dark-mode__"
+        darkStyleEl.textContent =
+            "html,body{background-color:#111!important;color:#e2e8f0!important}" +
+            ".chapter-container,.reading-content,.page-break,.wp-manga-chapter-img," +
+            "div[class*='chapter'],div[class*='page']{background:#111!important}"
+        document.head.appendChild(darkStyleEl)
+        darkModeActive = true
+    }
+    function removeDark() {
+        darkStyleEl?.remove()
+        darkStyleEl = null
+        darkModeActive = false
+    }
+
+    if (isLight) applyDark()
+
     const host = document.createElement("div")
     host.id = BANNER_ID
     document.body.appendChild(host)
 
     const shadow = host.attachShadow({ mode: "open" })
+    const darkBtnActive = isLight ? " dark-active" : ""
     shadow.innerHTML = `
         <style>
-            .banner {
-                position: fixed;
-                bottom: 24px;
-                right: 24px;
-                z-index: 2147483647;
-                background: #16213e;
-                border: 1px solid rgba(255,255,255,0.10);
-                border-radius: 14px;
-                padding: 14px 16px;
-                display: flex;
-                align-items: center;
-                gap: 14px;
+            .panel {
+                position: fixed; bottom: 24px; right: 24px; z-index: 2147483647;
+                background: #16213e; border: 1px solid rgba(255,255,255,0.12);
+                border-radius: 14px; padding: 12px 14px;
+                display: flex; flex-direction: column; gap: 10px;
                 font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-                font-size: 14px;
-                color: #e2e8f0;
-                box-shadow: 0 12px 40px rgba(0,0,0,0.55);
-                animation: slide-in 0.22s cubic-bezier(.22,.6,.36,1) both;
-                max-width: 300px;
-                min-width: 220px;
+                font-size: 13px; color: #e2e8f0;
+                box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+                animation: slide-in 0.22s cubic-bezier(.22,.6,.36,1) both; width: 220px;
             }
             @keyframes slide-in {
                 from { transform: translateY(110%); opacity: 0; }
-                to   { transform: translateY(0);    opacity: 1; }
+                to   { transform: translateY(0); opacity: 1; }
             }
-            .icon { font-size: 22px; flex-shrink: 0; line-height: 1; }
-            .text { flex: 1; min-width: 0; }
-            .text b { display: block; font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 2px; }
-            .text small { font-size: 11px; color: #64748b; }
-            .actions { display: flex; gap: 8px; flex-shrink: 0; }
-            .btn-open {
-                background: #6366f1;
-                color: #fff;
-                border: none;
-                border-radius: 8px;
-                padding: 7px 14px;
-                font-size: 13px;
-                font-weight: 600;
-                cursor: pointer;
-                font-family: inherit;
-                transition: background 0.15s;
+            .hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+            .ttl { font-weight: 700; font-size: 13px; color: #fff; }
+            .sub { font-size: 11px; color: #64748b; margin-top: 1px;
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+            .x { background: none; border: none; color: #64748b; cursor: pointer;
+                 font-size: 16px; line-height: 1; padding: 0 2px; font-family: inherit; flex-shrink: 0; }
+            .x:hover { color: #e2e8f0; }
+            .sep { height: 1px; background: rgba(255,255,255,0.08); }
+            .row { display: flex; gap: 6px; }
+            .btn {
+                flex: 1; background: rgba(255,255,255,0.08); color: #e2e8f0;
+                border: 1px solid rgba(255,255,255,0.10); border-radius: 8px;
+                padding: 7px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
+                font-family: inherit; transition: background 0.15s, opacity 0.15s;
+                text-align: center; white-space: nowrap;
             }
-            .btn-open:hover { background: #818cf8; }
-            .btn-dismiss {
-                background: transparent;
-                color: #64748b;
-                border: 1px solid rgba(255,255,255,0.10);
-                border-radius: 8px;
-                padding: 7px 10px;
-                font-size: 13px;
-                cursor: pointer;
-                font-family: inherit;
-                transition: color 0.15s, border-color 0.15s;
-            }
-            .btn-dismiss:hover { color: #e2e8f0; border-color: rgba(255,255,255,0.22); }
+            .btn:hover:not(:disabled) { background: rgba(255,255,255,0.16); }
+            .btn:disabled { opacity: 0.28; cursor: default; }
+            .btn-p { background: #6366f1; border-color: transparent; }
+            .btn-p:hover:not(:disabled) { background: #818cf8; }
+            .btn-moon { font-size: 14px; padding: 7px 8px; flex: 0 0 auto; }
+            .dark-active { background: #1e3a8a; border-color: #3b82f6; }
         </style>
-        <div class="banner">
-            <div class="icon">📖</div>
-            <div class="text">
-                <b>Open in AMR?</b>
-                <small>Chapter detected on this page</small>
+        <div class="panel">
+            <div class="hd">
+                <div>
+                    <div class="ttl">📖 AMR</div>
+                    <div class="sub" id="sub">Chapter detected</div>
+                </div>
+                <button class="x" id="xbtn" aria-label="Dismiss">✕</button>
             </div>
-            <div class="actions">
-                <button class="btn-open">Open</button>
-                <button class="btn-dismiss">✕</button>
+            <div class="sep"></div>
+            <div class="row">
+                <button class="btn" id="bprev" disabled>‹ Prev</button>
+                <button class="btn" id="bnext" disabled>Next ›</button>
             </div>
+            <div class="row">
+                <button class="btn btn-p" id="bopen">Open in AMR</button>
+                <button class="btn btn-moon${darkBtnActive}" id="bdark" title="Toggle dark background">🌙</button>
+            </div>
+            <button class="btn" id="btrack">Mark read</button>
         </div>
     `
 
-    shadow.querySelector(".btn-open")?.addEventListener("click", () => {
+    let prevUrl: string | null = null
+    let nextUrl: string | null = null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    chrome.runtime.sendMessage({ type: "chapter:siblings", url: chapterUrl }, (resp: any) => {
+        if (!resp?.ok || !resp.data) return
+        const d = resp.data as {
+            prevUrl: string | null
+            nextUrl: string | null
+            mangaTitle: string | null
+            chapterTitle: string | null
+        }
+        prevUrl = d.prevUrl
+        nextUrl = d.nextUrl
+        const sub = shadow.getElementById("sub")
+        if (sub && (d.chapterTitle || d.mangaTitle)) sub.textContent = d.chapterTitle ?? d.mangaTitle
+        ;(shadow.getElementById("bprev") as HTMLButtonElement | null)!.disabled = !prevUrl
+        ;(shadow.getElementById("bnext") as HTMLButtonElement | null)!.disabled = !nextUrl
+    })
+
+    shadow.getElementById("xbtn")?.addEventListener("click", () => host.remove())
+
+    shadow.getElementById("bopen")?.addEventListener("click", () => {
         chrome.runtime.sendMessage({ type: "chapter:open-in-reader", url: chapterUrl })
         host.remove()
     })
 
-    shadow.querySelector(".btn-dismiss")?.addEventListener("click", () => {
-        host.remove()
+    shadow.getElementById("btrack")?.addEventListener("click", () => {
+        chrome.runtime.sendMessage({ type: "chapter:track", url: chapterUrl })
+        const btn = shadow.getElementById("btrack") as HTMLButtonElement | null
+        if (btn) {
+            btn.textContent = "Marked ✓"
+            btn.disabled = true
+        }
+    })
+
+    shadow.getElementById("bdark")?.addEventListener("click", () => {
+        const btn = shadow.getElementById("bdark")
+        if (darkModeActive) {
+            removeDark()
+            btn?.classList.remove("dark-active")
+        } else {
+            applyDark()
+            btn?.classList.add("dark-active")
+        }
+    })
+
+    shadow.getElementById("bprev")?.addEventListener("click", () => {
+        if (prevUrl) window.location.href = prevUrl
+    })
+    shadow.getElementById("bnext")?.addEventListener("click", () => {
+        if (nextUrl) window.location.href = nextUrl
     })
 }
 
@@ -943,42 +972,25 @@ export default defineBackground(() => {
                         }
                         return success(resolved)
                     }
-                    case "reader:ads": {
-                        const sourceHost = new URL(request.url).hostname
-                        const CACHE_TTL = 5 * 60 * 1000
-                        // Reuse HTML already fetched by the tab fallback if fresh enough
-                        if (
-                            lastHtmlCache &&
-                            lastHtmlCache.url === request.url &&
-                            Date.now() - lastHtmlCache.at < CACHE_TTL
-                        ) {
-                            return success({ sourceHost, bannerImages: extractAdBanners(lastHtmlCache.html) })
-                        }
-                        // Fall back to a lightweight direct fetch (best-effort — may be CF-blocked)
-                        try {
-                            const controller = new AbortController()
-                            const timer = setTimeout(() => controller.abort(), 10_000)
-                            try {
-                                const res = await fetch(request.url, {
-                                    headers: {
-                                        "User-Agent":
-                                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-                                        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                                    },
-                                    signal: controller.signal
-                                })
-                                if (res.ok) {
-                                    const html = await res.text()
-                                    lastHtmlCache = { url: request.url, html, at: Date.now() }
-                                    return success({ sourceHost, bannerImages: extractAdBanners(html) })
-                                }
-                            } finally {
-                                clearTimeout(timer)
-                            }
-                        } catch {
-                            // best-effort — return empty banners but still show the visit button
-                        }
-                        return success({ sourceHost, bannerImages: [] as string[] })
+                    case "chapter:siblings": {
+                        // Look up cached chapters from DB — no network call needed.
+                        // auto-capture already stored chapters when the user first visited.
+                        const chRecord = await db.chapters.filter(c => c.url === request.url).first()
+                        if (!chRecord)
+                            return success({ prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null })
+                        const manga = await db.manga.get(chRecord.mangaId)
+                        if (!manga)
+                            return success({ prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null })
+                        const siblings = await db.chapters.where("mangaId").equals(chRecord.mangaId).sortBy("sortKey")
+                        const idx = siblings.findIndex(c => c.url === request.url)
+                        const prev = idx > 0 ? siblings[idx - 1] : null
+                        const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null
+                        return success({
+                            prevUrl: prev?.url ?? null,
+                            nextUrl: next?.url ?? null,
+                            mangaTitle: manga.title,
+                            chapterTitle: chRecord.title ?? null
+                        })
                     }
                     case "reader:chapters": {
                         try {
