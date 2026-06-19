@@ -64,6 +64,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("page:current") }),
     z.object({ type: z.literal("page:capture"), url: z.url() }),
     z.object({ type: z.literal("reader:resolve"), url: z.url() }),
+    z.object({ type: z.literal("reader:ads"), url: z.url() }),
     z.object({
         type: z.literal("reader:chapters"),
         sourceId: z.string().min(1),

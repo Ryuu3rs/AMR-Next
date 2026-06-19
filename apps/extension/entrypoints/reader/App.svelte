@@ -45,6 +45,10 @@
     const isBookmarked = $derived(bookmarkedPages.has(currentPage))
     let bookmarkWorking = $state(false)
 
+    type SiteAds = { sourceHost: string; bannerImages: string[] }
+    let siteAds = $state<SiteAds | null>(null)
+    let siteAdsDismissed = $state(false)
+
     $effect(() => {
         if (!chapter) {
             bookmarkedPages = new Set()
@@ -80,6 +84,19 @@
             bookmarkWorking = false
         }
     }
+
+    $effect(() => {
+        if (!chapter) {
+            siteAds = null
+            return
+        }
+        const url = chapter.chapter.url
+        void sendRuntimeMessage<SiteAds>({ type: "reader:ads", url })
+            .then(result => {
+                if (chapter?.chapter.url === url) siteAds = result
+            })
+            .catch(() => {})
+    })
 
     let showCatPanel = $state(false)
     let mangaCategories = $state<string[]>([])
@@ -664,6 +681,58 @@
     {/if}
 </main>
 
+{#if chapter && !error && !resolving && siteAds}
+    <section class="site-support" aria-label="Support {siteAds.sourceHost}">
+        {#if siteAdsDismissed}
+            <button
+                type="button"
+                class="ads-restore"
+                onclick={() => (siteAdsDismissed = false)}
+                title="Show site support">
+                Support {siteAds.sourceHost}
+            </button>
+        {:else}
+            <div class="ads-header">
+                <span class="ads-label">Support {siteAds.sourceHost}</span>
+                <button type="button" class="ads-dismiss" onclick={() => (siteAdsDismissed = true)} aria-label="Dismiss"
+                    >×</button>
+            </div>
+            {#if siteAds.bannerImages.length > 0}
+                <div class="ads-banners">
+                    {#each siteAds.bannerImages as src (src)}
+                        <a
+                            href={chapterUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="ads-banner-link"
+                            onclick={e => {
+                                e.preventDefault()
+                                void browser.tabs.create({ url: chapterUrl })
+                            }}>
+                            <img
+                                {src}
+                                alt="Ad"
+                                class="ads-banner-img"
+                                onerror={e => e.currentTarget.closest(".ads-banner-link")?.remove()} />
+                        </a>
+                    {/each}
+                </div>
+            {/if}
+            <a
+                href={chapterUrl}
+                class="ads-visit-btn"
+                target="_blank"
+                rel="noopener noreferrer"
+                onclick={e => {
+                    e.preventDefault()
+                    void browser.tabs.create({ url: chapterUrl })
+                }}>
+                Visit {siteAds.sourceHost} →
+            </a>
+        {/if}
+    </section>
+{/if}
+
 {#if chapter && !error && !resolving && (nextUrl || prevUrl)}
     <footer class="chapter-nav">
         <button type="button" class="btn-sm" disabled={!prevUrl} onclick={() => goToChapter(prevUrl)}>
@@ -777,6 +846,97 @@
 {/if}
 
 <style>
+    .site-support {
+        max-width: 720px;
+        margin: 32px auto 8px;
+        padding: 0 16px;
+        text-align: center;
+    }
+
+    .ads-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .ads-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        opacity: 0.45;
+    }
+
+    .ads-dismiss {
+        background: none;
+        border: none;
+        color: inherit;
+        opacity: 0.4;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 0 4px;
+        line-height: 1;
+    }
+
+    .ads-dismiss:hover {
+        opacity: 0.8;
+    }
+
+    .ads-banners {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 12px;
+    }
+
+    .ads-banner-link {
+        display: block;
+        border-radius: 4px;
+        overflow: hidden;
+        max-width: 100%;
+    }
+
+    .ads-banner-img {
+        display: block;
+        max-width: 100%;
+        max-height: 120px;
+        border-radius: 4px;
+        object-fit: contain;
+    }
+
+    .ads-visit-btn {
+        display: inline-block;
+        font-size: 12px;
+        padding: 6px 14px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 6px;
+        color: inherit;
+        text-decoration: none;
+        opacity: 0.55;
+        transition: opacity 0.15s;
+    }
+
+    .ads-visit-btn:hover {
+        opacity: 1;
+    }
+
+    .ads-restore {
+        background: none;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        color: inherit;
+        cursor: pointer;
+        font-size: 11px;
+        opacity: 0.35;
+        padding: 4px 10px;
+    }
+
+    .ads-restore:hover {
+        opacity: 0.7;
+    }
+
     .btn-mirror {
         margin-top: 16px;
         background: #f59e0b;

@@ -53,6 +53,10 @@ const coverBackfillAttempted = new Set<string>()
 // and race against the in-flight tab fetch.
 const internalTabIds = new Set<number>()
 
+// Cache the most recently tab-fetched HTML so reader:ads can reuse it
+// instead of re-fetching the page. Cleared on SW restart (in-memory only).
+let lastHtmlCache: { url: string; html: string; at: number } | undefined
+
 // URLs currently being captured — deduplicate concurrent calls for the same URL
 // (e.g. rapid navigation events or the same URL from multiple listener paths).
 const capturingUrls = new Set<string>()
@@ -217,11 +221,49 @@ async function fetchChapterHtmlViaTab(url: string): Promise<string> {
             func: () => document.documentElement.outerHTML
         })
         const html = results[0]?.result
-        return typeof html === "string" ? html : ""
+        const htmlStr = typeof html === "string" ? html : ""
+        if (htmlStr) lastHtmlCache = { url, html: htmlStr, at: Date.now() }
+        return htmlStr
     } finally {
         internalTabIds.delete(tabId)
         await browser.tabs.remove(tabId).catch(() => {})
     }
+}
+
+// Extract static ad banner image URLs from raw chapter HTML. Works best on
+// tab-fetched HTML (fully rendered DOM). Direct-fetched HTML may be empty if
+// the site renders ads via JavaScript after page load.
+function extractAdBanners(html: string): string[] {
+    const seen = new Set<string>()
+    const out: string[] = []
+
+    function tryAdd(src: string) {
+        if (out.length >= 4) return
+        if (!src || seen.has(src) || src.startsWith("data:") || src.length > 600) return
+        seen.add(src)
+        out.push(src)
+    }
+
+    // Strategy 1: img tags inside elements whose class/id contains ad-related words
+    const blockRe =
+        /<(?:div|aside|section|ins)\b[^>]*(?:class|id)="[^"]*\b(?:ads?|advert(?:isement)?|adsense|dfp|ad-unit|banner|sponsor)\b[^"]*"[^>]*>([\s\S]{0,5000}?)<\/(?:div|aside|section|ins)>/gi
+    for (const block of html.matchAll(blockRe)) {
+        for (const img of (block[1] ?? "").matchAll(/<img\b[^>]*\bsrc="(https?:\/\/[^"]+)"[^>]*/gi)) {
+            tryAdd(img[1] ?? "")
+        }
+        if (out.length >= 4) break
+    }
+
+    // Strategy 2: images served from known ad network CDNs
+    if (out.length < 4) {
+        const adCdnRe =
+            /<img\b[^>]*\bsrc="(https?:\/\/[^"]*(?:doubleclick\.net|googlesyndication\.com|media\.net|adsrvr\.org|adnxs\.com)[^"]*)"[^>]*/gi
+        for (const img of html.matchAll(adCdnRe)) {
+            tryAdd(img[1] ?? "")
+        }
+    }
+
+    return out
 }
 
 function isBotBlocked(error: unknown): boolean {
@@ -900,6 +942,43 @@ export default defineBackground(() => {
                             }
                         }
                         return success(resolved)
+                    }
+                    case "reader:ads": {
+                        const sourceHost = new URL(request.url).hostname
+                        const CACHE_TTL = 5 * 60 * 1000
+                        // Reuse HTML already fetched by the tab fallback if fresh enough
+                        if (
+                            lastHtmlCache &&
+                            lastHtmlCache.url === request.url &&
+                            Date.now() - lastHtmlCache.at < CACHE_TTL
+                        ) {
+                            return success({ sourceHost, bannerImages: extractAdBanners(lastHtmlCache.html) })
+                        }
+                        // Fall back to a lightweight direct fetch (best-effort — may be CF-blocked)
+                        try {
+                            const controller = new AbortController()
+                            const timer = setTimeout(() => controller.abort(), 10_000)
+                            try {
+                                const res = await fetch(request.url, {
+                                    headers: {
+                                        "User-Agent":
+                                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                                        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                                    },
+                                    signal: controller.signal
+                                })
+                                if (res.ok) {
+                                    const html = await res.text()
+                                    lastHtmlCache = { url: request.url, html, at: Date.now() }
+                                    return success({ sourceHost, bannerImages: extractAdBanners(html) })
+                                }
+                            } finally {
+                                clearTimeout(timer)
+                            }
+                        } catch {
+                            // best-effort — return empty banners but still show the visit button
+                        }
+                        return success({ sourceHost, bannerImages: [] as string[] })
                     }
                     case "reader:chapters": {
                         try {
