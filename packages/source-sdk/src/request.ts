@@ -35,6 +35,10 @@ export type BoundedRequestClientOptions = {
     // Injectable for tests so backoff/rate-limit waits are instant.
     sleep?: (ms: number) => Promise<void>
     random?: () => number
+    // Short-TTL success cache for coalescable GETs. 0 or omit to disable.
+    cacheTtlMs?: number
+    // Injectable clock for tests.
+    now?: () => number
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
@@ -53,6 +57,8 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
     const retryBaseDelayMs = options.retryBaseDelayMs ?? 300
     const sleep = options.sleep ?? defaultSleep
     const random = options.random ?? Math.random
+    const now = options.now ?? (() => Date.now())
+    const cacheTtlMs = options.cacheTtlMs ?? 0
     const minIntervalMs =
         options.rateLimit && options.rateLimit.requests > 0
             ? options.rateLimit.intervalMs / options.rateLimit.requests
@@ -64,12 +70,14 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
     // Dedupe concurrent identical GETs. Keyed by URL string; the entry lives only
     // while the underlying fetch is in flight (no time-based caching).
     const inFlight = new Map<string, Promise<string>>()
+    // Short-TTL success cache for coalescable GETs. Entries expire after cacheTtlMs.
+    const responseCache = new Map<string, { body: string; expiresAt: number }>()
 
     async function waitForRateSlot(): Promise<void> {
         if (minIntervalMs <= 0) return
-        const now = Date.now()
-        const wait = Math.max(0, nextAllowedAt - now)
-        nextAllowedAt = Math.max(now, nextAllowedAt) + minIntervalMs
+        const ts = now()
+        const wait = Math.max(0, nextAllowedAt - ts)
+        nextAllowedAt = Math.max(ts, nextAllowedAt) + minIntervalMs
         if (wait > 0) await sleep(wait)
     }
 
@@ -153,13 +161,24 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
             return attemptWithRetries(url, init)
         }
         const key = url.toString()
+        if (cacheTtlMs > 0) {
+            const cached = responseCache.get(key)
+            if (cached !== undefined && now() < cached.expiresAt) {
+                return cached.body
+            }
+        }
         const existing = inFlight.get(key)
         if (existing !== undefined) {
             return existing
         }
-        const pending = attemptWithRetries(url, init).finally(() => {
-            inFlight.delete(key)
-        })
+        const pending = attemptWithRetries(url, init)
+            .then(body => {
+                if (cacheTtlMs > 0) responseCache.set(key, { body, expiresAt: now() + cacheTtlMs })
+                return body
+            })
+            .finally(() => {
+                inFlight.delete(key)
+            })
         inFlight.set(key, pending)
         return pending
     }
