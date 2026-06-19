@@ -27,6 +27,9 @@ export type MangaStreamConfig = {
     mangaPath?: string
     language?: string
     rateLimit?: { requests: number; intervalMs: number }
+    // "hierarchical": chapters live at /<mangaPath>/<manga-slug>/<num>/ instead of
+    // the flat root slug containing "chapter". Use for sites like KappaBeast.
+    chapterFormat?: "flat" | "hierarchical"
 }
 
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
@@ -181,10 +184,14 @@ function extractTitle(html: string, fallbackSlug: string): string {
 export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapter {
     const mangaPath = config.mangaPath ?? "manga"
     const language = config.language ?? "en"
+    const isHierarchical = config.chapterFormat === "hierarchical"
     const escPath = escapeRegex(mangaPath)
     const mangaRe = new RegExp(`^/${escPath}/([^/]+)/?$`)
-    // MangaStream chapters live at the site root with a slug containing "chapter".
-    const chapterRe = /^\/([a-z0-9][a-z0-9._-]*chapter[a-z0-9._-]*)\/?$/i
+    // Hierarchical: /<mangaPath>/<manga-slug>/<chapter-num>/
+    // Flat (default): root slug containing the word "chapter"
+    const chapterRe: RegExp = isHierarchical
+        ? new RegExp(`^/${escPath}/([^/]+)/(\\d+(?:[.-]\\d+)?)/?$`)
+        : /^\/([a-z0-9][a-z0-9._-]*chapter[a-z0-9._-]*)\/?$/i
 
     const browserHeaders = {
         "User-Agent":
@@ -196,6 +203,10 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
 
     function chapterSlug(url: URL): string | undefined {
         if (!matchesSourceDomain(url.hostname, config.domains)) return undefined
+        if (isHierarchical) {
+            const m = url.pathname.match(chapterRe)
+            return m ? `${m[1]}/${m[2]}` : undefined
+        }
         return url.pathname.match(chapterRe)?.[1]
     }
 
@@ -205,6 +216,10 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
     }
 
     function chapterNumberOf(slug: string): string {
+        if (isHierarchical) {
+            const num = slug.split("/").pop()
+            return num?.replace("-", ".") ?? "1"
+        }
         const m = slug.match(/chapter[-_ ]?(\d+(?:[.-]\d+)?)/i)
         const raw = m ? captureGroup(m, 1) : undefined
         return raw ? raw.replace("-", ".") : "1"
@@ -256,8 +271,17 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
             } catch {
                 continue
             }
-            const cslug = absolute.pathname.replace(/\/$/, "").split("/").pop()
-            if (!cslug || !/chapter/i.test(cslug) || seen.has(cslug)) continue
+            let cslug: string
+            if (isHierarchical) {
+                const m = absolute.pathname.match(chapterRe)
+                if (!m) continue
+                cslug = `${m[1]}/${m[2]}`
+            } else {
+                const lastSeg = absolute.pathname.replace(/\/$/, "").split("/").pop()
+                if (!lastSeg || !/chapter/i.test(lastSeg)) continue
+                cslug = lastSeg
+            }
+            if (seen.has(cslug)) continue
             seen.add(cslug)
             const number = chapterNumberOf(cslug)
             out.push({
@@ -379,7 +403,9 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
                 throw new SourceError("invalid-response", msg)
             }
 
-            const mangaSlugGuess = slug.replace(/-?chapter[-_]?\d.*$/i, "") || slug
+            const mangaSlugGuess = isHierarchical
+                ? (slug.split("/")[0] ?? slug)
+                : slug.replace(/-?chapter[-_]?\d.*$/i, "") || slug
             const number = chapterNumberOf(slug)
             const coverUrl = extractCoverUrl(html)
             const title = extractTitle(html, mangaSlugGuess)

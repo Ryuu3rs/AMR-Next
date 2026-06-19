@@ -12,7 +12,14 @@ const SITES: MangaStreamConfig[] = [
         origin: "https://en-thunderscans.com",
         domains: ["en-thunderscans.com"]
     },
-    { id: "kappabeast", name: "Kappa Beast", origin: "https://kappabeast.com", domains: ["kappabeast.com"] },
+    {
+        id: "kappabeast",
+        name: "Kappa Beast",
+        origin: "https://kappabeast.com",
+        domains: ["kappabeast.com"],
+        mangaPath: "reader",
+        chapterFormat: "hierarchical"
+    },
     {
         id: "phoenixscans",
         name: "Phoenix Scans",
