@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { importExportEnvelopeSchema, mangaRecordSchema, preferencesSchema, readingProgressSchema } from "./domain"
+import { mangaRecordSchema, readingProgressSchema } from "./domain"
 
 const manga = {
     id: "manga-1",
@@ -18,17 +18,6 @@ describe("domain contracts", () => {
         expect(() => mangaRecordSchema.parse({ ...manga, unexpected: true })).toThrow()
     })
 
-    it("applies preference defaults", () => {
-        expect(preferencesSchema.parse({})).toEqual({
-            theme: "system",
-            readingDirection: "left-to-right",
-            pageFit: "width",
-            preloadPages: 2,
-            showPageNumber: true,
-            autoMarkCompleted: true
-        })
-    })
-
     it("rejects progress outside the chapter page range", () => {
         expect(
             readingProgressSchema.safeParse({
@@ -40,25 +29,5 @@ describe("domain contracts", () => {
                 updatedAt: 200
             }).success
         ).toBe(false)
-    })
-
-    it("validates a versioned import/export envelope", () => {
-        const result = importExportEnvelopeSchema.parse({
-            format: "all-mangas-reader",
-            version: 1,
-            exportedAt: 300,
-            data: {
-                manga: [manga],
-                sourceLinks: [],
-                chapters: [],
-                pages: [],
-                progress: [],
-                preferences: {},
-                sourceHealth: []
-            }
-        })
-
-        expect(result.data.preferences.theme).toBe("system")
-        expect(() => importExportEnvelopeSchema.parse({ ...result, version: 2 })).toThrow()
     })
 })

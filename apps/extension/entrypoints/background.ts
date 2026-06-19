@@ -1,6 +1,6 @@
 import type { ReadingProgress } from "@amr/contracts"
 import { SourceError, SourceRequestError } from "@amr/source-sdk"
-import { sourceAdapters } from "@amr/sources"
+import { sourceRegistry } from "@amr/sources"
 import {
     db,
     cacheCover,
@@ -643,7 +643,7 @@ export default defineBackground(() => {
                         return success(await checkSourcePermission())
                     case "sources:list":
                         return success(
-                            sourceAdapters.map(adapter => ({
+                            sourceRegistry.list().map(adapter => ({
                                 id: adapter.manifest.id,
                                 name: adapter.manifest.name,
                                 domains: adapter.manifest.domains,
@@ -654,7 +654,7 @@ export default defineBackground(() => {
                         )
                     case "sources:ping": {
                         const checks = await Promise.all(
-                            sourceAdapters.map(async adapter => {
+                            sourceRegistry.list().map(async adapter => {
                                 const origin =
                                     adapter.manifest.homepage ??
                                     (adapter.manifest.domains[0] ? `https://${adapter.manifest.domains[0]}` : undefined)

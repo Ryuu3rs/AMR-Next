@@ -5,12 +5,12 @@ import {
     type SourceManga,
     type SourceSearchResult
 } from "@amr/source-sdk"
-import { sourceAdapters } from "@amr/sources"
+import { sourceRegistry } from "@amr/sources"
 import type { LibraryManga } from "./database"
 import { SOURCE_ORIGINS, sourceOrigins } from "./permissions"
 
 export function findSource(url: URL) {
-    return sourceAdapters.find(adapter => adapter.match(url) !== "none")
+    return sourceRegistry.match(url)
 }
 
 function createSourceContext(rateLimit?: { requests: number; intervalMs: number }): SourceContext {
@@ -40,7 +40,7 @@ export async function resolveCoverFor(manga: {
     sourceMangaId?: string
     mangaUrl?: string
 }): Promise<string | undefined> {
-    const source = sourceAdapters.find(adapter => adapter.manifest.id === manga.sourceId)
+    const source = sourceRegistry.get(manga.sourceId)
     if (!source?.resolveCover) return undefined
     const input: { sourceMangaId?: string; url?: URL } = {}
     if (manga.sourceMangaId) input.sourceMangaId = manga.sourceMangaId
@@ -60,7 +60,7 @@ export async function resolveGenresFor(manga: {
     sourceMangaId?: string
     mangaUrl?: string
 }): Promise<string[]> {
-    const source = sourceAdapters.find(adapter => adapter.manifest.id === manga.sourceId)
+    const source = sourceRegistry.get(manga.sourceId)
     if (!source?.resolveGenres) return []
     const input: { sourceMangaId?: string; url?: URL } = {}
     if (manga.sourceMangaId) input.sourceMangaId = manga.sourceMangaId
@@ -133,7 +133,7 @@ export async function searchManga(query: string): Promise<SourceSearchResult[]> 
     const stored = (await browser.storage.local.get("sourceHealth"))["sourceHealth"] as
         | Record<string, { alive: boolean; at: number }>
         | undefined
-    const searchable = sourceAdapters.filter(adapter => {
+    const searchable = sourceRegistry.list().filter(adapter => {
         if (!adapter.search) return false
         const health = stored?.[adapter.manifest.id]
         return !(health && health.alive === false && Date.now() - health.at < 24 * 60 * 60 * 1000)
@@ -179,7 +179,7 @@ export async function listChaptersForSource(
     sourceMangaId: string,
     mangaUrl: string
 ) {
-    const source = sourceAdapters.find(adapter => adapter.manifest.id === sourceId)
+    const source = sourceRegistry.get(sourceId)
     if (!source) throw new Error("That source is not supported")
     const sourceManga: SourceManga = { manga, sourceId, sourceMangaId, url: mangaUrl }
     return source.listChapters(
@@ -191,7 +191,7 @@ export async function listChaptersForSource(
 // List chapters for a source/manga that may not be in the library (used by the
 // reader for prev/next navigation).
 export async function listChaptersBySource(sourceId: string, sourceMangaId: string, mangaUrl: string) {
-    const source = sourceAdapters.find(adapter => adapter.manifest.id === sourceId)
+    const source = sourceRegistry.get(sourceId)
     if (!source) throw new Error("That source is not supported")
     const stub: MangaRecord = {
         id: `${sourceId}:manga:${sourceMangaId}`,
@@ -210,7 +210,7 @@ export async function listChaptersBySource(sourceId: string, sourceMangaId: stri
 }
 
 export async function listMangaChapters(manga: LibraryManga, link: SourceLinkRecord, language = "en") {
-    const source = sourceAdapters.find(adapter => adapter.manifest.id === link.sourceId)
+    const source = sourceRegistry.get(link.sourceId)
     if (!source || !link.sourceMangaId) throw new Error("The source link cannot be refreshed")
     const sourceManga: SourceManga = {
         manga,

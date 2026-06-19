@@ -1,5 +1,5 @@
 import type { ChapterRecord, SourceLinkRecord } from "@amr/contracts"
-import { sourceAdapters } from "@amr/sources"
+import { sourceRegistry } from "@amr/sources"
 import type { HistoryEvent, LibraryManga } from "./database"
 
 type LegacyManga = {
@@ -33,7 +33,7 @@ function parseUrl(value: string | undefined): URL | undefined {
 }
 
 function adapterIdFor(url: URL): string | undefined {
-    const adapter = sourceAdapters.find(a => a.match(url) !== "none")
+    const adapter = sourceRegistry.match(url)
     return adapter?.manifest.id
 }
 

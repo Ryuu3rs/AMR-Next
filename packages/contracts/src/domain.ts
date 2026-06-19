@@ -80,18 +80,6 @@ export const chapterRecordSchema = z
 
 export type ChapterRecord = z.infer<typeof chapterRecordSchema>
 
-export const pageRecordSchema = z
-    .object({
-        chapterId: chapterIdSchema,
-        index: z.number().int().nonnegative(),
-        imageUrl: httpUrlSchema,
-        width: z.number().int().positive().optional(),
-        height: z.number().int().positive().optional()
-    })
-    .strict()
-
-export type PageRecord = z.infer<typeof pageRecordSchema>
-
 export const readingProgressSchema = z
     .object({
         mangaId: mangaIdSchema,
@@ -108,54 +96,3 @@ export const readingProgressSchema = z
     })
 
 export type ReadingProgress = z.infer<typeof readingProgressSchema>
-
-export const preferencesSchema = z
-    .object({
-        theme: z.enum(["system", "light", "dark"]).default("system"),
-        readingDirection: z.enum(["left-to-right", "right-to-left", "vertical"]).default("left-to-right"),
-        pageFit: z.enum(["width", "height", "contain", "original"]).default("width"),
-        preloadPages: z.number().int().min(0).max(20).default(2),
-        showPageNumber: z.boolean().default(true),
-        autoMarkCompleted: z.boolean().default(true)
-    })
-    .strict()
-
-export type Preferences = z.infer<typeof preferencesSchema>
-
-export const sourceHealthSchema = z
-    .object({
-        sourceId: sourceIdSchema,
-        status: z.enum(["unknown", "healthy", "degraded", "unavailable"]),
-        checkedAt: timestampSchema,
-        responseTimeMs: z.number().finite().nonnegative().optional(),
-        message: z.string().trim().min(1).optional(),
-        consecutiveFailures: z.number().int().nonnegative().default(0)
-    })
-    .strict()
-
-export type SourceHealth = z.infer<typeof sourceHealthSchema>
-
-export const importExportDataSchema = z
-    .object({
-        manga: z.array(mangaRecordSchema),
-        sourceLinks: z.array(sourceLinkRecordSchema),
-        chapters: z.array(chapterRecordSchema),
-        pages: z.array(pageRecordSchema),
-        progress: z.array(readingProgressSchema),
-        preferences: preferencesSchema,
-        sourceHealth: z.array(sourceHealthSchema)
-    })
-    .strict()
-
-export type ImportExportData = z.infer<typeof importExportDataSchema>
-
-export const importExportEnvelopeSchema = z
-    .object({
-        format: z.literal("all-mangas-reader"),
-        version: z.literal(1),
-        exportedAt: timestampSchema,
-        data: importExportDataSchema
-    })
-    .strict()
-
-export type ImportExportEnvelope = z.infer<typeof importExportEnvelopeSchema>
