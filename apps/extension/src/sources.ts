@@ -23,6 +23,7 @@ function createSourceContext(rateLimit?: { requests: number; intervalMs: number 
         maxRequests: 20,
         maxResponseBytes: 10 * 1024 * 1024,
         timeoutMs: 20_000,
+        cacheTtlMs: 60_000,
         ...(rateLimit ? { rateLimit } : {})
     })
     return {

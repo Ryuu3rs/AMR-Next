@@ -217,6 +217,73 @@ describe("createBoundedRequestClient GET coalescing", () => {
     })
 })
 
+describe("createBoundedRequestClient TTL cache", () => {
+    it("serves second GET from cache without fetching", async () => {
+        let calls = 0
+        let fakeNow = 1000
+        const client = createBoundedRequestClient({
+            fetch: async () => {
+                calls += 1
+                return { ok: true, status: 200, text: async () => "cached-body" }
+            },
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 10,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            cacheTtlMs: 5000,
+            now: () => fakeNow
+        })
+        const url = new URL("https://api.example.test/item")
+        const a = await client.getText(url)
+        const b = await client.getText(url)
+        expect(a).toBe("cached-body")
+        expect(b).toBe("cached-body")
+        expect(calls).toBe(1)
+    })
+
+    it("refetches after TTL expires", async () => {
+        let calls = 0
+        let fakeNow = 1000
+        const client = createBoundedRequestClient({
+            fetch: async () => {
+                calls += 1
+                return { ok: true, status: 200, text: async () => `body-${calls}` }
+            },
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 10,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            cacheTtlMs: 5000,
+            now: () => fakeNow
+        })
+        const url = new URL("https://api.example.test/item")
+        await client.getText(url)
+        fakeNow += 6000
+        const second = await client.getText(url)
+        expect(second).toBe("body-2")
+        expect(calls).toBe(2)
+    })
+
+    it("does not cache POST responses", async () => {
+        let calls = 0
+        const client = createBoundedRequestClient({
+            fetch: async () => {
+                calls += 1
+                return { ok: true, status: 200, text: async () => "post-body" }
+            },
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 10,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            cacheTtlMs: 5000
+        })
+        const url = new URL("https://api.example.test/form")
+        await client.postForm(url, { q: "a" })
+        await client.postForm(url, { q: "a" })
+        expect(calls).toBe(2)
+    })
+})
+
 describe("SourceRegistry", () => {
     const adapter = {
         manifest: {
