@@ -69,6 +69,36 @@
         }
     }
 
+    async function removeTitle(manga: LibraryManga) {
+        const card = cardOf(manga.id)
+        card.searching = true
+        card.error = false
+        card.message = ""
+        try {
+            await sendRuntimeMessage({ type: "library:remove", mangaId: manga.id })
+            onLinked(manga.id)
+        } catch (cause) {
+            card.error = true
+            card.message = cause instanceof Error ? cause.message : "Failed to remove."
+        } finally {
+            card.searching = false
+        }
+    }
+
+    let removingAll = $state(false)
+
+    async function removeAll() {
+        removingAll = true
+        try {
+            for (const manga of mangas) {
+                await sendRuntimeMessage({ type: "library:remove", mangaId: manga.id })
+                onLinked(manga.id)
+            }
+        } finally {
+            removingAll = false
+        }
+    }
+
     async function findSources(manga: LibraryManga) {
         const card = cardOf(manga.id)
         card.searching = true
@@ -134,6 +164,13 @@
             These titles were imported but their original source couldn't be matched. Find them on a live source and
             link to preserve your progress.
         </p>
+        <button
+            type="button"
+            class="btn-ghost btn-sm reconcile-remove-all"
+            disabled={removingAll}
+            onclick={() => void removeAll()}>
+            {removingAll ? "Removing…" : `Remove all ${mangas.length}`}
+        </button>
         <ul class="reconcile-list">
             {#each visible as manga (manga.id)}
                 {@const card = cardOf(manga.id)}
@@ -163,6 +200,13 @@
                                     disabled={card.searching}
                                     onclick={() => dismissManual(manga)}>
                                     Mark as manual
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn-ghost btn-sm btn-danger-ghost"
+                                    disabled={card.searching}
+                                    onclick={() => removeTitle(manga)}>
+                                    Remove
                                 </button>
                             </div>
                         {/if}
@@ -212,6 +256,8 @@
 
 <style>
     .reconcile-section {
+        display: flex;
+        flex-direction: column;
         margin-top: 24px;
         border-top: 1px solid var(--border);
         padding-top: 20px;
@@ -284,6 +330,22 @@
 
     .btn-ghost:hover:not(:disabled) {
         color: var(--text, inherit);
+    }
+
+    .btn-danger-ghost:hover:not(:disabled) {
+        color: var(--error, #ef4444);
+    }
+
+    .reconcile-remove-all {
+        align-self: flex-start;
+        margin-bottom: 8px;
+        color: var(--error, #ef4444);
+        opacity: 0.75;
+        font-size: 0.8rem;
+    }
+
+    .reconcile-remove-all:hover:not(:disabled) {
+        opacity: 1;
     }
 
     .reconcile-msg {
