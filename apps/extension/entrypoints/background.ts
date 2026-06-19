@@ -775,10 +775,17 @@ export default defineBackground(() => {
                                     (adapter.manifest.domains[0] ? `https://${adapter.manifest.domains[0]}` : undefined)
                                 if (!origin) return { id: adapter.manifest.id, alive: false }
                                 const controller = new AbortController()
-                                const timer = setTimeout(() => controller.abort(), 7000)
+                                const timer = setTimeout(() => controller.abort(), 10000)
                                 try {
-                                    await fetch(origin, { method: "GET", mode: "no-cors", signal: controller.signal })
-                                    return { id: adapter.manifest.id, alive: true }
+                                    // Background fetches are privileged (no CORS restriction for origins in
+                                    // host_permissions). Check status: anything < 500 means the server is
+                                    // reachable. 403/429 from Cloudflare/rate-limiting is alive, not dead.
+                                    const res = await fetch(origin, {
+                                        method: "HEAD",
+                                        signal: controller.signal,
+                                        credentials: "omit"
+                                    })
+                                    return { id: adapter.manifest.id, alive: res.status < 500 }
                                 } catch {
                                     return { id: adapter.manifest.id, alive: false }
                                 } finally {
