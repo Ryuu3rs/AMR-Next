@@ -1173,6 +1173,45 @@ button:disabled {
     font-size: 12px;
 }
 
+.insights-genre-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.genre-bar-row {
+    display: grid;
+    grid-template-columns: 120px 1fr 32px;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+}
+
+.genre-label {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.genre-bar-track {
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.genre-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 4px;
+    transition: width 0.4s;
+}
+
+.genre-count {
+    text-align: right;
+}
+
 .source-row {
     display: flex;
     align-items: center;

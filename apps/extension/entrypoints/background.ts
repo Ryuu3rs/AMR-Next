@@ -24,7 +24,8 @@ import {
     bookmarkedPagesForChapter,
     listBookmarks,
     removeBookmark,
-    type AnalyticsEvent
+    type AnalyticsEvent,
+    type LibraryManga
 } from "../src/database"
 import { runtimeRequestSchema, type RuntimeResponse } from "../src/runtime"
 import { getSettings, updateSettings } from "../src/settings"
@@ -918,13 +919,17 @@ export default defineBackground(() => {
                     case "manga:genres": {
                         const manga = await db.manga.get(request.mangaId)
                         if (!manga) return success([] as string[])
-                        return success(
-                            await resolveGenresFor({
-                                sourceId: manga.sourceId,
-                                ...(manga.sourceMangaId ? { sourceMangaId: manga.sourceMangaId } : {}),
-                                mangaUrl: manga.mangaUrl ?? manga.sourceUrl
-                            })
-                        )
+                        // Return cached genres immediately if available, skip the network call.
+                        if (manga.genres && manga.genres.length > 0) return success(manga.genres)
+                        const genres = await resolveGenresFor({
+                            sourceId: manga.sourceId,
+                            ...(manga.sourceMangaId ? { sourceMangaId: manga.sourceMangaId } : {}),
+                            mangaUrl: manga.mangaUrl ?? manga.sourceUrl
+                        })
+                        if (genres.length > 0) {
+                            void db.manga.update(request.mangaId, { genres } as Partial<LibraryManga>)
+                        }
+                        return success(genres)
                     }
                     case "source:permission:check":
                         return success(await checkSourcePermission())

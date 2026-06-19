@@ -1152,6 +1152,9 @@
         topSources: Array<{ sourceId: string; count: number }>
         topErrors: Array<{ sourceId: string; count: number }>
         panelActions: Array<{ action: string; count: number }>
+        topGenres: Array<{ genre: string; count: number }>
+        topAuthors: Array<{ author: string; count: number }>
+        statusBreakdown: Array<{ status: string; count: number }>
     }
     let analyticsSummary = $state<AnalyticsSummary | null>(null)
     let analyticsLoaded = $state(false)
@@ -2110,6 +2113,46 @@
                             <div class="insights-row">
                                 <span class="insights-label">{a.action}</span>
                                 <span class="insights-count">{a.count}</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+                {#if analyticsSummary.topGenres.length > 0}
+                    <p class="shelf-label" style="margin-top:16px">
+                        Top genres <span class="muted">(from library titles with fetched genres)</span>
+                    </p>
+                    <div class="insights-genre-grid">
+                        {#each analyticsSummary.topGenres as g}
+                            {@const max = analyticsSummary.topGenres[0]?.count ?? 1}
+                            <div class="genre-bar-row">
+                                <span class="genre-label">{g.genre}</span>
+                                <div class="genre-bar-track">
+                                    <div class="genre-bar-fill" style="width:{Math.round((g.count / max) * 100)}%">
+                                    </div>
+                                </div>
+                                <span class="genre-count muted">{g.count}</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+                {#if analyticsSummary.topAuthors.length > 0}
+                    <p class="shelf-label" style="margin-top:16px">Top authors</p>
+                    <div class="insights-list">
+                        {#each analyticsSummary.topAuthors as a}
+                            <div class="insights-row">
+                                <span class="insights-label">{a.author}</span>
+                                <span class="insights-count">{a.count} titles</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+                {#if analyticsSummary.statusBreakdown.length > 0}
+                    <p class="shelf-label" style="margin-top:16px">Library by status</p>
+                    <div class="insights-list">
+                        {#each analyticsSummary.statusBreakdown.sort((a, b) => b.count - a.count) as s}
+                            <div class="insights-row">
+                                <span class="insights-label" style="text-transform:capitalize">{s.status}</span>
+                                <span class="insights-count">{s.count} titles</span>
                             </div>
                         {/each}
                     </div>

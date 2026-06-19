@@ -31,6 +31,8 @@ export type LibraryManga = MangaRecord & {
     nsfw?: boolean
     // Free-form per-manga notes the user keeps alongside the title.
     notes?: string
+    // Genres fetched from the source (cached to avoid repeat network calls).
+    genres?: string[]
 }
 
 export type HistoryEvent = {
@@ -1069,6 +1071,24 @@ export async function getAnalyticsSummary(days = 30) {
     const errorRate =
         captureOk + captureErrors > 0 ? Math.round((captureErrors / (captureOk + captureErrors)) * 100) : 0
 
+    // Aggregate genre, author, and status distributions from the full library.
+    // Genres are only counted for manga that have had their genres fetched and cached.
+    const allManga = await db.manga.toArray()
+    const genreCounts = new Map<string, number>()
+    const authorCounts = new Map<string, number>()
+    const statusCounts = new Map<string, number>()
+
+    for (const m of allManga) {
+        for (const g of m.genres ?? []) {
+            genreCounts.set(g, (genreCounts.get(g) ?? 0) + 1)
+        }
+        for (const a of m.authors ?? []) {
+            authorCounts.set(a, (authorCounts.get(a) ?? 0) + 1)
+        }
+        const st = m.status ?? "unknown"
+        statusCounts.set(st, (statusCounts.get(st) ?? 0) + 1)
+    }
+
     return {
         days,
         captureOk,
@@ -1089,7 +1109,16 @@ export async function getAnalyticsSummary(days = 30) {
             .map(([sourceId, count]) => ({ sourceId, count })),
         panelActions: [...panelActions.entries()]
             .sort((a, b) => b[1] - a[1])
-            .map(([action, count]) => ({ action, count }))
+            .map(([action, count]) => ({ action, count })),
+        topGenres: [...genreCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([genre, count]) => ({ genre, count })),
+        topAuthors: [...authorCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([author, count]) => ({ author, count })),
+        statusBreakdown: [...statusCounts.entries()].map(([status, count]) => ({ status, count }))
     }
 }
 
