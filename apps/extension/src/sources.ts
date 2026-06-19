@@ -108,11 +108,12 @@ export async function resolveChapterFromHtml(urlStr: string, html: string) {
         timeoutMs: 15_000
     })
 
-    const chapterUrlStr = parsedUrl.toString()
     const context: SourceContext = {
         request: {
             getText: async (url, opts) => {
-                if (url.toString() === chapterUrlStr) return html
+                // Match on origin+pathname so adapters that append query params (e.g. Madara
+                // appends ?style=list) still get the pre-fetched HTML instead of re-fetching.
+                if (url.origin + url.pathname === parsedUrl.origin + parsedUrl.pathname) return html
                 return fallbackClient.getText(url, opts)
             },
             getJson: (url, schema, opts) => fallbackClient.getJson(url, schema, opts),

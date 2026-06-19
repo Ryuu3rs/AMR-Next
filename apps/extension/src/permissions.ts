@@ -30,7 +30,20 @@ const BASE_SOURCE_ORIGINS = [
     // MangaPark — images served from xfs subdomain CDN
     "https://mangapark.net/*",
     "*://*.mangapark.net/*",
-    "*://*.mangapark.me/*"
+    "*://*.mangapark.me/*",
+    // AsuraComic (Next.js adapter) — chapter images served from subdomains (e.g. gg.asuracomic.net)
+    "https://asuracomic.net/*",
+    "*://*.asuracomic.net/*",
+    // AsuraScans (React RSC adapter) — chapter images served from cdn.asurascans.com
+    "https://asurascans.com/*",
+    "*://*.asurascans.com/*",
+    // User-requested Madara sites
+    "https://likemanga.io/*",
+    "*://*.likemanga.io/*",
+    "https://suryatoon.com/*",
+    "*://*.suryatoon.com/*",
+    "https://mangagalaxy.me/*",
+    "*://*.mangagalaxy.me/*"
 ] as const
 
 export const SOURCE_ORIGINS: readonly string[] = [

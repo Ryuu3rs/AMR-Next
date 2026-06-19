@@ -5,6 +5,8 @@ import { mgekoAdapter } from "./mgeko"
 import { manganatoAdapter } from "./manganato"
 import { weebCentralAdapter } from "./weebcentral"
 import { dynastyScansAdapter } from "./dynasty-scans"
+import { asuraComicAdapter } from "./asuracomic"
+import { asuraScansAdapter } from "./asurascans"
 import { madaraAdapters } from "./madara-sites"
 import { mangaStreamAdapters } from "./mangastream-sites"
 import { mangaBuddyAdapters } from "./mangabuddy-sites"
@@ -16,6 +18,8 @@ export { mgekoAdapter } from "./mgeko"
 export { manganatoAdapter } from "./manganato"
 export { weebCentralAdapter } from "./weebcentral"
 export { dynastyScansAdapter } from "./dynasty-scans"
+export { asuraComicAdapter } from "./asuracomic"
+export { asuraScansAdapter } from "./asurascans"
 export { createMadaraAdapter, type MadaraConfig } from "./madara"
 export { madaraAdapters, madaraOrigins } from "./madara-sites"
 export { createMangaStreamAdapter, type MangaStreamConfig } from "./mangastream"
@@ -31,6 +35,8 @@ export const sourceAdapters: readonly SourceAdapter[] = [
     manganatoAdapter,
     weebCentralAdapter,
     dynastyScansAdapter,
+    asuraComicAdapter,
+    asuraScansAdapter,
     ...madaraAdapters,
     ...mangaStreamAdapters,
     ...mangaBuddyAdapters,

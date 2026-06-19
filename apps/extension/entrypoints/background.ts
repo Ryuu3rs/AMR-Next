@@ -323,6 +323,97 @@ async function inlineCover(url: string): Promise<string | undefined> {
     }
 }
 
+// Self-contained — serialized and injected into the page via scripting.executeScript.
+// Must not reference any external variables or imports.
+function injectChapterPrompt(chapterUrl: string): void {
+    const BANNER_ID = "__amr-chapter-prompt__"
+    if (document.getElementById(BANNER_ID)) return
+
+    const host = document.createElement("div")
+    host.id = BANNER_ID
+    document.body.appendChild(host)
+
+    const shadow = host.attachShadow({ mode: "open" })
+    shadow.innerHTML = `
+        <style>
+            .banner {
+                position: fixed;
+                bottom: 24px;
+                right: 24px;
+                z-index: 2147483647;
+                background: #16213e;
+                border: 1px solid rgba(255,255,255,0.10);
+                border-radius: 14px;
+                padding: 14px 16px;
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 14px;
+                color: #e2e8f0;
+                box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+                animation: slide-in 0.22s cubic-bezier(.22,.6,.36,1) both;
+                max-width: 300px;
+                min-width: 220px;
+            }
+            @keyframes slide-in {
+                from { transform: translateY(110%); opacity: 0; }
+                to   { transform: translateY(0);    opacity: 1; }
+            }
+            .icon { font-size: 22px; flex-shrink: 0; line-height: 1; }
+            .text { flex: 1; min-width: 0; }
+            .text b { display: block; font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 2px; }
+            .text small { font-size: 11px; color: #64748b; }
+            .actions { display: flex; gap: 8px; flex-shrink: 0; }
+            .btn-open {
+                background: #6366f1;
+                color: #fff;
+                border: none;
+                border-radius: 8px;
+                padding: 7px 14px;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+                font-family: inherit;
+                transition: background 0.15s;
+            }
+            .btn-open:hover { background: #818cf8; }
+            .btn-dismiss {
+                background: transparent;
+                color: #64748b;
+                border: 1px solid rgba(255,255,255,0.10);
+                border-radius: 8px;
+                padding: 7px 10px;
+                font-size: 13px;
+                cursor: pointer;
+                font-family: inherit;
+                transition: color 0.15s, border-color 0.15s;
+            }
+            .btn-dismiss:hover { color: #e2e8f0; border-color: rgba(255,255,255,0.22); }
+        </style>
+        <div class="banner">
+            <div class="icon">📖</div>
+            <div class="text">
+                <b>Open in AMR?</b>
+                <small>Chapter detected on this page</small>
+            </div>
+            <div class="actions">
+                <button class="btn-open">Open</button>
+                <button class="btn-dismiss">✕</button>
+            </div>
+        </div>
+    `
+
+    shadow.querySelector(".btn-open")?.addEventListener("click", () => {
+        chrome.runtime.sendMessage({ type: "chapter:open-in-reader", url: chapterUrl })
+        host.remove()
+    })
+
+    shadow.querySelector(".btn-dismiss")?.addEventListener("click", () => {
+        host.remove()
+    })
+}
+
 export default defineBackground(() => {
     browser.runtime.onInstalled.addListener(() => {
         void configureUpdateAlarm()
@@ -339,11 +430,26 @@ export default defineBackground(() => {
         if (alarm.name === extensionUpdateAlarmName) void checkExtensionUpdate()
     })
 
-    browser.tabs.onUpdated.addListener((_tabId, changeInfo) => {
-        if (!changeInfo.url) return
-        void captureChapter(changeInfo.url).catch(error => {
-            console.warn("[AMR] Automatic chapter capture failed", error)
-        })
+    browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+        if (changeInfo.url) {
+            void captureChapter(changeInfo.url).catch(error => {
+                console.warn("[AMR] Automatic chapter capture failed", error)
+            })
+        }
+        if (changeInfo.status === "complete" && tab.url) {
+            let parsedUrl: URL
+            try {
+                parsedUrl = new URL(tab.url)
+            } catch {
+                return
+            }
+            const source = findSource(parsedUrl)
+            if (source?.match(parsedUrl) === "chapter") {
+                void browser.scripting
+                    .executeScript({ target: { tabId }, func: injectChapterPrompt, args: [tab.url] })
+                    .catch(() => {})
+            }
+        }
     })
 
     browser.runtime.onMessage.addListener((message, sender) => {
@@ -818,6 +924,12 @@ export default defineBackground(() => {
                             sourceId: source.manifest.id
                         })
                         return success({ supported: true as const, ...tracked })
+                    }
+                    case "chapter:open-in-reader": {
+                        void captureChapter(request.url).catch(() => {})
+                        const readerUrl = browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(request.url)}`)
+                        await browser.tabs.create({ url: readerUrl })
+                        return success(null)
                     }
                     case "chapter:download:get":
                         return success((await getDownload(request.chapterId)) ?? null)

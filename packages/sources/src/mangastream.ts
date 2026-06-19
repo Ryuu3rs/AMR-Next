@@ -1,5 +1,6 @@
 import {
     SourceError,
+    SourceRequestError,
     matchesSourceDomain,
     type ListChaptersInput,
     type ResolveChapterInput,
@@ -371,8 +372,11 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
             const html = await context.request.getText(input.url, { headers: browserHeaders })
             const imageUrls = extractStreamImages(html)
             if (imageUrls.length === 0) {
-                const hasCf = /cf-browser-verification|cf_chl_jschl|__cf_chl_captcha/.test(html)
-                throw new SourceError("invalid-response", `No images found [html:${html.length}b cf=${hasCf}]`)
+                const isBlocked =
+                    /cf_chl|challenge-platform|cf-browser-verification|__cf_chl_captcha|ddos-guard\.net/i.test(html)
+                const msg = `No images found [html:${html.length}b blocked=${isBlocked}]`
+                if (isBlocked) throw new SourceRequestError(msg, undefined, { url: input.url.toString() })
+                throw new SourceError("invalid-response", msg)
             }
 
             const mangaSlugGuess = slug.replace(/-?chapter[-_]?\d.*$/i, "") || slug

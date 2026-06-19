@@ -128,7 +128,20 @@
             "note": "mirrors: bato.ac/.bz/.cc/.cx/.day"
         },
         { "url": "https://reaperscans.com/", "name": "Reaper Scans", "priority": "community", "cmsGuess": "bespoke" },
-        { "url": "https://asuracomic.net/", "name": "Asura Comic", "priority": "community", "cmsGuess": "mangastream" },
+        {
+            "url": "https://asuracomic.net/",
+            "name": "Asura Comic",
+            "priority": "community",
+            "cmsGuess": "nextjs",
+            "note": "supported adapter; migrated from MangaStream to Next.js — dedicated asuracomic.ts adapter"
+        },
+        {
+            "url": "https://asurascans.com/",
+            "name": "Asura Scans",
+            "priority": "community",
+            "cmsGuess": "react-rsc",
+            "note": "supported adapter; React Flight (RSC) SPA — chapter images in SSR HTML via data-page-index img tags and RSC flight data; /comics/<slug>/chapter/<num> URL pattern"
+        },
         {
             "url": "https://flamecomics.xyz/",
             "name": "Flame Comics",
@@ -137,6 +150,68 @@
         },
         { "url": "https://hivetoon.com/", "name": "HiveToon", "priority": "community", "cmsGuess": "madara" },
         { "url": "https://templescan.net/", "name": "Temple Scan", "priority": "community", "cmsGuess": "mangastream" },
-        { "url": "https://mangagalaxy.me/", "name": "Manga Galaxy", "priority": "community", "cmsGuess": "madara" }
+        {
+            "url": "https://mangagalaxy.me/",
+            "name": "Manga Galaxy",
+            "priority": "community",
+            "cmsGuess": "madara",
+            "note": "supported adapter; Cloudflare JS-challenge gated — tab fallback handles first-read"
+        },
+        {
+            "url": "https://likemanga.io/",
+            "name": "LikeManga",
+            "priority": "community",
+            "cmsGuess": "madara",
+            "note": "supported adapter; theme:init-manga (WordPress/Madara confirmed)"
+        },
+        {
+            "url": "https://suryatoon.com/",
+            "name": "Surya Toon",
+            "priority": "community",
+            "cmsGuess": "madara",
+            "note": "supported adapter; Cloudflare JS-challenge gated — tab fallback handles first-read"
+        },
+        {
+            "url": "https://dark-scan.com/",
+            "name": "Dark Scan",
+            "priority": "community",
+            "cmsGuess": "unknown",
+            "note": "DDoS-Guard protected; probe blocked — skip"
+        },
+        {
+            "url": "https://creepyscans.com/",
+            "name": "Creepy Scans",
+            "priority": "community",
+            "cmsGuess": "unknown",
+            "note": "DDoS-Guard protected; probe blocked — skip"
+        },
+        {
+            "url": "https://seimanga.me/",
+            "name": "SeiManga",
+            "priority": "community",
+            "cmsGuess": "unknown",
+            "note": "404 dead"
+        },
+        {
+            "url": "https://agscomics.com/",
+            "name": "Animated Glitched Comics",
+            "priority": "community",
+            "cmsGuess": "unknown",
+            "note": "fetch timeout; unreachable"
+        },
+        {
+            "url": "https://reaper-scans.com/",
+            "name": "Reaper Scans (Fake)",
+            "priority": "community",
+            "cmsGuess": "unknown",
+            "note": "rate-limited on probe; CMS unclassified — revisit"
+        },
+        {
+            "url": "https://harimanga.com/",
+            "name": "Hari Manga (.com)",
+            "priority": "community",
+            "cmsGuess": "madara",
+            "note": "fetch failed; harimanga.me already has a supported adapter"
+        }
     ]
 }

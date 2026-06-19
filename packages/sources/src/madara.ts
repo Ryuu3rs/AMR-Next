@@ -1,5 +1,6 @@
 import {
     SourceError,
+    SourceRequestError,
     matchesSourceDomain,
     type ListChaptersInput,
     type ResolveChapterInput,
@@ -612,11 +613,14 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             if (imageUrls.length === 0) imageUrls = extractImagesFromHtml(html, config.preferSrcAttribute)
 
             if (imageUrls.length === 0) {
-                const hasCf = /cf-browser-verification|cf_chl_jschl|__cf_chl_captcha/.test(html)
-                throw new SourceError(
-                    "invalid-response",
-                    `No images found [ajax:${ajaxResult.debug}] [html:${html.length}b cf=${hasCf}]`
-                )
+                // Detect anti-scrape challenge pages (Cloudflare JS challenge, DDoS-Guard).
+                // Throw as a network-origin error so isBotBlocked() triggers fetchChapterHtmlViaTab,
+                // which opens a real browser tab that passes the challenge.
+                const isBlocked =
+                    /cf_chl|challenge-platform|cf-browser-verification|__cf_chl_captcha|ddos-guard\.net/i.test(html)
+                const msg = `No images found [ajax:${ajaxResult.debug}] [html:${html.length}b blocked=${isBlocked}]`
+                if (isBlocked) throw new SourceRequestError(msg, undefined, { url: input.url.toString() })
+                throw new SourceError("invalid-response", msg)
             }
 
             const mangaTitle = extractMangaTitle(html, slugs.mangaSlug)
