@@ -78,6 +78,18 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         pageCount: z.number().int().positive(),
         completed: z.boolean()
     }),
+    z.object({
+        type: z.literal("bookmark:toggle"),
+        mangaId: z.string().min(1),
+        chapterId: z.string().min(1),
+        pageIndex: z.number().int().nonnegative(),
+        mangaTitle: z.string(),
+        chapterTitle: z.string(),
+        chapterUrl: z.url()
+    }),
+    z.object({ type: z.literal("bookmark:pages"), chapterId: z.string().min(1) }),
+    z.object({ type: z.literal("bookmark:list") }),
+    z.object({ type: z.literal("bookmark:remove"), id: z.string().min(1) }),
     z.object({ type: z.literal("chapter:download"), url: z.url() }),
     z.object({ type: z.literal("chapter:track"), url: z.url() }),
     z.object({ type: z.literal("chapter:download:get"), chapterId: z.string().min(1) }),

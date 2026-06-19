@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { ImportConflict, ImportResolution, LibraryManga } from "../../src/database"
+    import type { ImportConflict, ImportResolution, LibraryManga, PageBookmark } from "../../src/database"
     import type { AppSettings } from "../../src/settings"
     import { onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
@@ -20,6 +20,7 @@
     const sections = [
         "Home",
         "Library",
+        "Bookmarks",
         "Tags",
         "Updates",
         "History",
@@ -42,6 +43,8 @@
     let selectMode = $state(false)
     let selectedIds = $state<Set<string>>(new Set())
     let bulkCategory = $state("")
+    let bookmarks = $state<PageBookmark[]>([])
+    let bookmarksLoaded = $state(false)
 
     function toggleSelect(id: string) {
         const next = new Set(selectedIds)
@@ -352,6 +355,25 @@
     $effect(() => {
         if (activeSection === "History") void loadHistory()
     })
+
+    async function loadBookmarks() {
+        bookmarks = await sendRuntimeMessage<PageBookmark[]>({ type: "bookmark:list" })
+        bookmarksLoaded = true
+    }
+
+    $effect(() => {
+        if (activeSection === "Bookmarks") void loadBookmarks()
+    })
+
+    async function deleteBookmark(id: string) {
+        await sendRuntimeMessage({ type: "bookmark:remove", id })
+        bookmarks = bookmarks.filter(b => b.id !== id)
+    }
+
+    function bookmarkReaderUrl(b: PageBookmark): string {
+        const base = browser.runtime.getURL("/reader.html")
+        return `${base}?url=${encodeURIComponent(b.chapterUrl)}&page=${b.pageIndex}`
+    }
 
     $effect(() => {
         document.documentElement.dataset["theme"] = settings?.theme ?? "dark"
@@ -1727,6 +1749,41 @@
                         Load more ({visibleLibrary.length - libraryLimit} left)
                     </button>
                 </div>
+            {/if}
+        {:else if activeSection === "Bookmarks"}
+            <h1>Bookmarks</h1>
+            <p class="muted search-hint">
+                Pages you've saved while reading. Click a bookmark to jump straight to that page.
+            </p>
+            {#if !bookmarksLoaded}
+                <p class="muted">Loading…</p>
+            {:else if bookmarks.length === 0}
+                <p class="muted">No bookmarks yet. Use the ☆ button in the reader to save a page.</p>
+            {:else}
+                <ul class="bookmark-list">
+                    {#each bookmarks as bm (bm.id)}
+                        <li class="bookmark-card">
+                            <div class="bookmark-info">
+                                <span class="bookmark-manga">{bm.mangaTitle}</span>
+                                <span class="bookmark-chapter muted">{bm.chapterTitle} — page {bm.pageIndex + 1}</span>
+                                <span class="bookmark-date muted">{new Date(bm.addedAt).toLocaleDateString()}</span>
+                            </div>
+                            <div class="bookmark-actions">
+                                <a
+                                    href={bookmarkReaderUrl(bm)}
+                                    class="btn-sm btn-outline"
+                                    onclick={e => {
+                                        e.preventDefault()
+                                        void browser.tabs.create({ url: bookmarkReaderUrl(bm) })
+                                    }}>Open</a>
+                                <button
+                                    type="button"
+                                    class="btn-sm btn-ghost-danger"
+                                    onclick={() => void deleteBookmark(bm.id)}>Remove</button>
+                            </div>
+                        </li>
+                    {/each}
+                </ul>
             {/if}
         {:else if activeSection === "Tags"}
             <h1>Tags</h1>

@@ -17,7 +17,11 @@ import {
     saveProgress,
     saveResolvedChapter,
     trackExternalChapter,
-    seedDatabase
+    seedDatabase,
+    toggleBookmark,
+    bookmarkedPagesForChapter,
+    listBookmarks,
+    removeBookmark
 } from "../src/database"
 import { runtimeRequestSchema, type RuntimeResponse } from "../src/runtime"
 import { getSettings, updateSettings } from "../src/settings"
@@ -820,6 +824,24 @@ export default defineBackground(() => {
                         return success(null)
                     case "downloads:list":
                         return success(await listDownloads())
+                    case "bookmark:toggle":
+                        return success(
+                            await toggleBookmark({
+                                mangaId: request.mangaId,
+                                chapterId: request.chapterId,
+                                pageIndex: request.pageIndex,
+                                mangaTitle: request.mangaTitle,
+                                chapterTitle: request.chapterTitle,
+                                chapterUrl: request.chapterUrl
+                            })
+                        )
+                    case "bookmark:pages":
+                        return success(await bookmarkedPagesForChapter(request.chapterId))
+                    case "bookmark:list":
+                        return success(await listBookmarks())
+                    case "bookmark:remove":
+                        await removeBookmark(request.id)
+                        return success(null)
                     case "settings:get":
                         return success(await getSettings())
                     case "settings:update": {

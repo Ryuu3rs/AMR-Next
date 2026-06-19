@@ -49,6 +49,17 @@ export type ChapterDownload = {
     downloadedAt: number
 }
 
+export type PageBookmark = {
+    id: string
+    mangaId: string
+    chapterId: string
+    pageIndex: number
+    mangaTitle: string
+    chapterTitle: string
+    chapterUrl: string
+    addedAt: number
+}
+
 export class AmrDatabase extends Dexie {
     manga!: EntityTable<LibraryManga, "id">
     sourceLinks!: EntityTable<SourceLinkRecord, "mangaId">
@@ -57,6 +68,7 @@ export class AmrDatabase extends Dexie {
     historyEvents!: EntityTable<HistoryEvent, "id">
     downloads!: EntityTable<ChapterDownload, "chapterId">
     covers!: Table<CoverCacheRecord, string>
+    pageBookmarks!: EntityTable<PageBookmark, "id">
 
     constructor() {
         super("all-mangas-reader")
@@ -89,6 +101,16 @@ export class AmrDatabase extends Dexie {
             downloads: "chapterId, mangaId, downloadedAt",
             covers: "mangaId"
         })
+        this.version(5).stores({
+            manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+            sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+            chapters: "id, mangaId, sourceId, sortKey",
+            progress: "chapterId, mangaId, updatedAt, completed",
+            historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+            downloads: "chapterId, mangaId, downloadedAt",
+            covers: "mangaId",
+            pageBookmarks: "id, mangaId, chapterId, addedAt"
+        })
     }
 }
 
@@ -105,7 +127,7 @@ export async function getCachedCover(mangaId: string): Promise<Blob | undefined>
 export async function removeManga(mangaId: string): Promise<void> {
     await db.transaction(
         "rw",
-        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.downloads],
+        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.downloads, db.pageBookmarks],
         async () => {
             await db.manga.delete(mangaId)
             await db.sourceLinks.delete(mangaId)
@@ -113,6 +135,7 @@ export async function removeManga(mangaId: string): Promise<void> {
             await db.progress.where("mangaId").equals(mangaId).delete()
             await db.historyEvents.where("mangaId").equals(mangaId).delete()
             await db.downloads.where("mangaId").equals(mangaId).delete()
+            await db.pageBookmarks.where("mangaId").equals(mangaId).delete()
         }
     )
 }
@@ -957,4 +980,28 @@ export async function getActivityCalendar(days = 120): Promise<Array<{ date: str
         cursor.setDate(cursor.getDate() + 1)
     }
     return result
+}
+
+export async function toggleBookmark(data: Omit<PageBookmark, "id" | "addedAt">): Promise<boolean> {
+    const id = `${data.chapterId}:${data.pageIndex}`
+    const existing = await db.pageBookmarks.get(id)
+    if (existing) {
+        await db.pageBookmarks.delete(id)
+        return false
+    }
+    await db.pageBookmarks.put({ ...data, id, addedAt: Date.now() })
+    return true
+}
+
+export async function bookmarkedPagesForChapter(chapterId: string): Promise<number[]> {
+    const records = await db.pageBookmarks.where("chapterId").equals(chapterId).toArray()
+    return records.map(r => r.pageIndex)
+}
+
+export async function listBookmarks(): Promise<PageBookmark[]> {
+    return db.pageBookmarks.orderBy("addedAt").reverse().toArray()
+}
+
+export async function removeBookmark(id: string): Promise<void> {
+    await db.pageBookmarks.delete(id)
 }

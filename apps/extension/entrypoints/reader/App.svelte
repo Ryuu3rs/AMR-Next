@@ -41,6 +41,45 @@
     let mirrorResults = $state<SearchResult[]>([])
     let trackMessage = $state("")
 
+    let bookmarkedPages = $state(new Set<number>())
+    const isBookmarked = $derived(bookmarkedPages.has(currentPage))
+    let bookmarkWorking = $state(false)
+
+    $effect(() => {
+        if (!chapter) {
+            bookmarkedPages = new Set()
+            return
+        }
+        const chapterId = chapter.chapter.id
+        void sendRuntimeMessage<number[]>({ type: "bookmark:pages", chapterId })
+            .then(pages => {
+                bookmarkedPages = new Set(pages)
+            })
+            .catch(() => {})
+    })
+
+    async function togglePageBookmark() {
+        if (!chapter || bookmarkWorking) return
+        bookmarkWorking = true
+        try {
+            const added = await sendRuntimeMessage<boolean>({
+                type: "bookmark:toggle",
+                mangaId: chapter.manga.manga.id,
+                chapterId: chapter.chapter.id,
+                pageIndex: currentPage,
+                mangaTitle: chapter.manga.manga.title,
+                chapterTitle: chapter.chapter.title,
+                chapterUrl: chapter.chapter.url
+            })
+            if (added) bookmarkedPages.add(currentPage)
+            else bookmarkedPages.delete(currentPage)
+        } catch {
+            // ignore
+        } finally {
+            bookmarkWorking = false
+        }
+    }
+
     // Open the chapter on its own site and still record it as read — the no-scrape
     // fallback for sources whose images the in-app reader can't load.
     async function openOnSiteAndTrack() {
@@ -284,13 +323,19 @@
     }
 
     onMount(async () => {
-        const url = new URL(location.href).searchParams.get("url")
+        const params = new URL(location.href).searchParams
+        const url = params.get("url")
         if (!url) {
             error = "No chapter URL was provided"
             return
         }
         chapterUrl = url
         await loadChapter(url)
+        const pageParam = params.get("page")
+        if (pageParam !== null) {
+            const p = parseInt(pageParam)
+            if (Number.isFinite(p) && p >= 0 && chapter && p < chapter.pages.length) currentPage = p
+        }
     })
 
     onDestroy(() => revokeOfflinePages())
@@ -458,6 +503,16 @@
                 title="Keyboard shortcuts (?)"
                 aria-label="Keyboard shortcuts"
                 onclick={() => (showHelp = !showHelp)}>?</button>
+            <button
+                type="button"
+                class="btn-sm"
+                class:active={isBookmarked}
+                title={isBookmarked ? "Remove bookmark for this page" : "Bookmark this page"}
+                aria-label={isBookmarked ? "Remove bookmark" : "Bookmark page"}
+                disabled={bookmarkWorking}
+                onclick={() => void togglePageBookmark()}>
+                {isBookmarked ? "★" : "☆"}
+            </button>
         {/if}
         <button
             type="button"
