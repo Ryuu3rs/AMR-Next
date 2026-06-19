@@ -2062,6 +2062,56 @@ button:disabled {
     color: var(--text);
     border: 1px solid var(--border);
 }
+.filter-toggle {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    border-radius: 6px;
+    white-space: nowrap;
+}
+.filter-toggle:hover,
+.filter-toggle.active {
+    color: var(--text);
+    border-color: var(--accent);
+}
+.filters-panel {
+    background: var(--surface-2, var(--surface));
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+}
+.filters-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.filters-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+}
+.filters-field select {
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-size: 13px;
+}
+.filters-clear {
+    align-self: flex-end;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    background: none;
+    border-radius: 6px;
+}
+.filters-clear:hover {
+    color: var(--text);
+    border-color: var(--accent);
+}
 
 /* Library list view */
 .list-view {
