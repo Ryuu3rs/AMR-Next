@@ -219,6 +219,67 @@ header.chrome-hidden {
     color: #fff;
 }
 
+.cat-panel {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 8px 0 10px;
+    border-top: 1px solid #29313b;
+}
+.cat-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: 1;
+}
+.cat-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #1e2a3a;
+    border: 1px solid #3b4653;
+    font-size: 12px;
+}
+.cat-remove {
+    min-height: unset;
+    padding: 0 2px;
+    border: none;
+    background: none;
+    color: #9faab7;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+}
+.cat-remove:hover {
+    color: #ef4444;
+}
+.cat-empty {
+    font-size: 12px;
+    color: #6b7a8d;
+}
+.cat-form {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.cat-input {
+    min-height: 30px;
+    padding: 0 10px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1px solid #3b4653;
+    background: #18202a;
+    color: #f5f7fa;
+    width: 120px;
+}
+.cat-input::placeholder {
+    color: #6b7a8d;
+}
+
 .chapter-nav {
     display: flex;
     align-items: center;

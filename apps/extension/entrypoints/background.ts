@@ -354,6 +354,8 @@ export default defineBackground(() => {
                 switch (request.type) {
                     case "library:list":
                         return success(await db.manga.orderBy("updatedAt").reverse().toArray())
+                    case "library:get":
+                        return success((await db.manga.get(request.mangaId)) ?? null)
                     case "library:remove":
                         await removeManga(request.mangaId)
                         return success(null)

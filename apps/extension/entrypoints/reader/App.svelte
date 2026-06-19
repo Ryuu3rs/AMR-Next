@@ -80,6 +80,47 @@
         }
     }
 
+    let showCatPanel = $state(false)
+    let mangaCategories = $state<string[]>([])
+    let catInput = $state("")
+    let catSaving = $state(false)
+
+    $effect(() => {
+        if (!mangaId) {
+            mangaCategories = []
+            return
+        }
+        void sendRuntimeMessage<{ categories?: string[] } | null>({ type: "library:get", mangaId })
+            .then(m => {
+                mangaCategories = m?.categories ?? []
+            })
+            .catch(() => {})
+    })
+
+    async function saveCategories(next: string[]) {
+        if (!mangaId || catSaving) return
+        catSaving = true
+        try {
+            await sendRuntimeMessage({ type: "library:categories", mangaId, categories: next })
+            mangaCategories = next
+        } catch {
+            // ignore
+        } finally {
+            catSaving = false
+        }
+    }
+
+    function addCategory() {
+        const tag = catInput.trim()
+        catInput = ""
+        if (!tag || mangaCategories.includes(tag)) return
+        void saveCategories([...mangaCategories, tag])
+    }
+
+    function removeCategory(tag: string) {
+        void saveCategories(mangaCategories.filter(c => c !== tag))
+    }
+
     // Open the chapter on its own site and still record it as read — the no-scrape
     // fallback for sources whose images the in-app reader can't load.
     async function openOnSiteAndTrack() {
@@ -513,6 +554,12 @@
                 onclick={() => void togglePageBookmark()}>
                 {isBookmarked ? "★" : "☆"}
             </button>
+            <button
+                type="button"
+                class="btn-sm"
+                class:active={showCatPanel}
+                title="Manage tags for this title"
+                onclick={() => (showCatPanel = !showCatPanel)}>Tag</button>
         {/if}
         <button
             type="button"
@@ -522,6 +569,34 @@
             {resolving ? "…" : "↺"}
         </button>
     </div>
+    {#if showCatPanel && chapter}
+        <div class="cat-panel">
+            <div class="cat-tags">
+                {#each mangaCategories as tag}
+                    <span class="cat-tag">
+                        {tag}
+                        <button
+                            type="button"
+                            class="cat-remove"
+                            aria-label="Remove tag {tag}"
+                            onclick={() => removeCategory(tag)}>×</button>
+                    </span>
+                {/each}
+                {#if mangaCategories.length === 0}
+                    <span class="cat-empty">No tags yet</span>
+                {/if}
+            </div>
+            <form
+                class="cat-form"
+                onsubmit={e => {
+                    e.preventDefault()
+                    addCategory()
+                }}>
+                <input bind:value={catInput} placeholder="Add tag…" class="cat-input" aria-label="New tag name" />
+                <button type="submit" class="btn-sm" disabled={catSaving || !catInput.trim()}>Add</button>
+            </form>
+        </div>
+    {/if}
 </header>
 
 {#if chapter}
