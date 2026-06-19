@@ -2003,6 +2003,10 @@ button:disabled {
     background: var(--success, #10b981);
     box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
 }
+.status-dot.gated {
+    background: #f59e0b;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+}
 .status-dot.dead {
     background: #ef4444;
     box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);

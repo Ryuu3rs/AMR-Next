@@ -777,17 +777,26 @@ export default defineBackground(() => {
                                 const controller = new AbortController()
                                 const timer = setTimeout(() => controller.abort(), 10000)
                                 try {
-                                    // Background fetches are privileged (no CORS restriction for origins in
-                                    // host_permissions). Check status: anything < 500 means the server is
-                                    // reachable. 403/429 from Cloudflare/rate-limiting is alive, not dead.
+                                    // Background fetches are privileged — no CORS restriction for origins
+                                    // in host_permissions. Distinguish three states:
+                                    //   live  — server answered normally (2xx/3xx)
+                                    //   gated — bot-blocked (403/429 from CF or rate-limiting);
+                                    //           chapter reads still work via the tab fallback
+                                    //   dead  — truly unreachable (timeout, DNS, 5xx)
                                     const res = await fetch(origin, {
                                         method: "HEAD",
                                         signal: controller.signal,
                                         credentials: "omit"
                                     })
-                                    return { id: adapter.manifest.id, alive: res.status < 500 }
+                                    const status =
+                                        res.status < 400
+                                            ? ("live" as const)
+                                            : res.status === 403 || res.status === 429
+                                              ? ("gated" as const)
+                                              : ("dead" as const)
+                                    return { id: adapter.manifest.id, alive: status !== "dead", status }
                                 } catch {
-                                    return { id: adapter.manifest.id, alive: false }
+                                    return { id: adapter.manifest.id, alive: false, status: "dead" as const }
                                 } finally {
                                     clearTimeout(timer)
                                 }

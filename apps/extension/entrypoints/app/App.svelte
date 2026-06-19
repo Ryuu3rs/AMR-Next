@@ -1170,7 +1170,7 @@
         if (url) void browser.tabs.create({ url })
     }
 
-    let pingState = $state<Map<string, boolean>>(new Map())
+    let pingState = $state<Map<string, "live" | "gated" | "dead">>(new Map())
     let pinging = $state(false)
     let pingedOnce = $state(false)
 
@@ -1178,8 +1178,10 @@
         if (pinging) return
         pinging = true
         try {
-            const res = await sendRuntimeMessage<Array<{ id: string; alive: boolean }>>({ type: "sources:ping" })
-            pingState = new Map(res.map(r => [r.id, r.alive]))
+            const res = await sendRuntimeMessage<Array<{ id: string; status: "live" | "gated" | "dead" }>>({
+                type: "sources:ping"
+            })
+            pingState = new Map(res.map(r => [r.id, r.status]))
             pingedOnce = true
         } catch {
             // reachability is best-effort
@@ -2060,12 +2062,12 @@
                     </button>
                 </div>
                 <p class="muted search-hint">
-                    Click a site to open it in a new tab. The dot shows whether the site answered a reachability check
-                    (green = live, red = unreachable, grey = not checked).
+                    Click a site to open it in a new tab. The dot shows reachability: green = live, yellow = bot-gated
+                    (chapters still load via tab), red = unreachable, grey = not checked yet.
                 </p>
                 <div class="adapter-grid">
                     {#each sourcesList as src}
-                        {@const alive = pingState.get(src.id)}
+                        {@const pingStatus = pingState.get(src.id)}
                         {@const count = sourceTitleCounts.get(src.id) ?? 0}
                         <button
                             type="button"
@@ -2075,9 +2077,16 @@
                             <span class="adapter-head">
                                 <span
                                     class="status-dot"
-                                    class:alive={alive === true}
-                                    class:dead={alive === false}
-                                    title={alive === undefined ? "Not checked" : alive ? "Live" : "Unreachable"}></span>
+                                    class:alive={pingStatus === "live"}
+                                    class:gated={pingStatus === "gated"}
+                                    class:dead={pingStatus === "dead"}
+                                    title={pingStatus === undefined
+                                        ? "Not checked"
+                                        : pingStatus === "live"
+                                          ? "Live"
+                                          : pingStatus === "gated"
+                                            ? "Bot-gated — Cloudflare or rate-limited. Chapters still load via tab."
+                                            : "Unreachable"}></span>
                                 <span class="adapter-name">{src.name}</span>
                             </span>
                             <span class="adapter-caps muted">
