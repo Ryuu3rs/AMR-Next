@@ -48,6 +48,15 @@ const COVER_BACKFILL_BATCH = 20
 // Cleared when a full backfill pass completes (remaining hits 0).
 const coverBackfillAttempted = new Set<string>()
 
+// Tab IDs opened internally by fetchChapterHtmlViaTab. Excluded from the main
+// tabs.onUpdated listener so our own background tabs don't re-trigger captureChapter
+// and race against the in-flight tab fetch.
+const internalTabIds = new Set<number>()
+
+// URLs currently being captured — deduplicate concurrent calls for the same URL
+// (e.g. rapid navigation events or the same URL from multiple listener paths).
+const capturingUrls = new Set<string>()
+
 const updateAlarmName = "check-manga-updates"
 const syncAlarmName = "sync-push"
 const extensionUpdateAlarmName = "check-extension-update"
@@ -187,6 +196,7 @@ async function fetchChapterHtmlViaTab(url: string): Promise<string> {
     const tab = await browser.tabs.create({ url, active: false })
     const tabId = tab.id
     if (!tabId) throw new Error("Tab creation failed")
+    internalTabIds.add(tabId)
     try {
         await new Promise<void>((resolve, reject) => {
             const listener = (changedId: number, info: { status?: string }) => {
@@ -209,6 +219,7 @@ async function fetchChapterHtmlViaTab(url: string): Promise<string> {
         const html = results[0]?.result
         return typeof html === "string" ? html : ""
     } finally {
+        internalTabIds.delete(tabId)
         await browser.tabs.remove(tabId).catch(() => {})
     }
 }
@@ -253,6 +264,16 @@ async function fetchPageBlob(url: string): Promise<Blob> {
 }
 
 async function captureChapter(url: string) {
+    if (capturingUrls.has(url)) return { supported: true as const, added: false as const }
+    capturingUrls.add(url)
+    try {
+        return await doCaptureChapter(url)
+    } finally {
+        capturingUrls.delete(url)
+    }
+}
+
+async function doCaptureChapter(url: string) {
     const settings = await getSettings()
     const parsedUrl = new URL(url)
     const source = findSource(parsedUrl)
@@ -446,7 +467,7 @@ export default defineBackground(() => {
     // most common cause of excessive SW restarts and subsequent throttling.
     browser.tabs.onUpdated.addListener(
         (tabId, changeInfo, tab) => {
-            if (changeInfo.url) {
+            if (changeInfo.url && !internalTabIds.has(tabId)) {
                 void captureChapter(changeInfo.url).catch(error => {
                     console.warn("[AMR] Automatic chapter capture failed", error)
                 })

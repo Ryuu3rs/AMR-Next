@@ -53,7 +53,8 @@
         const chapterId = chapter.chapter.id
         void sendRuntimeMessage<number[]>({ type: "bookmark:pages", chapterId })
             .then(pages => {
-                bookmarkedPages = new Set(pages)
+                // Ignore stale responses if the chapter changed before this resolved.
+                if (chapter?.chapter.id === chapterId) bookmarkedPages = new Set(pages)
             })
             .catch(() => {})
     })

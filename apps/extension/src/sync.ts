@@ -94,6 +94,9 @@ export async function pullFromGist(): Promise<unknown> {
     const json = (await res.json()) as { files?: Record<string, { content?: string } | undefined> }
     const file = json.files?.[GIST_FILENAME]
     if (!file?.content) throw new Error("Backup file not found in the gist")
+    // Parse before updating the timestamp — a corrupted/truncated backup would
+    // otherwise mark the pull as successful even though import never runs.
+    const parsed: unknown = JSON.parse(file.content)
     await setSyncConfig({ lastPulledAt: Date.now() })
-    return JSON.parse(file.content)
+    return parsed
 }

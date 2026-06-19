@@ -156,10 +156,19 @@ export async function saveResolvedChapter(input: {
             mangaUrl: input.sourceLink.url,
             latestChapterId: input.chapter.id,
             ...(Number.isFinite(input.chapter.sortKey) ? { latestChapterNumber: input.chapter.sortKey } : {}),
+            // Preserve user-controlled and read-progress fields from the existing record
+            // so a re-capture never silently clears ratings, categories, notes, or history.
             ...(existing?.lastReadChapterId ? { lastReadChapterId: existing.lastReadChapterId } : {}),
             ...(existing?.lastReadChapterNumber !== undefined
                 ? { lastReadChapterNumber: existing.lastReadChapterNumber }
-                : {})
+                : {}),
+            ...(existing?.lastReadAt !== undefined ? { lastReadAt: existing.lastReadAt } : {}),
+            ...(existing?.manualTracking !== undefined ? { manualTracking: existing.manualTracking } : {}),
+            ...(existing?.categories !== undefined ? { categories: existing.categories } : {}),
+            ...(existing?.nsfw !== undefined ? { nsfw: existing.nsfw } : {}),
+            ...(existing?.notes !== undefined ? { notes: existing.notes } : {}),
+            // rating lives in MangaRecord — prefer existing if the source didn't supply one
+            ...(!input.manga.rating && existing?.rating !== undefined ? { rating: existing.rating } : {})
         }
         await db.manga.put(manga)
         await db.sourceLinks.put(input.sourceLink)
