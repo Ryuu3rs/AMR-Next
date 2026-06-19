@@ -1163,6 +1163,7 @@
                 <button
                     type="button"
                     class:active={activeSection === section}
+                    aria-current={activeSection === section ? "page" : undefined}
                     onclick={() => (activeSection = section)}>
                     {section}
                 </button>
@@ -1696,7 +1697,11 @@
         {:else if activeSection === "Updates"}
             <div class="page-head">
                 <h1>Updates</h1>
-                <button type="button" onclick={() => void checkForUpdates()} disabled={checkingUpdates}>
+                <button
+                    type="button"
+                    onclick={() => void checkForUpdates()}
+                    disabled={checkingUpdates}
+                    aria-busy={checkingUpdates}>
                     {checkingUpdates ? "Checking..." : "Check all"}
                 </button>
             </div>
@@ -1921,7 +1926,12 @@
             {#if sourcesList.length > 0}
                 <div class="page-head">
                     <p class="shelf-label" style="margin-bottom:0">Browse a source ({sourcesList.length})</p>
-                    <button type="button" class="btn-sm" onclick={() => void pingSources()} disabled={pinging}>
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        onclick={() => void pingSources()}
+                        disabled={pinging}
+                        aria-busy={pinging}>
                         {pinging ? "Checking…" : "Re-check sites"}
                     </button>
                 </div>
@@ -2007,7 +2017,7 @@
                 </div>
             </div>
             {#if importWorking}
-                <p class="notice muted">Working…</p>
+                <p class="notice muted" role="status" aria-live="polite">Working…</p>
             {:else if importConflicts.length > 0}
                 <div class="conflict-panel">
                     <p class="conflict-title">
@@ -2046,7 +2056,7 @@
                     </div>
                 </div>
             {:else if dataMessage}
-                <p class="notice">{dataMessage}</p>
+                <p class="notice" role="status" aria-live="polite">{dataMessage}</p>
             {/if}
 
             <ImportReconcile
