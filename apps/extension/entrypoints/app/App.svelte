@@ -35,6 +35,10 @@
     let query = $state("")
     let librarySort = $state<"recent-read" | "recent-added" | "title" | "latest-chapter">("recent-read")
     let categoryFilter = $state("")
+    let sourceFilter = $state("")
+    let ratingFilter = $state(0)
+    let updatedSinceFilter = $state(0)
+    let showFiltersPanel = $state(false)
     let selectMode = $state(false)
     let selectedIds = $state<Set<string>>(new Set())
     let bulkCategory = $state("")
@@ -918,6 +922,9 @@
         return "reading"
     }
     function matchesFilter(m: LibraryManga): boolean {
+        if (sourceFilter && m.sourceId !== sourceFilter) return false
+        if (ratingFilter > 0 && (m.rating ?? 0) < ratingFilter) return false
+        if (updatedSinceFilter > 0 && m.updatedAt < Date.now() - updatedSinceFilter * 86_400_000) return false
         switch (libraryFilter) {
             case "manual":
                 return Boolean(m.manualTracking)
@@ -928,6 +935,17 @@
             default:
                 return true
         }
+    }
+
+    const advancedFilterCount = $derived(
+        (sourceFilter ? 1 : 0) + (ratingFilter > 0 ? 1 : 0) + (updatedSinceFilter > 0 ? 1 : 0)
+    )
+
+    function clearAdvancedFilters() {
+        sourceFilter = ""
+        ratingFilter = 0
+        updatedSinceFilter = 0
+        categoryFilter = ""
     }
 
     const visibleLibrary = $derived.by(() => {
@@ -979,6 +997,9 @@
         void categoryFilter
         void librarySort
         void libraryFilter
+        void sourceFilter
+        void ratingFilter
+        void updatedSinceFilter
         libraryLimit = libraryPageSize
     })
 
@@ -1467,6 +1488,14 @@
                         </button>
                     {/each}
                 </div>
+                <button
+                    type="button"
+                    class="btn-sm filter-toggle"
+                    class:active={showFiltersPanel || advancedFilterCount > 0}
+                    onclick={() => (showFiltersPanel = !showFiltersPanel)}
+                    aria-expanded={showFiltersPanel}>
+                    Filters{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""}
+                </button>
                 <label class="page-size">
                     <span class="muted">Per page</span>
                     <select aria-label="Items per page" bind:value={libraryPageSize}>
@@ -1476,6 +1505,44 @@
                     </select>
                 </label>
             </div>
+            {#if showFiltersPanel}
+                <div class="filters-panel">
+                    <div class="filters-row">
+                        <label class="filters-field">
+                            <span class="muted">Source</span>
+                            <select aria-label="Filter by source" bind:value={sourceFilter}>
+                                <option value="">All sources</option>
+                                {#each librarySources as sid}
+                                    <option value={sid}>{sid}</option>
+                                {/each}
+                            </select>
+                        </label>
+                        <label class="filters-field">
+                            <span class="muted">Min rating</span>
+                            <select aria-label="Minimum rating" bind:value={ratingFilter}>
+                                <option value={0}>Any</option>
+                                {#each [1, 2, 3, 4, 5] as r}
+                                    <option value={r}>{"★".repeat(r)}</option>
+                                {/each}
+                            </select>
+                        </label>
+                        <label class="filters-field">
+                            <span class="muted">Updated</span>
+                            <select aria-label="Updated since" bind:value={updatedSinceFilter}>
+                                <option value={0}>Any time</option>
+                                <option value={7}>Last 7 days</option>
+                                <option value={30}>Last 30 days</option>
+                                <option value={90}>Last 90 days</option>
+                            </select>
+                        </label>
+                        {#if advancedFilterCount > 0}
+                            <button type="button" class="btn-sm filters-clear" onclick={clearAdvancedFilters}>
+                                Clear filters
+                            </button>
+                        {/if}
+                    </div>
+                </div>
+            {/if}
             <form
                 class="url-form"
                 onsubmit={e => {
