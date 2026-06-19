@@ -9,6 +9,7 @@ import {
     getDownload,
     getLocalStats,
     importDatabase,
+    previewImport,
     listDownloads,
     removeDownload,
     removeManga,
@@ -596,8 +597,10 @@ export default defineBackground(() => {
                         return success(await getActivityCalendar(request.days ?? 120))
                     case "data:export":
                         return success(await exportDatabase())
+                    case "data:import:preview":
+                        return success(await previewImport(request.envelope))
                     case "data:import":
-                        return success(await importDatabase(request.envelope))
+                        return success(await importDatabase(request.envelope, request.resolutions))
                     case "data:seed":
                         return success(await seedDatabase())
                     case "sync:status":

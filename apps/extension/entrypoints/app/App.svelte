@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { LibraryManga } from "../../src/database"
+    import type { ImportConflict, ImportResolution, LibraryManga } from "../../src/database"
     import type { AppSettings } from "../../src/settings"
     import { onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
@@ -169,6 +169,16 @@
         }>
     }>()
     let dataMessage = $state("")
+    let importConflicts = $state<ImportConflict[]>([])
+    let importEnvelope = $state<unknown>(null)
+    let importMigrationMeta = $state<{
+        migrated: boolean
+        converted: number
+        skipped: number
+        needsAttention: string[]
+    } | null>(null)
+    let importResolutions = $state<Record<string, ImportResolution>>({})
+    let importWorking = $state(false)
     let downloadsCount = $state(0)
     let reconcileIds = $state<string[]>([])
     let extensionUpdate = $state<{ available: boolean; latestVersion: string; releaseUrl: string } | null>(null)
@@ -695,32 +705,85 @@
     }
 
     async function importData(file: File) {
+        importConflicts = []
+        importEnvelope = null
+        importMigrationMeta = null
+        importResolutions = {}
+        dataMessage = ""
+        importWorking = true
         try {
             const raw: unknown = JSON.parse(await file.text())
             const { envelope, migrated, converted, skipped, needsAttention } = migrateLegacyImport(raw)
-            const result = await sendRuntimeMessage<{ manga: number; chapters: number }>({
-                type: "data:import",
+            const conflicts = await sendRuntimeMessage<ImportConflict[]>({
+                type: "data:import:preview",
                 envelope
             })
-            await load()
-            if (migrated) {
-                reconcileIds = needsAttention
-                dataMessage =
-                    `Imported ${converted} manga from old AMR backup.` +
-                    (skipped > 0 ? ` ${skipped} entries skipped (no title or URL).` : "") +
-                    (needsAttention.length > 0
-                        ? ` ${needsAttention.length} titles need a live source — see below.`
-                        : "")
-                if (needsAttention.length > 0) activeSection = "Data"
-                // fire-and-forget: fetch covers for known-adapter entries (MangaDex etc.)
-                void backfillCovers()
+            importEnvelope = envelope
+            importMigrationMeta = { migrated, converted, skipped, needsAttention }
+            if (conflicts.length > 0) {
+                importConflicts = conflicts
+                importResolutions = Object.fromEntries(conflicts.map(c => [c.mangaId, "overwrite" as ImportResolution]))
             } else {
-                dataMessage = `Imported ${result.manga} manga and ${result.chapters} chapters.`
-                void backfillCovers()
+                await applyImport(envelope, {}, { migrated, converted, skipped, needsAttention })
             }
         } catch (cause) {
             dataMessage = cause instanceof Error ? cause.message : "The backup could not be imported."
+        } finally {
+            importWorking = false
         }
+    }
+
+    async function applyImport(
+        envelope: unknown,
+        resolutions: Record<string, ImportResolution>,
+        meta: { migrated: boolean; converted: number; skipped: number; needsAttention: string[] }
+    ) {
+        const result = await sendRuntimeMessage<{ manga: number; chapters: number }>({
+            type: "data:import",
+            envelope,
+            resolutions
+        })
+        importConflicts = []
+        importEnvelope = null
+        importMigrationMeta = null
+        importResolutions = {}
+        await load()
+        if (meta.migrated) {
+            reconcileIds = meta.needsAttention
+            dataMessage =
+                `Imported ${meta.converted} manga from old AMR backup.` +
+                (meta.skipped > 0 ? ` ${meta.skipped} entries skipped (no title or URL).` : "") +
+                (meta.needsAttention.length > 0
+                    ? ` ${meta.needsAttention.length} titles need a live source — see below.`
+                    : "")
+            if (meta.needsAttention.length > 0) activeSection = "Data"
+        } else {
+            dataMessage = `Imported ${result.manga} manga and ${result.chapters} chapters.`
+        }
+        void backfillCovers()
+    }
+
+    async function confirmImport() {
+        if (!importEnvelope || !importMigrationMeta) return
+        importWorking = true
+        try {
+            await applyImport(importEnvelope, importResolutions, importMigrationMeta)
+        } catch (cause) {
+            dataMessage = cause instanceof Error ? cause.message : "Import failed."
+        } finally {
+            importWorking = false
+        }
+    }
+
+    function cancelImport() {
+        importConflicts = []
+        importEnvelope = null
+        importMigrationMeta = null
+        importResolutions = {}
+    }
+
+    function setAllResolutions(resolution: ImportResolution) {
+        importResolutions = Object.fromEntries(importConflicts.map(c => [c.mangaId, resolution]))
     }
 
     async function checkForUpdates(sourceId?: string) {
@@ -1943,7 +2006,48 @@
                     <span class="data-count">{downloadsCount} {downloadsCount === 1 ? "chapter" : "chapters"}</span>
                 </div>
             </div>
-            {#if dataMessage}<p class="notice">{dataMessage}</p>{/if}
+            {#if importWorking}
+                <p class="notice muted">Working…</p>
+            {:else if importConflicts.length > 0}
+                <div class="conflict-panel">
+                    <p class="conflict-title">
+                        {importConflicts.length} conflict{importConflicts.length !== 1 ? "s" : ""} — {importConflicts.length}
+                        title{importConflicts.length !== 1 ? "s" : ""} already exist in your library.
+                    </p>
+                    <div class="conflict-bulk">
+                        <span class="muted">Apply to all:</span>
+                        <button type="button" class="btn-sm" onclick={() => setAllResolutions("overwrite")}
+                            >Overwrite all</button>
+                        <button type="button" class="btn-sm" onclick={() => setAllResolutions("merge")}
+                            >Merge all</button>
+                        <button type="button" class="btn-sm" onclick={() => setAllResolutions("skip")}>Skip all</button>
+                    </div>
+                    <div class="conflict-list">
+                        {#each importConflicts as conflict}
+                            <div class="conflict-row">
+                                <span class="conflict-name" title={conflict.mangaId}>{conflict.existingTitle}</span>
+                                <span class="conflict-hint muted">
+                                    {#if conflict.importedTitle !== conflict.existingTitle}
+                                        "{conflict.importedTitle}" in backup ·
+                                    {/if}
+                                    {new Date(conflict.importedUpdatedAt).toLocaleDateString()} in backup
+                                </span>
+                                <select class="conflict-select" bind:value={importResolutions[conflict.mangaId]}>
+                                    <option value="overwrite">Overwrite</option>
+                                    <option value="merge">Merge</option>
+                                    <option value="skip">Skip</option>
+                                </select>
+                            </div>
+                        {/each}
+                    </div>
+                    <div class="conflict-actions">
+                        <button type="button" class="btn-outline" onclick={cancelImport}>Cancel</button>
+                        <button type="button" onclick={() => void confirmImport()}>Import</button>
+                    </div>
+                </div>
+            {:else if dataMessage}
+                <p class="notice">{dataMessage}</p>
+            {/if}
 
             <ImportReconcile
                 mangas={library.filter(m => reconcileIds.includes(m.id))}

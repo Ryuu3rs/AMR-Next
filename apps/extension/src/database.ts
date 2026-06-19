@@ -323,30 +323,117 @@ export async function exportDatabase() {
     } as const
 }
 
-export async function importDatabase(value: unknown): Promise<{ manga: number; chapters: number }> {
+export type ImportResolution = "overwrite" | "skip" | "merge"
+
+export type ImportConflict = {
+    mangaId: string
+    existingTitle: string
+    importedTitle: string
+    existingUpdatedAt: number
+    importedUpdatedAt: number
+}
+
+function parseImportData(value: unknown) {
     const result = exportEnvelopeSchema.safeParse(value)
     if (!result.success) {
         const issue = result.error.issues[0]
         const where = issue && issue.path.length > 0 ? ` at ${issue.path.join(".")}` : ""
         throw new Error(`Import file is invalid${where}: ${issue?.message ?? "unrecognized format"}`)
     }
-    // Validated above; cast bridges Zod's `key?: T | undefined` optionals to the
-    // Dexie insert types' `key?: T` under exactOptionalPropertyTypes.
-    const data = {
+    return {
         manga: (result.data.data?.manga as LibraryManga[] | undefined) ?? [],
         sourceLinks: (result.data.data?.sourceLinks as SourceLinkRecord[] | undefined) ?? [],
         chapters: (result.data.data?.chapters as ChapterRecord[] | undefined) ?? [],
         progress: (result.data.data?.progress as ReadingProgress[] | undefined) ?? [],
         historyEvents: (result.data.data?.historyEvents as HistoryEvent[] | undefined) ?? []
     }
+}
+
+function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryManga {
+    return {
+        ...imported,
+        // user preferences: always keep existing
+        rating: existing.rating ?? imported.rating,
+        categories: existing.categories ?? imported.categories,
+        notes: existing.notes ?? imported.notes,
+        nsfw: existing.nsfw ?? imported.nsfw,
+        manualTracking: existing.manualTracking ?? imported.manualTracking,
+        // progress: keep the further-along value
+        lastReadChapterNumber:
+            Math.max(existing.lastReadChapterNumber ?? 0, imported.lastReadChapterNumber ?? 0) || undefined,
+        latestChapterNumber:
+            Math.max(existing.latestChapterNumber ?? 0, imported.latestChapterNumber ?? 0) || undefined,
+        lastReadAt: existing.lastReadAt
+            ? imported.lastReadAt
+                ? Math.max(existing.lastReadAt, imported.lastReadAt)
+                : existing.lastReadAt
+            : imported.lastReadAt,
+        addedAt: Math.min(existing.addedAt, imported.addedAt),
+        updatedAt: Math.max(existing.updatedAt, imported.updatedAt)
+    }
+}
+
+export async function previewImport(value: unknown): Promise<ImportConflict[]> {
+    const data = parseImportData(value)
+    if (data.manga.length === 0) return []
+    const ids = data.manga.map(m => m.id)
+    const existing = await db.manga.bulkGet(ids)
+    const conflicts: ImportConflict[] = []
+    for (let i = 0; i < data.manga.length; i++) {
+        const ex = existing[i]
+        const im = data.manga[i]
+        if (ex) {
+            conflicts.push({
+                mangaId: im.id,
+                existingTitle: ex.title,
+                importedTitle: im.title,
+                existingUpdatedAt: ex.updatedAt,
+                importedUpdatedAt: im.updatedAt
+            })
+        }
+    }
+    return conflicts
+}
+
+export async function importDatabase(
+    value: unknown,
+    resolutions: Record<string, ImportResolution> = {}
+): Promise<{ manga: number; chapters: number }> {
+    const data = parseImportData(value)
+
+    const skippedIds = new Set<string>()
+    const mangaToWrite: LibraryManga[] = []
+
+    if (data.manga.length > 0) {
+        const ids = data.manga.map(m => m.id)
+        const existing = await db.manga.bulkGet(ids)
+        for (let i = 0; i < data.manga.length; i++) {
+            const im = data.manga[i]
+            const ex = existing[i]
+            const resolution = ex ? (resolutions[im.id] ?? "overwrite") : "overwrite"
+            if (resolution === "skip") {
+                skippedIds.add(im.id)
+            } else if (resolution === "merge" && ex) {
+                mangaToWrite.push(mergeManga(ex, im))
+            } else {
+                mangaToWrite.push(im)
+            }
+        }
+    }
+
+    const sourceLinksToWrite = data.sourceLinks.filter(sl => !skippedIds.has(sl.mangaId))
+    const chaptersToWrite = data.chapters.filter(ch => !skippedIds.has(ch.mangaId))
+    const progressToWrite = data.progress.filter(p => !skippedIds.has(p.mangaId))
+    const historyToWrite = data.historyEvents.filter(h => !skippedIds.has(h.mangaId))
+
     await db.transaction("rw", [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents], async () => {
-        if (data.manga.length > 0) await db.manga.bulkPut(data.manga)
-        if (data.sourceLinks.length > 0) await db.sourceLinks.bulkPut(data.sourceLinks)
-        if (data.chapters.length > 0) await db.chapters.bulkPut(data.chapters)
-        if (data.progress.length > 0) await db.progress.bulkPut(data.progress)
-        if (data.historyEvents.length > 0) await db.historyEvents.bulkPut(data.historyEvents)
+        if (mangaToWrite.length > 0) await db.manga.bulkPut(mangaToWrite)
+        if (sourceLinksToWrite.length > 0) await db.sourceLinks.bulkPut(sourceLinksToWrite)
+        if (chaptersToWrite.length > 0) await db.chapters.bulkPut(chaptersToWrite)
+        if (progressToWrite.length > 0) await db.progress.bulkPut(progressToWrite)
+        if (historyToWrite.length > 0) await db.historyEvents.bulkPut(historyToWrite)
     })
-    return { manga: data.manga.length, chapters: data.chapters.length }
+    return { manga: mangaToWrite.length, chapters: chaptersToWrite.length }
 }
 
 export async function seedDatabase(): Promise<void> {
