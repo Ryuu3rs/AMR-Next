@@ -738,6 +738,10 @@
 
     const librarySources = $derived([...new Set(library.filter(m => !isSeedData(m)).map(m => m.sourceId))].sort())
 
+    const sourceTitleCounts = $derived(
+        new Map(sourcesList.map(src => [src.id, library.filter(m => !isSeedData(m) && m.sourceId === src.id).length]))
+    )
+
     async function changeUpdateInterval(value: string) {
         settings = await sendRuntimeMessage<AppSettings>({
             type: "settings:update",
@@ -1865,6 +1869,7 @@
                 <div class="adapter-grid">
                     {#each sourcesList as src}
                         {@const alive = pingState.get(src.id)}
+                        {@const count = sourceTitleCounts.get(src.id) ?? 0}
                         <button
                             type="button"
                             class="adapter-chip"
@@ -1882,7 +1887,12 @@
                                 {src.capabilities.join(", ")}{#if src.canSearch}
                                     · search{/if}
                             </span>
-                            <span class="adapter-open">Open site ↗</span>
+                            <span class="adapter-footer">
+                                <span class="adapter-open">Open site ↗</span>
+                                {#if count > 0}
+                                    <span class="adapter-count">{count} title{count !== 1 ? "s" : ""}</span>
+                                {/if}
+                            </span>
                         </button>
                     {/each}
                 </div>

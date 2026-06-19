@@ -25,9 +25,12 @@
         "typecheck": "npm run typecheck --workspaces --if-present",
         "lint": "eslint .",
         "test": "npm run test --workspaces --if-present",
+        "test:coverage": "vitest run --coverage.enabled=true --coverage.provider=v8 --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=lcov --passWithNoTests",
         "check": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run build:firefox && npm run test"
     },
     "devDependencies": {
+        "@vitest/coverage-v8": "^4.1.8",
+        "vitest": "^4.1.8",
         "eslint": "^9.39.4",
         "eslint-plugin-svelte": "^3.19.0",
         "globals": "^17.6.0",

@@ -677,6 +677,12 @@ button:disabled {
     transform: translateY(1px);
 }
 
+.adapter-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
 .adapter-open {
     color: var(--accent);
     font-size: 11px;
@@ -687,6 +693,12 @@ button:disabled {
 
 .adapter-chip:hover .adapter-open {
     opacity: 1;
+}
+
+.adapter-count {
+    font-size: 10px;
+    color: var(--muted, #6b7a8d);
+    font-variant-numeric: tabular-nums;
 }
 
 .adapter-name {

@@ -19,7 +19,7 @@ permissions:
 jobs:
     release-please:
         runs-on: ubuntu-latest
-        timeout-minutes: 20
+        timeout-minutes: 30
         env:
             AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
             AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
@@ -34,6 +34,19 @@ jobs:
             - name: Checkout
               if: ${{ steps.release.outputs.release_created }}
               uses: actions/checkout@v4
+
+            - name: Version/tag check
+              if: ${{ steps.release.outputs.release_created }}
+              shell: bash
+              run: |
+                  PKG_VERSION=$(node -p "require('./package.json').version")
+                  TAG="${{ steps.release.outputs.tag_name }}"
+                  STRIPPED="${TAG#v}"
+                  if [ "$PKG_VERSION" != "$STRIPPED" ]; then
+                    echo "::error::Version mismatch: package.json=$PKG_VERSION tag=$TAG"
+                    exit 1
+                  fi
+                  echo "Version check passed: $PKG_VERSION"
 
             - name: Setup Node.js
               if: ${{ steps.release.outputs.release_created }}
@@ -61,6 +74,10 @@ jobs:
             - name: Package Firefox
               if: ${{ steps.release.outputs.release_created }}
               run: npm run zip:firefox
+
+            - name: Manifest smoke gate
+              if: ${{ steps.release.outputs.release_created }}
+              run: npm run test:manifest --workspace @amr/browser-tests
 
             - name: Sign Firefox add-on (AMO, optional)
               if: ${{ steps.release.outputs.release_created && env.AMO_JWT_ISSUER != '' }}
