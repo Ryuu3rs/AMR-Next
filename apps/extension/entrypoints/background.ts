@@ -6,11 +6,13 @@ import {
     cacheCover,
     exportDatabase,
     getActivityCalendar,
+    getAnalyticsSummary,
     getDownload,
     getLocalStats,
     importDatabase,
     previewImport,
     listDownloads,
+    recordAnalyticsEvent,
     removeDownload,
     removeManga,
     saveDownload,
@@ -21,7 +23,8 @@ import {
     toggleBookmark,
     bookmarkedPagesForChapter,
     listBookmarks,
-    removeBookmark
+    removeBookmark,
+    type AnalyticsEvent
 } from "../src/database"
 import { runtimeRequestSchema, type RuntimeResponse } from "../src/runtime"
 import { getSettings, updateSettings } from "../src/settings"
@@ -293,11 +296,14 @@ async function doCaptureChapter(url: string) {
         // The source's images can't be scraped (anti-scrape / spoiler / dead CDN).
         // Still add the title and track it by URL so the library follows progress
         // even when the chapter only reads on the source site.
+        void recordAnalyticsEvent({ event: "capture_error", sourceId: source.manifest.id, ts: Date.now() })
         const tracked = await trackExternalChapter({ url, sourceId: source.manifest.id, completed: false })
         console.debug("[AMR] Captured chapter without scraping", { url, error })
         await flashAddedBadge()
         return { supported: true as const, added: true as const, external: true as const, title: tracked.title }
     }
+
+    void recordAnalyticsEvent({ event: "capture_ok", sourceId: source.manifest.id, ts: Date.now() })
 
     const rawCover = resolved.manga.manga.coverUrl
     const inlinedCover = rawCover ? ((await inlineCover(rawCover)) ?? rawCover) : undefined
@@ -398,17 +404,25 @@ function injectChapterPrompt(chapterUrl: string): void {
             .panel {
                 position: fixed; bottom: 24px; right: 24px; z-index: 2147483647;
                 background: #16213e; border: 1px solid rgba(255,255,255,0.12);
-                border-radius: 14px; padding: 12px 14px;
-                display: flex; flex-direction: column; gap: 10px;
+                border-radius: 14px; padding: 0;
+                display: flex; flex-direction: column;
                 font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
                 font-size: 13px; color: #e2e8f0;
                 box-shadow: 0 12px 40px rgba(0,0,0,0.6);
                 animation: slide-in 0.22s cubic-bezier(.22,.6,.36,1) both; width: 220px;
+                overflow: hidden;
             }
             @keyframes slide-in {
                 from { transform: translateY(110%); opacity: 0; }
                 to   { transform: translateY(0); opacity: 1; }
             }
+            .prog-track {
+                height: 3px; background: rgba(255,255,255,0.06); width: 100%; flex-shrink: 0;
+            }
+            .prog-fill {
+                height: 100%; background: #6366f1; width: 0%; transition: width 0.1s linear;
+            }
+            .inner { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
             .hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
             .ttl { font-weight: 700; font-size: 13px; color: #fff; }
             .sub { font-size: 11px; color: #64748b; margin-top: 1px;
@@ -433,25 +447,57 @@ function injectChapterPrompt(chapterUrl: string): void {
             .dark-active { background: #1e3a8a; border-color: #3b82f6; }
         </style>
         <div class="panel">
-            <div class="hd">
-                <div>
-                    <div class="ttl">📖 AMR</div>
-                    <div class="sub" id="sub">Chapter detected</div>
+            <div class="prog-track"><div class="prog-fill" id="prog"></div></div>
+            <div class="inner">
+                <div class="hd">
+                    <div>
+                        <div class="ttl">📖 AMR</div>
+                        <div class="sub" id="sub">Chapter detected</div>
+                    </div>
+                    <button class="x" id="xbtn" aria-label="Dismiss">✕</button>
                 </div>
-                <button class="x" id="xbtn" aria-label="Dismiss">✕</button>
+                <div class="sep"></div>
+                <div class="row">
+                    <button class="btn" id="bprev" disabled>‹ Prev</button>
+                    <button class="btn" id="bnext" disabled>Next ›</button>
+                </div>
+                <div class="row">
+                    <button class="btn btn-p" id="bopen">Open in AMR</button>
+                    <button class="btn btn-moon${darkBtnActive}" id="bdark" title="Toggle dark background">🌙</button>
+                </div>
+                <button class="btn" id="btrack">Mark read</button>
             </div>
-            <div class="sep"></div>
-            <div class="row">
-                <button class="btn" id="bprev" disabled>‹ Prev</button>
-                <button class="btn" id="bnext" disabled>Next ›</button>
-            </div>
-            <div class="row">
-                <button class="btn btn-p" id="bopen">Open in AMR</button>
-                <button class="btn btn-moon${darkBtnActive}" id="bdark" title="Toggle dark background">🌙</button>
-            </div>
-            <button class="btn" id="btrack">Mark read</button>
         </div>
     `
+
+    // Scroll progress bar — updates on every scroll event via rAF.
+    const progEl = shadow.getElementById("prog") as HTMLElement | null
+    function updateProgress() {
+        if (!progEl) return
+        const el = document.documentElement
+        const scrollable = el.scrollHeight - el.clientHeight
+        const pct = scrollable > 0 ? Math.round((window.scrollY / scrollable) * 100) : 0
+        progEl.style.width = `${pct}%`
+    }
+    let rafPending = false
+    function onScroll() {
+        if (rafPending) return
+        rafPending = true
+        requestAnimationFrame(() => {
+            updateProgress()
+            rafPending = false
+        })
+    }
+    window.addEventListener("scroll", onScroll, { passive: true })
+    updateProgress()
+
+    function track(action: string) {
+        chrome.runtime.sendMessage({
+            type: "analytics:record",
+            event: "panel_action",
+            detail: JSON.stringify({ action })
+        })
+    }
 
     let prevUrl: string | null = null
     let nextUrl: string | null = null
@@ -473,14 +519,21 @@ function injectChapterPrompt(chapterUrl: string): void {
         ;(shadow.getElementById("bnext") as HTMLButtonElement | null)!.disabled = !nextUrl
     })
 
-    shadow.getElementById("xbtn")?.addEventListener("click", () => host.remove())
+    shadow.getElementById("xbtn")?.addEventListener("click", () => {
+        track("dismiss")
+        window.removeEventListener("scroll", onScroll)
+        host.remove()
+    })
 
     shadow.getElementById("bopen")?.addEventListener("click", () => {
+        track("open-in-reader")
         chrome.runtime.sendMessage({ type: "chapter:open-in-reader", url: chapterUrl })
+        window.removeEventListener("scroll", onScroll)
         host.remove()
     })
 
     shadow.getElementById("btrack")?.addEventListener("click", () => {
+        track("mark-read")
         chrome.runtime.sendMessage({ type: "chapter:track", url: chapterUrl })
         const btn = shadow.getElementById("btrack") as HTMLButtonElement | null
         if (btn) {
@@ -492,19 +545,29 @@ function injectChapterPrompt(chapterUrl: string): void {
     shadow.getElementById("bdark")?.addEventListener("click", () => {
         const btn = shadow.getElementById("bdark")
         if (darkModeActive) {
+            track("dark-off")
             removeDark()
             btn?.classList.remove("dark-active")
         } else {
+            track("dark-on")
             applyDark()
             btn?.classList.add("dark-active")
         }
     })
 
     shadow.getElementById("bprev")?.addEventListener("click", () => {
-        if (prevUrl) window.location.href = prevUrl
+        if (prevUrl) {
+            track("prev")
+            window.removeEventListener("scroll", onScroll)
+            window.location.href = prevUrl
+        }
     })
     shadow.getElementById("bnext")?.addEventListener("click", () => {
-        if (nextUrl) window.location.href = nextUrl
+        if (nextUrl) {
+            track("next")
+            window.removeEventListener("scroll", onScroll)
+            window.location.href = nextUrl
+        }
     })
 }
 
@@ -953,8 +1016,15 @@ export default defineBackground(() => {
                         let resolved
                         try {
                             resolved = await resolveChapterUrl(request.url)
+                            void recordAnalyticsEvent({
+                                event: "resolve_direct",
+                                sourceId: findSource(new URL(request.url))?.manifest.id,
+                                ts: Date.now()
+                            })
                         } catch (fetchError) {
                             if (isBotBlocked(fetchError)) {
+                                const srcId = findSource(new URL(request.url))?.manifest.id
+                                void recordAnalyticsEvent({ event: "resolve_tab", sourceId: srcId, ts: Date.now() })
                                 const html = await fetchChapterHtmlViaTab(request.url)
                                 resolved = await resolveChapterFromHtml(request.url, html)
                             } else {
@@ -992,6 +1062,17 @@ export default defineBackground(() => {
                             chapterTitle: chRecord.title ?? null
                         })
                     }
+                    case "analytics:record": {
+                        void recordAnalyticsEvent({
+                            event: request.event as AnalyticsEvent["event"],
+                            ...(request.sourceId ? { sourceId: request.sourceId } : {}),
+                            ...(request.detail ? { detail: request.detail } : {}),
+                            ts: Date.now()
+                        })
+                        return success(null)
+                    }
+                    case "analytics:summary":
+                        return success(await getAnalyticsSummary(request.days))
                     case "reader:chapters": {
                         try {
                             const chapters = await listChaptersBySource(
@@ -1064,6 +1145,11 @@ export default defineBackground(() => {
                         if (!source || source.match(parsedUrl) !== "chapter") {
                             return success({ supported: false as const })
                         }
+                        void recordAnalyticsEvent({
+                            event: "on_site_track",
+                            sourceId: source.manifest.id,
+                            ts: Date.now()
+                        })
                         const tracked = await trackExternalChapter({
                             url: request.url,
                             sourceId: source.manifest.id
@@ -1071,6 +1157,8 @@ export default defineBackground(() => {
                         return success({ supported: true as const, ...tracked })
                     }
                     case "chapter:open-in-reader": {
+                        const srcId = findSource(new URL(request.url))?.manifest.id
+                        void recordAnalyticsEvent({ event: "reader_opened", sourceId: srcId, ts: Date.now() })
                         void captureChapter(request.url).catch(() => {})
                         const readerUrl = browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(request.url)}`)
                         await browser.tabs.create({ url: readerUrl })

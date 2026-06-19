@@ -66,6 +66,13 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("reader:resolve"), url: z.url() }),
     z.object({ type: z.literal("chapter:siblings"), url: z.url() }),
     z.object({
+        type: z.literal("analytics:record"),
+        event: z.string(),
+        sourceId: z.string().optional(),
+        detail: z.string().optional()
+    }),
+    z.object({ type: z.literal("analytics:summary"), days: z.number().int().positive().optional() }),
+    z.object({
         type: z.literal("reader:chapters"),
         sourceId: z.string().min(1),
         sourceMangaId: z.string().min(1),

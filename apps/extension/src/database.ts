@@ -60,6 +60,21 @@ export type PageBookmark = {
     addedAt: number
 }
 
+export type AnalyticsEvent = {
+    id?: number
+    event:
+        | "capture_ok" // chapter URL auto-captured from a tab
+        | "capture_error" // capture failed (CF block, 404, etc.)
+        | "reader_opened" // user opened chapter in AMR reader
+        | "on_site_track" // marked read while reading on-site (via panel)
+        | "panel_action" // any panel button click (detail: { action })
+        | "resolve_direct" // chapter resolved via direct HTTP fetch
+        | "resolve_tab" // chapter required the tab-fallback (CF-gated site)
+    sourceId?: string
+    ts: number
+    detail?: string // JSON blob for event-specific fields
+}
+
 export class AmrDatabase extends Dexie {
     manga!: EntityTable<LibraryManga, "id">
     sourceLinks!: EntityTable<SourceLinkRecord, "mangaId">
@@ -69,6 +84,7 @@ export class AmrDatabase extends Dexie {
     downloads!: EntityTable<ChapterDownload, "chapterId">
     covers!: Table<CoverCacheRecord, string>
     pageBookmarks!: EntityTable<PageBookmark, "id">
+    analyticsEvents!: EntityTable<AnalyticsEvent, "id">
 
     constructor() {
         super("all-mangas-reader")
@@ -110,6 +126,17 @@ export class AmrDatabase extends Dexie {
             downloads: "chapterId, mangaId, downloadedAt",
             covers: "mangaId",
             pageBookmarks: "id, mangaId, chapterId, addedAt"
+        })
+        this.version(6).stores({
+            manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+            sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+            chapters: "id, mangaId, sourceId, sortKey",
+            progress: "chapterId, mangaId, updatedAt, completed",
+            historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+            downloads: "chapterId, mangaId, downloadedAt",
+            covers: "mangaId",
+            pageBookmarks: "id, mangaId, chapterId, addedAt",
+            analyticsEvents: "++id, event, ts, sourceId"
         })
     }
 }
@@ -989,6 +1016,81 @@ export async function getActivityCalendar(days = 120): Promise<Array<{ date: str
         cursor.setDate(cursor.getDate() + 1)
     }
     return result
+}
+
+export async function recordAnalyticsEvent(event: Omit<AnalyticsEvent, "id">): Promise<void> {
+    await db.analyticsEvents.add(event)
+    // Keep last 90 days only — prune inline to avoid a separate cleanup job.
+    const cutoff = Date.now() - 90 * 86_400_000
+    void db.analyticsEvents.where("ts").below(cutoff).delete()
+}
+
+export async function getAnalyticsSummary(days = 30) {
+    const since = Date.now() - days * 86_400_000
+    const events = await db.analyticsEvents.where("ts").above(since).toArray()
+
+    const sourceErrors = new Map<string, number>()
+    const sourceCaptures = new Map<string, number>()
+    const panelActions = new Map<string, number>()
+    let captureOk = 0,
+        captureErrors = 0,
+        readerOpened = 0,
+        onSiteTrack = 0,
+        directResolves = 0,
+        tabResolves = 0
+
+    for (const ev of events) {
+        if (ev.event === "capture_ok") {
+            captureOk++
+            if (ev.sourceId) sourceCaptures.set(ev.sourceId, (sourceCaptures.get(ev.sourceId) ?? 0) + 1)
+        } else if (ev.event === "capture_error") {
+            captureErrors++
+            if (ev.sourceId) sourceErrors.set(ev.sourceId, (sourceErrors.get(ev.sourceId) ?? 0) + 1)
+        } else if (ev.event === "reader_opened") {
+            readerOpened++
+        } else if (ev.event === "on_site_track") {
+            onSiteTrack++
+        } else if (ev.event === "resolve_direct") {
+            directResolves++
+        } else if (ev.event === "resolve_tab") {
+            tabResolves++
+        } else if (ev.event === "panel_action" && ev.detail) {
+            try {
+                const d = JSON.parse(ev.detail) as { action?: string }
+                const a = d.action ?? "unknown"
+                panelActions.set(a, (panelActions.get(a) ?? 0) + 1)
+            } catch {
+                // ignore malformed detail
+            }
+        }
+    }
+
+    const readerRate = captureOk > 0 ? Math.round((readerOpened / captureOk) * 100) : 0
+    const errorRate =
+        captureOk + captureErrors > 0 ? Math.round((captureErrors / (captureOk + captureErrors)) * 100) : 0
+
+    return {
+        days,
+        captureOk,
+        captureErrors,
+        readerOpened,
+        onSiteTrack,
+        directResolves,
+        tabResolves,
+        readerRate,
+        errorRate,
+        topSources: [...sourceCaptures.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([sourceId, count]) => ({ sourceId, count })),
+        topErrors: [...sourceErrors.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([sourceId, count]) => ({ sourceId, count })),
+        panelActions: [...panelActions.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([action, count]) => ({ action, count }))
+    }
 }
 
 export async function toggleBookmark(data: Omit<PageBookmark, "id" | "addedAt">): Promise<boolean> {

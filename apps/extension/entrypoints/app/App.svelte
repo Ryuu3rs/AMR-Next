@@ -1139,6 +1139,31 @@
         }
     })
 
+    type AnalyticsSummary = {
+        days: number
+        captureOk: number
+        captureErrors: number
+        readerOpened: number
+        onSiteTrack: number
+        directResolves: number
+        tabResolves: number
+        readerRate: number
+        errorRate: number
+        topSources: Array<{ sourceId: string; count: number }>
+        topErrors: Array<{ sourceId: string; count: number }>
+        panelActions: Array<{ action: string; count: number }>
+    }
+    let analyticsSummary = $state<AnalyticsSummary | null>(null)
+    let analyticsLoaded = $state(false)
+    $effect(() => {
+        if (activeSection === "Achievements" && !analyticsLoaded) {
+            analyticsLoaded = true
+            void sendRuntimeMessage<AnalyticsSummary>({ type: "analytics:summary" })
+                .then(d => (analyticsSummary = d))
+                .catch(() => {})
+        }
+    })
+
     const UPDATES_INITIAL = 50
     let updatesLimit = $state(UPDATES_INITIAL)
     const pagedUpdates = $derived(library.slice(0, updatesLimit))
@@ -2029,6 +2054,67 @@
                     {/each}
                 </div>
             {/each}
+
+            {#if analyticsSummary}
+                <p class="shelf-label" style="margin-top:32px">
+                    Usage insights <span class="muted">(last {analyticsSummary.days} days)</span>
+                </p>
+                <div class="stat-row">
+                    <div class="stat-box">
+                        <strong>{analyticsSummary.captureOk}</strong><span>Chapters captured</span>
+                    </div>
+                    <div class="stat-box">
+                        <strong>{analyticsSummary.readerRate}%</strong><span>Opened in reader</span>
+                    </div>
+                    <div class="stat-box">
+                        <strong>{analyticsSummary.onSiteTrack}</strong><span>Marked on-site</span>
+                    </div>
+                    <div class="stat-box" class:stat-warn={analyticsSummary.errorRate > 10}>
+                        <strong>{analyticsSummary.errorRate}%</strong><span>Capture error rate</span>
+                    </div>
+                </div>
+                <div class="stat-row">
+                    <div class="stat-box">
+                        <strong>{analyticsSummary.directResolves}</strong><span>Direct resolves</span>
+                    </div>
+                    <div class="stat-box" class:stat-warn={analyticsSummary.tabResolves > 0}>
+                        <strong>{analyticsSummary.tabResolves}</strong><span>Tab fallbacks (CF)</span>
+                    </div>
+                </div>
+                {#if analyticsSummary.topSources.length > 0}
+                    <p class="shelf-label" style="margin-top:16px">Top sources</p>
+                    <div class="insights-list">
+                        {#each analyticsSummary.topSources as s}
+                            <div class="insights-row">
+                                <span class="insights-label">{s.sourceId}</span>
+                                <span class="insights-count">{s.count}</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+                {#if analyticsSummary.topErrors.length > 0}
+                    <p class="shelf-label" style="margin-top:16px">Sources with errors</p>
+                    <div class="insights-list">
+                        {#each analyticsSummary.topErrors as s}
+                            <div class="insights-row insights-row-warn">
+                                <span class="insights-label">{s.sourceId}</span>
+                                <span class="insights-count">{s.count} errors</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+                {#if analyticsSummary.panelActions.length > 0}
+                    <p class="shelf-label" style="margin-top:16px">Panel button usage</p>
+                    <div class="insights-list">
+                        {#each analyticsSummary.panelActions as a}
+                            <div class="insights-row">
+                                <span class="insights-label">{a.action}</span>
+                                <span class="insights-count">{a.count}</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+            {/if}
         {:else if activeSection === "Sources"}
             <h1>Sources</h1>
 
