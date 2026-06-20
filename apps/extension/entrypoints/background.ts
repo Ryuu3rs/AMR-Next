@@ -33,6 +33,14 @@ import { getSyncConfig, getSyncStatus, pullFromGist, pushToGist, setSyncConfig }
 import { isNewerVersion } from "../src/update-check"
 import { SOURCE_ORIGINS } from "../src/permissions"
 import {
+    apiRegister,
+    apiSyncEvents,
+    apiFetchCommunityStats,
+    getCommunityProfile,
+    updateCommunityProfile,
+    type CommunityEvent
+} from "../src/community"
+import {
     findSource,
     listChaptersBySource,
     listChaptersForSource,
@@ -63,8 +71,10 @@ const capturingUrls = new Set<string>()
 
 let updateCheckRunning = false
 let genreBackfillRunning = false
+let communityRunning = false
 
 const updateAlarmName = "check-manga-updates"
+const communityAlarmName = "community-sync"
 const syncAlarmName = "sync-push"
 const extensionUpdateAlarmName = "check-extension-update"
 
@@ -114,6 +124,64 @@ async function configureSyncAlarm() {
     await browser.alarms.clear(syncAlarmName)
     if (config.autoSync && config.token) {
         await browser.alarms.create(syncAlarmName, { periodInMinutes: 60 })
+    }
+}
+
+async function configureCommunityAlarm() {
+    const profile = await getCommunityProfile()
+    await browser.alarms.clear(communityAlarmName)
+    if (profile.enabled && profile.userId) {
+        await browser.alarms.create(communityAlarmName, { periodInMinutes: 60 })
+    }
+}
+
+async function runCommunitySync() {
+    if (communityRunning) return
+    communityRunning = true
+    try {
+        const profile = await getCommunityProfile()
+        if (!profile.enabled || !profile.userId) return
+
+        const newHistory = await db.historyEvents
+            .where("occurredAt")
+            .above(profile.lastSyncAt)
+            .filter(h => h.type === "completed")
+            .toArray()
+        if (newHistory.length === 0) return
+
+        const mangaIds = [...new Set(newHistory.map(h => h.mangaId))]
+        const mangaList = await db.manga.where("id").anyOf(mangaIds).toArray()
+        const mangaMap = new Map(mangaList.map(m => [m.id, m]))
+
+        const events: CommunityEvent[] = newHistory
+            .map(h => {
+                const manga = mangaMap.get(h.mangaId)
+                if (!manga) return null
+                return {
+                    type: "chapter_read" as const,
+                    sourceId: manga.sourceId,
+                    mangaTitle: manga.title,
+                    genres: manga.genres ?? [],
+                    date: new Date(h.occurredAt).toISOString().slice(0, 10)
+                }
+            })
+            .filter((e): e is CommunityEvent => e !== null)
+        if (events.length === 0) return
+
+        const result = await apiSyncEvents(profile.userId, events)
+        const communityStats = await apiFetchCommunityStats().catch(() => profile.communityStats)
+
+        await updateCommunityProfile({
+            lastSyncAt: Date.now(),
+            communityRank: result.rank,
+            recommendations: result.recommendations,
+            newAchievements: [...(profile.newAchievements ?? []), ...result.newAchievements],
+            communityStats
+        })
+    } catch (error) {
+        console.warn("[AMR] Community sync failed", error)
+    } finally {
+        communityRunning = false
     }
 }
 
@@ -657,6 +725,7 @@ export default defineBackground(() => {
     browser.runtime.onInstalled.addListener(() => {
         void configureUpdateAlarm()
         void configureSyncAlarm()
+        void configureCommunityAlarm()
         void browser.alarms.create(extensionUpdateAlarmName, {
             periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
         })
@@ -671,6 +740,7 @@ export default defineBackground(() => {
     browser.runtime.onStartup.addListener(() => {
         void configureUpdateAlarm()
         void configureSyncAlarm()
+        void configureCommunityAlarm()
         void browser.alarms.create(extensionUpdateAlarmName, {
             periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
         })
@@ -679,6 +749,7 @@ export default defineBackground(() => {
 
     browser.alarms.onAlarm.addListener(alarm => {
         if (alarm.name === updateAlarmName) void checkUpdates()
+        if (alarm.name === communityAlarmName) void runCommunitySync()
         if (alarm.name === syncAlarmName) void autoPush()
         if (alarm.name === extensionUpdateAlarmName) void checkExtensionUpdate()
     })
@@ -1280,6 +1351,35 @@ export default defineBackground(() => {
                     case "bookmark:remove":
                         await removeBookmark(request.id)
                         return success(null)
+                    case "community:status":
+                        return success(await getCommunityProfile())
+                    case "community:register": {
+                        const existing = await getCommunityProfile()
+                        if (existing.userId) return success(existing)
+                        try {
+                            const { userId } = await apiRegister(request.username)
+                            const updated = await updateCommunityProfile({
+                                username: request.username,
+                                userId,
+                                enabled: true,
+                                lastSyncAt: 0
+                            })
+                            await configureCommunityAlarm()
+                            void runCommunitySync()
+                            return success(updated)
+                        } catch (err) {
+                            return failure(err)
+                        }
+                    }
+                    case "community:toggle": {
+                        const updated = await updateCommunityProfile({ enabled: request.enabled })
+                        if (request.enabled) {
+                            await configureCommunityAlarm()
+                        } else {
+                            await browser.alarms.clear(communityAlarmName)
+                        }
+                        return success(updated)
+                    }
                     case "settings:get":
                         return success(await getSettings())
                     case "settings:update": {

@@ -1168,6 +1168,51 @@
         }
     })
 
+    type CommunityProfile = {
+        enabled: boolean
+        username: string
+        userId: string
+        lastSyncAt: number
+        communityRank: number | null
+        recommendations: Array<{ title: string; sourceId: string }>
+        newAchievements: string[]
+        communityStats: {
+            leaderboard: Array<{ rank: number; username: string; chaptersWeek: number }>
+            trendingManga: Array<{ title: string; sourceId: string; count: number }>
+            topGenres: Array<{ genre: string; count: number }>
+            totalUsers: number
+        } | null
+    }
+    let communityProfile = $state<CommunityProfile | null>(null)
+    let communityLoaded = $state(false)
+    let communityUsernameInput = $state("")
+    let communityRegisterError = $state("")
+    $effect(() => {
+        if ((activeSection === "Achievements" || activeSection === "Settings") && !communityLoaded) {
+            communityLoaded = true
+            void sendRuntimeMessage<CommunityProfile>({ type: "community:status" })
+                .then(p => (communityProfile = p))
+                .catch(() => {})
+        }
+    })
+    async function toggleCommunity(enabled: boolean) {
+        communityProfile = await sendRuntimeMessage<CommunityProfile>({ type: "community:toggle", enabled })
+    }
+    async function registerCommunity() {
+        const name = communityUsernameInput.trim()
+        if (!name) return
+        communityRegisterError = ""
+        try {
+            communityProfile = await sendRuntimeMessage<CommunityProfile>({
+                type: "community:register",
+                username: name
+            })
+            communityUsernameInput = ""
+        } catch (e) {
+            communityRegisterError = e instanceof Error ? e.message : "Registration failed"
+        }
+    }
+
     const UPDATES_INITIAL = 50
     let updatesLimit = $state(UPDATES_INITIAL)
     const pagedUpdates = $derived(library.slice(0, updatesLimit))
@@ -2177,6 +2222,68 @@
                     </div>
                 {/if}
             {/if}
+
+            {#if communityProfile?.communityStats}
+                <p class="shelf-label" style="margin-top:36px">Community</p>
+                {#if communityProfile.communityRank}
+                    <div class="stat-row">
+                        <div class="stat-box">
+                            <strong>#{communityProfile.communityRank}</strong><span>Your rank this week</span>
+                        </div>
+                        <div class="stat-box">
+                            <strong>{communityProfile.communityStats.totalUsers}</strong><span>Total readers</span>
+                        </div>
+                    </div>
+                {:else if communityProfile.userId}
+                    <p class="muted">Read more chapters to appear on the leaderboard.</p>
+                {:else if communityProfile.enabled}
+                    <p class="muted">Set a username in Settings to join the community.</p>
+                {/if}
+                {#if communityProfile.communityStats.leaderboard.length > 0}
+                    <p class="shelf-label" style="margin-top:16px">Weekly leaderboard</p>
+                    <div class="insights-list">
+                        {#each communityProfile.communityStats.leaderboard.slice(0, 10) as entry}
+                            <div
+                                class="insights-row"
+                                class:insights-row-highlight={entry.username === communityProfile.username}>
+                                <span class="insights-label">#{entry.rank} {entry.username}</span>
+                                <span class="insights-count">{entry.chaptersWeek} ch</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+                {#if communityProfile.communityStats.trendingManga.length > 0}
+                    <p class="shelf-label" style="margin-top:16px">Trending this week</p>
+                    <div class="insights-list">
+                        {#each communityProfile.communityStats.trendingManga.slice(0, 5) as manga}
+                            <div class="insights-row">
+                                <span class="insights-label">{manga.title}</span>
+                                <span class="insights-count">{manga.count} readers</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+                {#if communityProfile.recommendations.length > 0}
+                    <p class="shelf-label" style="margin-top:16px">Recommended for you</p>
+                    <div class="insights-list">
+                        {#each communityProfile.recommendations as rec}
+                            <div class="insights-row">
+                                <span class="insights-label">{rec.title}</span>
+                                <span class="insights-count muted">{rec.sourceId}</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+            {:else if communityProfile?.enabled && communityProfile.userId}
+                <p class="shelf-label" style="margin-top:36px">Community</p>
+                <p class="muted">Syncing your reading history… stats appear after the first sync completes.</p>
+            {:else if !communityProfile?.userId}
+                <p class="shelf-label" style="margin-top:36px">Community</p>
+                <p class="muted">
+                    Set a community username in <button class="link-btn" onclick={() => (activeSection = "Settings")}
+                        >Settings</button> to join the leaderboard.
+                </p>
+            {/if}
         {:else if activeSection === "Sources"}
             <h1>Sources</h1>
 
@@ -2593,6 +2700,57 @@
                         <span class="track"></span>
                     </label>
                 </div>
+
+                <p class="shelf-label" style="margin-top:28px">Community</p>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Community stats</p>
+                        <p class="muted">
+                            Share anonymous reading stats — no IP, no identity info collected. Enables the community
+                            leaderboard, trending manga, and personalised recommendations in the Stats &amp;
+                            achievements tab.
+                        </p>
+                    </div>
+                    <label class="toggle">
+                        <input
+                            type="checkbox"
+                            checked={communityProfile?.enabled ?? true}
+                            onchange={e => void toggleCommunity(e.currentTarget.checked)} />
+                        <span class="track"></span>
+                    </label>
+                </div>
+                {#if communityProfile?.enabled}
+                    <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+                        <div>
+                            <p class="row-label">Community username</p>
+                            <p class="muted">
+                                {#if communityProfile.userId}
+                                    Registered as <strong>{communityProfile.username}</strong>. Your reading data syncs
+                                    hourly.
+                                {:else}
+                                    Choose a display name for the leaderboard. Letters, numbers, _ and – only.
+                                {/if}
+                            </p>
+                        </div>
+                        {#if !communityProfile.userId}
+                            <div style="display:flex;gap:8px;align-items:center;width:100%">
+                                <input
+                                    type="text"
+                                    placeholder="your-username"
+                                    maxlength="30"
+                                    style="flex:1"
+                                    bind:value={communityUsernameInput}
+                                    onkeydown={e => {
+                                        if (e.key === "Enter") void registerCommunity()
+                                    }} />
+                                <button onclick={() => void registerCommunity()}>Join</button>
+                            </div>
+                            {#if communityRegisterError}
+                                <p class="muted" style="color:var(--color-warn)">{communityRegisterError}</p>
+                            {/if}
+                        {/if}
+                    </div>
+                {/if}
             </div>
         {/if}
     </main>
