@@ -43,7 +43,15 @@ const LEGACY_DOMAIN_ALIASES: Readonly<Record<string, string>> = {
     // MangaSushi — old AMR used .net, new adapter only registers .org
     "mangasushi.net": "mangasushi",
     // Weeb Central — cover any legacy capitalization / www variant
-    "www.weebcentral.com": "weebcentral"
+    "www.weebcentral.com": "weebcentral",
+    // AsuraToon — early domain before asurascans.com settled
+    "asuratoon.com": "asurascans",
+    "www.asuratoon.com": "asurascans",
+    // FlameComics — migrated from .com/.me to .xyz
+    "flamecomics.com": "flamecomics",
+    "www.flamecomics.com": "flamecomics",
+    "flamecomics.me": "flamecomics",
+    "www.flamecomics.me": "flamecomics"
 }
 
 export function isLegacyExport(raw: unknown): raw is LegacyExport {
@@ -87,8 +95,12 @@ function mangadexId(u: URL, kind: "title" | "chapter"): string | undefined {
 }
 
 function chapterNumberFrom(url: string): number | undefined {
-    const m = url.match(/chapter[-_ ]?(\d+(?:\.\d+)?)/i)
-    return m?.[1] !== undefined ? Number(m[1]) : undefined
+    const chapter = url.match(/chapter[-_ ]?(\d+(?:\.\d+)?)/i)
+    if (chapter?.[1] !== undefined) return Number(chapter[1])
+    // Webtoons uses episode_no=N query param instead of /chapter-N/ path segments
+    const episode = url.match(/[?&]episode_no=(\d+)/i)
+    if (episode?.[1] !== undefined) return Number(episode[1])
+    return undefined
 }
 
 function sanitizeKey(u: URL): string {
@@ -114,11 +126,14 @@ function convertEntry(entry: LegacyManga): {
     const resolvedSourceId = sourceId ?? primary.hostname
 
     const isMangaDex = resolvedSourceId === "mangadex"
+    const isWebtoons = resolvedSourceId === "webtoons"
     const sourceMangaId = isMangaDex
         ? mangaUrlParsed
             ? mangadexId(mangaUrlParsed, "title")
             : undefined
-        : deriveSlug(mangaUrlParsed ?? primary) || undefined
+        : isWebtoons
+          ? ((mangaUrlParsed ?? primary).searchParams.get("title_no") ?? undefined)
+          : deriveSlug(mangaUrlParsed ?? primary) || undefined
 
     const idKey = sourceMangaId ?? sanitizeKey(mangaUrlParsed ?? primary)
     const id = `${resolvedSourceId}:manga:${idKey}`
