@@ -16,6 +16,36 @@ type LegacyExport = { mangas: LegacyManga[]; bookmarks?: unknown[] }
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MANGA_PATH_MARKERS = ["manga", "comic", "comics", "series", "manhwa", "manhua", "title", "read"]
 
+// Old AMR stored URLs on domains that have since changed or that the new registry lists under a different canonical hostname.
+const LEGACY_DOMAIN_ALIASES: Readonly<Record<string, string>> = {
+    // MangaNato / Manganelo — the old AMR "Manganelo" mirror accepted many subdomains
+    // that the new manganato adapter doesn't list (it only covers the canonical ones).
+    "chap.manganato.com": "manganato",
+    "m.manganato.com": "manganato",
+    "readmanganato.com": "manganato",
+    "m.manganelo.com": "manganato",
+    "chap.manganelo.com": "manganato",
+    "manganelo.com": "manganato",
+    // MangaPark — old AMR used .com, new adapter only registers .net
+    "mangapark.com": "mangapark",
+    // AsuraScans — old AMR used asura.gg and www.asurascans.com before the domain settled
+    "asura.gg": "asurascans",
+    "www.asurascans.com": "asurascans",
+    // ManhuaPlus — migrated domain (.com → .org); old AMR links still use .com
+    "manhuaplus.com": "manhuaplus",
+    "www.manhuaplus.com": "manhuaplus",
+    // MangaRead — old AMR accepted mangaread.org without www prefix
+    "mangaread.org": "mangaread",
+    // Dynasty Scans — ensure the apex domain without www is covered
+    "dynasty-scans.com": "dynasty-scans",
+    // MangaBuddy family
+    "mangabuddy.com": "mangabuddy",
+    // MangaSushi — old AMR used .net, new adapter only registers .org
+    "mangasushi.net": "mangasushi",
+    // Weeb Central — cover any legacy capitalization / www variant
+    "www.weebcentral.com": "weebcentral"
+}
+
 export function isLegacyExport(raw: unknown): raw is LegacyExport {
     if (typeof raw !== "object" || raw === null) return false
     const obj = raw as Record<string, unknown>
@@ -34,7 +64,8 @@ function parseUrl(value: string | undefined): URL | undefined {
 
 function adapterIdFor(url: URL): string | undefined {
     const adapter = sourceRegistry.match(url)
-    return adapter?.manifest.id
+    if (adapter) return adapter.manifest.id
+    return LEGACY_DOMAIN_ALIASES[url.hostname.toLowerCase()]
 }
 
 function deriveSlug(u: URL): string {
