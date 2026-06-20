@@ -186,6 +186,7 @@
     } | null>(null)
     let importResolutions = $state<Record<string, ImportResolution>>({})
     let importWorking = $state(false)
+    let importError = $state("")
     let downloadsCount = $state(0)
     let reconcileIds = $state<string[]>([])
     let extensionUpdate = $state<{ available: boolean; latestVersion: string; releaseUrl: string } | null>(null)
@@ -736,6 +737,7 @@
         importMigrationMeta = null
         importResolutions = {}
         dataMessage = ""
+        importError = ""
         importWorking = true
         try {
             const raw: unknown = JSON.parse(await file.text())
@@ -792,10 +794,11 @@
     async function confirmImport() {
         if (!importEnvelope || !importMigrationMeta) return
         importWorking = true
+        importError = ""
         try {
             await applyImport(importEnvelope, importResolutions, importMigrationMeta)
         } catch (cause) {
-            dataMessage = cause instanceof Error ? cause.message : "Import failed."
+            importError = cause instanceof Error ? cause.message : "Import failed."
         } finally {
             importWorking = false
         }
@@ -806,6 +809,7 @@
         importEnvelope = null
         importMigrationMeta = null
         importResolutions = {}
+        importError = ""
     }
 
     function setAllResolutions(resolution: ImportResolution) {
@@ -2404,7 +2408,7 @@
                     <span class="data-count">{downloadsCount} {downloadsCount === 1 ? "chapter" : "chapters"}</span>
                 </div>
             </div>
-            {#if importWorking}
+            {#if importWorking && importConflicts.length === 0}
                 <p class="notice muted" role="status" aria-live="polite">Working…</p>
             {:else if importConflicts.length > 0}
                 <div class="conflict-panel">
@@ -2438,9 +2442,14 @@
                             </div>
                         {/each}
                     </div>
+                    {#if importError}
+                        <p class="notice" role="alert" style="color:var(--error,#f87171);margin:0">{importError}</p>
+                    {/if}
                     <div class="conflict-actions">
                         <button type="button" class="btn-outline" onclick={cancelImport}>Cancel</button>
-                        <button type="button" onclick={() => void confirmImport()}>Import</button>
+                        <button type="button" disabled={importWorking} onclick={() => void confirmImport()}>
+                            {importWorking ? "Importing…" : "Import"}
+                        </button>
                     </div>
                 </div>
             {:else if dataMessage}
