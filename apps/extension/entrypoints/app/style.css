@@ -1164,6 +1164,21 @@ button:disabled {
     outline: 1px solid rgba(245, 158, 11, 0.2);
 }
 
+.insights-row-highlight {
+    background: rgba(99, 102, 241, 0.12);
+    outline: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent, #6366f1);
+    cursor: pointer;
+    font-size: inherit;
+    text-decoration: underline;
+}
+
 .insights-label {
     font-weight: 600;
 }
