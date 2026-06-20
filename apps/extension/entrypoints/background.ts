@@ -81,11 +81,14 @@ const extensionUpdateAlarmName = "check-extension-update"
 const EXTENSION_UPDATE_INTERVAL_HOURS = 24
 const GITHUB_RELEASES_URL = "https://api.github.com/repos/Ryuu3rs/AMR-Next/releases/latest"
 
-async function checkExtensionUpdate(): Promise<void> {
+async function checkExtensionUpdate(force = false): Promise<void> {
     const stored = (await browser.storage.local.get("extensionUpdate"))["extensionUpdate"] as
         | { checkedAt: number }
         | undefined
-    if (stored && Date.now() - stored.checkedAt < EXTENSION_UPDATE_INTERVAL_HOURS * 3_600_000) return
+    if (!force && stored && Date.now() - stored.checkedAt < EXTENSION_UPDATE_INTERVAL_HOURS * 3_600_000) return
+    // Clear stale result before fetch so the UI never shows an outdated banner
+    // while the fresh check is in-flight.
+    if (force) await browser.storage.local.remove("extensionUpdate")
     try {
         const response = await fetch(GITHUB_RELEASES_URL, {
             headers: { Accept: "application/vnd.github.v3+json" }
@@ -729,7 +732,8 @@ export default defineBackground(() => {
         void browser.alarms.create(extensionUpdateAlarmName, {
             periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
         })
-        void checkExtensionUpdate()
+        // force=true: bypass 24h throttle and clear stale banner on every install/update
+        void checkExtensionUpdate(true)
         void backfillMangaGenres()
     })
 
