@@ -54,12 +54,44 @@ for backup sync.
 - `docs/` — architecture and development docs (see [docs/README.md](docs/README.md))
 - `archive/` — previous implementations (not built)
 
-## Requirements
+## Installing (end users)
+
+Download the latest release from the [Releases page](https://github.com/Ryuu3rs/AMR-Next/releases).
+
+### Firefox
+
+1. Download `amrextension-X.X.X-firefox.xpi`
+2. Open Firefox and go to `about:addons`
+3. Click the gear icon → **Install Add-on From File…**
+4. Select the `.xpi` file — Firefox will prompt you to confirm
+5. Open the AMR panel and grant source access when prompted
+
+> **Note:** Unsigned extensions can only be permanently installed in Firefox Developer Edition or Nightly. In regular Firefox, the `.xpi` installs as a temporary add-on (cleared on restart) unless it has been signed by Mozilla. A signed release will be submitted to AMO once the extension is ready for public listing.
+
+### Firefox for Android
+
+Firefox for Android supports the same `.xpi`. Once a signed AMO listing exists, install directly from the add-on page in Firefox for Android. For local testing, use remote debugging via `about:debugging` on a connected desktop — see [docs/ANDROID.md](docs/ANDROID.md).
+
+### Chrome / Chromium / Edge / Brave
+
+Chrome no longer allows installing packed extensions from outside the Web Store (Google removed that in 2018). Until the extension is published on the Chrome Web Store, manual install requires developer mode:
+
+1. Download `amrextension-X.X.X-chrome.zip` and **unzip it** to a permanent folder (don't delete it — Chrome loads it live from that folder)
+2. Open `chrome://extensions` (or `edge://extensions` / `brave://extensions`)
+3. Enable **Developer mode** (toggle, top-right)
+4. Click **Load unpacked** and select the unzipped folder
+5. Open the AMR panel and grant source access when prompted
+
+> The extension stays loaded as long as the folder exists. If you move or delete the folder it will stop working — just re-load it from the new location.
+
+---
+
+## Requirements (developers)
 
 - Node.js 22 or newer
 - npm 11 or newer
 
-## Install
+## Install (developers)
 
 ```powershell
 npm install
@@ -145,9 +177,9 @@ npm run probe -w @amr/source-probe
 
 ## Releases
 
-Releases are automated with release-please and published as GitHub Releases with
-Chromium/Firefox zips and SHA-256 checksums. The extension can check GitHub for a
-newer version but never downloads or executes update code automatically.
+Published as GitHub Releases with Chrome zip, Firefox `.xpi`, and a sources archive.
+The extension periodically checks GitHub for newer versions but never downloads or
+executes update code automatically — it only notifies you in the panel.
 
 ## Documentation
 
