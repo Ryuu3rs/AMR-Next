@@ -15,6 +15,8 @@ import {
     recordAnalyticsEvent,
     removeDownload,
     removeManga,
+    clearLibrary,
+    clearHistory,
     saveDownload,
     saveProgress,
     saveResolvedChapter,
@@ -798,6 +800,12 @@ export default defineBackground(() => {
                         return success((await db.manga.get(request.mangaId)) ?? null)
                     case "library:remove":
                         await removeManga(request.mangaId)
+                        return success(null)
+                    case "library:clear":
+                        await clearLibrary()
+                        return success(null)
+                    case "library:clear-history":
+                        await clearHistory()
                         return success(null)
                     case "library:rate": {
                         const rating = request.rating === 0 ? undefined : request.rating

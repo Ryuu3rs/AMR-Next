@@ -4,6 +4,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("library:list") }),
     z.object({ type: z.literal("library:get"), mangaId: z.string().min(1) }),
     z.object({ type: z.literal("library:remove"), mangaId: z.string().min(1) }),
+    z.object({ type: z.literal("library:clear") }),
+    z.object({ type: z.literal("library:clear-history") }),
     z.object({ type: z.literal("library:rate"), mangaId: z.string().min(1), rating: z.number().int().min(0).max(5) }),
     z.object({ type: z.literal("library:manual"), mangaId: z.string().min(1), manual: z.boolean() }),
     z.object({ type: z.literal("library:nsfw"), mangaId: z.string().min(1), nsfw: z.boolean() }),

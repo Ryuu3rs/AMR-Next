@@ -153,6 +153,40 @@ export async function getCachedCover(mangaId: string): Promise<Blob | undefined>
     return (await db.covers.get(mangaId))?.blob
 }
 
+export async function clearLibrary(): Promise<void> {
+    await db.transaction(
+        "rw",
+        [
+            db.manga,
+            db.sourceLinks,
+            db.chapters,
+            db.progress,
+            db.historyEvents,
+            db.downloads,
+            db.covers,
+            db.pageBookmarks
+        ],
+        async () => {
+            await Promise.all([
+                db.manga.clear(),
+                db.sourceLinks.clear(),
+                db.chapters.clear(),
+                db.progress.clear(),
+                db.historyEvents.clear(),
+                db.downloads.clear(),
+                db.covers.clear(),
+                db.pageBookmarks.clear()
+            ])
+        }
+    )
+}
+
+export async function clearHistory(): Promise<void> {
+    await db.transaction("rw", [db.historyEvents, db.progress], async () => {
+        await Promise.all([db.historyEvents.clear(), db.progress.clear()])
+    })
+}
+
 export async function removeManga(mangaId: string): Promise<void> {
     await db.transaction(
         "rw",

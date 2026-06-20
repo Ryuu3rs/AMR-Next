@@ -187,6 +187,8 @@
     let importResolutions = $state<Record<string, ImportResolution>>({})
     let importWorking = $state(false)
     let importError = $state("")
+    let clearConfirm = $state<"" | "history" | "all">("")
+    let clearWorking = $state(false)
     let downloadsCount = $state(0)
     let reconcileIds = $state<string[]>([])
     let extensionUpdate = $state<{ available: boolean; latestVersion: string; releaseUrl: string } | null>(null)
@@ -1202,6 +1204,20 @@
     async function toggleCommunity(enabled: boolean) {
         communityProfile = await sendRuntimeMessage<CommunityProfile>({ type: "community:toggle", enabled })
     }
+    async function executeClear(scope: "history" | "all") {
+        clearWorking = true
+        try {
+            await sendRuntimeMessage({ type: scope === "all" ? "library:clear" : "library:clear-history" })
+            if (scope === "all") {
+                library = []
+                categories = []
+            }
+            clearConfirm = ""
+        } finally {
+            clearWorking = false
+        }
+    }
+
     async function registerCommunity() {
         const name = communityUsernameInput.trim()
         if (!name) return
@@ -2760,6 +2776,51 @@
                         {/if}
                     </div>
                 {/if}
+                <p class="shelf-label" style="margin-top:28px">Danger zone</p>
+                <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:10px">
+                    <div>
+                        <p class="row-label">Clear reading history</p>
+                        <p class="muted">
+                            Removes all history events and reading progress. Library manga and chapters are kept.
+                        </p>
+                    </div>
+                    {#if clearConfirm === "history"}
+                        <p class="muted" style="color:var(--color-warn)">
+                            This removes all history and progress and cannot be undone.
+                        </p>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn-outline" onclick={() => (clearConfirm = "")}>Cancel</button>
+                            <button
+                                class="btn-danger"
+                                disabled={clearWorking}
+                                onclick={() => void executeClear("history")}>
+                                {clearWorking ? "Clearing…" : "Yes, clear history"}
+                            </button>
+                        </div>
+                    {:else}
+                        <button class="btn-outline" onclick={() => (clearConfirm = "history")}>Clear history</button>
+                    {/if}
+                </div>
+                <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:10px">
+                    <div>
+                        <p class="row-label">Clear entire library</p>
+                        <p class="muted">
+                            Wipes all manga, chapters, history, bookmarks, and covers from local storage. Cannot be
+                            undone.
+                        </p>
+                    </div>
+                    {#if clearConfirm === "all"}
+                        <p class="muted" style="color:var(--color-warn)">Everything will be deleted permanently.</p>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn-outline" onclick={() => (clearConfirm = "")}>Cancel</button>
+                            <button class="btn-danger" disabled={clearWorking} onclick={() => void executeClear("all")}>
+                                {clearWorking ? "Clearing…" : "Yes, wipe everything"}
+                            </button>
+                        </div>
+                    {:else}
+                        <button class="btn-danger" onclick={() => (clearConfirm = "all")}>Clear library</button>
+                    {/if}
+                </div>
             </div>
         {/if}
     </main>
