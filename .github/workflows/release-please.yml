@@ -39,11 +39,16 @@ jobs:
               if: ${{ steps.release.outputs.release_created }}
               shell: bash
               run: |
-                  PKG_VERSION=$(node -p "require('./package.json').version")
+                  PKG_VERSION=$(node -p "require('./apps/extension/package.json').version")
+                  ROOT_VERSION=$(node -p "require('./package.json').version")
                   TAG="${{ steps.release.outputs.tag_name }}"
                   STRIPPED="${TAG#v}"
                   if [ "$PKG_VERSION" != "$STRIPPED" ]; then
-                    echo "::error::Version mismatch: package.json=$PKG_VERSION tag=$TAG"
+                    echo "::error::Version mismatch: apps/extension/package.json=$PKG_VERSION tag=$TAG"
+                    exit 1
+                  fi
+                  if [ "$ROOT_VERSION" != "$STRIPPED" ]; then
+                    echo "::error::Version mismatch: package.json=$ROOT_VERSION tag=$TAG — bump root package.json too"
                     exit 1
                   fi
                   echo "Version check passed: $PKG_VERSION"
