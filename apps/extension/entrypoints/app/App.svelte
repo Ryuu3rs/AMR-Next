@@ -1151,6 +1151,7 @@
         errorRate: number
         topSources: Array<{ sourceId: string; count: number }>
         topErrors: Array<{ sourceId: string; count: number }>
+        errorTypes: Array<{ type: string; count: number }>
         panelActions: Array<{ action: string; count: number }>
         topGenres: Array<{ genre: string; count: number }>
         topAuthors: Array<{ author: string; count: number }>
@@ -2102,6 +2103,24 @@
                             <div class="insights-row insights-row-warn">
                                 <span class="insights-label">{s.sourceId}</span>
                                 <span class="insights-count">{s.count} errors</span>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+                {#if analyticsSummary.errorTypes.length > 0}
+                    <p class="shelf-label" style="margin-top:12px">Error breakdown</p>
+                    <div class="insights-list">
+                        {#each analyticsSummary.errorTypes as e}
+                            <div class="insights-row insights-row-warn">
+                                <span class="insights-label"
+                                    >{e.type === "bot-block"
+                                        ? "CF / bot block"
+                                        : e.type === "not-found"
+                                          ? "404 not found"
+                                          : e.type === "network"
+                                            ? "Network / timeout"
+                                            : e.type}</span>
+                                <span class="insights-count">{e.count}</span>
                             </div>
                         {/each}
                     </div>

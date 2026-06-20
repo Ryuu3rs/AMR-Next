@@ -1029,11 +1029,15 @@ export async function recordAnalyticsEvent(event: Omit<AnalyticsEvent, "id">): P
 
 export async function getAnalyticsSummary(days = 30) {
     const since = Date.now() - days * 86_400_000
-    const events = await db.analyticsEvents.where("ts").above(since).toArray()
+    const [events, allManga] = await Promise.all([
+        db.analyticsEvents.where("ts").above(since).toArray(),
+        db.manga.toArray()
+    ])
 
     const sourceErrors = new Map<string, number>()
     const sourceCaptures = new Map<string, number>()
     const panelActions = new Map<string, number>()
+    const errorTypeCount = new Map<string, number>()
     let captureOk = 0,
         captureErrors = 0,
         readerOpened = 0,
@@ -1048,6 +1052,13 @@ export async function getAnalyticsSummary(days = 30) {
         } else if (ev.event === "capture_error") {
             captureErrors++
             if (ev.sourceId) sourceErrors.set(ev.sourceId, (sourceErrors.get(ev.sourceId) ?? 0) + 1)
+            try {
+                const d = ev.detail ? (JSON.parse(ev.detail) as { errorType?: string }) : null
+                const type = d?.errorType ?? "unknown"
+                errorTypeCount.set(type, (errorTypeCount.get(type) ?? 0) + 1)
+            } catch {
+                errorTypeCount.set("unknown", (errorTypeCount.get("unknown") ?? 0) + 1)
+            }
         } else if (ev.event === "reader_opened") {
             readerOpened++
         } else if (ev.event === "on_site_track") {
@@ -1073,7 +1084,6 @@ export async function getAnalyticsSummary(days = 30) {
 
     // Aggregate genre, author, and status distributions from the full library.
     // Genres are only counted for manga that have had their genres fetched and cached.
-    const allManga = await db.manga.toArray()
     const genreCounts = new Map<string, number>()
     const authorCounts = new Map<string, number>()
     const statusCounts = new Map<string, number>()
@@ -1118,7 +1128,8 @@ export async function getAnalyticsSummary(days = 30) {
             .sort((a, b) => b[1] - a[1])
             .slice(0, 5)
             .map(([author, count]) => ({ author, count })),
-        statusBreakdown: [...statusCounts.entries()].map(([status, count]) => ({ status, count }))
+        statusBreakdown: [...statusCounts.entries()].map(([status, count]) => ({ status, count })),
+        errorTypes: [...errorTypeCount.entries()].sort((a, b) => b[1] - a[1]).map(([type, count]) => ({ type, count }))
     }
 }
 

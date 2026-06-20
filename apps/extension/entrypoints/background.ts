@@ -61,6 +61,9 @@ const internalTabIds = new Set<number>()
 // (e.g. rapid navigation events or the same URL from multiple listener paths).
 const capturingUrls = new Set<string>()
 
+let updateCheckRunning = false
+let genreBackfillRunning = false
+
 const updateAlarmName = "check-manga-updates"
 const syncAlarmName = "sync-push"
 const extensionUpdateAlarmName = "check-extension-update"
@@ -125,50 +128,56 @@ async function autoPush() {
 }
 
 async function checkUpdates(sourceId?: string) {
-    const settings = await getSettings()
-    const all = await db.manga.toArray()
-    const manga = sourceId ? all.filter(item => item.sourceId === sourceId) : all
-    let checked = 0
-    let updated = 0
-    let failed = 0
+    if (updateCheckRunning) return
+    updateCheckRunning = true
+    try {
+        const settings = await getSettings()
+        const all = await db.manga.toArray()
+        const manga = sourceId ? all.filter(item => item.sourceId === sourceId) : all
+        let checked = 0
+        let updated = 0
+        let failed = 0
 
-    const errors: Array<{ mangaId: string; title: string; message: string }> = []
+        const errors: Array<{ mangaId: string; title: string; message: string }> = []
 
-    for (const item of manga) {
-        if (item.manualTracking) continue
-        const link = await db.sourceLinks.get(item.id)
-        if (!link) continue
-        try {
-            const chapters = await listMangaChapters(item, link, settings.language)
-            const latest = chapters.reduce(
-                (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
-                chapters[0]
-            )
-            await db.transaction("rw", db.chapters, db.manga, async () => {
-                await db.chapters.bulkPut(chapters)
-                if (latest && latest.id !== item.latestChapterId) {
-                    updated += 1
-                    await db.manga.update(item.id, {
-                        latestChapterId: latest.id,
-                        sourceUrl: latest.url,
-                        ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
-                        updatedAt: Date.now()
-                    })
-                }
-            })
-            checked += 1
-        } catch (error) {
-            failed += 1
-            const message = error instanceof Error ? error.message : "Update failed"
-            errors.push({ mangaId: item.id, title: item.title, message })
-            console.warn("[AMR] Update check failed", { mangaId: item.id, error })
+        for (const item of manga) {
+            if (item.manualTracking) continue
+            const link = await db.sourceLinks.get(item.id)
+            if (!link) continue
+            try {
+                const chapters = await listMangaChapters(item, link, settings.language)
+                const latest = chapters.reduce(
+                    (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
+                    chapters[0]
+                )
+                await db.transaction("rw", db.chapters, db.manga, async () => {
+                    await db.chapters.bulkPut(chapters)
+                    if (latest && latest.id !== item.latestChapterId) {
+                        updated += 1
+                        await db.manga.update(item.id, {
+                            latestChapterId: latest.id,
+                            sourceUrl: latest.url,
+                            ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
+                            updatedAt: Date.now()
+                        })
+                    }
+                })
+                checked += 1
+            } catch (error) {
+                failed += 1
+                const message = error instanceof Error ? error.message : "Update failed"
+                errors.push({ mangaId: item.id, title: item.title, message })
+                console.warn("[AMR] Update check failed", { mangaId: item.id, error })
+            }
         }
-    }
 
-    // Keep only the most recent handful of errors so the status stays small.
-    const status = { checked, updated, failed, checkedAt: Date.now(), errors: errors.slice(0, 20) }
-    await browser.storage.local.set({ updateStatus: status })
-    return status
+        // Keep only the most recent handful of errors so the status stays small.
+        const status = { checked, updated, failed, checkedAt: Date.now(), errors: errors.slice(0, 20) }
+        await browser.storage.local.set({ updateStatus: status })
+        return status
+    } finally {
+        updateCheckRunning = false
+    }
 }
 
 function success<T>(data: T): RuntimeResponse<T> {
@@ -235,6 +244,17 @@ function isBotBlocked(error: unknown): boolean {
     return status === 403 || status === 502 || status === 503 || status === undefined
 }
 
+function classifyError(error: unknown): string {
+    if (error instanceof SourceRequestError) {
+        const s = error.status
+        if (s === 403 || s === 502 || s === 503) return "bot-block"
+        if (s === 404) return "not-found"
+        if (s === undefined) return "network"
+        return `http-${s}`
+    }
+    return "unknown"
+}
+
 async function fetchPageBlob(url: string): Promise<Blob> {
     const maxAttempts = 3
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -297,8 +317,19 @@ async function doCaptureChapter(url: string) {
         // The source's images can't be scraped (anti-scrape / spoiler / dead CDN).
         // Still add the title and track it by URL so the library follows progress
         // even when the chapter only reads on the source site.
-        void recordAnalyticsEvent({ event: "capture_error", sourceId: source.manifest.id, ts: Date.now() })
-        const tracked = await trackExternalChapter({ url, sourceId: source.manifest.id, completed: false })
+        void recordAnalyticsEvent({
+            event: "capture_error",
+            sourceId: source.manifest.id,
+            detail: JSON.stringify({ errorType: classifyError(error) }),
+            ts: Date.now()
+        })
+        let tracked
+        try {
+            tracked = await trackExternalChapter({ url, sourceId: source.manifest.id, completed: false })
+        } catch (trackError) {
+            console.warn("[AMR] Failed to track external chapter", { url, trackError })
+            return { supported: true as const, added: false as const }
+        }
         console.debug("[AMR] Captured chapter without scraping", { url, error })
         await flashAddedBadge()
         return { supported: true as const, added: true as const, external: true as const, title: tracked.title }
@@ -345,8 +376,11 @@ async function inlineCover(url: string): Promise<string | undefined> {
         const blob = await res.blob()
         if (blob.size === 0 || blob.size > MAX_COVER_BYTES || !blob.type.startsWith("image/")) return undefined
         const bytes = new Uint8Array(await blob.arrayBuffer())
+        const CHUNK = 65536
         let binary = ""
-        for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i] as number)
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+            binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+        }
         return `data:${blob.type};base64,${btoa(binary)}`
     } catch {
         return undefined
@@ -516,8 +550,10 @@ function injectChapterPrompt(chapterUrl: string): void {
         nextUrl = d.nextUrl
         const sub = shadow.getElementById("sub")
         if (sub && (d.chapterTitle || d.mangaTitle)) sub.textContent = d.chapterTitle ?? d.mangaTitle
-        ;(shadow.getElementById("bprev") as HTMLButtonElement | null)!.disabled = !prevUrl
-        ;(shadow.getElementById("bnext") as HTMLButtonElement | null)!.disabled = !nextUrl
+        const bprevSib = shadow.getElementById("bprev") as HTMLButtonElement | null
+        const bnextSib = shadow.getElementById("bnext") as HTMLButtonElement | null
+        if (bprevSib) bprevSib.disabled = !prevUrl
+        if (bnextSib) bnextSib.disabled = !nextUrl
     })
 
     shadow.getElementById("xbtn")?.addEventListener("click", () => {
@@ -559,6 +595,13 @@ function injectChapterPrompt(chapterUrl: string): void {
     shadow.getElementById("bprev")?.addEventListener("click", () => {
         if (prevUrl) {
             track("prev")
+            const bp = shadow.getElementById("bprev") as HTMLButtonElement | null
+            const bn = shadow.getElementById("bnext") as HTMLButtonElement | null
+            if (bp) {
+                bp.textContent = "← Going…"
+                bp.disabled = true
+            }
+            if (bn) bn.disabled = true
             window.removeEventListener("scroll", onScroll)
             window.location.href = prevUrl
         }
@@ -566,10 +609,48 @@ function injectChapterPrompt(chapterUrl: string): void {
     shadow.getElementById("bnext")?.addEventListener("click", () => {
         if (nextUrl) {
             track("next")
+            const bp = shadow.getElementById("bprev") as HTMLButtonElement | null
+            const bn = shadow.getElementById("bnext") as HTMLButtonElement | null
+            if (bp) bp.disabled = true
+            if (bn) {
+                bn.textContent = "Going… →"
+                bn.disabled = true
+            }
             window.removeEventListener("scroll", onScroll)
             window.location.href = nextUrl
         }
     })
+}
+
+async function backfillMangaGenres(): Promise<void> {
+    if (genreBackfillRunning) return
+    genreBackfillRunning = true
+    try {
+        // Only process titles with a manga URL or source ID — sourceUrl is a chapter URL
+        // and genre resolvers expect a series page, so passing it silently fails.
+        const toFetch = await db.manga
+            .filter(m => (!m.genres || m.genres.length === 0) && (!!m.mangaUrl || !!m.sourceMangaId))
+            .toArray()
+        if (toFetch.length === 0) return
+        for (const manga of toFetch) {
+            try {
+                const genres = await resolveGenresFor({
+                    sourceId: manga.sourceId,
+                    ...(manga.sourceMangaId ? { sourceMangaId: manga.sourceMangaId } : {}),
+                    ...(manga.mangaUrl ? { mangaUrl: manga.mangaUrl } : {})
+                })
+                if (genres.length > 0) {
+                    await db.manga.update(manga.id, { genres } as Partial<LibraryManga>)
+                }
+            } catch {
+                // Skip — source may not support genres or fetch failed transiently
+            }
+            // Respect the source rate limit (3 req/s) between requests.
+            await new Promise<void>(r => setTimeout(r, 350))
+        }
+    } finally {
+        genreBackfillRunning = false
+    }
 }
 
 export default defineBackground(() => {
@@ -580,6 +661,7 @@ export default defineBackground(() => {
             periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
         })
         void checkExtensionUpdate()
+        void backfillMangaGenres()
     })
 
     // Re-arm alarms on browser startup in case they were cleared (profile wipe,
@@ -589,6 +671,10 @@ export default defineBackground(() => {
     browser.runtime.onStartup.addListener(() => {
         void configureUpdateAlarm()
         void configureSyncAlarm()
+        void browser.alarms.create(extensionUpdateAlarmName, {
+            periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
+        })
+        void backfillMangaGenres()
     })
 
     browser.alarms.onAlarm.addListener(alarm => {
@@ -924,7 +1010,7 @@ export default defineBackground(() => {
                         const genres = await resolveGenresFor({
                             sourceId: manga.sourceId,
                             ...(manga.sourceMangaId ? { sourceMangaId: manga.sourceMangaId } : {}),
-                            mangaUrl: manga.mangaUrl ?? manga.sourceUrl
+                            ...(manga.mangaUrl ? { mangaUrl: manga.mangaUrl } : {})
                         })
                         if (genres.length > 0) {
                             void db.manga.update(request.mangaId, { genres } as Partial<LibraryManga>)
