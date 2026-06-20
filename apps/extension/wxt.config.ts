@@ -1,5 +1,5 @@
 import { defineConfig } from "wxt"
-import { ALL_OPTIONAL_ORIGINS, COMMUNITY_API_ORIGIN, GITHUB_API_ORIGIN } from "./src/permissions"
+import { ALL_OPTIONAL_ORIGINS, GITHUB_API_ORIGIN } from "./src/permissions"
 
 export default defineConfig({
     manifestVersion: 3,
@@ -18,7 +18,12 @@ export default defineConfig({
         // All source origins are required so reading works immediately after install
         // without any manual "Grant access" step. GitHub API also required for
         // update checks and Gist sync.
-        host_permissions: [GITHUB_API_ORIGIN, COMMUNITY_API_ORIGIN, ...ALL_OPTIONAL_ORIGINS],
+        // VITE_COMMUNITY_API_ORIGIN is loaded from apps/extension/.env (gitignored)
+        host_permissions: [
+            GITHUB_API_ORIGIN,
+            ...(process.env.VITE_COMMUNITY_API_ORIGIN ? [process.env.VITE_COMMUNITY_API_ORIGIN] : []),
+            ...ALL_OPTIONAL_ORIGINS
+        ],
         icons: {
             32: "/icons/icon_32.png",
             48: "/icons/icon_48.png",

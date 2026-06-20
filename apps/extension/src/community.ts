@@ -1,8 +1,8 @@
 const COMMUNITY_KEY = "community"
 
-// VPS endpoint. Update to your Coolify HTTPS domain once SSL is configured.
-// Keep in sync with host_permissions in wxt.config.ts.
-export const COMMUNITY_API_BASE = "http://13.140.146.132:3001/api"
+// Injected at build time from .env — never hardcoded in source.
+// Set VITE_COMMUNITY_API_URL in apps/extension/.env (gitignored).
+const COMMUNITY_API_BASE = (import.meta.env.VITE_COMMUNITY_API_URL as string | undefined) ?? ""
 
 export type CommunityRecommendation = {
     title: string
