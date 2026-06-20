@@ -41,6 +41,11 @@ const BASE_SOURCE_ORIGINS = [
     "https://www.webtoons.com/*",
     "https://webtoons.com/*",
     "*://*.pstatic.net/*",
+    // MangaHub — manga list pages load without CF; chapter images from mhcdn/mghcdn CDN
+    "https://mangahub.io/*",
+    "https://www.mangahub.io/*",
+    "*://*.mhcdn.net/*",
+    "*://*.mghcdn.com/*",
     // User-requested Madara sites
     "https://likemanga.io/*",
     "*://*.likemanga.io/*",
