@@ -4,7 +4,7 @@ import path from "node:path"
 import test from "node:test"
 import { chromiumExtension, firefoxExtension } from "./paths.js"
 
-const allowedPermissions = ["alarms", "scripting", "storage", "tabs"]
+const allowedPermissions = ["alarms", "declarativeNetRequest", "scripting", "storage", "tabs"]
 
 // All source origins + GitHub API are required (granted at install, no per-source grant step).
 const allowedRequiredHosts = [

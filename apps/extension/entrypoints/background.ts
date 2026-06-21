@@ -444,7 +444,9 @@ const MAX_COVER_BYTES = 2 * 1024 * 1024
 async function inlineCover(url: string): Promise<string | undefined> {
     if (url.startsWith("data:")) return url
     try {
-        const res = await fetch(url)
+        const headers: HeadersInit = {}
+        if (url.includes("pstatic.net")) headers["Referer"] = "https://www.webtoons.com"
+        const res = await fetch(url, Object.keys(headers).length ? { headers } : undefined)
         if (!res.ok) return undefined
         const blob = await res.blob()
         if (blob.size === 0 || blob.size > MAX_COVER_BYTES || !blob.type.startsWith("image/")) return undefined

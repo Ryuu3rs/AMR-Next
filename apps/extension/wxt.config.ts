@@ -14,7 +14,10 @@ export default defineConfig({
     manifest: ({ browser }) => ({
         name: "All Mangas Reader",
         description: "Read and track manga from supported websites.",
-        permissions: ["alarms", "scripting", "storage", "tabs"],
+        permissions: ["alarms", "declarativeNetRequest", "scripting", "storage", "tabs"],
+        declarative_net_request: {
+            rule_resources: [{ id: "pstatic-referer", enabled: true, path: "rules/pstatic-referer.json" }]
+        },
         // All source origins are required so reading works immediately after install
         // without any manual "Grant access" step. GitHub API also required for
         // update checks and Gist sync.

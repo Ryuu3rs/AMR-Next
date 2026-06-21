@@ -1,5 +1,6 @@
 import {
     SourceError,
+    SourceRequestError,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -214,7 +215,10 @@ export const webtoonsAdapter: SourceAdapter = {
         const html = await ctx.request.getText(url, { headers: BROWSER_HEADERS })
         const images = extractImages(html)
         if (images.length === 0) {
-            throw new SourceError("No images found — chapter may require login or Fast Pass")
+            // Viewer images are JS-rendered; direct SW fetch returns minimal HTML.
+            // Signal bot-block to trigger the tab-render fallback (real browser session
+            // with locale cookies, full JS execution, data-url attributes in DOM).
+            throw new SourceRequestError(undefined)
         }
 
         // Build list URL by replacing the path segment and query
