@@ -51,7 +51,9 @@ const LEGACY_DOMAIN_ALIASES: Readonly<Record<string, string>> = {
     "flamecomics.com": "flamecomics",
     "www.flamecomics.com": "flamecomics",
     "flamecomics.me": "flamecomics",
-    "www.flamecomics.me": "flamecomics"
+    "www.flamecomics.me": "flamecomics",
+    // Tritinia Scans
+    "www.tritinia.org": "tritinia"
 }
 
 export function isLegacyExport(raw: unknown): raw is LegacyExport {

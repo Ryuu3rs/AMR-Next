@@ -105,7 +105,14 @@
         card.message = ""
         card.error = false
         try {
-            const all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
+            let all: SearchResult[]
+            try {
+                all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
+            } catch {
+                // MV3 service worker may have been suspended — wait for it to restart and retry once.
+                await new Promise(r => setTimeout(r, 500))
+                all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
+            }
             const want = normTitle(manga.title)
             card.results = all
                 .filter(r => {
@@ -121,6 +128,19 @@
         } finally {
             card.searching = false
         }
+    }
+
+    let searchingAll = $state(false)
+
+    async function findAllSources() {
+        searchingAll = true
+        for (const manga of mangas) {
+            const card = cardOf(manga.id)
+            if (!card.searched && !card.searching) {
+                await findSources(manga)
+            }
+        }
+        searchingAll = false
     }
 
     async function linkSource(manga: LibraryManga, result: SearchResult) {
@@ -164,13 +184,22 @@
             These titles were imported but their original source couldn't be matched. Find them on a live source and
             link to preserve your progress.
         </p>
-        <button
-            type="button"
-            class="btn-ghost btn-sm reconcile-remove-all"
-            disabled={removingAll}
-            onclick={() => void removeAll()}>
-            {removingAll ? "Removing…" : `Remove all ${mangas.length}`}
-        </button>
+        <div class="reconcile-bulk-actions">
+            <button
+                type="button"
+                class="btn-outline btn-sm"
+                disabled={searchingAll}
+                onclick={() => void findAllSources()}>
+                {searchingAll ? "Searching…" : `Search all ${mangas.length}`}
+            </button>
+            <button
+                type="button"
+                class="btn-ghost btn-sm reconcile-remove-all"
+                disabled={removingAll}
+                onclick={() => void removeAll()}>
+                {removingAll ? "Removing…" : `Remove all ${mangas.length}`}
+            </button>
+        </div>
         <ul class="reconcile-list">
             {#each visible as manga (manga.id)}
                 {@const card = cardOf(manga.id)}
@@ -336,9 +365,15 @@
         color: var(--error, #ef4444);
     }
 
-    .reconcile-remove-all {
-        align-self: flex-start;
+    .reconcile-bulk-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
         margin-bottom: 8px;
+        flex-wrap: wrap;
+    }
+
+    .reconcile-remove-all {
         color: var(--error, #ef4444);
         opacity: 0.75;
         font-size: 0.8rem;

@@ -75,6 +75,7 @@ const allowedRequiredHosts = [
     "https://suryatoon.com/*",
     "https://suryatoon.com/*",
     "https://templescan.net/*",
+    "https://tritinia.org/*",
     "https://uploads.mangadex.org/*",
     "https://utoon.net/*",
     "https://vortexscans.org/*",
