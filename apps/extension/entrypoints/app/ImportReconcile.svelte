@@ -53,6 +53,21 @@
             .trim()
     }
 
+    // Fraction of meaningful words from the shorter title that appear in the longer one.
+    // Catches alternate-title matches like "Latna Saga: Survival of a Sword King" vs
+    // "Survival Story of a Sword King in a Fantasy World" (same manga, different translations).
+    const STOP_WORDS = new Set(["a", "an", "the", "of", "in", "to", "and", "or", "for", "on"])
+    function wordOverlap(a: string, b: string): number {
+        const words = (s: string) => new Set(s.split(" ").filter(w => w.length > 2 && !STOP_WORDS.has(w)))
+        const wa = words(a),
+            wb = words(b)
+        const [shorter, longer] = wa.size <= wb.size ? [wa, wb] : [wb, wa]
+        if (shorter.size === 0) return 0
+        let shared = 0
+        for (const w of shorter) if (longer.has(w)) shared++
+        return shared / shorter.size
+    }
+
     async function dismissManual(manga: LibraryManga) {
         const card = cardOf(manga.id)
         card.searching = true
@@ -117,7 +132,7 @@
             card.results = all
                 .filter(r => {
                     const t = normTitle(r.title)
-                    return t === want || t.includes(want) || want.includes(t)
+                    return t === want || t.includes(want) || want.includes(t) || wordOverlap(t, want) >= 0.6
                 })
                 .sort((a, b) => (parseFloat(b.latestChapter ?? "0") || 0) - (parseFloat(a.latestChapter ?? "0") || 0))
             card.searched = true
