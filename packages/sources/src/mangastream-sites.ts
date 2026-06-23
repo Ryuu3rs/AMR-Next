@@ -29,7 +29,7 @@ const SITES: MangaStreamConfig[] = [
     { id: "spiderscans", name: "Spider Scans", origin: "https://spiderscans.xyz", domains: ["spiderscans.xyz"] },
     // Probe-green by homepage; needs live chapter confirmation (mangaPath/chapterPrefix may need tuning per site).
     // asuracomic migrated to Next.js — removed from MangaStream; see asuracomic.ts
-    { id: "flamecomics", name: "Flame Comics", origin: "https://flamecomics.xyz", domains: ["flamecomics.xyz"] },
+    // flamecomics migrated to Next.js SPA — search returns [] silently; removed
     { id: "templescan", name: "Temple Scan", origin: "https://templescan.net", domains: ["templescan.net"] }
 ]
 

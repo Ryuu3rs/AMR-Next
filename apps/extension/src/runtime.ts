@@ -22,6 +22,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     }),
     z.object({ type: z.literal("library:dismiss"), mangaId: z.string().min(1) }),
     z.object({ type: z.literal("library:relink"), mangaId: z.string().min(1), url: z.url() }),
+    z.object({ type: z.literal("library:link-url"), mangaId: z.string().min(1), mangaUrl: z.url() }),
     z.object({
         type: z.literal("library:switch"),
         mangaId: z.string().min(1),

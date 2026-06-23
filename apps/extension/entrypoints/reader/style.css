@@ -49,6 +49,22 @@ header {
     text-overflow: ellipsis;
 }
 
+.chapter-select {
+    font-size: 11px;
+    color: #9faab7;
+    background: transparent;
+    border: none;
+    outline: none;
+    cursor: pointer;
+    max-width: 100%;
+    padding: 0;
+    appearance: auto;
+}
+.chapter-select option {
+    background: #0d1117;
+    color: #f5f7fa;
+}
+
 .header-right {
     display: flex;
     align-items: center;

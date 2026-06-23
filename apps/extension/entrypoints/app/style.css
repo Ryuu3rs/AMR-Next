@@ -729,6 +729,13 @@ button:disabled {
     border-bottom: 1px solid var(--border, #1c232c);
     font-size: 12px;
 }
+.history-row.clickable {
+    cursor: pointer;
+    border-radius: 6px;
+}
+.history-row.clickable:hover {
+    background: var(--surface-2);
+}
 
 .history-dot {
     width: 8px;

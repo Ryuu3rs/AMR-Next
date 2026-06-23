@@ -312,6 +312,7 @@
         occurredAt: number
         chapterNumber?: number | null
         chapterTitle?: string | null
+        chapterUrl?: string | null
     }
     let history = $state<HistoryEntry[]>([])
     let historyLoaded = $state(false)
@@ -2025,7 +2026,16 @@
                             {#if open}
                                 <div class="history-events">
                                     {#each group.events as event}
-                                        <div class="history-row">
+                                        <div
+                                            class="history-row"
+                                            class:clickable={!!event.chapterUrl}
+                                            role={event.chapterUrl ? "button" : undefined}
+                                            tabindex={event.chapterUrl ? 0 : undefined}
+                                            onclick={() => event.chapterUrl && void readChapter(event.chapterUrl)}
+                                            onkeydown={e =>
+                                                e.key === "Enter" &&
+                                                event.chapterUrl &&
+                                                void readChapter(event.chapterUrl)}>
                                             <span class="history-dot" class:done={event.type === "completed"}></span>
                                             <span class="history-ev-title">
                                                 {event.chapterNumber != null

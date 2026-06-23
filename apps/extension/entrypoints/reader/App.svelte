@@ -481,7 +481,18 @@
     </div>
     <div class="header-title">
         <strong>{chapter?.manga.manga.title ?? (resolving ? "Loading…" : "Reader")}</strong>
-        {#if chapter}<span>{chapter.chapter.title}</span>{/if}
+        {#if chapter && siblings.length > 1}
+            <select
+                class="chapter-select"
+                value={chapter.chapter.url}
+                onchange={e => goToChapter((e.currentTarget as HTMLSelectElement).value)}>
+                {#each siblings as s (s.url)}
+                    <option value={s.url}>{s.title}</option>
+                {/each}
+            </select>
+        {:else if chapter}
+            <span>{chapter.chapter.title}</span>
+        {/if}
     </div>
     <div class="header-right">
         {#if chapter}
@@ -669,13 +680,9 @@
         <button type="button" class="btn-sm" disabled={!prevUrl} onclick={() => goToChapter(prevUrl)}>
             ‹ Previous chapter
         </button>
-        {#if nextUrl}
-            <button type="button" class="nav-primary" onclick={() => markReadAndNext()}>
-                Mark read &amp; next ›
-            </button>
-        {:else}
-            <span class="muted">You're on the latest chapter.</span>
-        {/if}
+        <button type="button" class="nav-primary" disabled={!nextUrl} onclick={() => markReadAndNext()}>
+            {nextUrl ? "Mark read & next ›" : "Next chapter ›"}
+        </button>
     </footer>
 {/if}
 

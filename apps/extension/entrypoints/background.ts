@@ -426,6 +426,12 @@ async function doCaptureChapter(url: string) {
         }
     })
 
+    // Fire-and-forget: cache the full chapter list so the on-page panel can
+    // show prev/next siblings without a network round-trip on each visit.
+    void listChaptersBySource(resolved.manga.sourceId, resolved.manga.sourceMangaId, resolved.manga.url)
+        .then(chapters => db.chapters.bulkPut(chapters))
+        .catch(() => {})
+
     await flashAddedBadge()
     return { supported: true as const, added: true as const, manga: resolved.manga.manga }
 }
@@ -512,7 +518,7 @@ function injectChapterPrompt(chapterUrl: string): void {
     shadow.innerHTML = `
         <style>
             .panel {
-                position: fixed; bottom: 24px; right: 24px; z-index: 2147483647;
+                position: fixed; bottom: 100px; right: 24px; z-index: 2147483647;
                 background: #16213e; border: 1px solid rgba(255,255,255,0.12);
                 border-radius: 14px; padding: 0;
                 display: flex; flex-direction: column;
@@ -882,6 +888,50 @@ export default defineBackground(() => {
                         })
                         return success({ sourceId: resolved.manga.sourceId })
                     }
+                    case "library:link-url": {
+                        // Link a library entry to a manga page URL without fetching it.
+                        // Used for CF-gated sources that can't appear in reconcile search
+                        // but whose chapters work via the tab-render fallback.
+                        const existing = await db.manga.get(request.mangaId)
+                        if (!existing) throw new SourceError("not-found", "That title is not in your library")
+                        const url = new URL(request.mangaUrl)
+                        const adapter = findSource(url)
+                        if (!adapter || adapter.match(url) !== "manga")
+                            throw new SourceError(
+                                "unsupported-url",
+                                "That URL is not a recognized manga page — make sure it's the series page, not a chapter"
+                            )
+                        const segments = url.pathname.split("/").filter(Boolean)
+                        const sourceMangaId = segments[segments.length - 1]
+                        if (!sourceMangaId)
+                            throw new SourceError("invalid-input", "Could not extract manga ID from that URL")
+                        const sourceId = adapter.manifest.id
+                        await db.transaction("rw", db.manga, db.sourceLinks, async () => {
+                            await db.manga.update(request.mangaId, {
+                                sourceId,
+                                sourceMangaId,
+                                mangaUrl: request.mangaUrl,
+                                manualTracking: false,
+                                updatedAt: Date.now()
+                            } as Partial<{
+                                sourceId: string
+                                sourceMangaId: string
+                                mangaUrl: string
+                                manualTracking: boolean
+                                updatedAt: number
+                            }>)
+                            await db.sourceLinks.put({
+                                mangaId: request.mangaId,
+                                sourceId,
+                                sourceMangaId,
+                                url: request.mangaUrl,
+                                title: existing.title,
+                                addedAt: existing.addedAt,
+                                updatedAt: Date.now()
+                            })
+                        })
+                        return success({ sourceId })
+                    }
                     case "library:switch": {
                         const existing = await db.manga.get(request.mangaId)
                         if (!existing) throw new SourceError("not-found", "That title is not in your library")
@@ -1004,7 +1054,8 @@ export default defineBackground(() => {
                                     type: e.type,
                                     occurredAt: e.occurredAt,
                                     chapterNumber: chapter && Number.isFinite(chapter.sortKey) ? chapter.sortKey : null,
-                                    chapterTitle: chapter?.title ?? null
+                                    chapterTitle: chapter?.title ?? null,
+                                    chapterUrl: chapter?.url ?? null
                                 }
                             })
                         )
@@ -1207,6 +1258,8 @@ export default defineBackground(() => {
                                 throw fetchError
                             }
                         }
+                        // Persist chapter so saveProgress can look up its sortKey for lastReadChapterNumber
+                        await db.chapters.put(resolved.chapter)
                         // Backfill coverUrl into library entry if missing
                         if (resolved.manga.manga.coverUrl) {
                             const existing = await db.manga.get(resolved.manga.manga.id)

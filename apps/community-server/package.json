@@ -1,0 +1,21 @@
+{
+    "name": "@amr/community-server",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "start": "node --import tsx/esm src/index.ts"
+    },
+    "dependencies": {
+        "@hono/node-server": "^1.14.4",
+        "better-sqlite3": "^11.9.1",
+        "hono": "^4.7.11",
+        "tsx": "^4.19.4"
+    },
+    "devDependencies": {
+        "@types/better-sqlite3": "^7.6.12",
+        "@types/node": "^22.15.30",
+        "typescript": "^5.8.3"
+    }
+}

@@ -281,7 +281,7 @@ export const mangadexAdapter: SourceAdapter = {
     async search(query: string, context: SourceContext): Promise<SourceSearchResult[]> {
         const url = new URL("/manga", API_ORIGIN)
         url.searchParams.set("title", query)
-        url.searchParams.set("limit", "12")
+        url.searchParams.set("limit", "20")
         url.searchParams.append("includes[]", "cover_art")
         url.searchParams.append("order[relevance]", "desc")
         const response = await context.request.getJson(url, mangaListSchema)

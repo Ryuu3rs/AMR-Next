@@ -9,15 +9,13 @@ import {
     type SourceChapter,
     type SourceContext,
     type SourceManga,
-    type SourcePageMatch,
-    type SourceSearchResult
+    type SourcePageMatch
 } from "@amr/source-sdk"
 
 const SOURCE_ID = "manganato"
 // All outbound requests normalize to this one origin (chapters + manga pages).
 // Input URLs on any of the four domains are accepted by match() but fetched here.
 const ORIGIN = "https://chapmanganato.to"
-const SEARCH_ORIGIN = "https://manganato.com"
 const DOMAINS = [
     "chapmanganato.to",
     "chapmanganato.com",
@@ -175,42 +173,6 @@ function extractChapterList(html: string, mangaId: string): SourceChapter[] {
     return out
 }
 
-function extractSearchResults(html: string): SourceSearchResult[] {
-    const out: SourceSearchResult[] = []
-    const seen = new Set<string>()
-    for (const a of html.matchAll(/<a\b[^>]*\bhref="([^"]+)"[^>]*\btitle="([^"]+)"[^>]*>/gi)) {
-        const href = captureGroup(a, 1)
-        const rawTitle = captureGroup(a, 2)
-        if (!href || !rawTitle) continue
-        let absolute: URL
-        try {
-            absolute = new URL(href, SEARCH_ORIGIN)
-        } catch {
-            continue
-        }
-        const mangaId = extractMangaId(absolute)
-        if (!mangaId || seen.has(mangaId)) continue
-        const title = decodeEntities(rawTitle)
-        if (title.length < 2) continue
-        seen.add(mangaId)
-        out.push({
-            sourceId: SOURCE_ID,
-            sourceMangaId: mangaId,
-            title,
-            url: `${ORIGIN}/${mangaId}`
-        })
-    }
-    return out
-}
-
-// MangaNato search slugs: lowercase, non-alphanumerics → "_"
-function searchSlug(query: string): string {
-    return query
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "")
-}
-
 export const manganatoAdapter: SourceAdapter = {
     manifest: {
         id: SOURCE_ID,
@@ -293,18 +255,10 @@ export const manganatoAdapter: SourceAdapter = {
         }
     },
 
-    async search(query: string, context: SourceContext): Promise<SourceSearchResult[]> {
-        const slug = searchSlug(query)
-        if (!slug) return []
-        try {
-            const html = await context.request.getText(new URL(`${SEARCH_ORIGIN}/search/story/${slug}`), {
-                headers: BROWSER_HEADERS
-            })
-            return extractSearchResults(html)
-        } catch {
-            return []
-        }
-    },
+    // search() removed: manganato.com domain was taken over by an unrelated site
+    // (spinzywheel.com) as of 2026-06. Requests succeed with 200 but return
+    // non-manga HTML, producing empty results. Removing the method excludes this
+    // adapter from reconcile search until the domain situation is resolved.
 
     async resolveChapter(input: ResolveChapterInput, context: SourceContext): Promise<ResolvedChapter> {
         if (!input.url) throw new SourceError("invalid-input", "A chapter URL is required")

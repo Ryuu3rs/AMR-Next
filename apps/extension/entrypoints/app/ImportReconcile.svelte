@@ -26,6 +26,8 @@
         message: string
         error: boolean
         searched: boolean
+        urlInput: string
+        urlLinking: boolean
     }
 
     const cards: Record<string, CardState> = $state({})
@@ -40,7 +42,16 @@
             // untrack: lazily initialising a $state property is fine as a side-effect,
             // but Svelte 5 forbids mutations inside derived/template expressions without it.
             untrack(() => {
-                cards[id] = { searching: false, results: [], linking: null, message: "", error: false, searched: false }
+                cards[id] = {
+                    searching: false,
+                    results: [],
+                    linking: null,
+                    message: "",
+                    error: false,
+                    searched: false,
+                    urlInput: "",
+                    urlLinking: false
+                }
             })
         }
         return cards[id]!
@@ -180,6 +191,24 @@
         }
     }
 
+    async function linkByUrl(manga: LibraryManga) {
+        const card = cardOf(manga.id)
+        const url = card.urlInput.trim()
+        if (!url) return
+        card.urlLinking = true
+        card.message = ""
+        card.error = false
+        try {
+            await sendRuntimeMessage({ type: "library:link-url", mangaId: manga.id, mangaUrl: url })
+            await sendRuntimeMessage({ type: "library:covers:backfill" })
+            onLinked(manga.id)
+        } catch (cause) {
+            card.error = true
+            card.message = cause instanceof Error ? cause.message : "Could not link that URL."
+            card.urlLinking = false
+        }
+    }
+
     function sourceDomain(manga: LibraryManga): string {
         try {
             return new URL(manga.mangaUrl ?? manga.sourceUrl).hostname.replace(/^www\./, "")
@@ -229,7 +258,7 @@
                         </span>
                     </div>
                     <div class="reconcile-actions">
-                        {#if !card.searched}
+                        {#if !card.searched || card.searching}
                             <div class="reconcile-btns">
                                 <button
                                     type="button"
@@ -256,6 +285,47 @@
                         {/if}
                         {#if card.message}
                             <p class="reconcile-msg" class:reconcile-error={card.error}>{card.message}</p>
+                        {/if}
+                        {#if card.searched && card.results.length === 0 && !card.searching}
+                            <div class="reconcile-btns">
+                                <button
+                                    type="button"
+                                    class="btn-outline btn-sm"
+                                    onclick={() => {
+                                        cards[manga.id]!.searched = false
+                                        void findSources(manga)
+                                    }}>
+                                    Retry search
+                                </button>
+                                <button type="button" class="btn-ghost btn-sm" onclick={() => dismissManual(manga)}>
+                                    Mark as manual
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn-ghost btn-sm btn-danger-ghost"
+                                    onclick={() => removeTitle(manga)}>
+                                    Remove
+                                </button>
+                            </div>
+                            <form
+                                class="link-url-form"
+                                onsubmit={e => {
+                                    e.preventDefault()
+                                    void linkByUrl(manga)
+                                }}>
+                                <input
+                                    class="link-url-input"
+                                    type="url"
+                                    placeholder="Or paste a manga page URL to link directly…"
+                                    bind:value={card.urlInput}
+                                    disabled={card.urlLinking} />
+                                <button
+                                    type="submit"
+                                    class="btn-outline btn-sm"
+                                    disabled={!card.urlInput.trim() || card.urlLinking}>
+                                    {card.urlLinking ? "Linking…" : "Link"}
+                                </button>
+                            </form>
                         {/if}
                         {#if card.results.length > 0}
                             <ul class="mirror-results">
@@ -468,5 +538,27 @@
     .show-more {
         margin-top: 12px;
         width: 100%;
+    }
+
+    .link-url-form {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-top: 4px;
+    }
+
+    .link-url-input {
+        flex: 1;
+        min-width: 0;
+        padding: 4px 8px;
+        font-size: 0.8rem;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--surface);
+        color: var(--text);
+    }
+
+    .link-url-input:disabled {
+        opacity: 0.5;
     }
 </style>
