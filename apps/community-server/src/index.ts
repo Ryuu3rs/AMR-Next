@@ -22,6 +22,7 @@ const app = new Hono()
 
 app.use("/*", cors({ origin: "*", allowMethods: ["GET", "POST"], allowHeaders: ["Content-Type"] }))
 
+app.get("/", c => c.json({ name: "AMR Community API", version: "1.0.0", status: "ok" }))
 app.get("/health", c => c.json({ ok: true }))
 
 app.post("/register", async c => {
