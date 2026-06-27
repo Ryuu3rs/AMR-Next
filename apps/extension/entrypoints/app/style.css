@@ -1274,6 +1274,93 @@ button:disabled {
     background: var(--surface);
 }
 
+/* Accordion update groups */
+.update-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.update-group {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+}
+
+.update-group-head {
+    display: grid;
+    grid-template-columns: 44px 1fr auto auto;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 14px;
+    width: 100%;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+    color: inherit;
+}
+
+.update-group-head:hover {
+    background: var(--surface-2);
+}
+
+.update-caret {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.update-when {
+    font-size: 11px;
+}
+
+.update-chapters {
+    padding: 4px 14px 10px 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-top: 1px solid var(--border);
+}
+
+.update-loading {
+    font-size: 12px;
+    padding: 6px 0;
+}
+
+.update-chapter-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 6px;
+    border-radius: 6px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border, #1c232c);
+}
+
+.update-chapter-row.clickable {
+    cursor: pointer;
+}
+
+.update-chapter-row.clickable:hover {
+    background: var(--surface-2);
+}
+
+.update-ch-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.badge-new-sm {
+    font-size: 11px;
+    color: #c4b5fd;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 .update-cover {
     width: 44px;
     height: 58px;

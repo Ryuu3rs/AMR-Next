@@ -1218,6 +1218,21 @@ export default defineBackground(() => {
                         const stored = await browser.storage.local.get("updateStatus")
                         return success(stored["updateStatus"] ?? null)
                     }
+                    case "updates:new-chapters": {
+                        const manga = await db.manga.get(request.mangaId)
+                        if (!manga) return success([])
+                        const all = await db.chapters.where("mangaId").equals(request.mangaId).sortBy("sortKey")
+                        const sinceKey = manga.lastReadChapterNumber ?? -1
+                        const fresh = all.filter(c => c.sortKey > sinceKey)
+                        return success(
+                            (fresh.length > 0 ? fresh : all.slice(-3)).map(c => ({
+                                id: c.id,
+                                title: c.title,
+                                sortKey: c.sortKey,
+                                url: c.url
+                            }))
+                        )
+                    }
                     case "page:current": {
                         const tab = sender.tab ?? (await browser.tabs.query({ active: true, currentWindow: true }))[0]
                         const url = tab?.url
