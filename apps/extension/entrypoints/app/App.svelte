@@ -1236,7 +1236,44 @@
 
     const UPDATES_INITIAL = 50
     let updatesLimit = $state(UPDATES_INITIAL)
-    const pagedUpdates = $derived(library.slice(0, updatesLimit))
+    const updatedManga = $derived(
+        library.filter(
+            m =>
+                (m.latestChapterId && m.latestChapterId !== m.lastReadChapterId) ||
+                (m.latestChapterId && !m.lastReadChapterId)
+        )
+    )
+    const pagedUpdates = $derived(updatedManga.slice(0, updatesLimit))
+    let expandedUpdates = $state(new Set<string>())
+    let updatesNewChapters = $state<Record<string, Array<{ id: string; title: string; sortKey: number; url: string }>>>(
+        {}
+    )
+
+    async function loadNewChapters(mangaId: string) {
+        if (updatesNewChapters[mangaId]) return
+        try {
+            const chapters = await sendRuntimeMessage<
+                Array<{ id: string; title: string; sortKey: number; url: string }>
+            >({
+                type: "updates:new-chapters",
+                mangaId
+            })
+            updatesNewChapters[mangaId] = chapters
+        } catch {
+            updatesNewChapters[mangaId] = []
+        }
+    }
+
+    function toggleUpdate(mangaId: string) {
+        const next = new Set(expandedUpdates)
+        if (next.has(mangaId)) {
+            next.delete(mangaId)
+        } else {
+            next.add(mangaId)
+            void loadNewChapters(mangaId)
+        }
+        expandedUpdates = next
+    }
 
     // Search results grouped by source, with display name + homepage from the registry.
     const sourceMeta = $derived(new Map(sourcesList.map(s => [s.id, s])))
@@ -1958,39 +1995,72 @@
             {/if}
             {#if library.length === 0}
                 <p class="muted">No manga in library to check.</p>
+            {:else if updatedManga.length === 0}
+                <p class="muted">Everything is up to date.</p>
             {:else}
-                <div class="update-list">
-                    {#each pagedUpdates as manga}
-                        {@const hasNew = Boolean(
-                            manga.latestChapterId &&
-                            manga.lastReadChapterId &&
-                            manga.latestChapterId !== manga.lastReadChapterId
-                        )}
-                        {@const neverRead = Boolean(manga.latestChapterId && !manga.lastReadChapterId)}
-                        <div class="update-row">
-                            <div class="update-cover">
-                                {#if coverSrcs[manga.id] ?? manga.coverUrl}<img
-                                        src={coverSrcs[manga.id] ?? manga.coverUrl}
-                                        alt={manga.title} />{:else}<span>{manga.title[0]}</span>{/if}
-                            </div>
-                            <div class="update-info">
-                                <p class="update-title">{manga.title}</p>
-                                <p class="muted">{new Date(manga.updatedAt).toLocaleDateString()}</p>
-                            </div>
-                            {#if hasNew}
-                                <span class="badge-new">New chapter</span>
-                            {:else if neverRead}
-                                <span class="badge-unread">Unread</span>
-                            {:else}
-                                <span class="badge-ok-sm">Up to date</span>
+                <div class="update-groups">
+                    {#each pagedUpdates as manga (manga.id)}
+                        {@const open = expandedUpdates.has(manga.id)}
+                        {@const neverRead = !manga.lastReadChapterId}
+                        {@const chapters = updatesNewChapters[manga.id]}
+                        <div class="update-group" class:open>
+                            <button type="button" class="update-group-head" onclick={() => toggleUpdate(manga.id)}>
+                                <div class="update-cover">
+                                    {#if coverSrcs[manga.id] ?? manga.coverUrl}
+                                        <img src={coverSrcs[manga.id] ?? manga.coverUrl} alt={manga.title} />
+                                    {:else}
+                                        <span>{manga.title[0]}</span>
+                                    {/if}
+                                </div>
+                                <div class="update-info">
+                                    <span class="update-title">{manga.title}</span>
+                                    <span class="muted update-when"
+                                        >{new Date(manga.updatedAt).toLocaleDateString()}</span>
+                                </div>
+                                {#if neverRead}
+                                    <span class="badge-unread">Unread</span>
+                                {:else if manga.latestChapterNumber != null && manga.lastReadChapterNumber != null}
+                                    <span class="badge-new">
+                                        +{Math.max(
+                                            1,
+                                            Math.round(manga.latestChapterNumber - manga.lastReadChapterNumber)
+                                        )} ch
+                                    </span>
+                                {:else}
+                                    <span class="badge-new">New</span>
+                                {/if}
+                                <span class="update-caret">{open ? "▾" : "▸"}</span>
+                            </button>
+                            {#if open}
+                                <div class="update-chapters">
+                                    {#if !chapters}
+                                        <p class="muted update-loading">Loading…</p>
+                                    {:else if chapters.length === 0}
+                                        <p class="muted update-loading">
+                                            No cached chapters — open the manga page to load them.
+                                        </p>
+                                    {:else}
+                                        {#each chapters.slice().reverse() as ch (ch.id)}
+                                            <div
+                                                class="update-chapter-row clickable"
+                                                role="button"
+                                                tabindex="0"
+                                                onclick={() => void readChapter(ch.url)}
+                                                onkeydown={e => e.key === "Enter" && void readChapter(ch.url)}>
+                                                <span class="update-ch-title">{ch.title}</span>
+                                                <span class="badge-new-sm">Read ›</span>
+                                            </div>
+                                        {/each}
+                                    {/if}
+                                </div>
                             {/if}
                         </div>
                     {/each}
                 </div>
-                {#if library.length > updatesLimit}
+                {#if updatedManga.length > updatesLimit}
                     <div class="load-more">
                         <button type="button" class="btn-sm" onclick={() => (updatesLimit += UPDATES_INITIAL)}>
-                            Load more ({library.length - updatesLimit} left)
+                            Load more ({updatedManga.length - updatesLimit} left)
                         </button>
                     </div>
                 {/if}
