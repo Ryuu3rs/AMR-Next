@@ -37,10 +37,15 @@
     const visible = $derived(mangas.slice(0, visibleCount))
     const hasMore = $derived(visibleCount < mangas.length)
 
+    // Search-all progress state
+    let searchingAll = $state(false)
+    let stopRequested = $state(false)
+    let searchProgress = $state({ done: 0, total: 0, current: "" })
+    let autoLinkedCount = $state(0)
+    let autoLinkEnabled = $state(true)
+
     function cardOf(id: string): CardState {
         if (!cards[id]) {
-            // untrack: lazily initialising a $state property is fine as a side-effect,
-            // but Svelte 5 forbids mutations inside derived/template expressions without it.
             untrack(() => {
                 cards[id] = {
                     searching: false,
@@ -64,9 +69,6 @@
             .trim()
     }
 
-    // Fraction of meaningful words from the shorter title that appear in the longer one.
-    // Catches alternate-title matches like "Latna Saga: Survival of a Sword King" vs
-    // "Survival Story of a Sword King in a Fantasy World" (same manga, different translations).
     const STOP_WORDS = new Set(["a", "an", "the", "of", "in", "to", "and", "or", "for", "on"])
     function wordOverlap(a: string, b: string): number {
         const words = (s: string) => new Set(s.split(" ").filter(w => w.length > 2 && !STOP_WORDS.has(w)))
@@ -135,7 +137,6 @@
             try {
                 all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
             } catch {
-                // MV3 service worker may have been suspended — wait for it to restart and retry once.
                 await new Promise(r => setTimeout(r, 500))
                 all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
             }
@@ -156,17 +157,55 @@
         }
     }
 
-    let searchingAll = $state(false)
+    // Returns true if the manga was auto-linked
+    async function findSourcesWithAutoLink(manga: LibraryManga): Promise<boolean> {
+        await findSources(manga)
+        if (!autoLinkEnabled) return false
+        const card = cardOf(manga.id)
+        if (card.results.length === 0 || card.error) return false
+        const want = normTitle(manga.title)
+        // Confident match: exact norm title OR single result with ≥85% word overlap
+        const confident =
+            card.results.find(r => normTitle(r.title) === want) ??
+            (card.results.length === 1 && wordOverlap(normTitle(card.results[0]!.title), want) >= 0.85
+                ? card.results[0]
+                : undefined)
+        if (!confident) return false
+        await linkSource(manga, confident)
+        return true
+    }
 
     async function findAllSources() {
         searchingAll = true
-        for (const manga of mangas) {
-            const card = cardOf(manga.id)
-            if (!card.searched && !card.searching) {
-                await findSources(manga)
+        stopRequested = false
+        autoLinkedCount = 0
+        const queue = mangas.filter(m => {
+            const c = cardOf(m.id)
+            return !c.searched && !c.searching
+        })
+        searchProgress = { done: 0, total: queue.length, current: "" }
+
+        const CONCURRENCY = 3
+        let idx = 0
+
+        async function worker() {
+            while (idx < queue.length && !stopRequested) {
+                const manga = queue[idx++]!
+                searchProgress.current = manga.title
+                const linked = await findSourcesWithAutoLink(manga)
+                if (linked) autoLinkedCount++
+                searchProgress.done++
             }
         }
+
+        await Promise.all(Array.from({ length: CONCURRENCY }, worker))
         searchingAll = false
+        stopRequested = false
+        searchProgress.current = ""
+    }
+
+    function stopSearch() {
+        stopRequested = true
     }
 
     async function linkSource(manga: LibraryManga, result: SearchResult) {
@@ -216,6 +255,10 @@
             return manga.sourceId
         }
     }
+
+    const progressPct = $derived(
+        searchProgress.total > 0 ? Math.round((searchProgress.done / searchProgress.total) * 100) : 0
+    )
 </script>
 
 {#if mangas.length > 0}
@@ -228,6 +271,7 @@
             These titles were imported but their original source couldn't be matched. Find them on a live source and
             link to preserve your progress.
         </p>
+
         <div class="reconcile-bulk-actions">
             <button
                 type="button"
@@ -236,6 +280,13 @@
                 onclick={() => void findAllSources()}>
                 {searchingAll ? "Searching…" : `Search all ${mangas.length}`}
             </button>
+            {#if searchingAll}
+                <button type="button" class="btn-ghost btn-sm stop-btn" onclick={stopSearch}> Stop </button>
+            {/if}
+            <label class="auto-link-toggle">
+                <input type="checkbox" bind:checked={autoLinkEnabled} disabled={searchingAll} />
+                <span>Auto-link confident matches</span>
+            </label>
             <button
                 type="button"
                 class="btn-ghost btn-sm reconcile-remove-all"
@@ -244,6 +295,32 @@
                 {removingAll ? "Removing…" : `Remove all ${mangas.length}`}
             </button>
         </div>
+
+        {#if searchingAll || (searchProgress.total > 0 && searchProgress.done > 0)}
+            <div class="search-progress-wrap">
+                <div class="progress-track">
+                    <div class="progress-fill" style="width: {progressPct}%"></div>
+                </div>
+                <div class="progress-meta">
+                    <span class="progress-count">
+                        {searchProgress.done} / {searchProgress.total} searched
+                        {#if autoLinkedCount > 0}
+                            · <strong>{autoLinkedCount} auto-linked</strong>
+                        {/if}
+                    </span>
+                    {#if searchProgress.current && searchingAll}
+                        <span class="progress-current muted">— {searchProgress.current}</span>
+                    {/if}
+                    {#if !searchingAll && searchProgress.done >= searchProgress.total && searchProgress.total > 0}
+                        <span class="progress-done">Done ✓</span>
+                    {/if}
+                    {#if stopRequested && searchingAll}
+                        <span class="muted">Stopping…</span>
+                    {/if}
+                </div>
+            </div>
+        {/if}
+
         <ul class="reconcile-list">
             {#each visible as manga (manga.id)}
                 {@const card = cardOf(manga.id)}
@@ -389,6 +466,95 @@
         font-size: 0.85rem;
     }
 
+    .reconcile-bulk-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+    }
+
+    .stop-btn {
+        color: var(--error, #ef4444);
+    }
+
+    .auto-link-toggle {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.82rem;
+        color: var(--text-muted, #888);
+        cursor: pointer;
+        user-select: none;
+        margin-left: 4px;
+    }
+
+    .auto-link-toggle input {
+        cursor: pointer;
+    }
+
+    .reconcile-remove-all {
+        color: var(--error, #ef4444);
+        opacity: 0.75;
+        font-size: 0.8rem;
+        margin-left: auto;
+    }
+
+    .reconcile-remove-all:hover:not(:disabled) {
+        opacity: 1;
+    }
+
+    /* Progress bar */
+    .search-progress-wrap {
+        background: var(--surface-2, var(--surface));
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .progress-track {
+        height: 6px;
+        background: var(--border);
+        border-radius: 99px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: var(--accent, #3b82f6);
+        border-radius: 99px;
+        transition: width 0.3s ease;
+    }
+
+    .progress-meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.82rem;
+        flex-wrap: wrap;
+    }
+
+    .progress-count {
+        font-weight: 500;
+    }
+
+    .progress-current {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 260px;
+    }
+
+    .progress-done {
+        color: var(--success, #22c55e);
+        font-weight: 500;
+    }
+
+    /* Card list */
     .reconcile-list {
         list-style: none;
         margin: 0;
@@ -448,24 +614,6 @@
 
     .btn-danger-ghost:hover:not(:disabled) {
         color: var(--error, #ef4444);
-    }
-
-    .reconcile-bulk-actions {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        margin-bottom: 8px;
-        flex-wrap: wrap;
-    }
-
-    .reconcile-remove-all {
-        color: var(--error, #ef4444);
-        opacity: 0.75;
-        font-size: 0.8rem;
-    }
-
-    .reconcile-remove-all:hover:not(:disabled) {
-        opacity: 1;
     }
 
     .reconcile-msg {
