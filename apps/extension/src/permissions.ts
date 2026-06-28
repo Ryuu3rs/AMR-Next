@@ -42,6 +42,9 @@ const BASE_SOURCE_ORIGINS = [
     "https://www.mangahub.io/*",
     "*://*.mhcdn.net/*",
     "*://*.mghcdn.com/*",
+    // OlympusStaff — Next.js SSR; images in standard src, full reader works
+    "https://olympustaff.com/*",
+    "https://www.olympustaff.com/*",
     // FanFox / MangaHere family — images JS-only; panel nav works via listChapters
     ...fanfoxFamilyOrigins,
     "https://z-fanfox.net/*",
