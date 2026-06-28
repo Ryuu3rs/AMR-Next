@@ -921,6 +921,26 @@ button:disabled {
     padding-top: 12px;
 }
 
+.discord-btn {
+    background: #5865f2;
+    border: none;
+    color: #fff;
+    font-weight: 600;
+    width: 100%;
+    border-radius: 8px;
+    min-height: 36px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.discord-btn:hover {
+    background: #4752c4;
+}
+
 .kofi-btn {
     background: #29abe0;
     border: none;
