@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.8.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.7.1...v0.8.0) (2026-06-28)
+
+
+### Features
+
+* add clear library and clear history options to Settings ([385da24](https://github.com/Ryuu3rs/AMR-Next/commit/385da2447543a76b77be8bdeec1a70602c17c6b1))
+* add MangaHub adapter with on-page panel support ([be29ead](https://github.com/Ryuu3rs/AMR-Next/commit/be29ead4a5a90efd2742dca8e7bb40d01ba46611))
+* add Tritinia Scans, fix reconcile SW timeout, add search-all ([d7b062e](https://github.com/Ryuu3rs/AMR-Next/commit/d7b062e3a3cb43ddad68c17038cc2e8641f4c2ba))
+* add WEBTOON adapter and fix legacy import for 92 webtoon titles ([13ca75c](https://github.com/Ryuu3rs/AMR-Next/commit/13ca75c47bcaecafc63e9ac0a9ca95062043c253))
+* history clickable rows, reader chapter dropdown, bug fixes ([88477b6](https://github.com/Ryuu3rs/AMR-Next/commit/88477b609cd3b837e755f7b321d6b3f5c19d1833))
+* import reconcile progress bar, 3x concurrency, auto-link, stop button ([53add21](https://github.com/Ryuu3rs/AMR-Next/commit/53add219c292d23f244d20ae201a04da3e8cea58))
+* updates page grouped accordion with nested chapters ([1801477](https://github.com/Ryuu3rs/AMR-Next/commit/180147758c60edee927fee850ce0acaaebd40cb1))
+
+
+### Bug Fixes
+
+* add root route to community API ([3f99b14](https://github.com/Ryuu3rs/AMR-Next/commit/3f99b148db647d8d309bfc69217fea7074baa621))
+* import conflict dialog shows error inline and stays visible during processing; add genres to export schema ([605ceae](https://github.com/Ryuu3rs/AMR-Next/commit/605ceae505b7e734c9f8b639df707aa740d6f13d))
+* map legacy AMR domain aliases in import so old library entries resolve correctly ([14729c8](https://github.com/Ryuu3rs/AMR-Next/commit/14729c85e853a634f9b323a0e0ca13659b23db27))
+* reconcile title matching uses word-overlap for alternate translations ([a54d14d](https://github.com/Ryuu3rs/AMR-Next/commit/a54d14de4cf20dc6957d5202ea46cb24a27425a6))
+* tabs.onUpdated URL filter Chrome-only (Firefox supports it, Chrome does not) ([749aecb](https://github.com/Ryuu3rs/AMR-Next/commit/749aecbd99b3cda8a7714debda5ca1632c085763))
+* webtoons chapter images via tab render and pstatic.net referer rule ([db4dc10](https://github.com/Ryuu3rs/AMR-Next/commit/db4dc1002a4c3510b9239ddfd90d6e024333b63f))
+
 ## [0.6.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.5.0...v0.6.0) (2026-06-18)
 
 
