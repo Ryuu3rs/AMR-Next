@@ -13,7 +13,7 @@ import { mangaBuddyAdapters } from "./mangabuddy-sites"
 import { mangaparkAdapter } from "./mangapark"
 import { webtoonsAdapter } from "./webtoons"
 import { mangahubAdapter } from "./mangahub"
-import { fanfoxAdapter } from "./fanfox"
+import { fanfoxFamilyAdapters } from "./fanfox-sites"
 
 export { mangadexAdapter } from "./mangadex"
 export { mangareadAdapter } from "./mangaread"
@@ -32,7 +32,8 @@ export { mangaBuddyAdapters, mangaBuddyOrigins } from "./mangabuddy-sites"
 export { mangaparkAdapter } from "./mangapark"
 export { webtoonsAdapter } from "./webtoons"
 export { mangahubAdapter } from "./mangahub"
-export { fanfoxAdapter } from "./fanfox"
+export { createFanfoxFamilyAdapter, type FanfoxFamilyConfig } from "./fanfox"
+export { fanfoxFamilyAdapters, fanfoxFamilyOrigins } from "./fanfox-sites"
 
 export const sourceAdapters: readonly SourceAdapter[] = [
     mangadexAdapter,
@@ -49,6 +50,6 @@ export const sourceAdapters: readonly SourceAdapter[] = [
     mangaparkAdapter,
     webtoonsAdapter,
     mangahubAdapter,
-    fanfoxAdapter
+    ...fanfoxFamilyAdapters
 ]
 export const sourceRegistry = new SourceRegistry(sourceAdapters)
