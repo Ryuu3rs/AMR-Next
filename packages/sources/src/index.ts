@@ -13,6 +13,7 @@ import { mangaBuddyAdapters } from "./mangabuddy-sites"
 import { mangaparkAdapter } from "./mangapark"
 import { webtoonsAdapter } from "./webtoons"
 import { mangahubAdapter } from "./mangahub"
+import { fanfoxAdapter } from "./fanfox"
 
 export { mangadexAdapter } from "./mangadex"
 export { mangareadAdapter } from "./mangaread"
@@ -31,6 +32,7 @@ export { mangaBuddyAdapters, mangaBuddyOrigins } from "./mangabuddy-sites"
 export { mangaparkAdapter } from "./mangapark"
 export { webtoonsAdapter } from "./webtoons"
 export { mangahubAdapter } from "./mangahub"
+export { fanfoxAdapter } from "./fanfox"
 
 export const sourceAdapters: readonly SourceAdapter[] = [
     mangadexAdapter,
@@ -46,6 +48,7 @@ export const sourceAdapters: readonly SourceAdapter[] = [
     ...mangaBuddyAdapters,
     mangaparkAdapter,
     webtoonsAdapter,
-    mangahubAdapter
+    mangahubAdapter,
+    fanfoxAdapter
 ]
 export const sourceRegistry = new SourceRegistry(sourceAdapters)

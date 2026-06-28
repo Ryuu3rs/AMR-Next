@@ -1,4 +1,4 @@
-import { madaraOrigins, mangaStreamOrigins, mangaBuddyOrigins } from "@amr/sources"
+import { madaraOrigins, mangaStreamOrigins, mangaBuddyOrigins, fanfoxAdapter } from "@amr/sources"
 
 // Single source of truth for source host origins. Consumed by the manifest
 // (wxt.config.ts), the background permission helpers, and every UI grant prompt.
@@ -42,6 +42,9 @@ const BASE_SOURCE_ORIGINS = [
     "https://www.mangahub.io/*",
     "*://*.mhcdn.net/*",
     "*://*.mghcdn.com/*",
+    // FanFox — main domain; chapter images served from z-fanfox.net CDN (JS-only, panel nav only)
+    ...fanfoxAdapter.manifest.domains.map(d => `https://${d}/*`),
+    "https://z-fanfox.net/*",
     // User-requested Madara sites
     "https://likemanga.io/*",
     "*://*.likemanga.io/*",
