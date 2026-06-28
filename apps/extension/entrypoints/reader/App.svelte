@@ -632,17 +632,27 @@
     {/if}
     {#if error}
         <section class="message">
-            <h1>Chapter could not be loaded</h1>
+            <h1>Can't load in reader view</h1>
             <p>{error}</p>
+            <p class="muted">
+                This site may still work with the <strong>AMR sidebar</strong> — open it directly and the chapter panel will
+                let you track your progress and navigate chapters while you read on the site normally.
+            </p>
             {#if chapterUrl}
                 <button type="button" onclick={() => void loadChapter(chapterUrl)}>Try again</button>
                 <button type="button" class="btn-mirror" onclick={() => void openOnSiteAndTrack()}>
-                    Read on the original site &amp; mark read
+                    Open on site (sidebar still works)
                 </button>
             {/if}
             <button type="button" class="btn-mirror" onclick={() => void findOnAnotherMirror()}>
-                Images not loading? Find another source
+                Find this on a supported source
             </button>
+            <p class="track-note">
+                Missing a site? Report it on
+                <a href="https://discord.gg/23kS4gDtr" target="_blank" rel="noopener">Discord</a>
+                or
+                <a href="https://github.com/Ryuu3rs/AMR-Next/issues" target="_blank" rel="noopener">GitHub</a>.
+            </p>
             {#if trackMessage}<p class="track-note">{trackMessage}</p>{/if}
         </section>
     {:else if resolving}
