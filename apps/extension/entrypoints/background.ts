@@ -768,33 +768,34 @@ export default defineBackground(() => {
         if (alarm.name === extensionUpdateAlarmName) void checkExtensionUpdate()
     })
 
-    // Filter to source URLs only so the MV3 service worker is not woken up for
-    // every tab navigation (YouTube, Google, etc.) — unfiltered onUpdated is the
-    // most common cause of excessive SW restarts and subsequent throttling.
-    browser.tabs.onUpdated.addListener(
-        (tabId, changeInfo, tab) => {
-            if (changeInfo.url && !internalTabIds.has(tabId)) {
-                void captureChapter(changeInfo.url).catch(error => {
-                    console.warn("[AMR] Automatic chapter capture failed", error)
-                })
+    const onUpdatedHandler = (tabId: number, changeInfo: { url?: string; status?: string }, tab: { url?: string }) => {
+        if (changeInfo.url && !internalTabIds.has(tabId)) {
+            void captureChapter(changeInfo.url).catch(error => {
+                console.warn("[AMR] Automatic chapter capture failed", error)
+            })
+        }
+        if (changeInfo.status === "complete" && tab.url) {
+            let parsedUrl: URL
+            try {
+                parsedUrl = new URL(tab.url)
+            } catch {
+                return
             }
-            if (changeInfo.status === "complete" && tab.url) {
-                let parsedUrl: URL
-                try {
-                    parsedUrl = new URL(tab.url)
-                } catch {
-                    return
-                }
-                const source = findSource(parsedUrl)
-                if (source?.match(parsedUrl) === "chapter") {
-                    void browser.scripting
-                        .executeScript({ target: { tabId }, func: injectChapterPrompt, args: [tab.url] })
-                        .catch(() => {})
-                }
+            const source = findSource(parsedUrl)
+            if (source?.match(parsedUrl) === "chapter") {
+                void browser.scripting
+                    .executeScript({ target: { tabId }, func: injectChapterPrompt, args: [tab.url] })
+                    .catch(() => {})
             }
-        },
-        { urls: [...SOURCE_ORIGINS] }
-    )
+        }
+    }
+    // Chrome does not support URL filters on tabs.onUpdated — Firefox does.
+    // Unfiltered onUpdated is noisier but safe; captureChapter ignores non-source URLs internally.
+    if (import.meta.env.BROWSER === "firefox") {
+        browser.tabs.onUpdated.addListener(onUpdatedHandler, { urls: [...SOURCE_ORIGINS] })
+    } else {
+        browser.tabs.onUpdated.addListener(onUpdatedHandler)
+    }
 
     browser.runtime.onMessage.addListener((message, sender) => {
         return (async () => {
