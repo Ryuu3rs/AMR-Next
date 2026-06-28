@@ -64,6 +64,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("sources:health") }),
     z.object({ type: z.literal("updates:check"), sourceId: z.string().optional() }),
     z.object({ type: z.literal("updates:get") }),
+    z.object({ type: z.literal("extension-update:check"), force: z.boolean().optional() }),
     z.object({ type: z.literal("updates:new-chapters"), mangaId: z.string().min(1) }),
     z.object({ type: z.literal("page:current") }),
     z.object({ type: z.literal("page:capture"), url: z.url() }),

@@ -193,6 +193,7 @@
     let reconcileIds = $state<string[]>([])
     let extensionUpdate = $state<{ available: boolean; latestVersion: string; releaseUrl: string } | null>(null)
     let updateBannerDismissed = $state(false)
+    let checkingExtUpdate = $state(false)
     let updateStatus = $state<{
         checked: number
         updated: number
@@ -532,6 +533,11 @@
                 | typeof extensionUpdate
                 | undefined
             if (stored?.available) extensionUpdate = stored
+            // Fire a non-blocking check on every popup open (24h throttle in background).
+            // Ensures the banner appears promptly after a release even without a browser restart.
+            void sendRuntimeMessage<typeof extensionUpdate>({ type: "extension-update:check" }).then(result => {
+                if (result) extensionUpdate = result
+            })
             // Persist broken-link panel across page opens. Entries with manualTracking
             // and a hostname-style sourceId (contains ".") were imported from an unknown
             // source. Adapter IDs like "madara"/"mangadex" never contain dots, so this
@@ -837,6 +843,20 @@
     const sourceTitleCounts = $derived(
         new Map(sourcesList.map(src => [src.id, library.filter(m => !isSeedData(m) && m.sourceId === src.id).length]))
     )
+
+    async function checkForExtensionUpdate() {
+        checkingExtUpdate = true
+        try {
+            const result = await sendRuntimeMessage<typeof extensionUpdate>({
+                type: "extension-update:check",
+                force: true
+            })
+            extensionUpdate = result
+            updateBannerDismissed = false
+        } finally {
+            checkingExtUpdate = false
+        }
+    }
 
     async function changeUpdateInterval(value: string) {
         settings = await sendRuntimeMessage<AppSettings>({
@@ -2667,6 +2687,37 @@
                         <option value="12">Every 12 h</option>
                         <option value="24">Daily</option>
                     </select>
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Extension updates</p>
+                        <p class="muted">
+                            {#if extensionUpdate?.available}
+                                v{extensionUpdate.latestVersion} is available.
+                            {:else if extensionUpdate}
+                                Up to date (v{extensionUpdate.latestVersion}).
+                            {:else}
+                                Check for a new version of AMR.
+                            {/if}
+                        </p>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        {#if extensionUpdate?.available}
+                            <button
+                                type="button"
+                                class="btn-sm"
+                                onclick={() => void browser.tabs.create({ url: extensionUpdate!.releaseUrl })}>
+                                Download ↗
+                            </button>
+                        {/if}
+                        <button
+                            type="button"
+                            class="btn-outline btn-sm"
+                            disabled={checkingExtUpdate}
+                            onclick={() => void checkForExtensionUpdate()}>
+                            {checkingExtUpdate ? "Checking…" : "Check now"}
+                        </button>
+                    </div>
                 </div>
                 <div class="settings-row">
                     <div>

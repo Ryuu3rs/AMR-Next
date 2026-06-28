@@ -758,6 +758,7 @@ export default defineBackground(() => {
         void browser.alarms.create(extensionUpdateAlarmName, {
             periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
         })
+        void checkExtensionUpdate()
         void backfillMangaGenres()
     })
 
@@ -1212,6 +1213,15 @@ export default defineBackground(() => {
                     case "sources:health": {
                         const stored = await browser.storage.local.get("sourceHealth")
                         return success(stored["sourceHealth"] ?? {})
+                    }
+                    case "extension-update:check": {
+                        await checkExtensionUpdate(request.force ?? false)
+                        const stored = await browser.storage.local.get("extensionUpdate")
+                        return success(
+                            (stored["extensionUpdate"] as
+                                | { available: boolean; latestVersion: string; releaseUrl: string }
+                                | undefined) ?? null
+                        )
                     }
                     case "updates:check":
                         return success(await checkUpdates(request.sourceId))
