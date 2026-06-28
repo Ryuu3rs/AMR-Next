@@ -1,6 +1,6 @@
 {
     "name": "all-mangas-reader",
-    "version": "0.8.2",
+    "version": "0.8.3",
     "private": true,
     "description": "A lightweight cross-browser manga reader extension",
     "type": "module",
