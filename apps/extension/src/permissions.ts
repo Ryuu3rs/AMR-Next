@@ -23,10 +23,10 @@ const BASE_SOURCE_ORIGINS = [
     // Dynasty Scans — images served from the same origin, no separate CDN
     "https://dynasty-scans.com/*",
     "https://www.dynasty-scans.com/*",
-    // MangaPark — images served from xfs subdomain CDN
-    "https://mangapark.net/*",
-    "*://*.mangapark.net/*",
-    "*://*.mangapark.me/*",
+    // MangaPark — retired 2026-06 (site down); uncomment when back
+    // "https://mangapark.net/*",
+    // "*://*.mangapark.net/*",
+    // "*://*.mangapark.me/*",
     // AsuraComic (Next.js adapter) — chapter images served from subdomains (e.g. gg.asuracomic.net)
     "https://asuracomic.net/*",
     "*://*.asuracomic.net/*",

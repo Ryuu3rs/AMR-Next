@@ -10,7 +10,7 @@ import { asuraScansAdapter } from "./asurascans"
 import { madaraAdapters } from "./madara-sites"
 import { mangaStreamAdapters } from "./mangastream-sites"
 import { mangaBuddyAdapters } from "./mangabuddy-sites"
-import { mangaparkAdapter } from "./mangapark"
+// import { mangaparkAdapter } from "./mangapark" // retired: site down 2026-06 — re-enable when back
 import { webtoonsAdapter } from "./webtoons"
 import { mangahubAdapter } from "./mangahub"
 import { fanfoxFamilyAdapters } from "./fanfox-sites"
@@ -30,7 +30,7 @@ export { createMangaStreamAdapter, type MangaStreamConfig } from "./mangastream"
 export { mangaStreamAdapters, mangaStreamOrigins } from "./mangastream-sites"
 export { createMangaBuddyAdapter, type MangaBuddyConfig } from "./mangabuddy"
 export { mangaBuddyAdapters, mangaBuddyOrigins } from "./mangabuddy-sites"
-export { mangaparkAdapter } from "./mangapark"
+// export { mangaparkAdapter } from "./mangapark" // retired: site down 2026-06
 export { webtoonsAdapter } from "./webtoons"
 export { mangahubAdapter } from "./mangahub"
 export { createFanfoxFamilyAdapter, type FanfoxFamilyConfig } from "./fanfox"
@@ -49,7 +49,7 @@ export const sourceAdapters: readonly SourceAdapter[] = [
     ...madaraAdapters,
     ...mangaStreamAdapters,
     ...mangaBuddyAdapters,
-    mangaparkAdapter,
+    // mangaparkAdapter, // retired: site down 2026-06 — re-enable when back
     webtoonsAdapter,
     mangahubAdapter,
     ...fanfoxFamilyAdapters,
