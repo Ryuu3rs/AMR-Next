@@ -966,7 +966,9 @@ export default defineBackground(() => {
                             request.sourceMangaId,
                             request.mangaUrl
                         )
-                        if (chapters.length === 0)
+                        const switchAdapter = sourceRegistry.get(request.sourceId)
+                        const hasPages = switchAdapter?.manifest.capabilities.includes("pages") ?? true
+                        if (chapters.length === 0 && hasPages)
                             throw new SourceError("invalid-response", "No chapters on that mirror")
                         const latest = chapters.reduce(
                             (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
