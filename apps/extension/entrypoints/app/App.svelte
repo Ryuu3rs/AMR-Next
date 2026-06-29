@@ -1240,6 +1240,24 @@
         }
     }
 
+    async function reloadCommunityProfile() {
+        communityProfile = await sendRuntimeMessage<CommunityProfile>({ type: "community:status" }).catch(
+            () => communityProfile
+        )
+    }
+
+    let communitySyncing = $state(false)
+    async function syncNow() {
+        communitySyncing = true
+        try {
+            await sendRuntimeMessage({ type: "community:sync" })
+            await reloadCommunityProfile()
+        } catch {
+        } finally {
+            communitySyncing = false
+        }
+    }
+
     async function registerCommunity() {
         const name = communityUsernameInput.trim()
         if (!name) return
@@ -1250,6 +1268,8 @@
                 username: name
             })
             communityUsernameInput = ""
+            // Sync fires immediately on registration; re-fetch after a short delay to pick up stats
+            setTimeout(() => void reloadCommunityProfile(), 4000)
         } catch (e) {
             communityRegisterError = e instanceof Error ? e.message : "Registration failed"
         }
@@ -2426,6 +2446,13 @@
             {:else if communityProfile?.enabled && communityProfile.userId}
                 <p class="shelf-label" style="margin-top:36px">Community</p>
                 <p class="muted">Syncing your reading history… stats appear after the first sync completes.</p>
+                <button
+                    class="btn-outline btn-sm"
+                    style="margin-top:8px"
+                    disabled={communitySyncing}
+                    onclick={() => void syncNow()}>
+                    {communitySyncing ? "Syncing…" : "Sync now"}
+                </button>
             {:else if !communityProfile?.userId}
                 <p class="shelf-label" style="margin-top:36px">Community</p>
                 <p class="muted">

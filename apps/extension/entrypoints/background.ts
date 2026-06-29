@@ -157,7 +157,6 @@ async function runCommunitySync() {
             .above(profile.lastSyncAt)
             .filter(h => h.type === "completed")
             .toArray()
-        if (newHistory.length === 0) return
 
         const mangaIds = [...new Set(newHistory.map(h => h.mangaId))]
         const mangaList = await db.manga.where("id").anyOf(mangaIds).toArray()
@@ -176,16 +175,23 @@ async function runCommunitySync() {
                 }
             })
             .filter((e): e is CommunityEvent => e !== null)
-        if (events.length === 0) return
 
-        const result = await apiSyncEvents(profile.userId, events)
+        let rank = profile.communityRank
+        let recommendations = profile.recommendations ?? []
+        let newAchievements: string[] = []
+        if (events.length > 0) {
+            const result = await apiSyncEvents(profile.userId, events)
+            rank = result.rank
+            recommendations = result.recommendations
+            newAchievements = result.newAchievements
+        }
         const communityStats = await apiFetchCommunityStats().catch(() => profile.communityStats)
 
         await updateCommunityProfile({
             lastSyncAt: Date.now(),
-            communityRank: result.rank,
-            recommendations: result.recommendations,
-            newAchievements: [...(profile.newAchievements ?? []), ...result.newAchievements],
+            communityRank: rank,
+            recommendations,
+            newAchievements: [...(profile.newAchievements ?? []), ...newAchievements],
             communityStats
         })
     } catch (error) {
@@ -1488,6 +1494,10 @@ export default defineBackground(() => {
                         } catch (err) {
                             return failure(err)
                         }
+                    }
+                    case "community:sync": {
+                        await runCommunitySync()
+                        return success(null)
                     }
                     case "community:toggle": {
                         const updated = await updateCommunityProfile({ enabled: request.enabled })

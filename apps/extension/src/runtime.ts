@@ -120,6 +120,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
             .regex(/^[a-zA-Z0-9_-]+$/)
     }),
     z.object({ type: z.literal("community:toggle"), enabled: z.boolean() }),
+    z.object({ type: z.literal("community:sync") }),
     z.object({ type: z.literal("settings:get") }),
     z.object({
         type: z.literal("settings:update"),
