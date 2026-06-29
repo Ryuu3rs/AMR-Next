@@ -236,6 +236,9 @@ async function checkUpdates(sourceId?: string) {
                     }
                 })
                 checked += 1
+                // Brief pause between requests so sites like MangaNato don't rate-limit
+                // when the library has many titles from the same source.
+                await delay(400)
             } catch (error) {
                 failed += 1
                 const message = error instanceof Error ? error.message : "Update failed"
