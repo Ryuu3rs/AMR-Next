@@ -15,9 +15,11 @@
     type Props = {
         mangas: LibraryManga[]
         onLinked: (mangaId: string) => void
+        heading?: string
+        hint?: string
     }
 
-    let { mangas, onLinked }: Props = $props()
+    let { mangas, onLinked, heading, hint }: Props = $props()
 
     type CardState = {
         searching: boolean
@@ -264,12 +266,12 @@
 {#if mangas.length > 0}
     <section class="reconcile-section">
         <h2 class="reconcile-heading">
-            Source issues — {mangas.length}
-            {mangas.length === 1 ? "title needs" : "titles need"} a live source
+            {heading ??
+                `Source issues — ${mangas.length} ${mangas.length === 1 ? "title needs" : "titles need"} a live source`}
         </h2>
         <p class="reconcile-hint muted">
-            These titles were imported but their original source couldn't be matched. Find them on a live source and
-            link to preserve your progress.
+            {hint ??
+                "These titles were imported but their original source couldn't be matched. Find them on a live source and link to preserve your progress."}
         </p>
 
         <div class="reconcile-bulk-actions">

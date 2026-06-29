@@ -191,6 +191,7 @@
     let clearWorking = $state(false)
     let downloadsCount = $state(0)
     let reconcileIds = $state<string[]>([])
+    let libScanIds = $state<string[]>([])
     let extensionUpdate = $state<{ available: boolean; latestVersion: string; releaseUrl: string } | null>(null)
     let updateBannerDismissed = $state(false)
     let checkingExtUpdate = $state(false)
@@ -1637,6 +1638,16 @@
                     </button>
                     <button
                         type="button"
+                        class="btn-sm btn-outline"
+                        title="Search all sources for better matches for every manga in your library"
+                        onclick={() => {
+                            libScanIds = library.filter(m => !m.manualTracking).map(m => m.id)
+                            activeSection = "Data"
+                        }}>
+                        Find better sources
+                    </button>
+                    <button
+                        type="button"
                         class="btn-sm"
                         onclick={() => (selectMode ? clearSelection() : (selectMode = true))}>
                         {selectMode ? "Cancel" : "Select"}
@@ -2591,8 +2602,22 @@
                 mangas={library.filter(m => reconcileIds.includes(m.id))}
                 onLinked={id => {
                     reconcileIds = reconcileIds.filter(rid => rid !== id)
+                    if (reconcileIds.length === 0 && dataMessage.includes("need a live source")) {
+                        dataMessage = dataMessage.replace(/\s*\d+ titles? need a live source[^.]*\.?/i, "").trim()
+                    }
                     void load()
                 }} />
+
+            {#if libScanIds.length > 0}
+                <ImportReconcile
+                    mangas={library.filter(m => libScanIds.includes(m.id))}
+                    heading="Find better sources — {libScanIds.length} {libScanIds.length === 1 ? 'title' : 'titles'}"
+                    hint="Search all sources for each manga in your library. Use this to find a source with more chapters or better availability."
+                    onLinked={id => {
+                        libScanIds = libScanIds.filter(lid => lid !== id)
+                        void load()
+                    }} />
+            {/if}
 
             <h1 style="margin-top:32px">GitHub Gist sync</h1>
             <div class="data-list">
