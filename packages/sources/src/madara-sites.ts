@@ -18,8 +18,15 @@ const SITES: MadaraConfig[] = [
     // { id: "harimanga", name: "HariManga", origin: "https://harimanga.me", domains: ["harimanga.me"] }, // retired: site down 2026-06 — re-enable when back
     { id: "utoon", name: "UToon", origin: "https://utoon.net", domains: ["utoon.net"] },
     { id: "mangasushi", name: "MangaSushi", origin: "https://mangasushi.org", domains: ["mangasushi.org"] },
-    // retired: manhuatop returns 403 on fetch + ad-redirect gate on browser nav 2026-06 — re-enable when fixed
-    // { id: "manhuatop", name: "ManhuaTop", origin: "https://manhuatop.org", domains: ["manhuatop.org"], mangaPath: "manhua" },
+    // chapters-only: chapter pages are ad-gated; sidebar tracking works, reader shows "open on site"
+    {
+        id: "manhuatop",
+        name: "ManhuaTop",
+        origin: "https://manhuatop.org",
+        domains: ["manhuatop.org"],
+        mangaPath: "manhua",
+        capabilities: ["chapters"]
+    },
     // Replacements for dead sites + new user-requested sources
     // { id: "saucemanhwa", name: "SauceManhwa", origin: "https://saucemanhwa.org", domains: ["saucemanhwa.org"] }, // retired: site down 2026-06 — re-enable when back
     {

@@ -31,6 +31,10 @@ export type MadaraConfig = {
     // the real image URL in src and an anti-scraping decoy in data-src (e.g. mangaread.org).
     // Matches the legacy Madara adapter's img_src:"src" default.
     preferSrcAttribute?: boolean
+    // Override adapter capabilities. Omit for the default ["pages", "chapters"].
+    // Set to ["chapters"] for sites that block background fetches or use ad-gates —
+    // sidebar tracking works but the reader returns pages:[] (shows "open on site" screen).
+    capabilities?: readonly string[]
 }
 
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
@@ -449,7 +453,7 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             name: config.name,
             domains: config.domains,
             languages: [language],
-            capabilities: ["pages", "chapters"],
+            capabilities: config.capabilities ? [...config.capabilities] : ["pages", "chapters"],
             requestRateLimit: config.rateLimit ?? { requests: 3, intervalMs: 1000 },
             fixtureVersion: 1,
             homepage: config.origin
@@ -597,6 +601,42 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             if (!input.url) throw new SourceError("invalid-input", "A chapter URL is required")
             const slugs = extractChapterSlugs(input.url)
             if (!slugs) throw new SourceError("unsupported-url", "This chapter URL is not supported")
+
+            // Sidebar-only mode: skip network fetch, construct from URL slugs, return empty pages.
+            // Reader will show "open on site" screen. Used for sites that block background
+            // fetches or gate chapters behind ad redirects.
+            if (!config.capabilities || !config.capabilities.includes("pages")) {
+                const chapterNumber = extractChapterNumber(slugs.chapterSlug)
+                const now = context.now()
+                const mangaId = `${config.id}:manga:${slugs.mangaSlug}`
+                const chapterId = `${config.id}:chapter:${slugs.mangaSlug}:${slugs.chapterSlug}`
+                const title = slugs.mangaSlug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+                const manga: SourceManga = {
+                    manga: {
+                        id: mangaId,
+                        title,
+                        normalizedTitle: title.toLocaleLowerCase("en"),
+                        authors: [],
+                        status: "unknown",
+                        addedAt: now,
+                        updatedAt: now
+                    },
+                    sourceId: config.id,
+                    sourceMangaId: slugs.mangaSlug,
+                    url: `${config.origin}/${mangaPath}/${slugs.mangaSlug}/`
+                }
+                const chapter: SourceChapter = {
+                    id: chapterId,
+                    mangaId,
+                    sourceId: config.id,
+                    sourceChapterId: `${slugs.mangaSlug}:${slugs.chapterSlug}`,
+                    title: `Chapter ${chapterNumber}`,
+                    url: input.url.toString(),
+                    sortKey: parseFloat(chapterNumber) || 0,
+                    language
+                }
+                return { manga, chapter, pages: [] }
+            }
 
             // Force Madara's scroll/list mode so the server renders ALL pages as page-break
             // divs in static HTML. Legacy adapter always did this (add_list_to_chapter_url:true).
