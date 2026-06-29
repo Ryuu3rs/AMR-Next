@@ -37,7 +37,7 @@ export default defineConfig({
             browser === "firefox"
                 ? {
                       gecko: {
-                          id: "all-mangas-reader-2@ryuu3rs.dev",
+                          id: "amr-next@ryuu3rs.dev",
                           strict_min_version: "142.0",
                           data_collection_permissions: {
                               required: ["none"]
