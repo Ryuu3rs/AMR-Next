@@ -22,6 +22,7 @@
         "build:firefox": "npm run build:firefox --workspace @amr/extension",
         "zip": "npm run zip --workspace @amr/extension",
         "zip:firefox": "npm run zip:firefox --workspace @amr/extension",
+        "sign:firefox": "web-ext sign --channel=unlisted --source-dir=apps/extension/.output/firefox-mv3 --artifacts-dir=apps/extension/.output",
         "typecheck": "npm run typecheck --workspaces --if-present",
         "lint": "eslint .",
         "test": "npm run test --workspaces --if-present",
