@@ -90,12 +90,20 @@ function extractTitle(html: string): string | undefined {
 function extractImages(html: string): string[] {
     const urls: string[] = []
     const seen = new Set<string>()
-    for (const m of html.matchAll(/<img\b[^>]*\bsrc="(https?:\/\/images\.mangafreak\.me\/mangas\/[^"]+)"/gi)) {
-        const url = captureGroup(m, 1)
-        if (url && !seen.has(url)) {
-            seen.add(url)
-            urls.push(url)
+    // Primary CDN pattern; fallback covers alt subdomains (img., cdn., etc.) and bare origin paths.
+    const patterns = [
+        /<img\b[^>]*\bsrc="(https?:\/\/[^"]*mangafreak\.me\/mangas\/[^"]+)"/gi,
+        /<img\b[^>]*\bdata-src="(https?:\/\/[^"]*mangafreak\.me\/mangas\/[^"]+)"/gi
+    ]
+    for (const re of patterns) {
+        for (const m of html.matchAll(re)) {
+            const url = captureGroup(m, 1)
+            if (url && !seen.has(url)) {
+                seen.add(url)
+                urls.push(url)
+            }
         }
+        if (urls.length > 0) break
     }
     return urls
 }

@@ -489,6 +489,8 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
         async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
             const slug = input.manga.sourceMangaId
             if (!slug) throw new SourceError("invalid-input", `A valid ${config.name} manga id is required`)
+            // Sidebar-only sources (no "chapters" capability) can't enumerate chapter lists.
+            if (config.capabilities && !config.capabilities.includes("chapters")) return []
             const mangaPageUrl = new URL(`${config.origin}/${mangaPath}/${slug}/`)
             const html = await context.request.getText(mangaPageUrl, { headers: browserHeaders })
 

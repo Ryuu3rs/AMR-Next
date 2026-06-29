@@ -241,14 +241,15 @@ async function checkUpdates(sourceId?: string) {
                     }
                 })
                 checked += 1
-                // Brief pause between requests so sites like MangaNato don't rate-limit
-                // when the library has many titles from the same source.
-                await delay(400)
             } catch (error) {
                 failed += 1
                 const message = error instanceof Error ? error.message : "Update failed"
                 errors.push({ mangaId: item.id, title: item.title, message })
                 console.warn("[AMR] Update check failed", { mangaId: item.id, error })
+            } finally {
+                // Pause between every iteration (success or failure) so sites don't
+                // rate-limit when the library has many titles from the same source.
+                await delay(400)
             }
         }
 
