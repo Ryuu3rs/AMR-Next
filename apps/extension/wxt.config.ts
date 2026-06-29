@@ -4,11 +4,11 @@ import { ALL_OPTIONAL_ORIGINS, GITHUB_API_ORIGIN } from "./src/permissions"
 export default defineConfig({
     manifestVersion: 3,
     modules: ["@wxt-dev/module-svelte"],
-    // Disable Vite 8's modulepreload polyfill — it uses Function() for feature detection
-    // which violates MV3 CSP (unsafe-eval). Extensions use self.importScripts, not link preload.
+    // Fully disable Vite's modulepreload — extensions use self.importScripts, not link preload,
+    // and the preload helper injects Function() + innerHTML which violate MV3 CSP and AMO policy.
     vite: () => ({
         build: {
-            modulePreload: { polyfill: false }
+            modulePreload: false
         }
     }),
     manifest: ({ browser }) => ({
