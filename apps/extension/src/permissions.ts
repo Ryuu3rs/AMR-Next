@@ -48,6 +48,13 @@ const BASE_SOURCE_ORIGINS = [
     // FanFox / MangaHere family — images JS-only; panel nav works via listChapters
     ...fanfoxFamilyOrigins,
     "https://z-fanfox.net/*",
+    // MangaFreak — all wwN mirrors + image CDN
+    "*://*.mangafreak.me/*",
+    "*://*.images.mangafreak.me/*",
+    // Comix — images are JS-only; sidebar tracking works
+    "https://comix.to/*",
+    "https://www.comix.to/*",
+    "*://*.static.comix.to/*",
     // User-requested Madara sites
     "https://likemanga.io/*",
     "*://*.likemanga.io/*",
