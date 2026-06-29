@@ -234,8 +234,9 @@
 
     async function linkByUrl(manga: LibraryManga) {
         const card = cardOf(manga.id)
-        const url = card.urlInput.trim()
+        let url = card.urlInput.trim()
         if (!url) return
+        if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://" + url
         card.urlLinking = true
         card.message = ""
         card.error = false

@@ -12,10 +12,10 @@ const BASE_SOURCE_ORIGINS = [
     "https://www.mangaread.org/*",
     "https://www.mgeko.cc/*",
     "*://*.imgsrv4.com/*",
-    // MangaNato — canonical domain + image CDNs (manganato.com hijacked by SpinzyWheel 2026-06; chapmanganelo.com dead)
-    "https://chapmanganato.to/*",
-    "*://*.mkklcdnv6tempv3.com/*",
-    "*://*.mkklcdnv6temp.com/*",
+    // MangaNato — retired 2026-06: chapmanganato.to down, manganato.com hijacked — uncomment when a working domain is found
+    // "https://chapmanganato.to/*",
+    // "*://*.mkklcdnv6tempv3.com/*",
+    // "*://*.mkklcdnv6temp.com/*",
     // Weeb Central (MangaSee successor) — main domain + image CDN subdomains
     "https://weebcentral.com/*",
     "https://www.weebcentral.com/*",

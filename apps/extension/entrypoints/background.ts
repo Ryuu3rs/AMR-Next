@@ -51,6 +51,7 @@ import {
     resolveChapterFromHtml,
     resolveCoverFor,
     resolveGenresFor,
+    resolveMangaUrl,
     searchManga,
     getMangaChapters,
     checkSourcePermission
@@ -70,6 +71,10 @@ const internalTabIds = new Set<number>()
 // URLs currently being captured — deduplicate concurrent calls for the same URL
 // (e.g. rapid navigation events or the same URL from multiple listener paths).
 const capturingUrls = new Set<string>()
+// Manga IDs currently having their chapter list refreshed — dedup so capturing
+// chapter 1 then chapter 2 in quick succession doesn't fire two identical network
+// fetches for the same manga's chapter list.
+const capturingMangaIds = new Set<string>()
 
 let updateCheckRunning = false
 let genreBackfillRunning = false
@@ -374,7 +379,6 @@ async function captureChapter(url: string) {
 }
 
 async function doCaptureChapter(url: string) {
-    const settings = await getSettings()
     const parsedUrl = new URL(url)
     const source = findSource(parsedUrl)
 
@@ -382,6 +386,7 @@ async function doCaptureChapter(url: string) {
         return { supported: false as const }
     }
 
+    const settings = await getSettings()
     if (!settings.autoAdd) {
         return { supported: true as const, added: false as const }
     }
@@ -431,9 +436,15 @@ async function doCaptureChapter(url: string) {
 
     // Fire-and-forget: cache the full chapter list so the on-page panel can
     // show prev/next siblings without a network round-trip on each visit.
-    void listChaptersBySource(resolved.manga.sourceId, resolved.manga.sourceMangaId, resolved.manga.url)
-        .then(chapters => db.chapters.bulkPut(chapters))
-        .catch(() => {})
+    // Dedup by manga so two rapid captures of the same series don't double-fetch.
+    const mangaKey = `${resolved.manga.sourceId}:${resolved.manga.sourceMangaId}`
+    if (!capturingMangaIds.has(mangaKey)) {
+        capturingMangaIds.add(mangaKey)
+        void listChaptersBySource(resolved.manga.sourceId, resolved.manga.sourceMangaId, resolved.manga.url)
+            .then(chapters => db.chapters.bulkPut(chapters))
+            .catch(() => {})
+            .finally(() => capturingMangaIds.delete(mangaKey))
+    }
 
     await flashAddedBadge()
     return { supported: true as const, added: true as const, manga: resolved.manga.manga }
@@ -623,7 +634,7 @@ function injectChapterPrompt(chapterUrl: string): void {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     chrome.runtime.sendMessage({ type: "chapter:siblings", url: chapterUrl }, (resp: any) => {
-        if (!resp?.ok || !resp.data) return
+        if (chrome.runtime.lastError || !resp?.ok || !resp.data) return
         const d = resp.data as {
             prevUrl: string | null
             nextUrl: string | null
@@ -906,8 +917,16 @@ export default defineBackground(() => {
                                 "unsupported-url",
                                 "That URL is not a recognized manga page — make sure it's the series page, not a chapter"
                             )
-                        const segments = url.pathname.split("/").filter(Boolean)
-                        const sourceMangaId = segments[segments.length - 1]
+                        // Delegate ID extraction to the adapter — handles MangaDex-style URLs
+                        // where the last segment is an SEO slug, not the internal ID.
+                        // Fallback to last path segment for CF-gated adapters that reject direct fetches.
+                        let sourceMangaId: string
+                        try {
+                            sourceMangaId = await resolveMangaUrl(url)
+                        } catch {
+                            const segs = url.pathname.split("/").filter(Boolean)
+                            sourceMangaId = segs[segs.length - 1] ?? ""
+                        }
                         if (!sourceMangaId)
                             throw new SourceError("invalid-input", "Could not extract manga ID from that URL")
                         const sourceId = adapter.manifest.id

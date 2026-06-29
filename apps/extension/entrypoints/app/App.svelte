@@ -1289,6 +1289,9 @@
         const next = new Set(expandedUpdates)
         if (next.has(mangaId)) {
             next.delete(mangaId)
+            // Clear cached chapters so re-opening always fetches fresh data
+            const { [mangaId]: _dropped, ...rest } = updatesNewChapters
+            updatesNewChapters = rest
         } else {
             next.add(mangaId)
             void loadNewChapters(mangaId)

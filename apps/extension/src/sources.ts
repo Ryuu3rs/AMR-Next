@@ -36,6 +36,18 @@ function createSourceContext(rateLimit?: { requests: number; intervalMs: number 
     }
 }
 
+// Resolve the canonical sourceMangaId from a manga page URL by delegating to
+// the adapter. This handles sites like MangaDex where last path segment is an
+// SEO slug, not the internal ID (/title/{uuid}/{slug} → returns the UUID).
+// Falls back to last path segment for adapters that fail (e.g. CF-gated sites).
+export async function resolveMangaUrl(url: URL): Promise<string> {
+    const source = sourceRegistry.match(url)
+    if (!source) throw new Error("No adapter for this URL")
+    const result = await source.resolveManga({ url }, createSourceContext(source.manifest.requestRateLimit))
+    if (!result.sourceMangaId) throw new Error("Adapter returned empty sourceMangaId")
+    return result.sourceMangaId
+}
+
 export async function resolveCoverFor(manga: {
     sourceId: string
     sourceMangaId?: string

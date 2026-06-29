@@ -5,7 +5,7 @@ import { createMangaStreamAdapter, type MangaStreamConfig } from "./mangastream"
 // source-probe. Each is a config row over the shared factory. Confirm a live
 // chapter before relying on any of them; mangaPath is tunable per config.
 const SITES: MangaStreamConfig[] = [
-    { id: "drakecomic", name: "Drake Comic", origin: "https://drakecomic.com", domains: ["drakecomic.com"] },
+    // { id: "drakecomic", name: "Drake Comic", origin: "https://drakecomic.com", domains: ["drakecomic.com"] }, // retired: site down 2026-06 — re-enable when back
     {
         id: "thunderscans",
         name: "Thunder Scans EN",

@@ -2,7 +2,7 @@ import { SourceRegistry, type SourceAdapter } from "@amr/source-sdk"
 import { mangadexAdapter } from "./mangadex"
 import { mangareadAdapter } from "./mangaread"
 import { mgekoAdapter } from "./mgeko"
-import { manganatoAdapter } from "./manganato"
+// import { manganatoAdapter } from "./manganato" // retired: chapmanganato.to down 2026-06, manganato.com hijacked — re-enable when a working domain is found
 import { weebCentralAdapter } from "./weebcentral"
 import { dynastyScansAdapter } from "./dynasty-scans"
 import { asuraComicAdapter } from "./asuracomic"
@@ -21,7 +21,7 @@ import { comixAdapter } from "./comix"
 export { mangadexAdapter } from "./mangadex"
 export { mangareadAdapter } from "./mangaread"
 export { mgekoAdapter } from "./mgeko"
-export { manganatoAdapter } from "./manganato"
+// export { manganatoAdapter } from "./manganato" // retired: chapmanganato.to down 2026-06
 export { weebCentralAdapter } from "./weebcentral"
 export { dynastyScansAdapter } from "./dynasty-scans"
 export { asuraComicAdapter } from "./asuracomic"
@@ -45,7 +45,7 @@ export const sourceAdapters: readonly SourceAdapter[] = [
     mangadexAdapter,
     mangareadAdapter,
     mgekoAdapter,
-    manganatoAdapter,
+    // manganatoAdapter, // retired: chapmanganato.to down 2026-06 — re-enable when back
     weebCentralAdapter,
     dynastyScansAdapter,
     asuraComicAdapter,
