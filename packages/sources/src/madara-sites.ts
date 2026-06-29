@@ -61,7 +61,8 @@ const SITES: MadaraConfig[] = [
     { id: "suryatoon", name: "Surya Toon", origin: "https://suryatoon.com", domains: ["suryatoon.com"] },
     { id: "mangagalaxy", name: "Manga Galaxy", origin: "https://mangagalaxy.me", domains: ["mangagalaxy.me"] },
     { id: "tritinia", name: "Tritinia Scans", origin: "https://tritinia.org", domains: ["tritinia.org"] },
-    { id: "manhuaus", name: "ManhuaUS", origin: "https://manhuaus.com", domains: ["manhuaus.com"] }
+    { id: "manhuaus", name: "ManhuaUS", origin: "https://manhuaus.com", domains: ["manhuaus.com"] },
+    { id: "mgread", name: "MgRead", origin: "https://mgread.io", domains: ["mgread.io"] }
 ]
 
 export const madaraAdapters: readonly SourceAdapter[] = SITES.map(createMadaraAdapter)
