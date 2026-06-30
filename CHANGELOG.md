@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.8.3](https://github.com/Ryuu3rs/AMR-Next/compare/v0.8.0...v0.8.3) (2026-06-30)
+
+
+### Features
+
+* add MgRead (mgread.io) as Madara source ([62bfa95](https://github.com/Ryuu3rs/AMR-Next/commit/62bfa953))
+* add ManhuaTop capabilities override — sidebar-only, reader shows "open on site" ([1d29e17](https://github.com/Ryuu3rs/AMR-Next/commit/1d29e174))
+* add MangaFreak adapter with full reader support ([4ddb28c](https://github.com/Ryuu3rs/AMR-Next/commit/4ddb28ca))
+* add Comix.to adapter (sidebar/tracking only) ([4ddb28c](https://github.com/Ryuu3rs/AMR-Next/commit/4ddb28ca))
+* add OlympusStaff source adapter with full reader support ([547f2af](https://github.com/Ryuu3rs/AMR-Next/commit/547f2af4))
+* add MangaHere source adapter via FanFox shared factory ([296dee4](https://github.com/Ryuu3rs/AMR-Next/commit/296dee4f))
+* add FanFox source adapter with on-page panel support ([e9872f2](https://github.com/Ryuu3rs/AMR-Next/commit/e9872f2e))
+* add ManhuaUS source adapter ([e9872f2](https://github.com/Ryuu3rs/AMR-Next/commit/e9872f2e))
+* add Discord link button to sidebar footer ([bfb5f95](https://github.com/Ryuu3rs/AMR-Next/commit/bfb5f959))
+* add check for updates button in Settings ([4f0a591](https://github.com/Ryuu3rs/AMR-Next/commit/4f0a591d))
+* add 5 new Madara sources: Aqua Scans, S2Manga, ManhwaTop, Aqua Manga, Manhwa Hentai ([28c66d6](https://github.com/Ryuu3rs/AMR-Next/commit/28c66d63))
+* ImportReconcile bulk scan — "Find Better Sources" batch auto-links all unresolved titles ([0393f58](https://github.com/Ryuu3rs/AMR-Next/commit/0393f58c))
+
+
+### Bug Fixes
+
+* community stats not showing after registration — always fetch leaderboard, add Sync Now button ([a78cf68](https://github.com/Ryuu3rs/AMR-Next/commit/a78cf687))
+* library:switch allows 0 chapters for sidebar-only sources (ImportReconcile no longer errors) ([30cef60](https://github.com/Ryuu3rs/AMR-Next/commit/30cef600))
+* eliminate Function() constructor and innerHTML from AMO-submitted bundle ([bfae940](https://github.com/Ryuu3rs/AMR-Next/commit/bfae9408))
+* Firefox strict_min_version bumped to 142 for data_collection_permissions support ([19543d1](https://github.com/Ryuu3rs/AMR-Next/commit/19543d1c))
+* 3 bugs — update alarm delay, MangaFreak CDN fallback, Madara capability guard ([751228e](https://github.com/Ryuu3rs/AMR-Next/commit/751228ed))
+* retire 12 dead sources; split reader error screen into unsupported vs site-down states ([a77f45d](https://github.com/Ryuu3rs/AMR-Next/commit/a77f45db))
+* clear import banner on resolve; fix update rate limiting ([0393f58](https://github.com/Ryuu3rs/AMR-Next/commit/0393f58c))
+* legacy import aliases — chapmanganato.com/to, mangakakalot, aquascans, manhwatop, s2manga ([28c66d6](https://github.com/Ryuu3rs/AMR-Next/commit/28c66d63))
+* cap adapter search timeout at 6 s so dead sources don't block ImportReconcile title search ([28c66d6](https://github.com/Ryuu3rs/AMR-Next/commit/28c66d63))
+* update banner latency fix ([4f0a591](https://github.com/Ryuu3rs/AMR-Next/commit/4f0a591d))
+
+
+### AMO / Firefox
+
+* gecko ID changed to `amr-next@ryuu3rs.dev` ([9b5e35b](https://github.com/Ryuu3rs/AMR-Next/commit/9b5e35b0))
+* add `sign:firefox` npm script for automated AMO signing ([19543d1](https://github.com/Ryuu3rs/AMR-Next/commit/19543d1c))
+
+
 ## [0.8.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.7.1...v0.8.0) (2026-06-28)
 
 
