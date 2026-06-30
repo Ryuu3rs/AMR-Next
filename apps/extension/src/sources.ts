@@ -152,8 +152,12 @@ export async function searchManga(query: string): Promise<SourceSearchResult[]> 
         const health = stored?.[adapter.manifest.id]
         return !(health && health.alive === false && Date.now() - health.at < 24 * 60 * 60 * 1000)
     })
+    const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
+        Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))])
     const settled = await Promise.allSettled(
-        searchable.map(adapter => adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)))
+        searchable.map(adapter =>
+            withTimeout(adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)), 6000)
+        )
     )
     return settled.flatMap(result => (result.status === "fulfilled" ? result.value : []))
 }

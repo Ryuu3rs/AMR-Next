@@ -62,7 +62,24 @@ const SITES: MadaraConfig[] = [
     { id: "mangagalaxy", name: "Manga Galaxy", origin: "https://mangagalaxy.me", domains: ["mangagalaxy.me"] },
     { id: "tritinia", name: "Tritinia Scans", origin: "https://tritinia.org", domains: ["tritinia.org"] },
     { id: "manhuaus", name: "ManhuaUS", origin: "https://manhuaus.com", domains: ["manhuaus.com"] },
-    { id: "mgread", name: "MgRead", origin: "https://mgread.io", domains: ["mgread.io"] }
+    { id: "mgread", name: "MgRead", origin: "https://mgread.io", domains: ["mgread.io"] },
+    { id: "aquascans", name: "Aqua Scans", origin: "https://aquascans.com", domains: ["aquascans.com"] },
+    { id: "s2manga", name: "S2Manga", origin: "https://s2manga.com", domains: ["s2manga.com"] },
+    { id: "manhwatop", name: "ManhwaTop", origin: "https://manhwatop.com", domains: ["manhwatop.com"] },
+    {
+        id: "aquamanga",
+        name: "Aqua Manga",
+        origin: "https://aquamanga.com",
+        domains: ["aquamanga.com"],
+        mangaPath: "read"
+    },
+    {
+        id: "manhwahentai",
+        name: "Manhwa Hentai",
+        origin: "https://manhwahentai.me",
+        domains: ["manhwahentai.me"],
+        mangaPath: "webtoon"
+    }
 ]
 
 export const madaraAdapters: readonly SourceAdapter[] = SITES.map(createMadaraAdapter)

@@ -53,7 +53,18 @@ const LEGACY_DOMAIN_ALIASES: Readonly<Record<string, string>> = {
     "flamecomics.me": "flamecomics",
     "www.flamecomics.me": "flamecomics",
     // Tritinia Scans
-    "www.tritinia.org": "tritinia"
+    "www.tritinia.org": "tritinia",
+    // MangaNato / Chapmanganato — standalone domains separate from chap.manganato.com
+    "chapmanganato.com": "manganato",
+    "chapmanganato.to": "manganato",
+    "mangakakalot.com": "manganato",
+    // Aqua Scans / Aqua Manga — import aliases for new adapters
+    "aquascans.com": "aquascans",
+    "aquamanga.com": "aquamanga",
+    // Other newly-registered Madara sites
+    "manhwatop.com": "manhwatop",
+    "s2manga.com": "s2manga",
+    "manhwahentai.me": "manhwahentai"
 }
 
 export function isLegacyExport(raw: unknown): raw is LegacyExport {
