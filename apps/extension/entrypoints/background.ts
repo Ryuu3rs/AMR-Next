@@ -53,6 +53,7 @@ import {
     resolveGenresFor,
     resolveMangaUrl,
     searchManga,
+    searchMangaStreaming,
     getMangaChapters,
     checkSourcePermission
 } from "../src/sources"
@@ -844,6 +845,34 @@ export default defineBackground(() => {
     } else {
         browser.tabs.onUpdated.addListener(onUpdatedHandler)
     }
+
+    // Streaming search via long-lived port so the UI can show results per-source
+    // as each adapter settles instead of waiting for all to finish.
+    browser.runtime.onConnect.addListener(port => {
+        if (port.name !== "search-stream") return
+        port.onMessage.addListener((msg: { type: string; query: string }) => {
+            if (msg.type !== "manga:search" || !msg.query) return
+            const searchable = sourceRegistry.list().filter(a => !!a.search)
+            port.postMessage({ type: "start", total: searchable.length })
+            searchMangaStreaming(
+                msg.query,
+                (results, sourceId) => {
+                    try {
+                        port.postMessage({ type: "partial", results, sourceId })
+                    } catch {
+                        // port may have disconnected
+                    }
+                },
+                () => {
+                    try {
+                        port.postMessage({ type: "done" })
+                    } catch {
+                        // port may have disconnected
+                    }
+                }
+            )
+        })
+    })
 
     browser.runtime.onMessage.addListener((message, sender) => {
         return (async () => {
