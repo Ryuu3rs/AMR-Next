@@ -143,23 +143,45 @@ export async function resolveChapterFromHtml(urlStr: string, html: string) {
 
 // Aggregate search across every adapter that supports it. Sources without
 // granted host permission fail their origin check and are skipped (allSettled).
+// sourceHealth is intentionally NOT used here — a source can be flagged dead for
+// chapter fetching but still have a working search endpoint.
 export async function searchManga(query: string): Promise<SourceSearchResult[]> {
-    const stored = (await browser.storage.local.get("sourceHealth"))["sourceHealth"] as
-        | Record<string, { alive: boolean; at: number }>
-        | undefined
-    const searchable = sourceRegistry.list().filter(adapter => {
-        if (!adapter.search) return false
-        const health = stored?.[adapter.manifest.id]
-        return !(health && health.alive === false && Date.now() - health.at < 24 * 60 * 60 * 1000)
-    })
+    const searchable = sourceRegistry.list().filter(adapter => !!adapter.search)
     const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
         Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))])
     const settled = await Promise.allSettled(
         searchable.map(adapter =>
-            withTimeout(adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)), 6000)
+            withTimeout(adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)), 10000)
         )
     )
     return settled.flatMap(result => (result.status === "fulfilled" ? result.value : []))
+}
+
+// Streaming variant — fires all adapters concurrently and calls onPartial as each
+// adapter settles, then calls onDone when all are complete. Enables progressive UI.
+export function searchMangaStreaming(
+    query: string,
+    onPartial: (results: SourceSearchResult[], sourceId: string) => void,
+    onDone: () => void
+): void {
+    const searchable = sourceRegistry.list().filter(adapter => !!adapter.search)
+    if (searchable.length === 0) {
+        onDone()
+        return
+    }
+    const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
+        Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))])
+    let remaining = searchable.length
+    for (const adapter of searchable) {
+        withTimeout(adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)), 10000)
+            .then(results => {
+                if (results.length > 0) onPartial(results, adapter.manifest.id)
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (--remaining === 0) onDone()
+            })
+    }
 }
 
 export type MangaSearchResult = SourceSearchResult

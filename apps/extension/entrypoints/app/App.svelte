@@ -304,6 +304,8 @@
     }
     let searchResults = $state<SearchResult[]>([])
     let searchLoading = $state(false)
+    let searchTotal = $state(0)
+    let searchSettled = $state(0)
     let selectedManga = $state<{ title: string } | null>(null)
     let mangaChapters = $state<Array<{ id: string; title: string; chapter?: string; url: string }>>([])
     let chaptersLoading = $state(false)
@@ -880,21 +882,36 @@
         hasPermission = await browser.permissions.request({ origins: sourceOrigins() })
     }
 
-    async function doSearch() {
+    function doSearch() {
         if (!browseQuery.trim()) return
         searchLoading = true
         searchResults = []
+        searchTotal = 0
+        searchSettled = 0
         selectedManga = null
-        try {
-            searchResults = await sendRuntimeMessage<typeof searchResults>({
-                type: "manga:search",
-                query: browseQuery.trim()
-            })
-        } catch {
-            searchResults = []
-        } finally {
+
+        const port = browser.runtime.connect({ name: "search-stream" })
+        const query = browseQuery.trim()
+
+        port.onMessage.addListener(
+            (msg: { type: string; total?: number; results?: SearchResult[]; sourceId?: string }) => {
+                if (msg.type === "start") {
+                    searchTotal = msg.total ?? 0
+                } else if (msg.type === "partial" && msg.results) {
+                    searchResults = [...searchResults, ...msg.results]
+                    searchSettled++
+                } else if (msg.type === "done") {
+                    searchLoading = false
+                    port.disconnect()
+                }
+            }
+        )
+
+        port.onDisconnect.addListener(() => {
             searchLoading = false
-        }
+        })
+
+        port.postMessage({ type: "manga:search", query })
     }
 
     // MangaDex can list chapters; other sources open the manga page directly.
@@ -1456,7 +1473,7 @@
                 class="search-bar global-search home-search"
                 onsubmit={e => {
                     e.preventDefault()
-                    void doSearch()
+                    doSearch()
                 }}>
                 <input
                     bind:value={browseQuery}
@@ -1491,39 +1508,52 @@
                         </div>
                     {/if}
                 </div>
-            {:else if searchLoading}
-                <p class="muted">Searching all sources…</p>
-            {:else if searchResults.length > 0}
-                {#each searchBySource as [sourceId, results]}
-                    <div class="source-group">
-                        <div class="source-group-head">
-                            <span class="source-name">{sourceMeta.get(sourceId)?.name ?? sourceId}</span>
-                            <span class="muted">{results.length} result{results.length === 1 ? "" : "s"}</span>
-                        </div>
-                        <div class="search-results">
-                            {#each results as result}
-                                <div class="search-result">
-                                    <div class="result-cover">
-                                        {#if result.coverUrl}<img
-                                                src={result.coverUrl}
-                                                alt={result.title} />{:else}<span>{result.title[0]}</span>{/if}
+            {:else}
+                {#if searchLoading && searchResults.length === 0}
+                    <p class="muted">
+                        Searching…{searchTotal > 0 ? ` (${searchSettled}/${searchTotal} sources)` : ""}
+                    </p>
+                {/if}
+                {#if searchResults.length > 0}
+                    {#if searchLoading}
+                        <p class="muted search-progress">
+                            Searching… {searchSettled}/{searchTotal} sources — {searchResults.length} result{searchResults.length ===
+                            1
+                                ? ""
+                                : "s"} so far
+                        </p>
+                    {/if}
+                    {#each searchBySource as [sourceId, results]}
+                        <div class="source-group">
+                            <div class="source-group-head">
+                                <span class="source-name">{sourceMeta.get(sourceId)?.name ?? sourceId}</span>
+                                <span class="muted">{results.length} result{results.length === 1 ? "" : "s"}</span>
+                            </div>
+                            <div class="search-results">
+                                {#each results as result}
+                                    <div class="search-result">
+                                        <div class="result-cover">
+                                            {#if result.coverUrl}<img
+                                                    src={result.coverUrl}
+                                                    alt={result.title} />{:else}<span>{result.title[0]}</span>{/if}
+                                        </div>
+                                        <div class="result-info">
+                                            <p class="result-title">{result.title}</p>
+                                            <p class="muted">
+                                                {#if result.latestChapter}latest ch {result.latestChapter}{:else}—{/if}
+                                            </p>
+                                        </div>
+                                        <button type="button" onclick={() => void openResult(result)}>
+                                            {result.sourceId === "mangadex" ? "Chapters" : "Open"}
+                                        </button>
                                     </div>
-                                    <div class="result-info">
-                                        <p class="result-title">{result.title}</p>
-                                        <p class="muted">
-                                            {#if result.latestChapter}latest ch {result.latestChapter}{:else}—{/if}
-                                        </p>
-                                    </div>
-                                    <button type="button" onclick={() => void openResult(result)}>
-                                        {result.sourceId === "mangadex" ? "Chapters" : "Open"}
-                                    </button>
-                                </div>
-                            {/each}
+                                {/each}
+                            </div>
                         </div>
-                    </div>
-                {/each}
-            {:else if browseQuery.trim() && !searchLoading}
-                <p class="muted">No results across any source.</p>
+                    {/each}
+                {:else if browseQuery.trim() && !searchLoading}
+                    <p class="muted">No results across any source.</p>
+                {/if}
             {/if}
 
             {#if loading}
