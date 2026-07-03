@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.9.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.8.3...v0.9.0) (2026-07-03)
+
+
+### Features
+
+* add 5 Madara sources, fix legacy import aliases, cap search timeout at 6s ([28c66d6](https://github.com/Ryuu3rs/AMR-Next/commit/28c66d6338df0dcefe13544b59e0a43adce9dd86))
+* add capabilities override to MadaraConfig, re-enable ManhuaTop as sidebar-only ([1d29e17](https://github.com/Ryuu3rs/AMR-Next/commit/1d29e1743ca23d0149cb49cfe1737bff8e767f91))
+* add MangaFreak (full reader) and Comix.to (sidebar/tracking) source adapters ([4ddb28c](https://github.com/Ryuu3rs/AMR-Next/commit/4ddb28cab529954d631f3683bb277b1d88f5d67e))
+* add MgRead (mgread.io) as Madara source ([62bfa95](https://github.com/Ryuu3rs/AMR-Next/commit/62bfa9532e57af0058a2e0134ce4e1e435dd7410))
+* stream search results per-source as each adapter settles ([5053277](https://github.com/Ryuu3rs/AMR-Next/commit/5053277ff3be8bd8d927c889fb57928e0668eb5a))
+
+
+### Bug Fixes
+
+* 3 bugs — delay on failed updates, mangafreak CDN fallback, madara capability guard ([751228e](https://github.com/Ryuu3rs/AMR-Next/commit/751228edd565929a2822a7a41785a78933adef30))
+* 6 bugs + retire 12 dead sources + add retirement workflow doc ([a77f45d](https://github.com/Ryuu3rs/AMR-Next/commit/a77f45db0b076d98ccea7cdf37dd8bc6e3cd3d6c))
+* allow library:switch with 0 chapters for sidebar-only sources ([30cef60](https://github.com/Ryuu3rs/AMR-Next/commit/30cef6004e13aecef70302757db2379a33825aef))
+* bump Firefox strict_min_version to 142 for data_collection_permissions support, add sign:firefox script ([19543d1](https://github.com/Ryuu3rs/AMR-Next/commit/19543d1c7cfbbd0cf990be52f65b49d942493312))
+* change gecko ID to all-mangas-reader-2@ryuu3rs.dev (original ID taken on AMO) ([7d86794](https://github.com/Ryuu3rs/AMR-Next/commit/7d86794a1f9cef586e0193f32cf84927474e4eb3))
+* clear import banner on resolve, add Find Better Sources bulk scan, fix update rate limiting ([0393f58](https://github.com/Ryuu3rs/AMR-Next/commit/0393f58cbd19edd8ab759319ccc1cebdfa93488a))
+* community stats not showing after registration — fetch leaderboard even with no new chapters, add Sync Now button, refresh profile post-register ([a78cf68](https://github.com/Ryuu3rs/AMR-Next/commit/a78cf687a8082b2372b66197a5de6b69542a2870))
+* eliminate Function() and innerHTML from AMO-submitted bundle ([bfae940](https://github.com/Ryuu3rs/AMR-Next/commit/bfae9408dd3c26c214076b2f44e65f4d9b694782))
+* set mangaPath=series for VortexScans (uses /series/ not /manga/) ([a9d5f7d](https://github.com/Ryuu3rs/AMR-Next/commit/a9d5f7d3378872139657fa62655ca2d99d28869e))
+* update gecko ID to amr-next@ryuu3rs.dev ([9b5e35b](https://github.com/Ryuu3rs/AMR-Next/commit/9b5e35b08fa62ae2f98c519a4f7023eb0dd500be))
+
 ## [0.8.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.7.1...v0.8.0) (2026-06-28)
 
 
