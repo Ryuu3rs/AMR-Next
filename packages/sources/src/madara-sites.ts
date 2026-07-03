@@ -38,7 +38,13 @@ const SITES: MadaraConfig[] = [
     { id: "manytoon", name: "ManyToon", origin: "https://manytoon.com", domains: ["manytoon.com"] },
     { id: "omegascans", name: "Omega Scans", origin: "https://omegascans.org", domains: ["omegascans.org"] },
     // { id: "kunmanga", name: "KunManga", origin: "https://kunmanga.com", domains: ["kunmanga.com"] }, // retired: site down 2026-06 — re-enable when back
-    { id: "vortexscans", name: "Vortex Scans", origin: "https://vortexscans.org", domains: ["vortexscans.org"] },
+    {
+        id: "vortexscans",
+        name: "Vortex Scans",
+        origin: "https://vortexscans.org",
+        domains: ["vortexscans.org"],
+        mangaPath: "series"
+    },
     // { id: "casacomic", name: "Casa Comic", origin: "https://casacomic.com", domains: ["casacomic.com"] }, // retired: site down 2026-06 — re-enable when back
     {
         id: "natomanga",
