@@ -387,6 +387,8 @@
                                     Remove
                                 </button>
                             </div>
+                        {/if}
+                        {#if card.searched && !card.searching}
                             <form
                                 class="link-url-form"
                                 onsubmit={e => {

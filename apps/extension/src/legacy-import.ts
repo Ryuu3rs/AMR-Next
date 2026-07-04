@@ -58,6 +58,10 @@ const LEGACY_DOMAIN_ALIASES: Readonly<Record<string, string>> = {
     "chapmanganato.com": "manganato",
     "chapmanganato.to": "manganato",
     "mangakakalot.com": "manganato",
+    // MangaDex — old AMR stored numeric chapter IDs (pre-UUID era) which the adapter's
+    // match() rejects; fall back via alias so the source is still recognised as mangadex.
+    "mangadex.org": "mangadex",
+    "www.mangadex.org": "mangadex",
     // Aqua Scans / Aqua Manga — import aliases for new adapters
     "aquascans.com": "aquascans",
     "aquamanga.com": "aquamanga",

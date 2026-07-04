@@ -505,7 +505,10 @@ export async function importDatabase(
         for (let i = 0; i < data.manga.length; i++) {
             const im = data.manga[i]
             const ex = existing[i]
-            const resolution = ex ? (resolutions[im.id] ?? "overwrite") : "overwrite"
+            // Default to merge (not overwrite) so read progress is never silently lost
+            // when no explicit resolution is chosen. Merge takes Math.max of progress
+            // fields, so it's strictly non-destructive.
+            const resolution = ex ? (resolutions[im.id] ?? "merge") : "overwrite"
             if (resolution === "skip") {
                 skippedIds.add(im.id)
             } else if (resolution === "merge" && ex) {
