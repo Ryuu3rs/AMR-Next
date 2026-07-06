@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1](https://github.com/Ryuu3rs/AMR-Next/compare/v0.9.0...v0.9.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* 3 migration bugs — mangadex alias, manual URL form, import read progress ([6dea208](https://github.com/Ryuu3rs/AMR-Next/commit/6dea208f0d022e42ea747c7d85930b3e48b666b4))
+* sync package-lock.json with community-server workspace ([9a18425](https://github.com/Ryuu3rs/AMR-Next/commit/9a18425c6d723ad76951589654952bc4505446f1))
+
 ## [0.9.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.8.3...v0.9.0) (2026-07-03)
 
 
