@@ -148,7 +148,7 @@ export const webtoonsAdapter: SourceAdapter = {
 
     async resolveManga(input: ResolveMangaInput, ctx: SourceContext): Promise<SourceManga> {
         const titleNo = input.sourceMangaId ?? input.url?.searchParams.get("title_no") ?? undefined
-        if (!titleNo) throw new SourceError("No title_no in URL or sourceMangaId")
+        if (!titleNo) throw new SourceError("invalid-input", "No title_no in URL or sourceMangaId")
         const url = input.url ?? new URL(`${ORIGIN}/en/fantasy/unknown/list?title_no=${titleNo}`)
         const html = await ctx.request.getText(url, { headers: BROWSER_HEADERS })
         const title = extractTitle(html, `Series ${titleNo}`)
@@ -206,11 +206,11 @@ export const webtoonsAdapter: SourceAdapter = {
     },
 
     async resolveChapter(input: ResolveChapterInput, ctx: SourceContext): Promise<ResolvedChapter> {
-        if (!input.url) throw new SourceError("Chapter URL required for WEBTOON")
+        if (!input.url) throw new SourceError("invalid-input", "Chapter URL required for WEBTOON")
         const url = input.url
         const titleNo = url.searchParams.get("title_no")
         const episodeNo = input.sourceChapterId ?? url.searchParams.get("episode_no")
-        if (!titleNo || !episodeNo) throw new SourceError("Missing title_no or episode_no in URL")
+        if (!titleNo || !episodeNo) throw new SourceError("invalid-input", "Missing title_no or episode_no in URL")
 
         const html = await ctx.request.getText(url, { headers: BROWSER_HEADERS })
         const images = extractImages(html)
@@ -218,7 +218,7 @@ export const webtoonsAdapter: SourceAdapter = {
             // Viewer images are JS-rendered; direct SW fetch returns minimal HTML.
             // Signal bot-block to trigger the tab-render fallback (real browser session
             // with locale cookies, full JS execution, data-url attributes in DOM).
-            throw new SourceRequestError(undefined)
+            throw new SourceRequestError("blocked")
         }
 
         // Build list URL by replacing the path segment and query

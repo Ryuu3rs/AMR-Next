@@ -445,24 +445,30 @@ function parseImportData(value: unknown) {
 }
 
 function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryManga {
+    const rating = existing.rating ?? imported.rating
+    const categories = existing.categories ?? imported.categories
+    const notes = existing.notes ?? imported.notes
+    const nsfw = existing.nsfw ?? imported.nsfw
+    const manualTracking = existing.manualTracking ?? imported.manualTracking
+    const lastReadChapterNumber =
+        Math.max(existing.lastReadChapterNumber ?? 0, imported.lastReadChapterNumber ?? 0) || undefined
+    const latestChapterNumber =
+        Math.max(existing.latestChapterNumber ?? 0, imported.latestChapterNumber ?? 0) || undefined
+    const lastReadAt = existing.lastReadAt
+        ? imported.lastReadAt
+            ? Math.max(existing.lastReadAt, imported.lastReadAt)
+            : existing.lastReadAt
+        : imported.lastReadAt
     return {
         ...imported,
-        // user preferences: always keep existing
-        rating: existing.rating ?? imported.rating,
-        categories: existing.categories ?? imported.categories,
-        notes: existing.notes ?? imported.notes,
-        nsfw: existing.nsfw ?? imported.nsfw,
-        manualTracking: existing.manualTracking ?? imported.manualTracking,
-        // progress: keep the further-along value
-        lastReadChapterNumber:
-            Math.max(existing.lastReadChapterNumber ?? 0, imported.lastReadChapterNumber ?? 0) || undefined,
-        latestChapterNumber:
-            Math.max(existing.latestChapterNumber ?? 0, imported.latestChapterNumber ?? 0) || undefined,
-        lastReadAt: existing.lastReadAt
-            ? imported.lastReadAt
-                ? Math.max(existing.lastReadAt, imported.lastReadAt)
-                : existing.lastReadAt
-            : imported.lastReadAt,
+        ...(rating !== undefined ? { rating } : {}),
+        ...(categories !== undefined ? { categories } : {}),
+        ...(notes !== undefined ? { notes } : {}),
+        ...(nsfw !== undefined ? { nsfw } : {}),
+        ...(manualTracking !== undefined ? { manualTracking } : {}),
+        ...(lastReadChapterNumber !== undefined ? { lastReadChapterNumber } : {}),
+        ...(latestChapterNumber !== undefined ? { latestChapterNumber } : {}),
+        ...(lastReadAt !== undefined ? { lastReadAt } : {}),
         addedAt: Math.min(existing.addedAt, imported.addedAt),
         updatedAt: Math.max(existing.updatedAt, imported.updatedAt)
     }
@@ -476,7 +482,7 @@ export async function previewImport(value: unknown): Promise<ImportConflict[]> {
     const conflicts: ImportConflict[] = []
     for (let i = 0; i < data.manga.length; i++) {
         const ex = existing[i]
-        const im = data.manga[i]
+        const im = data.manga[i]!
         if (ex) {
             conflicts.push({
                 mangaId: im.id,
@@ -503,7 +509,7 @@ export async function importDatabase(
         const ids = data.manga.map(m => m.id)
         const existing = await db.manga.bulkGet(ids)
         for (let i = 0; i < data.manga.length; i++) {
-            const im = data.manga[i]
+            const im = data.manga[i]!
             const ex = existing[i]
             // Default to merge (not overwrite) so read progress is never silently lost
             // when no explicit resolution is chosen. Merge takes Math.max of progress

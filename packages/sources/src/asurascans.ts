@@ -43,14 +43,14 @@ function extractImages(html: string): string[] {
     // Strategy 1: React Flight (RSC) data — "url":[0,"https://cdn.asurascans.com/asura-images/chapters/..."]
     const flightUrls = [
         ...html.matchAll(/"url":\[0,"(https?:\/\/cdn\.asurascans\.com\/asura-images\/chapters\/[^"]+)"/g)
-    ].map(m => m[1])
+    ].map(m => m[1]!)
     if (flightUrls.length > 0) return flightUrls
 
     // Strategy 2: <img data-page-index="N"> — chapter page imgs present in SSR HTML
     const pageImgs: string[] = []
     for (const m of html.matchAll(/<img\b([^>]*)>/gi)) {
-        const tag = m[1]
-        if (!/data-page-index/.test(tag)) continue
+        const tag = m[1] ?? ""
+        if (!tag || !/data-page-index/.test(tag)) continue
         const srcM = tag.match(/\bsrc=["']([^"']+)["']/)
         if (srcM?.[1]) pageImgs.push(srcM[1])
     }
@@ -61,7 +61,7 @@ function extractImages(html: string): string[] {
         ...html.matchAll(
             /<img\b[^>]*\bsrc=["'](https?:\/\/cdn\.asurascans\.com\/asura-images\/chapters\/[^"']+)["'][^>]*>/gi
         )
-    ].map(m => m[1])
+    ].map(m => m[1]!)
 }
 
 function extractTitle(html: string, slug: string): string {

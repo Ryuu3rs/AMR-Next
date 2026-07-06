@@ -156,7 +156,7 @@ export const mangahubAdapter: SourceAdapter = {
 
     async resolveManga(input: ResolveMangaInput, ctx: SourceContext): Promise<SourceManga> {
         const slug = input.sourceMangaId ?? input.url?.pathname.split("/").filter(Boolean)[1]
-        if (!slug) throw new SourceError("No manga slug")
+        if (!slug) throw new SourceError("invalid-input", "No manga slug")
         const url = new URL(`${ORIGIN}/manga/${slug}`)
         const html = await ctx.request.getText(url, { headers: BROWSER_HEADERS })
         const title = extractTitle(html, slug)
@@ -182,11 +182,11 @@ export const mangahubAdapter: SourceAdapter = {
         const { manga } = input
         const mangaUrl = new URL(manga.url)
         const html = await ctx.request.getText(mangaUrl, { headers: BROWSER_HEADERS })
-        return extractChapters(html, manga.id)
+        return extractChapters(html, manga.manga.id)
     },
 
     async resolveChapter(input: ResolveChapterInput, ctx: SourceContext): Promise<ResolvedChapter> {
-        if (!input.url) throw new SourceError("Chapter URL required for MangaHub")
+        if (!input.url) throw new SourceError("invalid-input", "Chapter URL required for MangaHub")
         const url = input.url
 
         // Chapter pages are behind Cloudflare JS challenge — tab render required.
@@ -197,15 +197,15 @@ export const mangahubAdapter: SourceAdapter = {
             html = await ctx.request.getText(url, { headers: BROWSER_HEADERS })
             // Cloudflare challenge response — treat as blocked
             if (html.includes("__CF$cv$params") || html.includes("/cdn-cgi/challenge-platform/")) {
-                throw new SourceRequestError(undefined)
+                throw new SourceRequestError("blocked")
             }
         } catch (e) {
-            if (e instanceof SourceRequestError && e.statusCode === undefined) throw e
-            throw new SourceRequestError(undefined)
+            if (e instanceof SourceRequestError && e.status === undefined) throw e
+            throw new SourceRequestError("blocked")
         }
 
         const images = extractImages(html)
-        if (images.length === 0) throw new SourceRequestError(undefined)
+        if (images.length === 0) throw new SourceRequestError("blocked")
 
         const pathParts = url.pathname.split("/").filter(Boolean)
         const chSlug = pathParts[1] ?? ""

@@ -59,7 +59,7 @@ function extractFromInitialData(html: string): { title?: string; coverUrl?: stri
             const title = typeof stateData["title"] === "string" ? stateData["title"] : undefined
             const poster = stateData["poster"] as Record<string, string> | undefined
             const coverUrl = poster?.["large"] ?? poster?.["medium"]
-            if (title || coverUrl) return { title, coverUrl }
+            if (title || coverUrl) return { ...(title ? { title } : {}), ...(coverUrl ? { coverUrl } : {}) }
         }
     } catch {}
     return {}
@@ -83,7 +83,7 @@ async function fetchMangaData(slug: string, context: SourceContext): Promise<{ t
             headers: BROWSER_HEADERS
         })
         const { title, coverUrl } = extractFromInitialData(html)
-        return { title: title ?? extractOgTitle(html) ?? slug, coverUrl }
+        return { title: title ?? extractOgTitle(html) ?? slug, ...(coverUrl ? { coverUrl } : {}) }
     } catch {
         return { title: slug }
     }

@@ -1249,7 +1249,6 @@
             await sendRuntimeMessage({ type: scope === "all" ? "library:clear" : "library:clear-history" })
             if (scope === "all") {
                 library = []
-                categories = []
             }
             clearConfirm = ""
         } finally {

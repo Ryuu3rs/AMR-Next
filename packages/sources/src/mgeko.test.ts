@@ -75,10 +75,10 @@ describe("mgekoAdapter.listChapters", () => {
         const chapters = await mgekoAdapter.listChapters({ manga, limit: 500 }, context)
 
         expect(chapters).toHaveLength(3)
-        expect(chapters[0].sortKey).toBe(52)
-        expect(chapters[0].title).toBe("Chapter 52")
-        expect(chapters[0].url).toBe(`https://www.mgeko.cc/reader/en/${MANGA_SLUG}-chapter-52-eng-li/`)
-        expect(chapters[2].sortKey).toBe(1)
+        expect(chapters[0]!.sortKey).toBe(52)
+        expect(chapters[0]!.title).toBe("Chapter 52")
+        expect(chapters[0]!.url).toBe(`https://www.mgeko.cc/reader/en/${MANGA_SLUG}-chapter-52-eng-li/`)
+        expect(chapters[2]!.sortKey).toBe(1)
         expect(requests).toEqual([`GET https://www.mgeko.cc${MANGA_PATH}`])
     })
 
@@ -97,20 +97,20 @@ describe("mgekoAdapter.search", () => {
         const requests: string[] = []
         const context = createContext({ [SEARCH_PATH]: searchHtml }, requests)
 
-        const results = await mgekoAdapter.search(SEARCH_QUERY, context)
+        const results = await mgekoAdapter.search!(SEARCH_QUERY, context)
 
         expect(results).toHaveLength(2)
-        expect(results[0].sourceMangaId).toBe(MANGA_SLUG)
-        expect(results[0].title).toBe("Barbarian's Adventure in a Fantasy World")
-        expect(results[0].coverUrl).toBe(COVER_URL)
-        expect(results[1].sourceMangaId).toBe("barbarian-quest")
-        expect(requests[0]).toContain("?s=barbarian")
+        expect(results[0]!.sourceMangaId).toBe(MANGA_SLUG)
+        expect(results[0]!.title).toBe("Barbarian's Adventure in a Fantasy World")
+        expect(results[0]!.coverUrl).toBe(COVER_URL)
+        expect(results[1]!.sourceMangaId).toBe("barbarian-quest")
+        expect(requests[0]!).toContain("?s=barbarian")
     })
 
     it("returns empty array for blank query", async () => {
         const requests: string[] = []
         const context = createContext({}, requests)
-        const results = await mgekoAdapter.search("   ", context)
+        const results = await mgekoAdapter.search!("   ", context)
         expect(results).toHaveLength(0)
         expect(requests).toHaveLength(0)
     })

@@ -213,7 +213,7 @@ function extractChapterPageMeta(html: string): { seriesSlug?: string; title: str
         title = raw.split(/\s*[|]\s*/)[0]?.trim() ?? ""
     }
     const sortKey = chapterSortKey(title)
-    return { seriesSlug, title: title || "Chapter", sortKey }
+    return { ...(seriesSlug ? { seriesSlug } : {}), title: title || "Chapter", sortKey }
 }
 
 function extractSearchResults(html: string): SourceSearchResult[] {

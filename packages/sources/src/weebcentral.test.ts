@@ -16,7 +16,7 @@ function makeContext(responses: Record<string, string>) {
     return {
         request: {
             getText: vi.fn(async (url: URL) => {
-                const key = url.toString().split("?")[0]
+                const key = url.toString().split("?")[0] ?? url.toString()
                 const html = responses[key]
                 if (html === undefined) throw new Error(`No fixture for ${key}`)
                 return html
@@ -76,9 +76,9 @@ describe("weebCentralAdapter.listChapters", () => {
         }
         const chapters = await adapter.listChapters({ manga: stubManga }, ctx as never)
         expect(chapters.length).toBe(3)
-        expect(chapters[0].sortKey).toBeLessThanOrEqual(chapters[1].sortKey)
-        expect(chapters[1].sortKey).toBeLessThanOrEqual(chapters[2].sortKey)
-        expect(chapters[0].sourceChapterId).toBe(CHAPTER_ID)
+        expect(chapters[0]!.sortKey).toBeLessThanOrEqual(chapters[1]!.sortKey)
+        expect(chapters[1]!.sortKey).toBeLessThanOrEqual(chapters[2]!.sortKey)
+        expect(chapters[0]!.sourceChapterId).toBe(CHAPTER_ID)
     })
 })
 
@@ -91,7 +91,7 @@ describe("weebCentralAdapter.resolveChapter", () => {
         })
         const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, ctx as never)
         expect(result.pages.length).toBe(3)
-        expect(result.pages[0].url).toContain("001.jpg")
+        expect(result.pages[0]!.url).toContain("001.jpg")
         expect(result.chapter.sourceChapterId).toBe(CHAPTER_ID)
         expect(result.manga.manga.title).toBe("Solo Leveling")
     })
@@ -109,9 +109,9 @@ describe("weebCentralAdapter.resolveChapter", () => {
 describe("weebCentralAdapter.search", () => {
     it("returns results from the search page", async () => {
         const ctx = makeContext({ [`${ORIGIN}/search`]: searchHtml })
-        const results = await adapter.search("solo leveling", ctx as never)
+        const results = await adapter.search!("solo leveling", ctx as never)
         expect(results.length).toBeGreaterThanOrEqual(1)
-        expect(results[0].title).toBe("Solo Leveling")
-        expect(results[0].sourceId).toBe("weebcentral")
+        expect(results[0]!.title).toBe("Solo Leveling")
+        expect(results[0]!.sourceId).toBe("weebcentral")
     })
 })

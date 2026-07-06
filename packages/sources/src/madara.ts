@@ -7,6 +7,7 @@ import {
     type ResolveMangaInput,
     type ResolvedChapter,
     type SourceAdapter,
+    type SourceCapability,
     type SourceChapter,
     type SourceContext,
     type SourceManga,
@@ -34,7 +35,7 @@ export type MadaraConfig = {
     // Override adapter capabilities. Omit for the default ["pages", "chapters"].
     // Set to ["chapters"] for sites that block background fetches or use ad-gates —
     // sidebar tracking works but the reader returns pages:[] (shows "open on site" screen).
-    capabilities?: readonly string[]
+    capabilities?: readonly SourceCapability[]
 }
 
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
