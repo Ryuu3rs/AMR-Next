@@ -608,7 +608,7 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             // Sidebar-only mode: skip network fetch, construct from URL slugs, return empty pages.
             // Reader will show "open on site" screen. Used for sites that block background
             // fetches or gate chapters behind ad redirects.
-            if (!config.capabilities || !config.capabilities.includes("pages")) {
+            if (config.capabilities && !config.capabilities.includes("pages")) {
                 const chapterNumber = extractChapterNumber(slugs.chapterSlug)
                 const now = context.now()
                 const mangaId = `${config.id}:manga:${slugs.mangaSlug}`

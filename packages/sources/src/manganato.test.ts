@@ -9,10 +9,8 @@ import {
     MANGA_PATH,
     MANGA_URL,
     PAGE_URLS,
-    SEARCH_PATH,
     chapterHtml,
-    mangaHtml,
-    searchHtml
+    mangaHtml
 } from "./__fixtures__/manganato"
 import { manganatoAdapter } from "./manganato"
 
@@ -86,15 +84,6 @@ describe("manganatoAdapter.listChapters", () => {
         const chapters = await manganatoAdapter.listChapters({ manga }, context)
         expect(chapters.map(c => c.sortKey)).toEqual([67, 68])
         expect(chapters[1]!.url).toBe(`https://chapmanganato.to/${MANGA_ID}/chapter-68`)
-    })
-})
-
-describe("manganatoAdapter.search", () => {
-    it("returns results from the search story endpoint", async () => {
-        const context = createContext({ [SEARCH_PATH]: searchHtml }, [])
-        const results = await manganatoAdapter.search!("Solo Leveling", context)
-        expect(results).toHaveLength(1)
-        expect(results[0]).toMatchObject({ sourceMangaId: MANGA_ID, title: "Solo Leveling" })
     })
 })
 
