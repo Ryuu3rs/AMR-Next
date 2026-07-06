@@ -2,75 +2,84 @@ import assert from "node:assert/strict"
 import { access, readFile } from "node:fs/promises"
 import path from "node:path"
 import test from "node:test"
-import { chromiumExtension, firefoxExtension } from "./paths.js"
+import { chromiumExtension, firefoxExtension, repositoryRoot } from "./paths.js"
+
+async function readCommunityApiOrigin() {
+    try {
+        const content = await readFile(path.join(repositoryRoot, "apps", "extension", ".env"), "utf8")
+        const match = /^VITE_COMMUNITY_API_ORIGIN=(.+)$/m.exec(content)
+        return match?.[1]?.trim()
+    } catch {
+        return undefined
+    }
+}
+
+const communityApiOrigin = await readCommunityApiOrigin()
 
 const allowedPermissions = ["alarms", "declarativeNetRequest", "scripting", "storage", "tabs"]
 
 // All source origins + GitHub API are required (granted at install, no per-source grant step).
+// VITE_COMMUNITY_API_ORIGIN is intentionally excluded — it comes from a local .env and must not be
+// part of the policy check (CI has no .env, local builds may have it set).
 const allowedRequiredHosts = [
     "*://*.asuracomic.net/*",
     "*://*.asurascans.com/*",
+    "*://*.images.mangafreak.me/*",
     "*://*.imgsrv4.com/*",
     "*://*.likemanga.io/*",
     "*://*.mangadex.network/*",
+    "*://*.mangafreak.me/*",
     "*://*.mangagalaxy.me/*",
-    "*://*.mangapark.me/*",
-    "*://*.mangapark.net/*",
     "*://*.mghcdn.com/*",
     "*://*.mhcdn.net/*",
-    "*://*.mkklcdnv6temp.com/*",
-    "*://*.mkklcdnv6tempv3.com/*",
     "*://*.pstatic.net/*",
+    "*://*.static.comix.to/*",
     "*://*.suryatoon.com/*",
     "*://*.weebcentral.com/*",
-    "https://agrcomics.com/*",
     "https://api.github.com/*",
     "https://api.mangadex.org/*",
+    "https://aquamanga.com/*",
+    "https://aquascans.com/*",
     "https://arvencomics.com/*",
     "https://arvenscans.org/*",
     "https://aryascans.com/*",
     "https://asuracomic.net/*",
     "https://asurascans.com/*",
-    "https://casacomic.com/*",
-    "https://chapmanganato.com/*",
-    "https://chapmanganato.to/*",
-    "https://chapmanganelo.com/*",
-    "https://drakecomic.com/*",
+    "https://comix.to/*",
     "https://dynasty-scans.com/*",
     "https://eahentai.com/*",
     "https://en-thunderscans.com/*",
-    "https://flamecomics.xyz/*",
-    "https://harimanga.me/*",
+    "https://fanfox.net/*",
     "https://hentai20.io/*",
     "https://hentairead.com/*",
     "https://hentalk.pw/*",
     "https://hivetoon.com/*",
     "https://kappabeast.com/*",
-    "https://kunmanga.com/*",
     "https://lhtranslation.net/*",
     "https://likemanga.io/*",
     "https://likemanga.io/*",
-    "https://mangabuddy.com/*",
     "https://mangadex.org/*",
     "https://mangadistrict.com/*",
     "https://mangagalaxy.me/*",
     "https://mangagalaxy.me/*",
+    "https://mangahere.cc/*",
     "https://mangahub.io/*",
-    "https://mangamirror.com/*",
-    "https://manganato.com/*",
-    "https://mangapark.net/*",
-    "https://mangapuma.com/*",
     "https://mangasushi.org/*",
     "https://manhuaplus.org/*",
     "https://manhuatop.org/*",
+    "https://manhuaus.com/*",
+    "https://manhwahentai.me/*",
+    "https://manhwatop.com/*",
     "https://manytoon.com/*",
+    "https://mgread.io/*",
     "https://natomanga.com/*",
     "https://novelmic.com/*",
+    "https://olympustaff.com/*",
     "https://omegascans.org/*",
     "https://phoenixscans.com/*",
     "https://rawkuma.com/*",
     "https://read.oppai.stream/*",
-    "https://saucemanhwa.org/*",
+    "https://s2manga.com/*",
     "https://spiderscans.xyz/*",
     "https://suryatoon.com/*",
     "https://suryatoon.com/*",
@@ -81,15 +90,19 @@ const allowedRequiredHosts = [
     "https://vortexscans.org/*",
     "https://webtoons.com/*",
     "https://weebcentral.com/*",
+    "https://www.comix.to/*",
     "https://www.dynasty-scans.com/*",
+    "https://www.fanfox.net/*",
+    "https://www.mangahere.cc/*",
     "https://www.mangahub.io/*",
-    "https://www.manganato.com/*",
     "https://www.mangaread.org/*",
     "https://www.mgeko.cc/*",
     "https://www.natomanga.com/*",
+    "https://www.olympustaff.com/*",
     "https://www.phoenixscans.com/*",
     "https://www.webtoons.com/*",
-    "https://www.weebcentral.com/*"
+    "https://www.weebcentral.com/*",
+    "https://z-fanfox.net/*"
 ]
 
 async function readManifest(extensionDirectory) {
@@ -115,7 +128,8 @@ for (const [browserName, extensionDirectory] of [
 
         assert.equal(manifest.manifest_version, 3)
         assert.deepEqual([...manifest.permissions].sort(), allowedPermissions)
-        assert.deepEqual([...manifest.host_permissions].sort(), allowedRequiredHosts)
+        const actualHosts = [...manifest.host_permissions].filter(h => h !== communityApiOrigin).sort()
+        assert.deepEqual(actualHosts, allowedRequiredHosts)
         assert.equal(manifest.optional_host_permissions, undefined)
         assert.equal(manifest.content_scripts, undefined)
         assert.equal(manifest.externally_connectable, undefined)
@@ -132,7 +146,7 @@ test("browser-specific manifest policy is preserved", async () => {
     const firefox = await readManifest(firefoxExtension)
 
     assert.equal(chromium.browser_specific_settings, undefined)
-    assert.equal(firefox.browser_specific_settings?.gecko?.id, "all-mangas-reader@ryuu3rs.dev")
+    assert.equal(firefox.browser_specific_settings?.gecko?.id, "amr-next@ryuu3rs.dev")
     assert.deepEqual(firefox.browser_specific_settings?.gecko?.data_collection_permissions, {
         required: ["none"]
     })
