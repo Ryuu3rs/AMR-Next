@@ -7,7 +7,7 @@ import { Builder, By, until } from "selenium-webdriver"
 import firefox from "selenium-webdriver/firefox.js"
 import { artifactsDirectory, firefoxExtension, repositoryRoot } from "../../src/paths.js"
 
-const extensionId = "all-mangas-reader@ryuu3rs.dev"
+const extensionId = "amr-next@ryuu3rs.dev"
 const extensionUuid = "8d2b2cc7-86aa-4afd-b733-939aaf4bb217"
 const geckodriverUrl = "http://127.0.0.1:4444"
 
