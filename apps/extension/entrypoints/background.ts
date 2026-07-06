@@ -500,9 +500,9 @@ function injectChapterPrompt(chapterUrl: string): void {
     function parseLuminance(css: string): number {
         const m = css.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
         if (!m) return -1
-        const r = parseInt(m[1]) / 255,
-            g = parseInt(m[2]) / 255,
-            b = parseInt(m[3]) / 255
+        const r = parseInt(m[1]!) / 255,
+            g = parseInt(m[2]!) / 255,
+            b = parseInt(m[3]!) / 255
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
     }
     const bgCss =
@@ -656,7 +656,7 @@ function injectChapterPrompt(chapterUrl: string): void {
     updateProgress()
 
     function track(action: string) {
-        chrome.runtime.sendMessage({
+        browser.runtime.sendMessage({
             type: "analytics:record",
             event: "panel_action",
             detail: JSON.stringify({ action })
@@ -667,8 +667,8 @@ function injectChapterPrompt(chapterUrl: string): void {
     let nextUrl: string | null = null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    chrome.runtime.sendMessage({ type: "chapter:siblings", url: chapterUrl }, (resp: any) => {
-        if (chrome.runtime.lastError || !resp?.ok || !resp.data) return
+    browser.runtime.sendMessage({ type: "chapter:siblings", url: chapterUrl }).then((resp: any) => {
+        if (!resp?.ok || !resp.data) return
         const d = resp.data as {
             prevUrl: string | null
             nextUrl: string | null
@@ -693,14 +693,14 @@ function injectChapterPrompt(chapterUrl: string): void {
 
     shadow.getElementById("bopen")?.addEventListener("click", () => {
         track("open-in-reader")
-        chrome.runtime.sendMessage({ type: "chapter:open-in-reader", url: chapterUrl })
+        browser.runtime.sendMessage({ type: "chapter:open-in-reader", url: chapterUrl })
         window.removeEventListener("scroll", onScroll)
         host.remove()
     })
 
     shadow.getElementById("btrack")?.addEventListener("click", () => {
         track("mark-read")
-        chrome.runtime.sendMessage({ type: "chapter:track", url: chapterUrl })
+        browser.runtime.sendMessage({ type: "chapter:track", url: chapterUrl })
         const btn = shadow.getElementById("btrack") as HTMLButtonElement | null
         if (btn) {
             btn.textContent = "Marked ✓"
@@ -817,7 +817,11 @@ export default defineBackground(() => {
         if (alarm.name === extensionUpdateAlarmName) void checkExtensionUpdate()
     })
 
-    const onUpdatedHandler = (tabId: number, changeInfo: { url?: string; status?: string }, tab: { url?: string }) => {
+    const onUpdatedHandler = (
+        tabId: number,
+        changeInfo: { url?: string; status?: string },
+        tab: { url?: string | undefined }
+    ) => {
         if (changeInfo.url && !internalTabIds.has(tabId)) {
             void captureChapter(changeInfo.url).catch(error => {
                 console.warn("[AMR] Automatic chapter capture failed", error)
@@ -841,6 +845,7 @@ export default defineBackground(() => {
     // Chrome does not support URL filters on tabs.onUpdated — Firefox does.
     // Unfiltered onUpdated is noisier but safe; captureChapter ignores non-source URLs internally.
     if (import.meta.env.BROWSER === "firefox") {
+        // @ts-expect-error Firefox-only URL filter not in webextension-polyfill types
         browser.tabs.onUpdated.addListener(onUpdatedHandler, { urls: [...SOURCE_ORIGINS] })
     } else {
         browser.tabs.onUpdated.addListener(onUpdatedHandler)
@@ -1355,15 +1360,20 @@ export default defineBackground(() => {
                         let resolved
                         try {
                             resolved = await resolveChapterUrl(request.url)
+                            const directSrcId = findSource(new URL(request.url))?.manifest.id
                             void recordAnalyticsEvent({
                                 event: "resolve_direct",
-                                sourceId: findSource(new URL(request.url))?.manifest.id,
+                                ...(directSrcId ? { sourceId: directSrcId } : {}),
                                 ts: Date.now()
                             })
                         } catch (fetchError) {
                             if (isBotBlocked(fetchError)) {
                                 const srcId = findSource(new URL(request.url))?.manifest.id
-                                void recordAnalyticsEvent({ event: "resolve_tab", sourceId: srcId, ts: Date.now() })
+                                void recordAnalyticsEvent({
+                                    event: "resolve_tab",
+                                    ...(srcId ? { sourceId: srcId } : {}),
+                                    ts: Date.now()
+                                })
                                 const html = await fetchChapterHtmlViaTab(request.url)
                                 resolved = await resolveChapterFromHtml(request.url, html)
                             } else {
@@ -1499,7 +1509,11 @@ export default defineBackground(() => {
                     }
                     case "chapter:open-in-reader": {
                         const srcId = findSource(new URL(request.url))?.manifest.id
-                        void recordAnalyticsEvent({ event: "reader_opened", sourceId: srcId, ts: Date.now() })
+                        void recordAnalyticsEvent({
+                            event: "reader_opened",
+                            ...(srcId ? { sourceId: srcId } : {}),
+                            ts: Date.now()
+                        })
                         void captureChapter(request.url).catch(() => {})
                         const readerUrl = browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(request.url)}`)
                         await browser.tabs.create({ url: readerUrl })

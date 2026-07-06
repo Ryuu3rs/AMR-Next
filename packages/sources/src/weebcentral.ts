@@ -163,7 +163,7 @@ function extractChapterPageMeta(html: string): { seriesId?: string; title: strin
         title = raw.split(/\s*[-|]\s*/)[0]?.trim() ?? ""
     }
     const sortKey = chapterNumberFromText(title)
-    return { seriesId, title: title || `Chapter ${sortKey || "?"}`, sortKey }
+    return { ...(seriesId ? { seriesId } : {}), title: title || `Chapter ${sortKey || "?"}`, sortKey }
 }
 
 function extractSearchResults(html: string): SourceSearchResult[] {

@@ -85,14 +85,14 @@ describe("manganatoAdapter.listChapters", () => {
         const manga = await manganatoAdapter.resolveManga({ sourceMangaId: MANGA_ID }, context)
         const chapters = await manganatoAdapter.listChapters({ manga }, context)
         expect(chapters.map(c => c.sortKey)).toEqual([67, 68])
-        expect(chapters[1].url).toBe(`https://chapmanganato.to/${MANGA_ID}/chapter-68`)
+        expect(chapters[1]!.url).toBe(`https://chapmanganato.to/${MANGA_ID}/chapter-68`)
     })
 })
 
 describe("manganatoAdapter.search", () => {
     it("returns results from the search story endpoint", async () => {
         const context = createContext({ [SEARCH_PATH]: searchHtml }, [])
-        const results = await manganatoAdapter.search("Solo Leveling", context)
+        const results = await manganatoAdapter.search!("Solo Leveling", context)
         expect(results).toHaveLength(1)
         expect(results[0]).toMatchObject({ sourceMangaId: MANGA_ID, title: "Solo Leveling" })
     })
@@ -101,6 +101,6 @@ describe("manganatoAdapter.search", () => {
 describe("manganatoAdapter.resolveCover", () => {
     it("returns og:image cover from manga page", async () => {
         const context = createContext({ [MANGA_PATH]: mangaHtml }, [])
-        expect(await manganatoAdapter.resolveCover({ sourceMangaId: MANGA_ID }, context)).toBe(COVER_URL)
+        expect(await manganatoAdapter.resolveCover!({ sourceMangaId: MANGA_ID }, context)).toBe(COVER_URL)
     })
 })
