@@ -143,12 +143,20 @@
                 all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
             }
             const want = normTitle(manga.title)
-            card.results = all
-                .filter(r => {
-                    const t = normTitle(r.title)
-                    return t === want || t.includes(want) || want.includes(t) || wordOverlap(t, want) >= 0.6
-                })
-                .sort((a, b) => (parseFloat(b.latestChapter ?? "0") || 0) - (parseFloat(a.latestChapter ?? "0") || 0))
+            const sortByChapter = (a: SearchResult, b: SearchResult) =>
+                (parseFloat(b.latestChapter ?? "0") || 0) - (parseFloat(a.latestChapter ?? "0") || 0)
+            const close = all.filter(r => {
+                const t = normTitle(r.title)
+                return t === want || t.includes(want) || want.includes(t) || wordOverlap(t, want) >= 0.6
+            })
+            if (close.length > 0) {
+                card.results = close.sort(sortByChapter)
+            } else if (all.length > 0) {
+                // No close title match — could be a cross-language pair (e.g. romaji vs
+                // English title). Show raw results so the user can pick manually.
+                card.results = all.sort(sortByChapter).slice(0, 15)
+                card.message = "No close title match found — pick manually if any look right."
+            }
             card.searched = true
             if (card.results.length === 0) card.message = "No live source found for this title."
         } catch (cause) {

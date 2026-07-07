@@ -297,13 +297,18 @@ export function createFanfoxFamilyAdapter(cfg: FanfoxFamilyConfig): SourceAdapte
                 sourceMangaId: mangaSlug,
                 url: `${origin}/manga/${mangaSlug}/`
             }
+            // Strip the page-number suffix (e.g. /c123/1.html → /c123/) so the stored
+            // URL matches what extractChapterList produces from the chapter-list links.
+            // Without this, chapter:siblings can't find the current chapter in the DB
+            // because bulkPut from listChaptersBySource overwrites with the normalized URL.
+            const canonicalUrl = input.url.toString().replace(/\/\d+\.html$/, "/")
             const chapter: SourceChapter = {
                 id: `${id}:chapter:${mangaSlug}:${chapterNum}`,
                 mangaId,
                 sourceId: id,
                 sourceChapterId: chapterNum,
                 title: `Ch.${chapterNum}`,
-                url: input.url.toString(),
+                url: canonicalUrl,
                 sortKey: parseFloat(chapterNum) || 0,
                 language: "en"
             }

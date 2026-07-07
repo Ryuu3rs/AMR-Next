@@ -1021,6 +1021,40 @@ export default defineBackground(() => {
                                 updatedAt: Date.now()
                             })
                         })
+                        // Fire-and-forget chapter fetch so chapters appear immediately
+                        // after linking rather than waiting for the next update alarm.
+                        void (async () => {
+                            try {
+                                const linked = await db.manga.get(request.mangaId)
+                                if (!linked) return
+                                const chapters = await listChaptersForSource(
+                                    linked,
+                                    sourceId,
+                                    sourceMangaId,
+                                    request.mangaUrl
+                                )
+                                if (chapters.length === 0) return
+                                const latest = chapters.reduce(
+                                    (cur, ch) => (ch.sortKey > (cur?.sortKey ?? -1) ? ch : cur),
+                                    chapters[0]
+                                )
+                                await db.transaction("rw", db.chapters, db.manga, async () => {
+                                    await db.chapters.bulkPut(chapters)
+                                    if (latest) {
+                                        await db.manga.update(request.mangaId, {
+                                            latestChapterId: latest.id,
+                                            sourceUrl: latest.url,
+                                            ...(Number.isFinite(latest.sortKey)
+                                                ? { latestChapterNumber: latest.sortKey }
+                                                : {}),
+                                            updatedAt: Date.now()
+                                        })
+                                    }
+                                })
+                            } catch {
+                                // best-effort; update alarm will retry
+                            }
+                        })()
                         return success({ sourceId })
                     }
                     case "library:switch": {
