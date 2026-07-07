@@ -1589,7 +1589,21 @@
                             <p class="eyebrow">Continue reading</p>
                             <h2 class="feature-title">{continueReading.title}</h2>
                             <p class="muted">
-                                {continueReading.sourceId}{#if continueReading.lastReadChapterNumber !== undefined}
+                                {#if continueReading.mangaUrl}
+                                    <button
+                                        class="source-link"
+                                        type="button"
+                                        title="Open on source site"
+                                        onclick={e => {
+                                            e.stopPropagation()
+                                            void browser.tabs.create({ url: continueReading!.mangaUrl! })
+                                        }}>
+                                        {sourceMeta.get(continueReading.sourceId)?.name ?? continueReading.sourceId}
+                                    </button>
+                                {:else}
+                                    {sourceMeta.get(continueReading.sourceId)?.name ?? continueReading.sourceId}
+                                {/if}
+                                {#if continueReading.lastReadChapterNumber !== undefined}
                                     · ch {continueReading.lastReadChapterNumber}{/if}
                             </p>
                             <button type="button" onclick={() => continueReading && read(continueReading)}
@@ -1881,7 +1895,19 @@
                                     }}>⋯</button>
                             </div>
                             <p class="poster-title">{manga.title}</p>
-                            <p class="poster-sub">{manga.sourceId}</p>
+                            <p class="poster-sub">
+                                {#if manga.mangaUrl}
+                                    <button
+                                        class="source-link"
+                                        type="button"
+                                        title="Open on source site"
+                                        onclick={() => void browser.tabs.create({ url: manga.mangaUrl! })}>
+                                        {sourceMeta.get(manga.sourceId)?.name ?? manga.sourceId}
+                                    </button>
+                                {:else}
+                                    {sourceMeta.get(manga.sourceId)?.name ?? manga.sourceId}
+                                {/if}
+                            </p>
                             {#if manga.lastReadChapterNumber !== undefined || manga.latestChapterNumber !== undefined}
                                 <p class="poster-chapter">
                                     {manga.lastReadChapterNumber !== undefined
@@ -1927,7 +1953,17 @@
                             <div class="list-main">
                                 <p class="list-title">{manga.title}</p>
                                 <p class="muted list-meta">
-                                    {manga.sourceId}
+                                    {#if manga.mangaUrl}
+                                        <button
+                                            class="source-link"
+                                            type="button"
+                                            title="Open on source site"
+                                            onclick={() => void browser.tabs.create({ url: manga.mangaUrl! })}>
+                                            {sourceMeta.get(manga.sourceId)?.name ?? manga.sourceId}
+                                        </button>
+                                    {:else}
+                                        {sourceMeta.get(manga.sourceId)?.name ?? manga.sourceId}
+                                    {/if}
                                     {#if manga.manualTracking}· manual{/if}
                                     {#if manga.notes}· 📝{/if}
                                 </p>
