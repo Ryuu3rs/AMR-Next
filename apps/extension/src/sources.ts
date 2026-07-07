@@ -13,9 +13,12 @@ export function findSource(url: URL) {
     return sourceRegistry.match(url)
 }
 
+const wrapFetch = (requestUrl: string, init: Parameters<typeof fetch>[1]) =>
+    fetch(requestUrl, init).then(r => ({ ok: r.ok, status: r.status, url: r.url, text: () => r.text() }))
+
 function createSourceContext(rateLimit?: { requests: number; intervalMs: number }): SourceContext {
     const request = createBoundedRequestClient({
-        fetch: (requestUrl, init) => fetch(requestUrl, init),
+        fetch: wrapFetch,
         // Wildcard patterns (e.g. *://*.mangadex.network/*) are manifest permission
         // entries for image CDNs — not valid URLs. Strip them; only exact origins
         // are needed by the bounded request client for API/HTML fetches.
@@ -113,7 +116,7 @@ export async function resolveChapterFromHtml(urlStr: string, html: string) {
     }
 
     const fallbackClient = createBoundedRequestClient({
-        fetch: (requestUrl, init) => fetch(requestUrl, init),
+        fetch: wrapFetch,
         allowedOrigins: SOURCE_ORIGINS.filter(o => !o.startsWith("*://")).map(o => o.replace(/\/\*$/, "")),
         maxRequests: 5,
         maxResponseBytes: 5 * 1024 * 1024,

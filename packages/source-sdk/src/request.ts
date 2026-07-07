@@ -5,6 +5,10 @@ import type { SourceRequestClient, SourceRequestOptions } from "./types"
 export type FetchResponse = {
     ok: boolean
     status: number
+    // Final URL after redirects. When present, the bounded client validates it
+    // against allowedOrigins so redirects to ad networks are caught and thrown
+    // as SourceError("invalid-input") rather than surfacing as CORS failures.
+    url?: string
     text(): Promise<string>
 }
 
@@ -101,6 +105,20 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
                 ...(init.body === undefined ? {} : { body: init.body }),
                 ...(init.headers === undefined ? {} : { headers: init.headers })
             })
+            if (response.url !== undefined) {
+                try {
+                    const finalOrigin = new URL(response.url).origin
+                    if (!allowedOrigins.has(finalOrigin)) {
+                        throw new SourceError(
+                            "invalid-input",
+                            `Request was redirected to a disallowed origin: ${finalOrigin}`
+                        )
+                    }
+                } catch (e) {
+                    if (e instanceof SourceError) throw e
+                }
+            }
+
             const body = await response.text()
             const bodySize = new TextEncoder().encode(body).byteLength
 

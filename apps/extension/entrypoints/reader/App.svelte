@@ -260,10 +260,21 @@
         }
     }
 
-    // A10: remember the reading mode (scroll/single) per title.
+    // A10: remember the reading mode (scroll/single) and direction per title.
     async function setMode(next: "continuous" | "single") {
         mode = next
         if (mangaId) await browser.storage.local.set({ [`readerMode:${mangaId}`]: next })
+    }
+
+    async function setDirection(next: ReadingDirection) {
+        direction = next
+        if (mangaId) await browser.storage.local.set({ [`readerDirection:${mangaId}`]: next })
+    }
+
+    function cycleDirection() {
+        const dirs: ReadingDirection[] = ["ltr", "rtl", "vertical"]
+        const next = dirs[(dirs.indexOf(direction) + 1) % dirs.length]!
+        void setDirection(next)
     }
 
     // Vertical (webtoon) direction always scrolls continuously.
@@ -331,31 +342,34 @@
                 chapterId: chapter.chapter.id
             })
             currentPage = progress?.pageIndex ?? 0
+            // A10: load global settings + per-title overrides in parallel so mode is
+            // set exactly once — no flicker from a global-default interim state.
+            mangaId = chapter.manga.manga.id
             try {
-                const settings = await sendRuntimeMessage<{
-                    readingMode: "continuous" | "single"
-                    readingDirection: ReadingDirection
-                    pageFit: PageFit
-                    showPageNumber: boolean
-                    preloadPages: number
-                }>({ type: "settings:get" })
-                mode = settings.readingMode
-                direction = settings.readingDirection
+                const modeKey = `readerMode:${mangaId}`
+                const dirKey = `readerDirection:${mangaId}`
+                const [settings, stored] = await Promise.all([
+                    sendRuntimeMessage<{
+                        readingMode: "continuous" | "single"
+                        readingDirection: ReadingDirection
+                        pageFit: PageFit
+                        showPageNumber: boolean
+                        preloadPages: number
+                    }>({ type: "settings:get" }),
+                    browser.storage.local.get([modeKey, dirKey]).catch(() => ({}) as Record<string, unknown>)
+                ])
+                const modeOverride = stored[modeKey]
+                const dirOverride = stored[dirKey]
+                mode = modeOverride === "single" || modeOverride === "continuous" ? modeOverride : settings.readingMode
+                direction =
+                    dirOverride === "ltr" || dirOverride === "rtl" || dirOverride === "vertical"
+                        ? dirOverride
+                        : settings.readingDirection
                 pageFit = settings.pageFit
                 showPageNumber = settings.showPageNumber
                 preloadPages = settings.preloadPages
             } catch {
                 // keep defaults
-            }
-            // Per-title mode override (A10) takes precedence over the global default.
-            mangaId = chapter.manga.manga.id
-            try {
-                const key = `readerMode:${mangaId}`
-                const stored = await browser.storage.local.get(key)
-                const override = stored[key]
-                if (override === "single" || override === "continuous") mode = override
-            } catch {
-                // ignore
             }
         } catch (cause) {
             error = cause instanceof Error ? cause.message : "The chapter could not be loaded"
@@ -518,6 +532,13 @@
                 title={direction === "vertical" ? "Vertical mode always scrolls" : "Toggle reading mode"}
                 onclick={() => void setMode(mode === "continuous" ? "single" : "continuous")}>
                 {effectiveMode === "continuous" ? "Single" : "Scroll"}
+            </button>
+            <button
+                type="button"
+                class="btn-sm"
+                title="Cycle reading direction (LTR → RTL → Vertical)"
+                onclick={cycleDirection}>
+                {direction === "ltr" ? "→" : direction === "rtl" ? "←" : "↓"}
             </button>
         {/if}
         {#if chapter}
@@ -683,7 +704,7 @@
         <section class="message"><p>Loading chapter…</p></section>
     {:else if !chapter}
         <section class="message"><p>No chapter loaded.</p></section>
-    {:else if effectiveMode === "single"}
+    {:else if effectiveMode === "single" && !imagesBroken}
         <div class="page">
             <img
                 src={pageSrcs[currentPage]}
@@ -693,7 +714,7 @@
                 onload={() => recordProgress(currentPage)} />
             {#if showPageNumber}<span class="page-num">{currentPage + 1} / {chapter.pages.length}</span>{/if}
         </div>
-    {:else}
+    {:else if !imagesBroken}
         {#each pageSrcs as src, index}
             <div class="page">
                 <img
