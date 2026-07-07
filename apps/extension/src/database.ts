@@ -869,23 +869,23 @@ export async function seedDatabase(): Promise<void> {
         {
             manga: {
                 id: "seed-cx-001",
-                title: "Chainsaw Man",
-                normalizedTitle: "chainsaw man",
-                coverUrl: "/sample-covers/chainsaw-man.jpg",
-                authors: ["Tatsuki Fujimoto"],
+                title: "My Possession Became a Ghost Story",
+                normalizedTitle: "my possession became a ghost story",
+                coverUrl: "/sample-covers/ghost-story.jpg",
+                authors: [],
                 status: "ongoing",
                 sourceId: "comix",
-                sourceUrl: "https://comix.to/title/chainsaw-man-fq21n/8765-chapter-1",
-                sourceMangaId: "chainsaw-man-fq21n",
-                mangaUrl: "https://comix.to/title/chainsaw-man-fq21n",
+                sourceUrl: "https://comix.to/title/80d0m-my-possession-became-a-ghost-story/10251750-chapter-0",
+                sourceMangaId: "80d0m-my-possession-became-a-ghost-story",
+                mangaUrl: "https://comix.to/title/80d0m-my-possession-became-a-ghost-story",
                 addedAt: now - 86400000 * 1,
                 updatedAt: now - 3600000 * 20,
                 latestChapterId: "seed-cx-001-ch"
             },
-            chapterUrl: "https://comix.to/title/chainsaw-man-fq21n/8765-chapter-1",
+            chapterUrl: "https://comix.to/title/80d0m-my-possession-became-a-ghost-story/10251750-chapter-0",
             sourceId: "comix",
-            chapterTitle: "Chapter 1",
-            sortKey: 1
+            chapterTitle: "Chapter 0",
+            sortKey: 0
         }
     ]
 
