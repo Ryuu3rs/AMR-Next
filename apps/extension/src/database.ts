@@ -634,6 +634,258 @@ export async function seedDatabase(): Promise<void> {
             sourceId: "mgeko",
             chapterTitle: "Chapter 52",
             sortKey: 52
+        },
+        {
+            manga: {
+                id: "seed-wc-001",
+                title: "Jujutsu Kaisen",
+                normalizedTitle: "jujutsu kaisen",
+                coverUrl: "/sample-covers/jujutsu-kaisen.jpg",
+                authors: ["Gege Akutami"],
+                status: "ongoing",
+                sourceId: "weebcentral",
+                sourceUrl: "https://weebcentral.com/chapters/01HRTXK7J8NQVMH5R1VT3WC4ZB",
+                sourceMangaId: "01HRTXK7J8NQVMH4P0ST2WB3XY",
+                mangaUrl: "https://weebcentral.com/series/01HRTXK7J8NQVMH4P0ST2WB3XY",
+                addedAt: now - 86400000 * 10,
+                updatedAt: now - 3600000 * 1,
+                latestChapterId: "seed-wc-001-ch"
+            },
+            chapterUrl: "https://weebcentral.com/chapters/01HRTXK7J8NQVMH5R1VT3WC4ZB",
+            sourceId: "weebcentral",
+            chapterTitle: "Chapter 1",
+            sortKey: 1
+        },
+        {
+            manga: {
+                id: "seed-dyn-001",
+                title: "Bloom Into You",
+                normalizedTitle: "bloom into you",
+                coverUrl: "/sample-covers/bloom-into-you.jpg",
+                authors: ["Nio Nakatani"],
+                status: "completed",
+                sourceId: "dynasty-scans",
+                sourceUrl: "https://dynasty-scans.com/chapters/bloom_into_you_ch1",
+                sourceMangaId: "bloom_into_you",
+                mangaUrl: "https://dynasty-scans.com/series/bloom_into_you",
+                addedAt: now - 86400000 * 9,
+                updatedAt: now - 3600000 * 6,
+                latestChapterId: "seed-dyn-001-ch"
+            },
+            chapterUrl: "https://dynasty-scans.com/chapters/bloom_into_you_ch1",
+            sourceId: "dynasty-scans",
+            chapterTitle: "Chapter 1",
+            sortKey: 1
+        },
+        {
+            manga: {
+                id: "seed-ac-001",
+                title: "Return of the Disaster-Class Hero",
+                normalizedTitle: "return of the disaster-class hero",
+                coverUrl: "/sample-covers/disaster-class-hero.jpg",
+                authors: [],
+                status: "ongoing",
+                sourceId: "asuracomic",
+                sourceUrl: "https://asuracomic.net/series/return-of-the-disaster-class-hero-4dbc9a3a/1",
+                sourceMangaId: "return-of-the-disaster-class-hero-4dbc9a3a",
+                mangaUrl: "https://asuracomic.net/series/return-of-the-disaster-class-hero-4dbc9a3a",
+                addedAt: now - 86400000 * 8,
+                updatedAt: now - 3600000 * 3,
+                latestChapterId: "seed-ac-001-ch"
+            },
+            chapterUrl: "https://asuracomic.net/series/return-of-the-disaster-class-hero-4dbc9a3a/1",
+            sourceId: "asuracomic",
+            chapterTitle: "Chapter 1",
+            sortKey: 1
+        },
+        {
+            manga: {
+                id: "seed-as-001",
+                title: "Omniscient Reader's Viewpoint",
+                normalizedTitle: "omniscient reader's viewpoint",
+                coverUrl: "/sample-covers/omniscient-reader.jpg",
+                authors: [],
+                status: "ongoing",
+                sourceId: "asurascans",
+                sourceUrl: "https://asurascans.com/comics/omniscient-readers-viewpoint-9182bca3/chapter/1",
+                sourceMangaId: "omniscient-readers-viewpoint-9182bca3",
+                mangaUrl: "https://asurascans.com/comics/omniscient-readers-viewpoint-9182bca3",
+                addedAt: now - 86400000 * 6,
+                updatedAt: now - 3600000 * 4,
+                latestChapterId: "seed-as-001-ch"
+            },
+            chapterUrl: "https://asurascans.com/comics/omniscient-readers-viewpoint-9182bca3/chapter/1",
+            sourceId: "asurascans",
+            chapterTitle: "Chapter 1",
+            sortKey: 1
+        },
+        {
+            manga: {
+                id: "seed-oms-001",
+                title: "The Beginning After The End",
+                normalizedTitle: "the beginning after the end",
+                coverUrl: "/sample-covers/beginning-after-end.jpg",
+                authors: ["TurtleMe"],
+                status: "ongoing",
+                sourceId: "omegascans",
+                sourceUrl: "https://omegascans.org/manga/the-beginning-after-the-end/chapter-1/",
+                sourceMangaId: "the-beginning-after-the-end",
+                mangaUrl: "https://omegascans.org/manga/the-beginning-after-the-end/",
+                addedAt: now - 86400000 * 14,
+                updatedAt: now - 3600000 * 9,
+                latestChapterId: "seed-oms-001-ch"
+            },
+            chapterUrl: "https://omegascans.org/manga/the-beginning-after-the-end/chapter-1/",
+            sourceId: "omegascans",
+            chapterTitle: "Chapter 1",
+            sortKey: 1
+        },
+        {
+            manga: {
+                id: "seed-ts-001",
+                title: "Nano Machine",
+                normalizedTitle: "nano machine",
+                coverUrl: "/sample-covers/nano-machine.jpg",
+                authors: [],
+                status: "ongoing",
+                sourceId: "thunderscans",
+                sourceUrl: "https://en-thunderscans.com/nano-machine-chapter-1/",
+                sourceMangaId: "nano-machine",
+                mangaUrl: "https://en-thunderscans.com/manga/nano-machine/",
+                addedAt: now - 86400000 * 13,
+                updatedAt: now - 3600000 * 7,
+                latestChapterId: "seed-ts-001-ch"
+            },
+            chapterUrl: "https://en-thunderscans.com/nano-machine-chapter-1/",
+            sourceId: "thunderscans",
+            chapterTitle: "Chapter 1",
+            sortKey: 1
+        },
+        {
+            manga: {
+                id: "seed-wt-001",
+                title: "Tower of God",
+                normalizedTitle: "tower of god",
+                coverUrl: "/sample-covers/tower-of-god.jpg",
+                authors: ["SIU"],
+                status: "ongoing",
+                sourceId: "webtoons",
+                sourceUrl: "https://www.webtoons.com/en/fantasy/tower-of-god/viewer?title_no=95&episode_no=1",
+                sourceMangaId: "95",
+                mangaUrl: "https://www.webtoons.com/en/fantasy/tower-of-god/list?title_no=95",
+                addedAt: now - 86400000 * 12,
+                updatedAt: now - 3600000 * 2,
+                latestChapterId: "seed-wt-001-ch"
+            },
+            chapterUrl: "https://www.webtoons.com/en/fantasy/tower-of-god/viewer?title_no=95&episode_no=1",
+            sourceId: "webtoons",
+            chapterTitle: "Episode 1",
+            sortKey: 1
+        },
+        {
+            manga: {
+                id: "seed-mh-001",
+                title: "Attack on Titan",
+                normalizedTitle: "attack on titan",
+                coverUrl: "/sample-covers/attack-on-titan.jpg",
+                authors: ["Hajime Isayama"],
+                status: "completed",
+                sourceId: "mangahub",
+                sourceUrl: "https://mangahub.io/chapter/shingeki-no-kyojin/chapter-1",
+                sourceMangaId: "shingeki-no-kyojin",
+                mangaUrl: "https://mangahub.io/manga/shingeki-no-kyojin",
+                addedAt: now - 86400000 * 11,
+                updatedAt: now - 3600000 * 15,
+                latestChapterId: "seed-mh-001-ch"
+            },
+            chapterUrl: "https://mangahub.io/chapter/shingeki-no-kyojin/chapter-1",
+            sourceId: "mangahub",
+            chapterTitle: "Chapter 1",
+            sortKey: 1
+        },
+        {
+            manga: {
+                id: "seed-ff-001",
+                title: "Bleach",
+                normalizedTitle: "bleach",
+                coverUrl: "/sample-covers/bleach.jpg",
+                authors: ["Tite Kubo"],
+                status: "completed",
+                sourceId: "fanfox",
+                sourceUrl: "https://fanfox.net/manga/bleach/c001/",
+                sourceMangaId: "bleach",
+                mangaUrl: "https://fanfox.net/manga/bleach/",
+                addedAt: now - 86400000 * 20,
+                updatedAt: now - 86400000 * 1,
+                latestChapterId: "seed-ff-001-ch"
+            },
+            chapterUrl: "https://fanfox.net/manga/bleach/c001/",
+            sourceId: "fanfox",
+            chapterTitle: "Ch.1",
+            sortKey: 1
+        },
+        {
+            manga: {
+                id: "seed-ops-001",
+                title: "Eleceed",
+                normalizedTitle: "eleceed",
+                coverUrl: "/sample-covers/eleceed.jpg",
+                authors: [],
+                status: "ongoing",
+                sourceId: "olympustaff",
+                sourceUrl: "https://olympustaff.com/series/eleceed/1",
+                sourceMangaId: "eleceed",
+                mangaUrl: "https://olympustaff.com/series/eleceed",
+                addedAt: now - 86400000 * 4,
+                updatedAt: now - 3600000 * 10,
+                latestChapterId: "seed-ops-001-ch"
+            },
+            chapterUrl: "https://olympustaff.com/series/eleceed/1",
+            sourceId: "olympustaff",
+            chapterTitle: "Chapter 1",
+            sortKey: 1
+        },
+        {
+            manga: {
+                id: "seed-mf-001",
+                title: "One Punch Man",
+                normalizedTitle: "one punch man",
+                coverUrl: "/sample-covers/one-punch-man.jpg",
+                authors: ["ONE", "Yusuke Murata"],
+                status: "ongoing",
+                sourceId: "mangafreak",
+                sourceUrl: "https://ww2.mangafreak.me/Read1_One_Punch_Man_1",
+                sourceMangaId: "One_Punch_Man",
+                mangaUrl: "https://ww2.mangafreak.me/Manga/One_Punch_Man",
+                addedAt: now - 86400000 * 16,
+                updatedAt: now - 3600000 * 18,
+                latestChapterId: "seed-mf-001-ch"
+            },
+            chapterUrl: "https://ww2.mangafreak.me/Read1_One_Punch_Man_1",
+            sourceId: "mangafreak",
+            chapterTitle: "Chapter 1",
+            sortKey: 1
+        },
+        {
+            manga: {
+                id: "seed-cx-001",
+                title: "Chainsaw Man",
+                normalizedTitle: "chainsaw man",
+                coverUrl: "/sample-covers/chainsaw-man.jpg",
+                authors: ["Tatsuki Fujimoto"],
+                status: "ongoing",
+                sourceId: "comix",
+                sourceUrl: "https://comix.to/title/chainsaw-man-fq21n/8765-chapter-1",
+                sourceMangaId: "chainsaw-man-fq21n",
+                mangaUrl: "https://comix.to/title/chainsaw-man-fq21n",
+                addedAt: now - 86400000 * 1,
+                updatedAt: now - 3600000 * 20,
+                latestChapterId: "seed-cx-001-ch"
+            },
+            chapterUrl: "https://comix.to/title/chainsaw-man-fq21n/8765-chapter-1",
+            sourceId: "comix",
+            chapterTitle: "Chapter 1",
+            sortKey: 1
         }
     ]
 
