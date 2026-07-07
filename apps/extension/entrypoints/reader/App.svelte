@@ -155,6 +155,8 @@
     }
 
     const mirrorQuery = $derived(chapter?.manga.manga.title ?? slugFromUrl(chapterUrl))
+    const sourceUrl = $derived(chapter?.manga.url ?? "")
+    const sourceDomain = $derived(sourceUrl ? new URL(sourceUrl).hostname.replace(/^www\./, "") : "")
 
     // A failed resolve, a page-count of 0, or images that error out all mean the
     // current source is broken for this chapter.
@@ -504,17 +506,28 @@
     </div>
     <div class="header-title">
         <strong>{chapter?.manga.manga.title ?? (resolving ? "Loading…" : "Reader")}</strong>
-        {#if chapter && siblings.length > 1}
-            <select
-                class="chapter-select"
-                value={chapter.chapter.url}
-                onchange={e => goToChapter((e.currentTarget as HTMLSelectElement).value)}>
-                {#each siblings as s (s.url)}
-                    <option value={s.url}>{s.title}</option>
-                {/each}
-            </select>
-        {:else if chapter}
-            <span>{chapter.chapter.title}</span>
+        {#if chapter}
+            {#if siblings.length > 1}
+                <select
+                    class="chapter-select"
+                    value={chapter.chapter.url}
+                    onchange={e => goToChapter((e.currentTarget as HTMLSelectElement).value)}>
+                    {#each siblings as s (s.url)}
+                        <option value={s.url}>{s.title}</option>
+                    {/each}
+                </select>
+            {:else}
+                <span>{chapter.chapter.title}</span>
+            {/if}
+            {#if sourceDomain}
+                <button
+                    class="source-link"
+                    type="button"
+                    title="Open manga page on source site"
+                    onclick={() => void browser.tabs.create({ url: sourceUrl })}>
+                    {sourceDomain}
+                </button>
+            {/if}
         {/if}
     </div>
     <div class="header-right">

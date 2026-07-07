@@ -487,6 +487,21 @@ button:disabled {
     color: var(--muted);
 }
 
+.source-link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    transition: text-decoration-color 0.15s;
+}
+.source-link:hover {
+    text-decoration-color: currentColor;
+}
+
 .poster-chapter {
     font-size: 11px;
     color: var(--text, #f5f7fa);
