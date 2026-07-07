@@ -298,10 +298,18 @@
     }
 
     let lastScroll = 0
+    let scrollCompleteFired = false
     function onScroll() {
         const y = window.scrollY
         chromeHidden = y > 120 && y > lastScroll
         lastScroll = y
+        if (!scrollCompleteFired && effectiveMode === "continuous" && chapter) {
+            const nearBottom = y + window.innerHeight >= document.documentElement.scrollHeight - 50
+            if (nearBottom) {
+                scrollCompleteFired = true
+                recordProgress(chapter.pages.length - 1)
+            }
+        }
     }
 
     const currentIndex = $derived(chapter ? siblings.findIndex(s => s.url === chapter!.chapter.url) : -1)
@@ -330,6 +338,7 @@
         revokeOfflinePages()
         downloaded = false
         imageErrorCount = 0
+        scrollCompleteFired = false
         mirrorOpen = false
         mirrorSearched = false
         mirrorResults = []
@@ -711,7 +720,10 @@
                 alt={`Page ${currentPage + 1}`}
                 ondblclick={toggleZoom}
                 onerror={handleImageError}
-                onload={() => recordProgress(currentPage)} />
+                onload={e => {
+                    delete (e.currentTarget as HTMLImageElement).dataset.didFallback
+                    recordProgress(currentPage)
+                }} />
             {#if showPageNumber}<span class="page-num">{currentPage + 1} / {chapter.pages.length}</span>{/if}
         </div>
     {:else if !imagesBroken}
