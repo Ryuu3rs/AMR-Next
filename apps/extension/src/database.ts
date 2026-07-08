@@ -644,14 +644,14 @@ export async function seedDatabase(): Promise<void> {
                 authors: ["Gege Akutami"],
                 status: "ongoing",
                 sourceId: "weebcentral",
-                sourceUrl: "https://weebcentral.com/chapters/01HRTXK7J8NQVMH5R1VT3WC4ZB",
-                sourceMangaId: "01HRTXK7J8NQVMH4P0ST2WB3XY",
-                mangaUrl: "https://weebcentral.com/series/01HRTXK7J8NQVMH4P0ST2WB3XY",
+                sourceUrl: "https://weebcentral.com/chapters/01KWX62ZXF6VQDFEM1ADY98TFD/",
+                sourceMangaId: "01KWX62ZXF6VQDFEM1ADY98TFD",
+                mangaUrl: "https://weebcentral.com/chapters/01KWX62ZXF6VQDFEM1ADY98TFD/",
                 addedAt: now - 86400000 * 10,
                 updatedAt: now - 3600000 * 1,
                 latestChapterId: "seed-wc-001-ch"
             },
-            chapterUrl: "https://weebcentral.com/chapters/01HRTXK7J8NQVMH5R1VT3WC4ZB",
+            chapterUrl: "https://weebcentral.com/chapters/01KWX62ZXF6VQDFEM1ADY98TFD/",
             sourceId: "weebcentral",
             chapterTitle: "Chapter 1",
             sortKey: 1
@@ -743,20 +743,24 @@ export async function seedDatabase(): Promise<void> {
         {
             manga: {
                 id: "seed-ts-001",
-                title: "Nano Machine",
-                normalizedTitle: "nano machine",
+                title: "Kukuku! He is the Weakest of the Four Heavenly Kings",
+                normalizedTitle: "kukuku! he is the weakest of the four heavenly kings",
                 coverUrl: "/sample-covers/nano-machine.jpg",
                 authors: [],
                 status: "ongoing",
                 sourceId: "thunderscans",
-                sourceUrl: "https://en-thunderscans.com/nano-machine-chapter-1/",
-                sourceMangaId: "nano-machine",
-                mangaUrl: "https://en-thunderscans.com/manga/nano-machine/",
+                sourceUrl:
+                    "https://en-thunderscans.com/kukuku-he-is-the-weakest-of-the-four-heavenly-kings-i-was-dismissed-from-my-job-but-somehow-i-became-the-master-of-a-hero-and-a-holy-maiden-chapter-1/",
+                sourceMangaId:
+                    "kukuku-he-is-the-weakest-of-the-four-heavenly-kings-i-was-dismissed-from-my-job-but-somehow-i-became-the-master-of-a-hero-and-a-holy-maiden",
+                mangaUrl:
+                    "https://en-thunderscans.com/manga/kukuku-he-is-the-weakest-of-the-four-heavenly-kings-i-was-dismissed-from-my-job-but-somehow-i-became-the-master-of-a-hero-and-a-holy-maiden/",
                 addedAt: now - 86400000 * 13,
                 updatedAt: now - 3600000 * 7,
                 latestChapterId: "seed-ts-001-ch"
             },
-            chapterUrl: "https://en-thunderscans.com/nano-machine-chapter-1/",
+            chapterUrl:
+                "https://en-thunderscans.com/kukuku-he-is-the-weakest-of-the-four-heavenly-kings-i-was-dismissed-from-my-job-but-somehow-i-became-the-master-of-a-hero-and-a-holy-maiden-chapter-1/",
             sourceId: "thunderscans",
             chapterTitle: "Chapter 1",
             sortKey: 1
@@ -764,20 +768,23 @@ export async function seedDatabase(): Promise<void> {
         {
             manga: {
                 id: "seed-wt-001",
-                title: "Tower of God",
-                normalizedTitle: "tower of god",
+                title: "Daisy: How to Become the Duke's Fiancée",
+                normalizedTitle: "daisy: how to become the duke's fiancée",
                 coverUrl: "/sample-covers/tower-of-god.jpg",
-                authors: ["SIU"],
+                authors: [],
                 status: "ongoing",
                 sourceId: "webtoons",
-                sourceUrl: "https://www.webtoons.com/en/fantasy/tower-of-god/viewer?title_no=95&episode_no=1",
-                sourceMangaId: "95",
-                mangaUrl: "https://www.webtoons.com/en/fantasy/tower-of-god/list?title_no=95",
+                sourceUrl:
+                    "https://www.webtoons.com/en/romance/daisy-how-to-become-the-dukes-fiancee/episode-1/viewer?title_no=8579&episode_no=1",
+                sourceMangaId: "8579",
+                mangaUrl:
+                    "https://www.webtoons.com/en/romance/daisy-how-to-become-the-dukes-fiancee/list?title_no=8579",
                 addedAt: now - 86400000 * 12,
                 updatedAt: now - 3600000 * 2,
                 latestChapterId: "seed-wt-001-ch"
             },
-            chapterUrl: "https://www.webtoons.com/en/fantasy/tower-of-god/viewer?title_no=95&episode_no=1",
+            chapterUrl:
+                "https://www.webtoons.com/en/romance/daisy-how-to-become-the-dukes-fiancee/episode-1/viewer?title_no=8579&episode_no=1",
             sourceId: "webtoons",
             chapterTitle: "Episode 1",
             sortKey: 1
@@ -806,23 +813,23 @@ export async function seedDatabase(): Promise<void> {
         {
             manga: {
                 id: "seed-ff-001",
-                title: "Bleach",
-                normalizedTitle: "bleach",
-                coverUrl: "/sample-covers/bleach.jpg",
-                authors: ["Tite Kubo"],
-                status: "completed",
+                title: "Ogami Tsumiki to Kinichijou",
+                normalizedTitle: "ogami tsumiki to kinichijou",
+                coverUrl: "/sample-covers/ghost-story.jpg",
+                authors: [],
+                status: "ongoing",
                 sourceId: "fanfox",
-                sourceUrl: "https://fanfox.net/manga/bleach/c001/",
-                sourceMangaId: "bleach",
-                mangaUrl: "https://fanfox.net/manga/bleach/",
+                sourceUrl: "https://fanfox.net/manga/ogami_tsumiki_to_kinichijou/c106/1.html",
+                sourceMangaId: "ogami_tsumiki_to_kinichijou",
+                mangaUrl: "https://fanfox.net/manga/ogami_tsumiki_to_kinichijou/",
                 addedAt: now - 86400000 * 20,
                 updatedAt: now - 86400000 * 1,
                 latestChapterId: "seed-ff-001-ch"
             },
-            chapterUrl: "https://fanfox.net/manga/bleach/c001/",
+            chapterUrl: "https://fanfox.net/manga/ogami_tsumiki_to_kinichijou/c106/1.html",
             sourceId: "fanfox",
-            chapterTitle: "Ch.1",
-            sortKey: 1
+            chapterTitle: "Ch.106",
+            sortKey: 106
         },
         {
             manga: {
