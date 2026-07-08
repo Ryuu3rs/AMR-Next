@@ -943,6 +943,22 @@ button:disabled {
     flex: 1;
 }
 
+.restore-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    border-radius: 8px;
+    border: 1px solid var(--warning, #f59e0b);
+    background: color-mix(in srgb, var(--warning, #f59e0b) 14%, var(--surface, #11161d));
+    font-size: 0.9rem;
+}
+
+.restore-banner span {
+    flex: 1;
+}
+
 .sidebar-footer {
     margin-top: auto;
     padding-top: 12px;
