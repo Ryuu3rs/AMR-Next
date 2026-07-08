@@ -141,6 +141,7 @@
     let syncGistId = $state("")
     let syncMessage = $state("")
     let syncing = $state(false)
+    let restoreBannerDismissed = $state(false)
 
     function coverFailed(id: string) {
         const next = new Set(failedCovers)
@@ -187,6 +188,16 @@
     let importResolutions = $state<Record<string, ImportResolution>>({})
     let importWorking = $state(false)
     let importError = $state("")
+
+    const showRestoreBanner = $derived(
+        !loading &&
+            !restoreBannerDismissed &&
+            library.length === 0 &&
+            Boolean(syncStatus?.hasToken) &&
+            !importWorking &&
+            !syncing
+    )
+
     let clearConfirm = $state<"" | "history" | "all">("")
     let clearWorking = $state(false)
     let downloadsCount = $state(0)
@@ -1464,6 +1475,20 @@
                     View release ↗
                 </button>
                 <button type="button" class="btn-outline btn-sm" onclick={() => (updateBannerDismissed = true)}>
+                    Dismiss
+                </button>
+            </div>
+        {/if}
+
+        {#if showRestoreBanner}
+            <div class="restore-banner" role="alert">
+                <span>
+                    <strong>Your library appears empty.</strong> You have a Gist backup configured — restore it now?
+                </span>
+                <button type="button" class="btn-sm" disabled={syncing} onclick={() => void pullSync()}>
+                    {syncing ? "Restoring…" : "Restore from Gist"}
+                </button>
+                <button type="button" class="btn-outline btn-sm" onclick={() => (restoreBannerDismissed = true)}>
                     Dismiss
                 </button>
             </div>
