@@ -724,6 +724,32 @@
         })
     }
 
+    async function setReadingDirection(manga: LibraryManga, raw: string) {
+        const value = raw === "" ? null : (raw as "ltr" | "rtl" | "vertical")
+        await sendRuntimeMessage({ type: "library:reading-prefs", mangaId: manga.id, readingDirection: value })
+        const apply = (m: LibraryManga): LibraryManga => {
+            const next = { ...m }
+            if (value === null) delete next.readingDirection
+            else next.readingDirection = value
+            return next
+        }
+        library = library.map(m => (m.id === manga.id ? apply(m) : m))
+        if (detailManga && detailManga.id === manga.id) detailManga = apply(detailManga)
+    }
+
+    async function setReadingPageFit(manga: LibraryManga, raw: string) {
+        const value = raw === "" ? null : (raw as "width" | "height" | "contain" | "original")
+        await sendRuntimeMessage({ type: "library:reading-prefs", mangaId: manga.id, pageFit: value })
+        const apply = (m: LibraryManga): LibraryManga => {
+            const next = { ...m }
+            if (value === null) delete next.pageFit
+            else next.pageFit = value
+            return next
+        }
+        library = library.map(m => (m.id === manga.id ? apply(m) : m))
+        if (detailManga && detailManga.id === manga.id) detailManga = apply(detailManga)
+    }
+
     async function changeAutoAdd(enabled: boolean) {
         settings = await sendRuntimeMessage<AppSettings>({
             type: "settings:update",
@@ -3332,6 +3358,36 @@
                                 </p>
                             {/if}
                         </div>
+                    </div>
+                </div>
+                <div class="detail-categories detail-section">
+                    <span class="muted">Reading (this title only)</span>
+                    <div class="detail-reading-row">
+                        <label class="menu-num">
+                            Direction
+                            <select
+                                value={detailManga.readingDirection ?? ""}
+                                onchange={e =>
+                                    detailManga && void setReadingDirection(detailManga, e.currentTarget.value)}>
+                                <option value="">Global default</option>
+                                <option value="ltr">Left → Right</option>
+                                <option value="rtl">Right → Left</option>
+                                <option value="vertical">Vertical</option>
+                            </select>
+                        </label>
+                        <label class="menu-num">
+                            Zoom / fit
+                            <select
+                                value={detailManga.pageFit ?? ""}
+                                onchange={e =>
+                                    detailManga && void setReadingPageFit(detailManga, e.currentTarget.value)}>
+                                <option value="">Global default</option>
+                                <option value="width">Fit width</option>
+                                <option value="height">Fit height</option>
+                                <option value="contain">Contain</option>
+                                <option value="original">Original size</option>
+                            </select>
+                        </label>
                     </div>
                 </div>
                 <label class="detail-categories detail-section">

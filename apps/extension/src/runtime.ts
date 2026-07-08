@@ -35,6 +35,12 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("history:list") }),
     z.object({ type: z.literal("chapter:adjacent"), mangaId: z.string().min(1) }),
     z.object({ type: z.literal("library:note"), mangaId: z.string().min(1), note: z.string() }),
+    z.object({
+        type: z.literal("library:reading-prefs"),
+        mangaId: z.string().min(1),
+        readingDirection: z.union([z.enum(["ltr", "rtl", "vertical"]), z.null()]).optional(),
+        pageFit: z.union([z.enum(["width", "height", "contain", "original"]), z.null()]).optional()
+    }),
     z.object({ type: z.literal("activity:get"), days: z.number().int().positive().optional() }),
     z.object({ type: z.literal("data:export") }),
     z.object({ type: z.literal("data:import:preview"), envelope: z.unknown() }),
