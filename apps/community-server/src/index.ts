@@ -14,6 +14,8 @@ import {
     getUserRank,
     getRecommendations,
     getCommunityStats,
+    upsertRating,
+    getMangaStats,
     type EventRow
 } from "./db.js"
 import { computeUnlocked } from "./achievements.js"
@@ -80,6 +82,22 @@ app.post("/events", async c => {
         newAchievements,
         recommendations: getRecommendations(body.userId)
     })
+})
+
+app.post("/rate", async c => {
+    const body = await c.req.json<{ userId?: string; mangaTitle?: string; rating?: number }>().catch(() => ({}))
+    if (!body.userId || !body.mangaTitle) return c.json({ error: "userId and mangaTitle required" }, 400)
+    if (!getUserById(body.userId)) return c.json({ error: "User not found" }, 404)
+    const rating = Number(body.rating)
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return c.json({ error: "Rating must be 1–5" }, 400)
+    upsertRating(body.userId, body.mangaTitle.trim(), rating)
+    return c.json({ ok: true })
+})
+
+app.get("/manga", c => {
+    const title = c.req.query("title")?.trim()
+    if (!title) return c.json({ error: "title required" }, 400)
+    return c.json(getMangaStats(title))
 })
 
 app.get("/community", c => c.json(getCommunityStats()))

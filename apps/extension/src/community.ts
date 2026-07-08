@@ -19,7 +19,14 @@ export type CommunityStats = {
     leaderboard: LeaderboardEntry[]
     trendingManga: Array<{ title: string; sourceId: string; count: number }>
     topGenres: Array<{ genre: string; count: number }>
+    topRated: Array<{ title: string; avgRating: number; ratingCount: number }>
     totalUsers: number
+}
+
+export type CommunityMangaStats = {
+    avgRating: number | null
+    ratingCount: number
+    readerCount: number
 }
 
 export type CommunityProfile = {
@@ -101,4 +108,19 @@ export async function apiFetchCommunityStats(): Promise<CommunityStats> {
     const res = await fetch(`${COMMUNITY_API_BASE}/community`)
     if (!res.ok) throw new Error(`Community stats fetch failed: ${res.status}`)
     return res.json() as Promise<CommunityStats>
+}
+
+export async function apiRate(userId: string, mangaTitle: string, rating: number): Promise<void> {
+    const res = await fetch(`${COMMUNITY_API_BASE}/rate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, mangaTitle, rating })
+    })
+    if (!res.ok) throw new Error(`Rating sync failed: ${res.status}`)
+}
+
+export async function apiFetchMangaStats(mangaTitle: string): Promise<CommunityMangaStats> {
+    const res = await fetch(`${COMMUNITY_API_BASE}/manga?title=${encodeURIComponent(mangaTitle)}`)
+    if (!res.ok) throw new Error(`Manga stats fetch failed: ${res.status}`)
+    return res.json() as Promise<CommunityMangaStats>
 }
