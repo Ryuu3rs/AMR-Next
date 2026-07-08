@@ -158,10 +158,11 @@
     const sourceUrl = $derived(chapter?.manga.url ?? "")
     const sourceDomain = $derived(sourceUrl ? new URL(sourceUrl).hostname.replace(/^www\./, "") : "")
 
-    // A failed resolve, a page-count of 0, or images that error out all mean the
-    // current source is broken for this chapter.
+    // pages.length === 0 means the adapter returned sidebar-only metadata (no reader).
+    // imagesBroken is only true when pages exist but they all errored.
+    const zeroPages = $derived(Boolean(chapter) && chapter!.pages.length === 0)
     const imagesBroken = $derived(
-        Boolean(chapter) && (chapter!.pages.length === 0 || imageErrorCount >= chapter!.pages.length)
+        Boolean(chapter) && chapter!.pages.length > 0 && imageErrorCount >= chapter!.pages.length
     )
 
     async function findOnAnotherMirror() {
@@ -283,7 +284,9 @@
     const effectiveMode = $derived(direction === "vertical" ? "continuous" : mode)
     // A5: double-click toggles between the configured fit and original (zoom).
     const effectivePageFit = $derived(fitOverride ?? pageFit)
-    const progressPct = $derived(chapter ? Math.round(((currentPage + 1) / chapter.pages.length) * 100) : 0)
+    const progressPct = $derived(
+        chapter && chapter.pages.length > 0 ? Math.round(((currentPage + 1) / chapter.pages.length) * 100) : 0
+    )
 
     function toggleZoom() {
         fitOverride = fitOverride ? null : "original"
@@ -309,7 +312,7 @@
             const nearBottom = y + window.innerHeight >= document.documentElement.scrollHeight - 50
             if (nearBottom) {
                 scrollCompleteFired = true
-                recordProgress(chapter.pages.length - 1)
+                if (chapter.pages.length > 0) recordProgress(chapter.pages.length - 1)
             }
         }
     }
@@ -429,7 +432,7 @@
 
     // A8: mark the current chapter complete and jump to the next one.
     function markReadAndNext() {
-        if (chapter) recordProgress(chapter.pages.length - 1)
+        if (chapter && chapter.pages.length > 0) recordProgress(chapter.pages.length - 1)
         goToChapter(nextUrl)
     }
 
@@ -661,6 +664,18 @@
 {/if}
 
 <main class:single={effectiveMode === "single"} class="fit-{effectivePageFit} dir-{direction}">
+    {#if chapter && !error && !resolving && zeroPages}
+        <div class="mirror-banner">
+            <span>No reader pages available — open on site and use the AMR sidebar to navigate.</span>
+            <button type="button" class="btn-mirror" onclick={() => void openOnSiteAndTrack()}>
+                Open on site &amp; mark read
+            </button>
+            <button type="button" class="btn-mirror" onclick={() => void findOnAnotherMirror()}>
+                Find another source
+            </button>
+            {#if trackMessage}<span class="track-note">{trackMessage}</span>{/if}
+        </div>
+    {/if}
     {#if chapter && !error && !resolving && imagesBroken}
         <div class="mirror-banner">
             <span>Images not loading on this source?</span>

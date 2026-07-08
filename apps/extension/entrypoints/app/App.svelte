@@ -192,6 +192,7 @@
     let downloadsCount = $state(0)
     let reconcileIds = $state<string[]>([])
     let libScanIds = $state<string[]>([])
+    const currentVersion = browser.runtime.getManifest().version
     let extensionUpdate = $state<{ available: boolean; latestVersion: string; releaseUrl: string } | null>(null)
     let updateBannerDismissed = $state(false)
     let checkingExtUpdate = $state(false)
@@ -214,6 +215,9 @@
     >([])
     let checkingUpdates = $state(false)
     let detailManga = $state<LibraryManga | null>(null)
+    let detailCommunityStats = $state<{ avgRating: number | null; ratingCount: number; readerCount: number } | null>(
+        null
+    )
     let relinkUrl = $state("")
     let relinkMessage = $state("")
     let mirrorResults = $state<SearchResult[]>([])
@@ -651,6 +655,20 @@
             if (detailManga) void loadGenres(detailManga)
         }
     })
+
+    $effect(() => {
+        const title = detailManga?.title
+        detailCommunityStats = null
+        if (title) {
+            void sendRuntimeMessage<{ avgRating: number | null; ratingCount: number; readerCount: number }>({
+                type: "community:manga-stats",
+                mangaTitle: title
+            })
+                .then(s => (detailCommunityStats = s))
+                .catch(() => {})
+        }
+    })
+
     // Genre suggestions not already applied as tags.
     const suggestedTags = $derived.by(() => {
         const dm = detailManga
@@ -665,6 +683,9 @@
         library = library.map(m =>
             m.id === manga.id ? { ...m, ...(next === 0 ? { rating: undefined } : { rating: next }) } : m
         )
+        if (next > 0) {
+            void sendRuntimeMessage({ type: "community:rate", mangaTitle: manga.title, rating: next }).catch(() => {})
+        }
     }
 
     async function setNsfw(manga: LibraryManga, nsfw: boolean) {
@@ -1407,6 +1428,7 @@
             {/each}
         </nav>
         <div class="sidebar-footer">
+            <span class="sidebar-version">v{currentVersion}</span>
             <button
                 type="button"
                 class="discord-btn"
@@ -1901,7 +1923,10 @@
                                         class="source-link"
                                         type="button"
                                         title="Open on source site"
-                                        onclick={() => void browser.tabs.create({ url: manga.mangaUrl! })}>
+                                        onclick={e => {
+                                            e.stopPropagation()
+                                            void browser.tabs.create({ url: manga.mangaUrl! })
+                                        }}>
                                         {sourceMeta.get(manga.sourceId)?.name ?? manga.sourceId}
                                     </button>
                                 {:else}
@@ -1958,7 +1983,10 @@
                                             class="source-link"
                                             type="button"
                                             title="Open on source site"
-                                            onclick={() => void browser.tabs.create({ url: manga.mangaUrl! })}>
+                                            onclick={e => {
+                                                e.stopPropagation()
+                                                void browser.tabs.create({ url: manga.mangaUrl! })
+                                            }}>
                                             {sourceMeta.get(manga.sourceId)?.name ?? manga.sourceId}
                                         </button>
                                     {:else}
@@ -3144,6 +3172,19 @@
                             }}>★</button>
                     {/each}
                 </div>
+                {#if detailCommunityStats && (detailCommunityStats.ratingCount > 0 || detailCommunityStats.readerCount > 0)}
+                    <div class="community-stats-row">
+                        {#if detailCommunityStats.ratingCount > 0}
+                            <span class="community-stat">
+                                ★ {detailCommunityStats.avgRating?.toFixed(1)}
+                                <span class="muted">({detailCommunityStats.ratingCount} ratings)</span>
+                            </span>
+                        {/if}
+                        {#if detailCommunityStats.readerCount > 0}
+                            <span class="community-stat muted">{detailCommunityStats.readerCount} readers</span>
+                        {/if}
+                    </div>
+                {/if}
                 <div class="detail-categories detail-section">
                     <span class="muted">Tags</span>
                     {#if (detailManga.categories ?? []).length > 0}

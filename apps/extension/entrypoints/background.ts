@@ -38,6 +38,8 @@ import {
     apiRegister,
     apiSyncEvents,
     apiFetchCommunityStats,
+    apiRate,
+    apiFetchMangaStats,
     getCommunityProfile,
     updateCommunityProfile,
     type CommunityEvent
@@ -329,8 +331,13 @@ async function fetchChapterHtmlViaTab(url: string): Promise<string> {
 function isBotBlocked(error: unknown): boolean {
     if (!(error instanceof SourceRequestError)) return false
     const { status } = error
-    // Retry via tab for: bot-blocked (403, 502, 503), network errors (undefined status)
-    return status === 403 || status === 502 || status === 503 || status === undefined
+    // Adapter deliberately signalled bot-block — use tab fallback.
+    if (error.message === "blocked") return true
+    // CDN / reverse-proxy blocks that real browser session can bypass.
+    return status === 403 || status === 502 || status === 503
+    // NOTE: status === undefined (network timeout / connection refused) is intentionally
+    // NOT treated as bot-blocked here. A genuinely-down site should fast-fail the reader
+    // rather than burning 25 s on a tab that also can't load.
 }
 
 function classifyError(error: unknown): string {
@@ -420,6 +427,19 @@ async function doCaptureChapter(url: string) {
             return { supported: true as const, added: false as const }
         }
         console.debug("[AMR] Captured chapter without scraping", { url, error })
+        // Best-effort: if the source can derive manga info from the URL alone, prime
+        // the chapter list so the on-page panel can still show prev/next buttons.
+        const mangaInfo = source.parseMangaUrl?.(parsedUrl) ?? null
+        if (mangaInfo) {
+            const mangaKey = `${source.manifest.id}:${mangaInfo.sourceMangaId}`
+            if (!capturingMangaIds.has(mangaKey)) {
+                capturingMangaIds.add(mangaKey)
+                void listChaptersBySource(source.manifest.id, mangaInfo.sourceMangaId, mangaInfo.mangaUrl)
+                    .then(chapters => db.chapters.bulkPut(chapters))
+                    .catch(() => {})
+                    .finally(() => capturingMangaIds.delete(mangaKey))
+            }
+        }
         await flashAddedBadge()
         return { supported: true as const, added: true as const, external: true as const, title: tracked.title }
     }
@@ -656,34 +676,39 @@ function injectChapterPrompt(chapterUrl: string): void {
     updateProgress()
 
     function track(action: string) {
-        browser.runtime.sendMessage({
-            type: "analytics:record",
-            event: "panel_action",
-            detail: JSON.stringify({ action })
-        })
+        browser.runtime
+            .sendMessage({
+                type: "analytics:record",
+                event: "panel_action",
+                detail: JSON.stringify({ action })
+            })
+            .catch(() => {})
     }
 
     let prevUrl: string | null = null
     let nextUrl: string | null = null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    browser.runtime.sendMessage({ type: "chapter:siblings", url: chapterUrl }).then((resp: any) => {
-        if (!resp?.ok || !resp.data) return
-        const d = resp.data as {
-            prevUrl: string | null
-            nextUrl: string | null
-            mangaTitle: string | null
-            chapterTitle: string | null
-        }
-        prevUrl = d.prevUrl
-        nextUrl = d.nextUrl
-        const sub = shadow.getElementById("sub")
-        if (sub && (d.chapterTitle || d.mangaTitle)) sub.textContent = d.chapterTitle ?? d.mangaTitle
-        const bprevSib = shadow.getElementById("bprev") as HTMLButtonElement | null
-        const bnextSib = shadow.getElementById("bnext") as HTMLButtonElement | null
-        if (bprevSib) bprevSib.disabled = !prevUrl
-        if (bnextSib) bnextSib.disabled = !nextUrl
-    })
+    browser.runtime
+        .sendMessage({ type: "chapter:siblings", url: chapterUrl })
+        .then((resp: any) => {
+            if (!resp?.ok || !resp.data) return
+            const d = resp.data as {
+                prevUrl: string | null
+                nextUrl: string | null
+                mangaTitle: string | null
+                chapterTitle: string | null
+            }
+            prevUrl = d.prevUrl
+            nextUrl = d.nextUrl
+            const sub = shadow.getElementById("sub")
+            if (sub && (d.chapterTitle || d.mangaTitle)) sub.textContent = d.chapterTitle ?? d.mangaTitle
+            const bprevSib = shadow.getElementById("bprev") as HTMLButtonElement | null
+            const bnextSib = shadow.getElementById("bnext") as HTMLButtonElement | null
+            if (bprevSib) bprevSib.disabled = !prevUrl
+            if (bnextSib) bnextSib.disabled = !nextUrl
+        })
+        .catch(() => {})
 
     shadow.getElementById("xbtn")?.addEventListener("click", () => {
         track("dismiss")
@@ -693,14 +718,14 @@ function injectChapterPrompt(chapterUrl: string): void {
 
     shadow.getElementById("bopen")?.addEventListener("click", () => {
         track("open-in-reader")
-        browser.runtime.sendMessage({ type: "chapter:open-in-reader", url: chapterUrl })
+        browser.runtime.sendMessage({ type: "chapter:open-in-reader", url: chapterUrl }).catch(() => {})
         window.removeEventListener("scroll", onScroll)
         host.remove()
     })
 
     shadow.getElementById("btrack")?.addEventListener("click", () => {
         track("mark-read")
-        browser.runtime.sendMessage({ type: "chapter:track", url: chapterUrl })
+        browser.runtime.sendMessage({ type: "chapter:track", url: chapterUrl }).catch(() => {})
         const btn = shadow.getElementById("btrack") as HTMLButtonElement | null
         if (btn) {
             btn.textContent = "Marked ✓"
@@ -1610,6 +1635,16 @@ export default defineBackground(() => {
                             await browser.alarms.clear(communityAlarmName)
                         }
                         return success(updated)
+                    }
+                    case "community:rate": {
+                        const profile = await getCommunityProfile()
+                        if (!profile.enabled || !profile.userId) return success(null)
+                        await apiRate(profile.userId, request.mangaTitle, request.rating)
+                        return success(null)
+                    }
+                    case "community:manga-stats": {
+                        const stats = await apiFetchMangaStats(request.mangaTitle)
+                        return success(stats)
                     }
                     case "settings:get":
                         return success(await getSettings())
