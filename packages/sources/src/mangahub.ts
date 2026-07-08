@@ -201,6 +201,7 @@ export const mangahubAdapter: SourceAdapter = {
             }
         } catch (e) {
             if (e instanceof SourceRequestError && e.status === undefined) throw e
+            if (e instanceof SourceRequestError && e.status === 404) throw e
             throw new SourceRequestError("blocked")
         }
 

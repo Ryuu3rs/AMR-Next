@@ -205,6 +205,14 @@ export const webtoonsAdapter: SourceAdapter = {
         return all
     },
 
+    parseMangaUrl(url: URL): { sourceMangaId: string; mangaUrl: string } | null {
+        const titleNo = url.searchParams.get("title_no")
+        if (!titleNo) return null
+        const segs = url.pathname.split("/").filter(Boolean)
+        const mangaUrl = `${ORIGIN}/${segs.slice(0, 3).join("/")}/list?title_no=${titleNo}`
+        return { sourceMangaId: titleNo, mangaUrl }
+    },
+
     async resolveChapter(input: ResolveChapterInput, ctx: SourceContext): Promise<ResolvedChapter> {
         if (!input.url) throw new SourceError("invalid-input", "Chapter URL required for WEBTOON")
         const url = input.url

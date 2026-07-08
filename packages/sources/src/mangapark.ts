@@ -363,7 +363,12 @@ export const mangaparkAdapter: SourceAdapter = {
         const imageUrls = extractMangaParkImages(html)
         if (imageUrls.length === 0) {
             const hasCf = /cf-browser-verification|cf_chl_jschl|__cf_chl_captcha/.test(html)
-            throw new SourceError("invalid-response", `No images found [html:${html.length}b cf=${hasCf}]`)
+            context.logger.warn(
+                `No images found [html:${html.length}b cf=${hasCf}] — returning pages:[] so siblings can be cached`,
+                {
+                    url: input.url.toString()
+                }
+            )
         }
 
         const number = chapterNumberFromSlug(slugs.chapterSlug)

@@ -270,7 +270,9 @@ export const manganatoAdapter: SourceAdapter = {
         const html = await context.request.getText(requestUrl, { headers: BROWSER_HEADERS })
         const imageUrls = extractImages(html)
         if (imageUrls.length === 0) {
-            throw new SourceError("invalid-response", "No images found in chapter page")
+            context.logger.warn("No images found in chapter page — returning pages:[] so siblings can be cached", {
+                url: input.url.toString()
+            })
         }
 
         const number = chapterNumberOf(ids.chapterSlug)
