@@ -88,7 +88,7 @@ jobs:
               if: ${{ steps.release.outputs.release_created && env.AMO_JWT_ISSUER != '' }}
               run: |
                   npx --yes web-ext sign \
-                    --channel=unlisted \
+                    --channel=listed \
                     --api-key="$AMO_JWT_ISSUER" \
                     --api-secret="$AMO_JWT_SECRET" \
                     --source-dir=apps/extension/.output/firefox-mv3 \
