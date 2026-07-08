@@ -1,5 +1,5 @@
-import type { ReadingProgress } from "@amr/contracts"
-import { SourceError, SourceRequestError } from "@amr/source-sdk"
+import type { ChapterRecord, ReadingProgress } from "@amr/contracts"
+import { SourceError, SourceRequestError, type ResolvedChapter } from "@amr/source-sdk"
 import { sourceRegistry } from "@amr/sources"
 import {
     db,
@@ -510,6 +510,56 @@ async function inlineCover(url: string): Promise<string | undefined> {
     }
 }
 
+// Extract episode_no-style links from a tab-injected viewer HTML and persist them as
+// ChapterRecords so the on-site panel's prev/next and mark-as-read work without a
+// separate list-page fetch. Webtoons renders a full episode-list dropdown in the viewer
+// DOM when the page is loaded in a real browser tab, so all episodes are present.
+async function mineAndCacheEpisodesFromViewerHtml(resolved: ResolvedChapter, html: string): Promise<void> {
+    const { manga: sourceManga, chapter } = resolved
+    const mangaId = sourceManga.manga.id
+    const sourceId = sourceManga.sourceId
+    const titleNo = sourceManga.sourceMangaId
+    const hostname = new URL(chapter.url).hostname
+
+    const epLinks: Array<{ url: string; epNo: number }> = []
+    const seen = new Set<number>()
+
+    for (const m of html.matchAll(/href="([^"]*\bviewer\?[^"]*\bepisode_no=(\d+)[^"]*)"/gi)) {
+        const rawHref = m[1] ?? ""
+        const epNo = Number(m[2] ?? "")
+        if (!rawHref || !Number.isFinite(epNo) || epNo < 1 || seen.has(epNo)) continue
+        seen.add(epNo)
+        const decoded = rawHref.replace(/&amp;/g, "&")
+        const epUrl = decoded.startsWith("http") ? decoded : `https://${hostname}${decoded}`
+        epLinks.push({ url: epUrl, epNo })
+    }
+
+    // Only act if the viewer page contains a meaningful episode list (more than just
+    // prev/next neighbours — those appear in both SSR and JS-rendered HTML).
+    if (epLinks.length <= 2) return
+
+    const dbChapters: ChapterRecord[] = epLinks.map(({ url, epNo }) => ({
+        id: `${sourceId}:chapter:${titleNo}:${epNo}`,
+        mangaId,
+        sourceId,
+        title: `Episode ${epNo}`,
+        url,
+        sortKey: epNo,
+        language: "en"
+    }))
+
+    await db.chapters.bulkPut(dbChapters)
+
+    const maxEpNo = Math.max(...epLinks.map(e => e.epNo))
+    const existing = await db.manga.get(mangaId)
+    if (existing && maxEpNo > (existing.latestChapterNumber ?? 0)) {
+        await db.manga.update(mangaId, {
+            latestChapterNumber: maxEpNo,
+            latestChapterId: `${sourceId}:chapter:${titleNo}:${maxEpNo}`
+        })
+    }
+}
+
 // Self-contained — serialized and injected into the page via scripting.executeScript.
 // Must not reference any external variables or imports.
 function injectChapterPrompt(chapterUrl: string): void {
@@ -687,6 +737,34 @@ function injectChapterPrompt(chapterUrl: string): void {
 
     let prevUrl: string | null = null
     let nextUrl: string | null = null
+
+    // Seed prev/next immediately from the page DOM for episode_no-style sites (e.g.
+    // Webtoons). The paginate nav links are in the SSR HTML so this works without
+    // any background round-trip and enables the buttons before the DB lookup returns.
+    ;(function seedNavFromDom() {
+        try {
+            const cu = new URL(chapterUrl)
+            const epNo = Number(cu.searchParams.get("episode_no"))
+            const titleNo = cu.searchParams.get("title_no")
+            if (!epNo || !titleNo || isNaN(epNo)) return
+            const anchors = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="episode_no="]'))
+            for (const a of anchors) {
+                try {
+                    const au = new URL(a.href || a.getAttribute("href") || "", location.origin)
+                    if (au.searchParams.get("title_no") !== titleNo) continue
+                    const aEpNo = Number(au.searchParams.get("episode_no"))
+                    if (aEpNo === epNo - 1 && !prevUrl) {
+                        prevUrl = au.toString()
+                        ;(bprev as HTMLButtonElement).disabled = false
+                    }
+                    if (aEpNo === epNo + 1 && !nextUrl) {
+                        nextUrl = au.toString()
+                        ;(bnext as HTMLButtonElement).disabled = false
+                    }
+                } catch {}
+            }
+        } catch {}
+    })()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     browser.runtime
@@ -1448,6 +1526,9 @@ export default defineBackground(() => {
                                 })
                                 const html = await fetchChapterHtmlViaTab(request.url)
                                 resolved = await resolveChapterFromHtml(request.url, html)
+                                // Mine all episode links from the rendered viewer DOM and cache
+                                // them so the on-site panel's prev/next and mark-as-read work.
+                                void mineAndCacheEpisodesFromViewerHtml(resolved, html).catch(() => {})
                             } else {
                                 throw fetchError
                             }
