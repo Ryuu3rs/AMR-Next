@@ -292,28 +292,45 @@ export async function trackExternalChapter(input: {
     url: string
     sourceId: string
     completed?: boolean
+    // When the source adapter can parse series-level info from the chapter URL, pass it
+    // here so we use a stable, correct ID and series prefix URL instead of deriveSlug/deriveMangaUrl.
+    // Important for sites like Webtoons where deriveSlug yields just "en".
+    mangaInfo?: { sourceMangaId: string; mangaUrl: string }
 }): Promise<{ tracked: boolean; title: string; chapterNumber: number | null }> {
     const now = Date.now()
     const u = new URL(input.url)
     const numberMatch = input.url.match(/chapter[-_ ]?(\d+(?:\.\d+)?)/i)
     const number = numberMatch?.[1] !== undefined ? Number(numberMatch[1]) : undefined
 
-    const all = await db.manga.toArray()
-    let manga =
-        all.find(m => m.mangaUrl && input.url.startsWith(m.mangaUrl.replace(/\/$/, ""))) ??
-        all.find(m => m.sourceId === input.sourceId && m.mangaUrl && sameHostSlug(m.mangaUrl, input.url)) ??
-        all.find(m => m.sourceId === input.sourceId && m.sourceUrl && sameHostSlug(m.sourceUrl, input.url))
+    // When caller supplies series-level info, try direct ID lookup first — finds the manga
+    // even if it was previously added via resolveChapter (which uses a different code path).
+    let manga: LibraryManga | undefined
+    if (input.mangaInfo) {
+        manga = await db.manga.get(`${input.sourceId}:manga:${input.mangaInfo.sourceMangaId}`)
+    }
+
+    if (!manga) {
+        const all = await db.manga.toArray()
+        manga =
+            all.find(m => m.mangaUrl && input.url.startsWith(m.mangaUrl.replace(/\/$/, ""))) ??
+            all.find(m => m.sourceId === input.sourceId && m.mangaUrl && sameHostSlug(m.mangaUrl, input.url)) ??
+            all.find(m => m.sourceId === input.sourceId && m.sourceUrl && sameHostSlug(m.sourceUrl, input.url))
+    }
 
     if (!manga) {
         const slug = deriveSlug(u)
         const title = humanizeSlug(slug) || u.hostname
+        const mangaId = input.mangaInfo
+            ? `${input.sourceId}:manga:${input.mangaInfo.sourceMangaId}`
+            : `${input.sourceId}:manga:${slug || u.pathname}`
+        const mangaUrl = input.mangaInfo?.mangaUrl ?? deriveMangaUrl(u, slug)
         manga = {
-            id: `${input.sourceId}:manga:${slug || u.pathname}`,
+            id: mangaId,
             title,
             normalizedTitle: title.toLocaleLowerCase("en"),
             sourceId: input.sourceId,
             sourceUrl: input.url,
-            mangaUrl: deriveMangaUrl(u, slug),
+            mangaUrl,
             authors: [],
             status: "unknown",
             addedAt: now,
@@ -323,7 +340,7 @@ export async function trackExternalChapter(input: {
         await db.sourceLinks.put({
             mangaId: manga.id,
             sourceId: input.sourceId,
-            url: manga.mangaUrl ?? input.url,
+            url: mangaUrl,
             title: manga.title,
             addedAt: now,
             updatedAt: now
@@ -348,7 +365,7 @@ export async function trackExternalChapter(input: {
         completed: input.completed ?? true,
         updatedAt: now
     })
-    return { tracked: true, title: manga.title, chapterNumber: number ?? null }
+    return { tracked: true, title: manga.title, chapterNumber: number ?? null, mangaId: manga.id }
 }
 
 export async function saveProgress(progress: ReadingProgress): Promise<void> {

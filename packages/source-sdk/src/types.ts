@@ -108,4 +108,9 @@ export interface SourceAdapter {
     // Optional: derive manga ID and list URL from a chapter URL without network.
     // Used to prime the chapter list for panel prev/next when chapter resolve fails (bot-block).
     parseMangaUrl?(url: URL): { sourceMangaId: string; mangaUrl: string } | null
+    // Optional: return the URL of the chapter-list page for this series.
+    // When listChapters returns 0 results (list page is JS-rendered and the service
+    // worker fetch returns empty HTML), background.ts falls back to tab-injecting
+    // this URL and mining episode links from the fully-rendered DOM.
+    getChapterListUrl?(sourceMangaId: string, mangaUrl: string): string | null
 }
