@@ -419,23 +419,30 @@ async function doCaptureChapter(url: string) {
             detail: JSON.stringify({ errorType: classifyError(error) }),
             ts: Date.now()
         })
+        const mangaInfo = source.parseMangaUrl?.(parsedUrl) ?? undefined
         let tracked
         try {
-            tracked = await trackExternalChapter({ url, sourceId: source.manifest.id, completed: false })
+            tracked = await trackExternalChapter({
+                url,
+                sourceId: source.manifest.id,
+                completed: false,
+                mangaInfo
+            })
         } catch (trackError) {
             console.warn("[AMR] Failed to track external chapter", { url, trackError })
             return { supported: true as const, added: false as const }
         }
         console.debug("[AMR] Captured chapter without scraping", { url, error })
-        // Best-effort: if the source can derive manga info from the URL alone, prime
-        // the chapter list so the on-page panel can still show prev/next buttons.
-        const mangaInfo = source.parseMangaUrl?.(parsedUrl) ?? null
+        // Best-effort: prime the chapter list so the on-page panel can show prev/next.
+        // Uses tab injection for JS-rendered list pages (e.g. Webtoons) to get the
+        // full episode count, not just what SW-fetch returns.
+        // Use tracked.mangaId (the actual DB entry) not a computed ID — the existing
+        // manga record may have a different ID if it was created before the fix.
         if (mangaInfo) {
             const mangaKey = `${source.manifest.id}:${mangaInfo.sourceMangaId}`
             if (!capturingMangaIds.has(mangaKey)) {
                 capturingMangaIds.add(mangaKey)
-                void listChaptersBySource(source.manifest.id, mangaInfo.sourceMangaId, mangaInfo.mangaUrl)
-                    .then(chapters => db.chapters.bulkPut(chapters))
+                void listChaptersWithTabFallback(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
                     .catch(() => {})
                     .finally(() => capturingMangaIds.delete(mangaKey))
             }
@@ -468,8 +475,12 @@ async function doCaptureChapter(url: string) {
     const mangaKey = `${resolved.manga.sourceId}:${resolved.manga.sourceMangaId}`
     if (!capturingMangaIds.has(mangaKey)) {
         capturingMangaIds.add(mangaKey)
-        void listChaptersBySource(resolved.manga.sourceId, resolved.manga.sourceMangaId, resolved.manga.url)
-            .then(chapters => db.chapters.bulkPut(chapters))
+        void listChaptersWithTabFallback(
+            source,
+            resolved.manga.sourceMangaId,
+            resolved.manga.url,
+            resolved.manga.manga.id
+        )
             .catch(() => {})
             .finally(() => capturingMangaIds.delete(mangaKey))
     }
@@ -510,17 +521,17 @@ async function inlineCover(url: string): Promise<string | undefined> {
     }
 }
 
-// Extract episode_no-style links from a tab-injected viewer HTML and persist them as
-// ChapterRecords so the on-site panel's prev/next and mark-as-read work without a
-// separate list-page fetch. Webtoons renders a full episode-list dropdown in the viewer
-// DOM when the page is loaded in a real browser tab, so all episodes are present.
-async function mineAndCacheEpisodesFromViewerHtml(resolved: ResolvedChapter, html: string): Promise<void> {
-    const { manga: sourceManga, chapter } = resolved
-    const mangaId = sourceManga.manga.id
-    const sourceId = sourceManga.sourceId
-    const titleNo = sourceManga.sourceMangaId
-    const hostname = new URL(chapter.url).hostname
-
+// Mine episode_no-style links from HTML and persist them as ChapterRecords.
+// Works for both tab-injected viewer HTML (which has all episodes in the dropdown)
+// and tab-injected list page HTML (which has the full paginated episode list).
+// Returns the number of new episodes stored (0 = nothing useful found).
+async function mineAndCacheEpisodesFromHtml(
+    mangaId: string,
+    sourceId: string,
+    sourceMangaId: string,
+    hostname: string,
+    html: string
+): Promise<number> {
     const epLinks: Array<{ url: string; epNo: number }> = []
     const seen = new Set<number>()
 
@@ -534,12 +545,11 @@ async function mineAndCacheEpisodesFromViewerHtml(resolved: ResolvedChapter, htm
         epLinks.push({ url: epUrl, epNo })
     }
 
-    // Only act if the viewer page contains a meaningful episode list (more than just
-    // prev/next neighbours — those appear in both SSR and JS-rendered HTML).
-    if (epLinks.length <= 2) return
+    // Ignore if we only got the 2-3 paginate prev/next links present in SSR HTML.
+    if (epLinks.length <= 2) return 0
 
     const dbChapters: ChapterRecord[] = epLinks.map(({ url, epNo }) => ({
-        id: `${sourceId}:chapter:${titleNo}:${epNo}`,
+        id: `${sourceId}:chapter:${sourceMangaId}:${epNo}`,
         mangaId,
         sourceId,
         title: `Episode ${epNo}`,
@@ -555,7 +565,44 @@ async function mineAndCacheEpisodesFromViewerHtml(resolved: ResolvedChapter, htm
     if (existing && maxEpNo > (existing.latestChapterNumber ?? 0)) {
         await db.manga.update(mangaId, {
             latestChapterNumber: maxEpNo,
-            latestChapterId: `${sourceId}:chapter:${titleNo}:${maxEpNo}`
+            latestChapterId: `${sourceId}:chapter:${sourceMangaId}:${maxEpNo}`
+        })
+    }
+
+    return epLinks.length
+}
+
+// Fetch and cache the full chapter list for a manga.
+// If the source provides getChapterListUrl (signals JS-rendered list page), tab-inject
+// that URL directly — SW fetch would return a partial/empty list.
+// Otherwise use the standard SW-fetch path and update the stored chapter count.
+async function listChaptersWithTabFallback(
+    source: ReturnType<typeof findSource>,
+    sourceMangaId: string,
+    mangaUrl: string,
+    mangaId: string
+): Promise<void> {
+    const listUrl = source?.getChapterListUrl?.(sourceMangaId, mangaUrl) ?? null
+
+    if (listUrl) {
+        // Tab injection: gets the fully-rendered DOM so we can mine all episode links.
+        // Page 1 (newest episodes) is enough to determine the max episode number.
+        const html = await fetchChapterHtmlViaTab(listUrl)
+        await mineAndCacheEpisodesFromHtml(mangaId, source!.manifest.id, sourceMangaId, new URL(listUrl).hostname, html)
+        return
+    }
+
+    // Standard path: SW-fetch the chapter list then persist + update latest count.
+    const chapters = await listChaptersBySource(source!.manifest.id, sourceMangaId, mangaUrl)
+    if (chapters.length === 0) return
+    await db.chapters.bulkPut(chapters)
+    const maxSortKey = Math.max(...chapters.map(c => c.sortKey))
+    const latestChapter = chapters.find(c => c.sortKey === maxSortKey)
+    const existing = await db.manga.get(mangaId)
+    if (existing && maxSortKey > (existing.latestChapterNumber ?? 0)) {
+        await db.manga.update(mangaId, {
+            latestChapterNumber: maxSortKey,
+            latestChapterId: latestChapter?.id
         })
     }
 }
@@ -1538,7 +1585,13 @@ export default defineBackground(() => {
                                 resolved = await resolveChapterFromHtml(request.url, html)
                                 // Mine all episode links from the rendered viewer DOM and cache
                                 // them so the on-site panel's prev/next and mark-as-read work.
-                                void mineAndCacheEpisodesFromViewerHtml(resolved, html).catch(() => {})
+                                void mineAndCacheEpisodesFromHtml(
+                                    resolved.manga.manga.id,
+                                    resolved.manga.sourceId,
+                                    resolved.manga.sourceMangaId,
+                                    new URL(request.url).hostname,
+                                    html
+                                ).catch(() => {})
                             } else {
                                 throw fetchError
                             }
@@ -1664,10 +1717,26 @@ export default defineBackground(() => {
                             sourceId: source.manifest.id,
                             ts: Date.now()
                         })
+                        const mangaInfo = source.parseMangaUrl?.(parsedUrl) ?? undefined
                         const tracked = await trackExternalChapter({
                             url: request.url,
-                            sourceId: source.manifest.id
+                            sourceId: source.manifest.id,
+                            mangaInfo
                         })
+                        if (mangaInfo) {
+                            const mangaKey = `${source.manifest.id}:${mangaInfo.sourceMangaId}`
+                            if (!capturingMangaIds.has(mangaKey)) {
+                                capturingMangaIds.add(mangaKey)
+                                void listChaptersWithTabFallback(
+                                    source,
+                                    mangaInfo.sourceMangaId,
+                                    mangaInfo.mangaUrl,
+                                    tracked.mangaId
+                                )
+                                    .catch(() => {})
+                                    .finally(() => capturingMangaIds.delete(mangaKey))
+                            }
+                        }
                         return success({ supported: true as const, ...tracked })
                     }
                     case "chapter:open-in-reader": {

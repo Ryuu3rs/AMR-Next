@@ -252,6 +252,17 @@ export const webtoonsAdapter: SourceAdapter = {
         return { sourceMangaId: titleNo, mangaUrl: seriesPrefixUrl(url) }
     },
 
+    getChapterListUrl(sourceMangaId: string, mangaUrl: string): string | null {
+        // mangaUrl is the series prefix e.g. https://www.webtoons.com/en/fantasy/slug/
+        // The list page is that prefix + "list?title_no=<id>".
+        try {
+            const base = new URL(mangaUrl)
+            return `${base.origin}${base.pathname}list?title_no=${encodeURIComponent(sourceMangaId)}`
+        } catch {
+            return null
+        }
+    },
+
     async resolveChapter(input: ResolveChapterInput, ctx: SourceContext): Promise<ResolvedChapter> {
         if (!input.url) throw new SourceError("invalid-input", "Chapter URL required for WEBTOON")
         const url = input.url
