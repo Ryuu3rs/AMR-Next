@@ -105,4 +105,7 @@ export interface SourceAdapter {
     resolveGenres?(input: { sourceMangaId?: string; url?: URL }, context: SourceContext): Promise<string[]>
     // Optional: search this source for a title. Adapters that can't search omit it.
     search?(query: string, context: SourceContext): Promise<SourceSearchResult[]>
+    // Optional: derive manga ID and list URL from a chapter URL without network.
+    // Used to prime the chapter list for panel prev/next when chapter resolve fails (bot-block).
+    parseMangaUrl?(url: URL): { sourceMangaId: string; mangaUrl: string } | null
 }

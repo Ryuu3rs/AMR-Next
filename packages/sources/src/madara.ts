@@ -662,7 +662,8 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
                 const isBlocked =
                     /cf_chl|challenge-platform|cf-browser-verification|__cf_chl_captcha|ddos-guard\.net/i.test(html)
                 const msg = `No images found [ajax:${ajaxResult.debug}] [html:${html.length}b blocked=${isBlocked}]`
-                if (isBlocked) throw new SourceRequestError(msg, undefined, { url: input.url.toString() })
+                if (isBlocked)
+                    throw new SourceRequestError("blocked", undefined, { url: input.url.toString(), debug: msg })
                 throw new SourceError("invalid-response", msg)
             }
 

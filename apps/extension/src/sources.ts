@@ -25,7 +25,7 @@ function createSourceContext(rateLimit?: { requests: number; intervalMs: number 
         allowedOrigins: SOURCE_ORIGINS.filter(o => !o.startsWith("*://")).map(o => o.replace(/\/\*$/, "")),
         maxRequests: 20,
         maxResponseBytes: 10 * 1024 * 1024,
-        timeoutMs: 20_000,
+        timeoutMs: 15_000,
         cacheTtlMs: 60_000,
         ...(rateLimit ? { rateLimit } : {})
     })

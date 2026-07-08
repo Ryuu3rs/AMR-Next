@@ -230,8 +230,12 @@ export const asuraScansAdapter: SourceAdapter = {
         if (imageUrls.length === 0) {
             const isBlocked =
                 /cf_chl|challenge-platform|cf-browser-verification|__cf_chl_captcha|ddos-guard\.net/i.test(html)
-            const msg = `No images found [html:${html.length}b blocked=${isBlocked}]`
-            throw new SourceRequestError(msg, undefined, { url: input.url.toString() })
+            context.logger.warn(
+                `No images found [html:${html.length}b blocked=${isBlocked}] — returning pages:[] so siblings can be cached`,
+                {
+                    url: input.url.toString()
+                }
+            )
         }
 
         const title = extractTitle(html, slug)

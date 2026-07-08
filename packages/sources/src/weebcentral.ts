@@ -294,16 +294,22 @@ export const weebCentralAdapter: SourceAdapter = {
         imagesUrl.searchParams.set("current_page", "1")
 
         // Fetch chapter page (manga metadata + chapter title) and images concurrently.
+        // The HTMX images endpoint may be bot-blocked — treat failure as empty images so
+        // the series metadata is still preserved and siblings can be cached for panel nav.
         const [chapterHtml, imagesHtml] = await Promise.all([
             context.request.getText(new URL(chapterPageUrl), { headers: BROWSER_HEADERS }),
-            context.request.getText(imagesUrl, {
-                headers: { ...BROWSER_HEADERS, "HX-Request": "true", Referer: chapterPageUrl }
-            })
+            context.request
+                .getText(imagesUrl, {
+                    headers: { ...BROWSER_HEADERS, "HX-Request": "true", Referer: chapterPageUrl }
+                })
+                .catch(() => "")
         ])
 
         const imageUrls = extractImages(imagesHtml)
         if (imageUrls.length === 0) {
-            throw new SourceError("invalid-response", "No images found in chapter")
+            context.logger.warn("WeebCentral images unavailable — preserving series metadata for panel nav", {
+                chapterId
+            })
         }
 
         const { seriesId, title: chapterTitle, sortKey } = extractChapterPageMeta(chapterHtml)
