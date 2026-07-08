@@ -69,10 +69,16 @@ function extractCover(html: string): string | undefined {
     return undefined
 }
 
-// Extract /en/{genre}/{slug} from a Webtoons list URL for building chapter URLs.
+// Return the first 3 path segments as /lang/genre/slug for list URL construction.
 function pathPrefix(url: URL): string {
     const segs = url.pathname.split("/").filter(Boolean)
     return "/" + segs.slice(0, 3).join("/")
+}
+
+// Canonical series prefix URL — used as mangaUrl so that chapter URLs (which share the
+// same /lang/genre/slug/ prefix) match via startsWith in trackExternalChapter.
+function seriesPrefixUrl(url: URL): string {
+    return `${ORIGIN}${pathPrefix(url)}/`
 }
 
 // Parse episode links from a list page, returning chapters oldest-first.
@@ -86,13 +92,33 @@ function extractEpisodes(html: string, titleNo: string, prefix: string): SourceC
         if (!epNo || seen.has(epNo)) continue
         seen.add(epNo)
         const sortKey = Number(epNo)
+
+        // Use the actual href from HTML (decoded) so the stored URL matches what the
+        // browser shows — chapter:siblings lookup uses exact URL string comparison.
+        const rawHref = captureGroup(m, 1) ?? ""
+        const decodedHref = rawHref.replace(/&amp;/g, "&")
+        const epUrl = decodedHref.startsWith("http") ? decodedHref : `${ORIGIN}${decodedHref}`
+
+        // Extract episode title from URL slug (e.g. "ep-5-some-title" → "Some Title").
+        const slugMatch = decodedHref.match(/\/([^/]+)\/viewer\?/)
+        const slug = slugMatch?.[1] ?? ""
+        let epTitle: string
+        if (slug.match(/^ep-\d+-/)) {
+            epTitle = slug
+                .replace(/^ep-\d+-/, "")
+                .replace(/-/g, " ")
+                .replace(/\b\w/g, c => c.toUpperCase())
+        } else {
+            epTitle = `Episode ${epNo}`
+        }
+
         out.push({
             id: `${SOURCE_ID}:chapter:${titleNo}:${epNo}`,
             mangaId,
             sourceId: SOURCE_ID,
             sourceChapterId: epNo,
-            title: `Episode ${epNo}`,
-            url: `${ORIGIN}${prefix}/episode-${epNo}/viewer?title_no=${titleNo}&episode_no=${epNo}`,
+            title: epTitle,
+            url: epUrl,
             sortKey,
             language: "en"
         })
@@ -104,10 +130,17 @@ function extractEpisodes(html: string, titleNo: string, prefix: string): SourceC
 
 // Extract image URLs from a viewer page.
 // Webtoons puts the real URL in data-url on <img class="_images"> in the initial HTML.
+// Scope the search to the actual episode content area (#content / .viewer_lst) to avoid
+// capturing anti-bot decoy images injected before the content section.
 function extractImages(html: string): string[] {
     const urls: string[] = []
     const seen = new Set<string>()
-    for (const m of html.matchAll(/data-url="(https?:\/\/[^"]+)"/gi)) {
+
+    // Find the start of the actual episode content area.
+    const contentIdx = html.search(/\bid=(?:"content"|'content')|\bclass="viewer_lst"/)
+    const scope = contentIdx >= 0 ? html.slice(contentIdx) : html
+
+    for (const m of scope.matchAll(/data-url="(https?:\/\/[^"]+)"/gi)) {
         const u = captureGroup(m, 1)
         if (u && !seen.has(u)) {
             seen.add(u)
@@ -116,7 +149,7 @@ function extractImages(html: string): string[] {
     }
     if (urls.length > 0) return urls
     // Fallback: src / data-src on elements with _images class
-    for (const m of html.matchAll(/<img\b[^>]+class="[^"]*_images[^"]*"[^>]*>/gi)) {
+    for (const m of scope.matchAll(/<img\b[^>]+class="[^"]*_images[^"]*"[^>]*>/gi)) {
         const tag = captureGroup(m, 0) ?? ""
         const src = tag.match(/\bdata-src="(https?:\/\/[^"]+)"/i)?.[1] ?? tag.match(/\bsrc="(https?:\/\/[^"]+)"/i)?.[1]
         if (src && !seen.has(src)) {
@@ -149,10 +182,13 @@ export const webtoonsAdapter: SourceAdapter = {
     async resolveManga(input: ResolveMangaInput, ctx: SourceContext): Promise<SourceManga> {
         const titleNo = input.sourceMangaId ?? input.url?.searchParams.get("title_no") ?? undefined
         if (!titleNo) throw new SourceError("invalid-input", "No title_no in URL or sourceMangaId")
-        const url = input.url ?? new URL(`${ORIGIN}/en/fantasy/unknown/list?title_no=${titleNo}`)
-        const html = await ctx.request.getText(url, { headers: BROWSER_HEADERS })
+        const fetchUrl = input.url ?? new URL(`${ORIGIN}/en/fantasy/unknown/list?title_no=${titleNo}`)
+        const html = await ctx.request.getText(fetchUrl, { headers: BROWSER_HEADERS })
         const title = extractTitle(html, `Series ${titleNo}`)
         const coverUrl = extractCover(html)
+        // Return the series path prefix as the manga URL so that any chapter URL
+        // (which shares /lang/genre/slug/) matches via startsWith in trackExternalChapter.
+        const mangaUrl = seriesPrefixUrl(fetchUrl)
         return {
             manga: {
                 id: `${SOURCE_ID}:manga:${titleNo}`,
@@ -166,22 +202,24 @@ export const webtoonsAdapter: SourceAdapter = {
             },
             sourceId: SOURCE_ID,
             sourceMangaId: titleNo,
-            url: url.toString()
+            url: mangaUrl
         }
     },
 
     async listChapters(input: ListChaptersInput, ctx: SourceContext): Promise<SourceChapter[]> {
         const { manga } = input
         const titleNo = manga.sourceMangaId
-        const baseUrl = new URL(manga.url)
-        const prefix = pathPrefix(baseUrl)
+        // Always build the list URL from the source manga ID so this works regardless of
+        // whether manga.url is the old list URL or the new series prefix.
+        const prefix = pathPrefix(new URL(manga.url))
+        const listBase = new URL(`${ORIGIN}${prefix}/list?title_no=${titleNo}`)
         const MAX_PAGES = 50
 
         const all: SourceChapter[] = []
         const seen = new Set<string>()
 
         for (let page = 1; page <= MAX_PAGES; page++) {
-            const pageUrl = new URL(manga.url)
+            const pageUrl = new URL(listBase.toString())
             pageUrl.searchParams.set("page", String(page))
             const html = await ctx.request.getText(pageUrl, { headers: BROWSER_HEADERS })
             const episodes = extractEpisodes(html, titleNo, prefix)
@@ -209,9 +247,9 @@ export const webtoonsAdapter: SourceAdapter = {
     parseMangaUrl(url: URL): { sourceMangaId: string; mangaUrl: string } | null {
         const titleNo = url.searchParams.get("title_no")
         if (!titleNo) return null
-        const segs = url.pathname.split("/").filter(Boolean)
-        const mangaUrl = `${ORIGIN}/${segs.slice(0, 3).join("/")}/list?title_no=${titleNo}`
-        return { sourceMangaId: titleNo, mangaUrl }
+        // Return the series path prefix so chapter URLs (e.g. /en/genre/slug/ep-5/viewer)
+        // match via startsWith against the stored mangaUrl.
+        return { sourceMangaId: titleNo, mangaUrl: seriesPrefixUrl(url) }
     },
 
     async resolveChapter(input: ResolveChapterInput, ctx: SourceContext): Promise<ResolvedChapter> {
@@ -230,25 +268,29 @@ export const webtoonsAdapter: SourceAdapter = {
             throw new SourceRequestError("blocked")
         }
 
-        // Build list URL by replacing the path segment and query
-        const listUrl = new URL(url.toString())
-        const segs = listUrl.pathname.split("/").filter(Boolean)
-        listUrl.pathname = "/" + segs.slice(0, 3).join("/") + "/list"
-        listUrl.search = `?title_no=${titleNo}`
+        // Fetch list page for real series title and cover art.
+        // This runs in the second (tab-injected) call where images were found.
+        const segs = url.pathname.split("/").filter(Boolean)
+        const mangaUrl = seriesPrefixUrl(url)
+        const listPageUrl = new URL(`${ORIGIN}/${segs.slice(0, 3).join("/")}/list?title_no=${titleNo}`)
+        const listHtml = await ctx.request.getText(listPageUrl, { headers: BROWSER_HEADERS }).catch(() => "")
+        const seriesTitle = extractTitle(listHtml, `Series ${titleNo}`)
+        const seriesCover = extractCover(listHtml)
 
         const manga: SourceManga = {
             manga: {
                 id: `${SOURCE_ID}:manga:${titleNo}`,
-                title: `Series ${titleNo}`,
-                normalizedTitle: `series ${titleNo}`,
+                title: seriesTitle,
+                normalizedTitle: seriesTitle.toLocaleLowerCase("en").replace(/\s+/g, " "),
                 authors: [],
                 status: "unknown",
+                ...(seriesCover ? { coverUrl: seriesCover } : {}),
                 addedAt: ctx.now(),
                 updatedAt: ctx.now()
             },
             sourceId: SOURCE_ID,
             sourceMangaId: titleNo,
-            url: listUrl.toString()
+            url: mangaUrl
         }
 
         return {
