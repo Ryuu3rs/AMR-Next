@@ -566,6 +566,14 @@ function injectChapterPrompt(chapterUrl: string): void {
     const BANNER_ID = "__amr-chapter-prompt__"
     if (document.getElementById(BANNER_ID)) return
 
+    // Resolve the WebExtension runtime from the page-level global, NOT from the background
+    // module's closure. When Chrome serializes this function via scripting.executeScript the
+    // closure is broken — 'browser' from wxt/browser compiles to a minified module-local var
+    // that is undefined in the re-evaluated isolated world. globalThis.browser (Chrome 121+
+    // native) or globalThis.chrome (all Chrome/Edge) are always available in the isolated world.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ext: any = (globalThis as any).browser ?? (globalThis as any).chrome
+
     // Auto-detect light background and switch to dark for comfortable reading.
     function parseLuminance(css: string): number {
         const m = css.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
@@ -726,7 +734,7 @@ function injectChapterPrompt(chapterUrl: string): void {
     updateProgress()
 
     function track(action: string) {
-        browser.runtime
+        ext.runtime
             .sendMessage({
                 type: "analytics:record",
                 event: "panel_action",
@@ -767,7 +775,7 @@ function injectChapterPrompt(chapterUrl: string): void {
     })()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    browser.runtime
+    ext.runtime
         .sendMessage({ type: "chapter:siblings", url: chapterUrl })
         .then((resp: any) => {
             if (!resp?.ok || !resp.data) return
@@ -777,8 +785,10 @@ function injectChapterPrompt(chapterUrl: string): void {
                 mangaTitle: string | null
                 chapterTitle: string | null
             }
-            prevUrl = d.prevUrl
-            nextUrl = d.nextUrl
+            // Only overwrite DOM-seeded URLs if the DB has real values — don't
+            // re-disable buttons that seedNavFromDom already enabled.
+            if (d.prevUrl !== null) prevUrl = d.prevUrl
+            if (d.nextUrl !== null) nextUrl = d.nextUrl
             const sub = shadow.getElementById("sub")
             if (sub && (d.chapterTitle || d.mangaTitle)) sub.textContent = d.chapterTitle ?? d.mangaTitle
             const bprevSib = shadow.getElementById("bprev") as HTMLButtonElement | null
@@ -796,14 +806,14 @@ function injectChapterPrompt(chapterUrl: string): void {
 
     shadow.getElementById("bopen")?.addEventListener("click", () => {
         track("open-in-reader")
-        browser.runtime.sendMessage({ type: "chapter:open-in-reader", url: chapterUrl }).catch(() => {})
+        ext.runtime.sendMessage({ type: "chapter:open-in-reader", url: chapterUrl }).catch(() => {})
         window.removeEventListener("scroll", onScroll)
         host.remove()
     })
 
     shadow.getElementById("btrack")?.addEventListener("click", () => {
         track("mark-read")
-        browser.runtime.sendMessage({ type: "chapter:track", url: chapterUrl }).catch(() => {})
+        ext.runtime.sendMessage({ type: "chapter:track", url: chapterUrl }).catch(() => {})
         const btn = shadow.getElementById("btrack") as HTMLButtonElement | null
         if (btn) {
             btn.textContent = "Marked ✓"
