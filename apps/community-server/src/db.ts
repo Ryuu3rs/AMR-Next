@@ -34,6 +34,15 @@ db.exec(`
         unlocked_at    INTEGER NOT NULL DEFAULT (unixepoch()),
         PRIMARY KEY (user_id, achievement_id)
     );
+
+    CREATE TABLE IF NOT EXISTS ratings (
+        user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        manga_title TEXT NOT NULL,
+        rating      INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+        updated_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+        PRIMARY KEY (user_id, manga_title)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ratings_title ON ratings(manga_title);
 `)
 
 function weekBounds(): [string, string] {
@@ -147,10 +156,42 @@ export function getRecommendations(userId: string): Array<{ title: string; sourc
         .all(userId, userId, userId) as Array<{ title: string; sourceId: string }>
 }
 
+export function upsertRating(userId: string, mangaTitle: string, rating: number): void {
+    db.prepare(
+        `INSERT INTO ratings (user_id, manga_title, rating, updated_at) VALUES (?, ?, ?, unixepoch())
+         ON CONFLICT (user_id, manga_title) DO UPDATE SET rating = excluded.rating, updated_at = unixepoch()`
+    ).run(userId, mangaTitle, rating)
+}
+
+export function getMangaStats(mangaTitle: string): {
+    avgRating: number | null
+    ratingCount: number
+    readerCount: number
+} {
+    const r = db
+        .prepare("SELECT ROUND(AVG(rating), 1) as avg, COUNT(*) as cnt FROM ratings WHERE manga_title = ?")
+        .get(mangaTitle) as { avg: number | null; cnt: number }
+    const u = db.prepare("SELECT COUNT(DISTINCT user_id) as cnt FROM events WHERE manga_title = ?").get(mangaTitle) as {
+        cnt: number
+    }
+    return { avgRating: r.avg, ratingCount: r.cnt, readerCount: u.cnt }
+}
+
+export function getTopRated(): Array<{ title: string; avgRating: number; ratingCount: number }> {
+    return db
+        .prepare(
+            `SELECT manga_title as title, ROUND(AVG(rating), 1) as avgRating, COUNT(*) as ratingCount
+             FROM ratings GROUP BY manga_title HAVING COUNT(*) >= 3
+             ORDER BY avgRating DESC, ratingCount DESC LIMIT 10`
+        )
+        .all() as Array<{ title: string; avgRating: number; ratingCount: number }>
+}
+
 export function getCommunityStats(): {
     leaderboard: Array<{ rank: number; username: string; chaptersWeek: number }>
     trendingManga: Array<{ title: string; sourceId: string; count: number }>
     topGenres: Array<{ genre: string; count: number }>
+    topRated: Array<{ title: string; avgRating: number; ratingCount: number }>
     totalUsers: number
 } {
     const [start, end] = weekBounds()
@@ -184,5 +225,5 @@ export function getCommunityStats(): {
 
     const totalUsers = (db.prepare("SELECT COUNT(*) as n FROM users").get() as { n: number }).n
 
-    return { leaderboard, trendingManga, topGenres, totalUsers }
+    return { leaderboard, trendingManga, topGenres, topRated: getTopRated(), totalUsers }
 }

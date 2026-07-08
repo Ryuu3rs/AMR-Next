@@ -121,6 +121,12 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     }),
     z.object({ type: z.literal("community:toggle"), enabled: z.boolean() }),
     z.object({ type: z.literal("community:sync") }),
+    z.object({
+        type: z.literal("community:rate"),
+        mangaTitle: z.string().min(1),
+        rating: z.number().int().min(1).max(5)
+    }),
+    z.object({ type: z.literal("community:manga-stats"), mangaTitle: z.string().min(1) }),
     z.object({ type: z.literal("settings:get") }),
     z.object({
         type: z.literal("settings:update"),
