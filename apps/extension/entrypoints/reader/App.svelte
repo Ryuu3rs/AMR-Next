@@ -362,7 +362,7 @@
             try {
                 const modeKey = `readerMode:${mangaId}`
                 const dirKey = `readerDirection:${mangaId}`
-                const [settings, stored] = await Promise.all([
+                const [settings, stored, libraryManga] = await Promise.all([
                     sendRuntimeMessage<{
                         readingMode: "continuous" | "single"
                         readingDirection: ReadingDirection
@@ -370,16 +370,22 @@
                         showPageNumber: boolean
                         preloadPages: number
                     }>({ type: "settings:get" }),
-                    browser.storage.local.get([modeKey, dirKey]).catch(() => ({}) as Record<string, unknown>)
+                    browser.storage.local.get([modeKey, dirKey]).catch(() => ({}) as Record<string, unknown>),
+                    sendRuntimeMessage<{
+                        readingDirection?: ReadingDirection
+                        pageFit?: PageFit
+                    } | null>({ type: "library:get", mangaId }).catch(() => null)
                 ])
                 const modeOverride = stored[modeKey]
                 const dirOverride = stored[dirKey]
                 mode = modeOverride === "single" || modeOverride === "continuous" ? modeOverride : settings.readingMode
+                // Per-series DB override wins, then the local per-title override, then global.
                 direction =
-                    dirOverride === "ltr" || dirOverride === "rtl" || dirOverride === "vertical"
+                    libraryManga?.readingDirection ??
+                    (dirOverride === "ltr" || dirOverride === "rtl" || dirOverride === "vertical"
                         ? dirOverride
-                        : settings.readingDirection
-                pageFit = settings.pageFit
+                        : settings.readingDirection)
+                pageFit = libraryManga?.pageFit ?? settings.pageFit
                 showPageNumber = settings.showPageNumber
                 preloadPages = settings.preloadPages
             } catch {

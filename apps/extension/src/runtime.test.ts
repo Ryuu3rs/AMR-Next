@@ -68,6 +68,40 @@ describe("sync schema (G5)", () => {
     })
 })
 
+describe("library:reading-prefs schema", () => {
+    it("accepts valid direction and fit overrides", () => {
+        expect(
+            runtimeRequestSchema.safeParse({
+                type: "library:reading-prefs",
+                mangaId: "m1",
+                readingDirection: "rtl",
+                pageFit: "width"
+            }).success
+        ).toBe(true)
+    })
+
+    it("accepts null to clear overrides", () => {
+        expect(
+            runtimeRequestSchema.safeParse({
+                type: "library:reading-prefs",
+                mangaId: "m1",
+                readingDirection: null,
+                pageFit: null
+            }).success
+        ).toBe(true)
+    })
+
+    it("rejects invalid direction", () => {
+        expect(
+            runtimeRequestSchema.safeParse({
+                type: "library:reading-prefs",
+                mangaId: "m1",
+                readingDirection: "diagonal"
+            }).success
+        ).toBe(false)
+    })
+})
+
 describe("manual tracking schema (G2)", () => {
     it("accepts library:manual toggles", () => {
         expect(runtimeRequestSchema.safeParse({ type: "library:manual", mangaId: "m1", manual: true }).success).toBe(

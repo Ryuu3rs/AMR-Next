@@ -33,6 +33,10 @@ export type LibraryManga = MangaRecord & {
     notes?: string
     // Genres fetched from the source (cached to avoid repeat network calls).
     genres?: string[]
+    // Per-series reading overrides — when set, the reader uses these instead of
+    // the global reading settings for chapters of this title.
+    readingDirection?: "ltr" | "rtl" | "vertical"
+    pageFit?: "width" | "height" | "contain" | "original"
 }
 
 export type HistoryEvent = {
@@ -230,6 +234,8 @@ export async function saveResolvedChapter(input: {
             ...(existing?.categories !== undefined ? { categories: existing.categories } : {}),
             ...(existing?.nsfw !== undefined ? { nsfw: existing.nsfw } : {}),
             ...(existing?.notes !== undefined ? { notes: existing.notes } : {}),
+            ...(existing?.readingDirection !== undefined ? { readingDirection: existing.readingDirection } : {}),
+            ...(existing?.pageFit !== undefined ? { pageFit: existing.pageFit } : {}),
             // rating lives in MangaRecord — prefer existing if the source didn't supply one
             ...(!input.manga.rating && existing?.rating !== undefined ? { rating: existing.rating } : {})
         }
@@ -450,6 +456,8 @@ function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryMang
     const notes = existing.notes ?? imported.notes
     const nsfw = existing.nsfw ?? imported.nsfw
     const manualTracking = existing.manualTracking ?? imported.manualTracking
+    const readingDirection = existing.readingDirection ?? imported.readingDirection
+    const pageFit = existing.pageFit ?? imported.pageFit
     const lastReadChapterNumber =
         Math.max(existing.lastReadChapterNumber ?? 0, imported.lastReadChapterNumber ?? 0) || undefined
     const latestChapterNumber =
@@ -466,6 +474,8 @@ function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryMang
         ...(notes !== undefined ? { notes } : {}),
         ...(nsfw !== undefined ? { nsfw } : {}),
         ...(manualTracking !== undefined ? { manualTracking } : {}),
+        ...(readingDirection !== undefined ? { readingDirection } : {}),
+        ...(pageFit !== undefined ? { pageFit } : {}),
         ...(lastReadChapterNumber !== undefined ? { lastReadChapterNumber } : {}),
         ...(latestChapterNumber !== undefined ? { latestChapterNumber } : {}),
         ...(lastReadAt !== undefined ? { lastReadAt } : {}),

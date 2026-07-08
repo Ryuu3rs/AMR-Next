@@ -2563,6 +2563,26 @@ button:disabled {
     font-size: 13px;
 }
 
+.detail-reading-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.detail-reading-row .menu-num {
+    flex: 1;
+    min-width: 130px;
+}
+.detail-reading-row select {
+    width: 100%;
+    margin-top: 4px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+}
+
 .detail-notes {
     width: 100%;
     resize: vertical;

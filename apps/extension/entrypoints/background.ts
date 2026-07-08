@@ -1252,6 +1252,19 @@ export default defineBackground(() => {
                         } as Partial<{ notes: string }>)
                         return success(null)
                     }
+                    case "library:reading-prefs": {
+                        const patch: {
+                            readingDirection?: LibraryManga["readingDirection"] | undefined
+                            pageFit?: LibraryManga["pageFit"] | undefined
+                        } = {}
+                        if (request.readingDirection !== undefined)
+                            patch.readingDirection = request.readingDirection ?? undefined
+                        if (request.pageFit !== undefined) patch.pageFit = request.pageFit ?? undefined
+                        if (Object.keys(patch).length > 0) {
+                            await db.manga.update(request.mangaId, patch as Partial<LibraryManga>)
+                        }
+                        return success(null)
+                    }
                     case "activity:get":
                         return success(await getActivityCalendar(request.days ?? 120))
                     case "data:export":
