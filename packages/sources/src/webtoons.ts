@@ -196,8 +196,9 @@ export const webtoonsAdapter: SourceAdapter = {
             }
             // If we added nothing new this page, stop
             if (added === 0) break
-            // Check if there's a next page link
-            const hasNext = new RegExp(`href="[^"]*[?&]page=${page + 1}[^"]*"`).test(html)
+            // Webtoons uses &amp; in href attributes, so check for the raw number only.
+            // page=10 won't match page=1 because \D after the digit rejects '0'.
+            const hasNext = new RegExp(`page=${page + 1}(?:\\D|$)`).test(html)
             if (!hasNext) break
         }
 
