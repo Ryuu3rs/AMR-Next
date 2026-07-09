@@ -287,10 +287,12 @@
         if (!url) return
         relinkMessage = "Re-linking…"
         try {
-            await sendRuntimeMessage({ type: "library:relink", mangaId: manga.id, url })
+            const result = await sendRuntimeMessage({ type: "library:relink", mangaId: manga.id, url })
             relinkUrl = ""
             await load()
-            detailManga = library.find(m => m.id === manga.id) ?? null
+            // After load(), find the updated record by the new mangaId
+            const newMangaId = (result as { sourceId: string; mangaId: string })?.mangaId ?? manga.id
+            detailManga = library.find(m => m.id === newMangaId) ?? null
             relinkMessage = "Re-linked. Progress preserved by chapter number."
         } catch (cause) {
             relinkMessage = cause instanceof Error ? cause.message : "Re-link failed."
@@ -574,6 +576,16 @@
 
     function openInBrowser(manga: LibraryManga, active = true) {
         void browser.tabs.create({ url: manga.sourceUrl, active })
+    }
+
+    function openSeriesPage(manga: LibraryManga, e?: MouseEvent) {
+        if (selectMode) {
+            toggleSelect(manga.id)
+            return
+        }
+        const url = manga.mangaUrl ?? manga.sourceUrl
+        if (!url) return
+        void browser.tabs.create({ url, active: e?.button !== 1 })
     }
 
     function openInReader(manga: LibraryManga) {
@@ -2016,8 +2028,8 @@
                                 type="button"
                                 class="list-cover"
                                 class:sample={isSeedData(manga)}
-                                onclick={e => read(manga, e)}
-                                onauxclick={e => read(manga, e)}
+                                onclick={e => openSeriesPage(manga, e)}
+                                onauxclick={e => openSeriesPage(manga, e)}
                                 aria-label={`Open ${manga.title}`}>
                                 {#if (coverSrcs[manga.id] ?? manga.coverUrl) && !failedCovers.has(manga.id)}<img
                                         src={coverSrcs[manga.id] ?? manga.coverUrl}
@@ -2027,7 +2039,8 @@
                                     >{/if}
                             </button>
                             <div class="list-main">
-                                <p class="list-title">{manga.title}</p>
+                                <button type="button" class="list-title" onclick={() => openSeriesPage(manga)}
+                                    >{manga.title}</button>
                                 <p class="muted list-meta">
                                     {#if manga.mangaUrl}
                                         <button

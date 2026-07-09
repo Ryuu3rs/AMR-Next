@@ -1,4 +1,4 @@
-import type { ChapterRecord, ReadingProgress } from "@amr/contracts"
+import type { ChapterRecord, ReadingProgress, SourceLinkRecord } from "@amr/contracts"
 import { SourceError, SourceRequestError, type ResolvedChapter } from "@amr/source-sdk"
 import { sourceRegistry } from "@amr/sources"
 import {
@@ -15,6 +15,7 @@ import {
     recordAnalyticsEvent,
     removeDownload,
     removeManga,
+    rekeyManga,
     clearLibrary,
     clearHistory,
     saveDownload,
@@ -1103,33 +1104,65 @@ export default defineBackground(() => {
                         const resolved = await resolveChapterUrl(request.url)
                         const existing = await db.manga.get(request.mangaId)
                         if (!existing) throw new SourceError("not-found", "That title is not in your library")
-                        await db.transaction("rw", db.manga, db.sourceLinks, async () => {
-                            await db.manga.update(request.mangaId, {
-                                sourceId: resolved.manga.sourceId,
-                                sourceUrl: resolved.chapter.url,
-                                ...(resolved.manga.sourceMangaId
-                                    ? { sourceMangaId: resolved.manga.sourceMangaId }
-                                    : {}),
-                                mangaUrl: resolved.manga.url,
-                                latestChapterId: resolved.chapter.id,
-                                ...(Number.isFinite(resolved.chapter.sortKey)
-                                    ? { latestChapterNumber: resolved.chapter.sortKey }
-                                    : {}),
-                                updatedAt: Date.now()
-                            })
-                            await db.sourceLinks.put({
-                                mangaId: request.mangaId,
-                                sourceId: resolved.manga.sourceId,
-                                ...(resolved.manga.sourceMangaId
-                                    ? { sourceMangaId: resolved.manga.sourceMangaId }
-                                    : {}),
-                                url: resolved.manga.url,
-                                title: existing.title,
-                                addedAt: existing.addedAt,
-                                updatedAt: Date.now()
-                            })
-                        })
-                        return success({ sourceId: resolved.manga.sourceId })
+                        const newId = resolved.manga.manga.id
+                        const now = Date.now()
+                        const relinkCover = existing.coverUrl ?? resolved.manga.manga.coverUrl
+                        const next: LibraryManga = {
+                            // Start from resolved manga (correct source fields)
+                            ...resolved.manga.manga,
+                            id: newId,
+                            sourceId: resolved.manga.sourceId,
+                            ...(resolved.manga.sourceMangaId ? { sourceMangaId: resolved.manga.sourceMangaId } : {}),
+                            sourceUrl: resolved.chapter.url,
+                            mangaUrl: resolved.manga.url,
+                            // Preserve user data from the existing record
+                            title: existing.title || resolved.manga.manga.title,
+                            ...(relinkCover ? { coverUrl: relinkCover } : {}),
+                            addedAt: existing.addedAt,
+                            ...(existing.lastReadChapterId ? { lastReadChapterId: existing.lastReadChapterId } : {}),
+                            ...(existing.lastReadChapterNumber !== undefined
+                                ? { lastReadChapterNumber: existing.lastReadChapterNumber }
+                                : {}),
+                            ...(existing.lastReadAt !== undefined ? { lastReadAt: existing.lastReadAt } : {}),
+                            ...(existing.rating !== undefined ? { rating: existing.rating } : {}),
+                            ...(existing.categories !== undefined ? { categories: existing.categories } : {}),
+                            ...(existing.notes !== undefined ? { notes: existing.notes } : {}),
+                            ...(existing.nsfw !== undefined ? { nsfw: existing.nsfw } : {}),
+                            ...(existing.manualTracking !== undefined
+                                ? { manualTracking: existing.manualTracking }
+                                : {}),
+                            ...(existing.readingDirection !== undefined
+                                ? { readingDirection: existing.readingDirection }
+                                : {}),
+                            ...(existing.pageFit !== undefined ? { pageFit: existing.pageFit } : {}),
+                            updatedAt: now
+                        }
+                        const newSourceLink: SourceLinkRecord = {
+                            mangaId: newId,
+                            sourceId: resolved.manga.sourceId,
+                            ...(resolved.manga.sourceMangaId ? { sourceMangaId: resolved.manga.sourceMangaId } : {}),
+                            url: resolved.manga.url,
+                            title: next.title,
+                            addedAt: now,
+                            updatedAt: now
+                        }
+                        await rekeyManga(request.mangaId, next, newSourceLink)
+                        await db.chapters.put(resolved.chapter)
+                        // Fire-and-forget: populate the chapter list for the new source
+                        const relinkSource = findSource(new URL(request.url))
+                        const mangaKeyRelink = `${resolved.manga.sourceId}:${resolved.manga.sourceMangaId}`
+                        if (relinkSource && !capturingMangaIds.has(mangaKeyRelink)) {
+                            capturingMangaIds.add(mangaKeyRelink)
+                            void listChaptersWithTabFallback(
+                                relinkSource,
+                                resolved.manga.sourceMangaId,
+                                resolved.manga.url,
+                                newId
+                            )
+                                .catch(() => {})
+                                .finally(() => capturingMangaIds.delete(mangaKeyRelink))
+                        }
+                        return success({ sourceId: resolved.manga.sourceId, mangaId: newId })
                     }
                     case "library:link-url": {
                         // Link a library entry to a manga page URL without fetching it.
