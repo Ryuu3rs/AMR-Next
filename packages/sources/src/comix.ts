@@ -9,8 +9,7 @@ import {
     type SourceChapter,
     type SourceContext,
     type SourceManga,
-    type SourcePageMatch,
-    type SourceSearchResult
+    type SourcePageMatch
 } from "@amr/source-sdk"
 
 const SOURCE_ID = "comix"
@@ -151,9 +150,8 @@ export const comixAdapter: SourceAdapter = {
         return []
     },
 
-    async search(_query: string, _context: SourceContext): Promise<SourceSearchResult[]> {
-        return []
-    },
+    // No search endpoint available — omitting `search` so canSearch reports false
+    // instead of presenting Comix as searchable and silently returning zero results.
 
     async resolveChapter(input: ResolveChapterInput, context: SourceContext): Promise<ResolvedChapter> {
         if (!input.url) throw new SourceError("invalid-input", "A chapter URL is required")

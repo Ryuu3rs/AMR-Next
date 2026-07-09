@@ -39,7 +39,7 @@ function extractMangaSlug(url: URL): string | undefined {
 
 // Parse slug like "manga-title-chapter-52-eng-li" into parts
 function parseChapterSlug(slug: string): { mangaSlug: string; chapterNumber: string; mangaTitle: string } {
-    const chapterMatch = slug.match(/^(.*)-chapter-(\d+(?:-\d+)?)-/)
+    const chapterMatch = slug.match(/^(.*)-chapter-(\d+(?:-\d+)?)(?:-|$)/)
     if (chapterMatch) {
         const mangaSlug = chapterMatch[1] ?? slug
         const raw = chapterMatch[2] ?? "1"
