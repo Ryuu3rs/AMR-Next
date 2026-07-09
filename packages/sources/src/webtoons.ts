@@ -281,12 +281,14 @@ export const webtoonsAdapter: SourceAdapter = {
 
         // Fetch list page for real series title and cover art.
         // This runs in the second (tab-injected) call where images were found.
+        // The list page SW fetch may be bot-blocked; fall back to viewer HTML
+        // (tab-injected, fully rendered) which also carries og:title / og:image.
         const segs = url.pathname.split("/").filter(Boolean)
         const mangaUrl = seriesPrefixUrl(url)
         const listPageUrl = new URL(`${ORIGIN}/${segs.slice(0, 3).join("/")}/list?title_no=${titleNo}`)
         const listHtml = await ctx.request.getText(listPageUrl, { headers: BROWSER_HEADERS }).catch(() => "")
-        const seriesTitle = extractTitle(listHtml, `Series ${titleNo}`)
-        const seriesCover = extractCover(listHtml)
+        const seriesTitle = extractTitle(listHtml, "") || extractTitle(html, `Series ${titleNo}`)
+        const seriesCover = extractCover(listHtml) ?? extractCover(html)
 
         const manga: SourceManga = {
             manga: {
