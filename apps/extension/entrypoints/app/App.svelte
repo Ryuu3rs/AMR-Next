@@ -1723,6 +1723,7 @@
                                         {#if (coverSrcs[manga.id] ?? manga.coverUrl) && !failedCovers.has(manga.id)}<img
                                                 src={coverSrcs[manga.id] ?? manga.coverUrl}
                                                 alt={manga.title}
+                                                data-source={manga.sourceId}
                                                 class:nsfw-blur={manga.nsfw && (settings?.blurNsfw ?? true)}
                                                 onerror={() => coverFailed(manga.id)} />{:else}<span
                                                 class="cover-initial">{manga.title[0]}</span
@@ -1959,6 +1960,7 @@
                                     {#if (coverSrcs[manga.id] ?? manga.coverUrl) && !failedCovers.has(manga.id)}<img
                                             src={coverSrcs[manga.id] ?? manga.coverUrl}
                                             alt={manga.title}
+                                            data-source={manga.sourceId}
                                             onerror={() => coverFailed(manga.id)} />{:else}<span class="cover-initial"
                                             >{manga.title[0]}</span
                                         >{/if}
@@ -2034,6 +2036,7 @@
                                 {#if (coverSrcs[manga.id] ?? manga.coverUrl) && !failedCovers.has(manga.id)}<img
                                         src={coverSrcs[manga.id] ?? manga.coverUrl}
                                         alt=""
+                                        data-source={manga.sourceId}
                                         onerror={() => coverFailed(manga.id)} />{:else}<span class="cover-initial"
                                         >{manga.title[0]}</span
                                     >{/if}
