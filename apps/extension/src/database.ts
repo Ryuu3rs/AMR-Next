@@ -207,6 +207,64 @@ export async function removeManga(mangaId: string): Promise<void> {
     )
 }
 
+export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLink: SourceLinkRecord): Promise<void> {
+    await db.transaction(
+        "rw",
+        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.downloads, db.pageBookmarks],
+        async () => {
+            if (next.id === oldId) {
+                // Same ID — plain update, no migration needed
+                await db.manga.put(next)
+                await db.sourceLinks.put(newSourceLink)
+                return
+            }
+            // Check if canonical new ID already exists (duplicate created by a prior capture)
+            const existing = await db.manga.get(next.id)
+            if (existing) {
+                // Merge preserved user fields from whichever record has them. Build with
+                // conditional spreads so we never assign `undefined` to an optional field
+                // (exactOptionalPropertyTypes is on).
+                const mergedLastReadNumber =
+                    Math.max(existing.lastReadChapterNumber ?? 0, next.lastReadChapterNumber ?? 0) || undefined
+                const mergedLastReadAt = Math.max(existing.lastReadAt ?? 0, next.lastReadAt ?? 0) || undefined
+                const lastReadChapterId = next.lastReadChapterId ?? existing.lastReadChapterId
+                const rating = next.rating ?? existing.rating
+                const categories = next.categories ?? existing.categories
+                const notes = next.notes ?? existing.notes
+                const nsfw = next.nsfw ?? existing.nsfw
+                const manualTracking = next.manualTracking ?? existing.manualTracking
+                const readingDirection = next.readingDirection ?? existing.readingDirection
+                const pageFit = next.pageFit ?? existing.pageFit
+                next = {
+                    ...next,
+                    addedAt: Math.min(existing.addedAt, next.addedAt),
+                    ...(mergedLastReadNumber !== undefined ? { lastReadChapterNumber: mergedLastReadNumber } : {}),
+                    ...(lastReadChapterId !== undefined ? { lastReadChapterId } : {}),
+                    ...(mergedLastReadAt !== undefined ? { lastReadAt: mergedLastReadAt } : {}),
+                    ...(rating !== undefined ? { rating } : {}),
+                    ...(categories !== undefined ? { categories } : {}),
+                    ...(notes !== undefined ? { notes } : {}),
+                    ...(nsfw !== undefined ? { nsfw } : {}),
+                    ...(manualTracking !== undefined ? { manualTracking } : {}),
+                    ...(readingDirection !== undefined ? { readingDirection } : {}),
+                    ...(pageFit !== undefined ? { pageFit } : {})
+                }
+            }
+            await db.manga.put(next)
+            await db.manga.delete(oldId)
+            // Delete old-source chapters — URLs are stale by definition after relink
+            await db.chapters.where("mangaId").equals(oldId).delete()
+            await db.sourceLinks.delete(oldId)
+            await db.sourceLinks.put(newSourceLink)
+            // Migrate history/progress/downloads/bookmarks to new id
+            await db.progress.where("mangaId").equals(oldId).modify({ mangaId: next.id })
+            await db.historyEvents.where("mangaId").equals(oldId).modify({ mangaId: next.id })
+            await db.downloads.where("mangaId").equals(oldId).modify({ mangaId: next.id })
+            await db.pageBookmarks.where("mangaId").equals(oldId).modify({ mangaId: next.id })
+        }
+    )
+}
+
 export async function saveResolvedChapter(input: {
     manga: MangaRecord
     chapter: ChapterRecord

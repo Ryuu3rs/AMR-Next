@@ -284,6 +284,9 @@ export const mangadexAdapter: SourceAdapter = {
         url.searchParams.set("limit", "20")
         url.searchParams.append("includes[]", "cover_art")
         url.searchParams.append("order[relevance]", "desc")
+        for (const rating of ["safe", "suggestive", "erotica", "pornographic"]) {
+            url.searchParams.append("contentRating[]", rating)
+        }
         const response = await context.request.getJson(url, mangaListSchema)
         return response.data.map(item => {
             const cover = item.relationships?.find(r => r.type === "cover_art")
@@ -320,6 +323,9 @@ export const mangadexAdapter: SourceAdapter = {
             url.searchParams.set("order[chapter]", "asc")
             for (const language of input.languages ?? []) {
                 url.searchParams.append("translatedLanguage[]", language)
+            }
+            for (const rating of ["safe", "suggestive", "erotica", "pornographic"]) {
+                url.searchParams.append("contentRating[]", rating)
             }
 
             const response = await context.request.getJson(url, chapterFeedSchema)

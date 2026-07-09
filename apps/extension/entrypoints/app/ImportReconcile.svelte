@@ -152,10 +152,18 @@
             if (close.length > 0) {
                 card.results = close.sort(sortByChapter)
             } else if (all.length > 0) {
-                // No close title match — could be a cross-language pair (e.g. romaji vs
-                // English title). Show raw results so the user can pick manually.
-                card.results = all.sort(sortByChapter).slice(0, 15)
-                card.message = "No close title match found — pick manually if any look right."
+                const scored = all
+                    .map(r => ({ r, score: wordOverlap(normTitle(r.title), want) }))
+                    .filter(({ score }) => score > 0)
+                    .sort((a, b) => b.score - a.score || sortByChapter(a.r, b.r))
+                    .slice(0, 10)
+                    .map(({ r }) => r)
+                card.results = scored
+                if (scored.length === 0) {
+                    card.message = "No live source found for this title."
+                } else {
+                    card.message = "No close title match found — pick manually if any look right."
+                }
             }
             card.searched = true
             if (card.results.length === 0) card.message = "No live source found for this title."
