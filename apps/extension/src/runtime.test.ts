@@ -109,6 +109,10 @@ describe("manual tracking schema (G2)", () => {
         )
     })
 
+    it("accepts library:hold toggles", () => {
+        expect(runtimeRequestSchema.safeParse({ type: "library:hold", mangaId: "m1", onHold: true }).success).toBe(true)
+    })
+
     it("accepts library:numbers with values or null to clear", () => {
         expect(
             runtimeRequestSchema.safeParse({ type: "library:numbers", mangaId: "m1", latestChapterNumber: 161 }).success

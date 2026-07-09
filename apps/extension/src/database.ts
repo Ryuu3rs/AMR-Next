@@ -25,6 +25,10 @@ export type LibraryManga = MangaRecord & {
     // Manual / "Do Not Scan": skip automatic update checks; the user maintains the
     // available + read chapter numbers by hand (e.g. Asura-style domain-hoppers).
     manualTracking?: boolean
+    // On Hold: skip automatic update checks like manualTracking, but also hide from
+    // the "reading" filter/pool so a paused title doesn't nag with an unread badge.
+    // Unlike manualTracking the source link stays live — un-holding resumes normal checks.
+    onHold?: boolean
     // User categories / labels for filtering the library.
     categories?: string[]
     // User-flagged adult content (covers blurred when the blur setting is on).
@@ -233,6 +237,7 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                 const notes = next.notes ?? existing.notes
                 const nsfw = next.nsfw ?? existing.nsfw
                 const manualTracking = next.manualTracking ?? existing.manualTracking
+                const onHold = next.onHold ?? existing.onHold
                 const readingDirection = next.readingDirection ?? existing.readingDirection
                 const pageFit = next.pageFit ?? existing.pageFit
                 next = {
@@ -246,6 +251,7 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                     ...(notes !== undefined ? { notes } : {}),
                     ...(nsfw !== undefined ? { nsfw } : {}),
                     ...(manualTracking !== undefined ? { manualTracking } : {}),
+                    ...(onHold !== undefined ? { onHold } : {}),
                     ...(readingDirection !== undefined ? { readingDirection } : {}),
                     ...(pageFit !== undefined ? { pageFit } : {})
                 }
@@ -289,6 +295,7 @@ export async function saveResolvedChapter(input: {
                 : {}),
             ...(existing?.lastReadAt !== undefined ? { lastReadAt: existing.lastReadAt } : {}),
             ...(existing?.manualTracking !== undefined ? { manualTracking: existing.manualTracking } : {}),
+            ...(existing?.onHold !== undefined ? { onHold: existing.onHold } : {}),
             ...(existing?.categories !== undefined ? { categories: existing.categories } : {}),
             ...(existing?.nsfw !== undefined ? { nsfw: existing.nsfw } : {}),
             ...(existing?.notes !== undefined ? { notes: existing.notes } : {}),
@@ -531,6 +538,7 @@ function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryMang
     const notes = existing.notes ?? imported.notes
     const nsfw = existing.nsfw ?? imported.nsfw
     const manualTracking = existing.manualTracking ?? imported.manualTracking
+    const onHold = existing.onHold ?? imported.onHold
     const readingDirection = existing.readingDirection ?? imported.readingDirection
     const pageFit = existing.pageFit ?? imported.pageFit
     const lastReadChapterNumber =
@@ -549,6 +557,7 @@ function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryMang
         ...(notes !== undefined ? { notes } : {}),
         ...(nsfw !== undefined ? { nsfw } : {}),
         ...(manualTracking !== undefined ? { manualTracking } : {}),
+        ...(onHold !== undefined ? { onHold } : {}),
         ...(readingDirection !== undefined ? { readingDirection } : {}),
         ...(pageFit !== undefined ? { pageFit } : {}),
         ...(lastReadChapterNumber !== undefined ? { lastReadChapterNumber } : {}),

@@ -8,6 +8,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("library:clear-history") }),
     z.object({ type: z.literal("library:rate"), mangaId: z.string().min(1), rating: z.number().int().min(0).max(5) }),
     z.object({ type: z.literal("library:manual"), mangaId: z.string().min(1), manual: z.boolean() }),
+    z.object({ type: z.literal("library:hold"), mangaId: z.string().min(1), onHold: z.boolean() }),
     z.object({ type: z.literal("library:nsfw"), mangaId: z.string().min(1), nsfw: z.boolean() }),
     z.object({
         type: z.literal("library:categories"),
@@ -18,7 +19,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         type: z.literal("library:numbers"),
         mangaId: z.string().min(1),
         latestChapterNumber: z.union([z.number().finite().nonnegative(), z.null()]).optional(),
-        lastReadChapterNumber: z.union([z.number().finite().nonnegative(), z.null()]).optional()
+        lastReadChapterNumber: z.union([z.number().finite().nonnegative(), z.null()]).optional(),
+        lastReadChapterId: z.union([z.string(), z.null()]).optional()
     }),
     z.object({ type: z.literal("library:dismiss"), mangaId: z.string().min(1) }),
     z.object({ type: z.literal("library:relink"), mangaId: z.string().min(1), url: z.url() }),

@@ -229,7 +229,7 @@ async function checkUpdates(sourceId?: string) {
         const errors: Array<{ mangaId: string; title: string; message: string }> = []
 
         for (const item of manga) {
-            if (item.manualTracking) continue
+            if (item.manualTracking || item.onHold) continue
             const link = await db.sourceLinks.get(item.id)
             if (!link) continue
             try {
@@ -1070,6 +1070,12 @@ export default defineBackground(() => {
                         } as Partial<{ manualTracking: boolean }>)
                         return success(null)
                     }
+                    case "library:hold": {
+                        await db.manga.update(request.mangaId, {
+                            onHold: request.onHold ? true : undefined
+                        } as Partial<{ onHold: boolean }>)
+                        return success(null)
+                    }
                     case "library:dismiss": {
                         // Clear the hostname-style sourceId that flags this as a broken import
                         // so it no longer appears in the reconcile panel.
@@ -1083,11 +1089,13 @@ export default defineBackground(() => {
                         return success(null)
                     }
                     case "library:numbers": {
-                        const patch: Record<string, number | undefined> = {}
+                        const patch: Record<string, number | string | undefined> = {}
                         if (request.latestChapterNumber !== undefined)
                             patch["latestChapterNumber"] = request.latestChapterNumber ?? undefined
                         if (request.lastReadChapterNumber !== undefined)
                             patch["lastReadChapterNumber"] = request.lastReadChapterNumber ?? undefined
+                        if (request.lastReadChapterId !== undefined)
+                            patch["lastReadChapterId"] = request.lastReadChapterId ?? undefined
                         if (Object.keys(patch).length > 0) {
                             await db.manga.update(request.mangaId, patch as Partial<{ latestChapterNumber: number }>)
                         }
