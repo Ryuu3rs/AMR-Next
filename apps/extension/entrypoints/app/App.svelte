@@ -731,6 +731,12 @@
         library = library.map(m => (m.id === manga.id ? { ...m, manualTracking: manual } : m))
     }
 
+    async function setHold(manga: LibraryManga, onHold: boolean) {
+        await sendRuntimeMessage({ type: "library:hold", mangaId: manga.id, onHold })
+        library = library.map(m => (m.id === manga.id ? { ...m, onHold } : m))
+        if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, onHold }
+    }
+
     async function setNumber(manga: LibraryManga, field: "lastReadChapterNumber" | "latestChapterNumber", raw: string) {
         const trimmed = raw.trim()
         const value = trimmed === "" ? null : Math.max(0, Number(trimmed))
@@ -1074,8 +1080,11 @@
         switch (libraryFilter) {
             case "manual":
                 return Boolean(m.manualTracking)
-            case "unread":
+            case "on-hold":
+                return Boolean(m.onHold)
             case "reading":
+                return statusOf(m) === "reading" && !m.onHold
+            case "unread":
             case "completed":
                 return statusOf(m) === libraryFilter
             default:
@@ -1132,8 +1141,8 @@
     // Library view: grid (covers) or list (rows), with a user-set page size so
     // large libraries don't render everything at once.
     let libraryView = $state<"grid" | "list">("grid")
-    let libraryFilter = $state<"all" | "unread" | "reading" | "completed" | "manual">("all")
-    const LIBRARY_FILTERS = ["all", "unread", "reading", "completed", "manual"] as const
+    let libraryFilter = $state<"all" | "unread" | "reading" | "completed" | "manual" | "on-hold">("all")
+    const LIBRARY_FILTERS = ["all", "unread", "reading", "completed", "manual", "on-hold"] as const
     let libraryPageSize = $state(50)
     let libraryLimit = $state(50)
     const pagedLibrary = $derived(visibleLibrary.slice(0, libraryLimit))
@@ -1185,11 +1194,24 @@
     async function markCaughtUp(manga: LibraryManga) {
         const latest = manga.latestChapterNumber
         if (latest === undefined) return
-        await sendRuntimeMessage({ type: "library:numbers", mangaId: manga.id, lastReadChapterNumber: latest })
-        library = library.map(m => (m.id === manga.id ? { ...m, lastReadChapterNumber: latest } : m))
+        await sendRuntimeMessage({
+            type: "library:numbers",
+            mangaId: manga.id,
+            lastReadChapterNumber: latest,
+            ...(manga.latestChapterId ? { lastReadChapterId: manga.latestChapterId } : {})
+        })
+        library = library.map(m =>
+            m.id === manga.id
+                ? {
+                      ...m,
+                      lastReadChapterNumber: latest,
+                      ...(manga.latestChapterId ? { lastReadChapterId: manga.latestChapterId } : {})
+                  }
+                : m
+        )
     }
 
-    const unreadPool = $derived(library.filter(m => statusOf(m) !== "completed"))
+    const unreadPool = $derived(library.filter(m => statusOf(m) !== "completed" && !m.onHold))
     function surpriseMe() {
         const pool = unreadPool.length > 0 ? unreadPool : library
         if (pool.length === 0) return
@@ -1847,7 +1869,7 @@
                             class="chip"
                             class:active={libraryFilter === f}
                             onclick={() => (libraryFilter = f)}>
-                            {f === "all" ? "All" : f[0]?.toUpperCase() + f.slice(1)}
+                            {f === "all" ? "All" : f === "on-hold" ? "On Hold" : f[0]?.toUpperCase() + f.slice(1)}
                         </button>
                     {/each}
                 </div>
@@ -3335,6 +3357,15 @@
                                     onchange={e =>
                                         detailManga && void setManual(detailManga, e.currentTarget.checked)} />
                                 Manual tracking
+                            </label>
+                            <label
+                                class="menu-toggle"
+                                title="Skips update checks and hides from the Reading tab without removing the title">
+                                <input
+                                    type="checkbox"
+                                    checked={detailManga.onHold ?? false}
+                                    onchange={e => detailManga && void setHold(detailManga, e.currentTarget.checked)} />
+                                On hold
                             </label>
                             <label class="menu-toggle">
                                 <input

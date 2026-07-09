@@ -48,6 +48,9 @@ const BASE_SOURCE_ORIGINS = [
     // FanFox / MangaHere family — images JS-only; panel nav works via listChapters
     ...fanfoxFamilyOrigins,
     "https://z-fanfox.net/*",
+    // MangaHere cover CDN — separate host from the manga/chapter pages above
+    "*://*.mangahere.com/*",
+    "*://*.compsci88.com/*",
     // MangaFreak — all wwN mirrors + image CDN
     "*://*.mangafreak.me/*",
     "*://*.images.mangafreak.me/*",

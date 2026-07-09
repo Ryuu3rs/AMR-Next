@@ -41,24 +41,50 @@ function matchChapterParts(url: URL): { slug: string; chapterId: string; chapter
     return { slug: m[1]!, chapterId: m[2]!, chapterNum: m[3]! }
 }
 
+type ComixDetail = {
+    title?: string
+    coverUrl?: string
+    latestChapter?: number
+    latestChapterUrl?: string
+    firstChapterUrl?: string
+}
+
 // Extract manga metadata from the <script id="initial-data"> JSON block.
 // Comix.to is a React app — metadata is SSR'd in a React Query dehydrated state.
-function extractFromInitialData(html: string): { title?: string; coverUrl?: string } {
+// `queries` is an object keyed by the JSON-stringified queryKey array (e.g.
+// `["manga","detail","<hid>"]`), NOT an array of {queryKey, state} entries.
+function extractFromInitialData(html: string): ComixDetail {
     const scriptM = html.match(/<script[^>]+id="initial-data"[^>]*>([\s\S]*?)<\/script>/i)
     if (!scriptM?.[1]) return {}
     try {
         const data = JSON.parse(scriptM[1]) as unknown
         const queries = (data as Record<string, unknown>)["queries"]
-        if (!Array.isArray(queries)) return {}
-        for (const q of queries) {
-            const qObj = q as Record<string, unknown>
-            const key = qObj["queryKey"]
+        if (!queries || typeof queries !== "object") return {}
+        for (const [rawKey, value] of Object.entries(queries as Record<string, unknown>)) {
+            let key: unknown
+            try {
+                key = JSON.parse(rawKey)
+            } catch {
+                continue
+            }
             if (!Array.isArray(key) || !key.includes("detail")) continue
-            const stateData = ((qObj["state"] as Record<string, unknown>)?.["data"] ?? {}) as Record<string, unknown>
+            const stateData = value as Record<string, unknown>
             const title = typeof stateData["title"] === "string" ? stateData["title"] : undefined
             const poster = stateData["poster"] as Record<string, string> | undefined
             const coverUrl = poster?.["large"] ?? poster?.["medium"]
-            if (title || coverUrl) return { ...(title ? { title } : {}), ...(coverUrl ? { coverUrl } : {}) }
+            const latestChapter =
+                typeof stateData["latestChapter"] === "number" ? stateData["latestChapter"] : undefined
+            const latestChapterUrl =
+                typeof stateData["latestChapterUrl"] === "string" ? stateData["latestChapterUrl"] : undefined
+            const firstChapterUrl =
+                typeof stateData["firstChapterUrl"] === "string" ? stateData["firstChapterUrl"] : undefined
+            return {
+                ...(title ? { title } : {}),
+                ...(coverUrl ? { coverUrl } : {}),
+                ...(latestChapter !== undefined ? { latestChapter } : {}),
+                ...(latestChapterUrl ? { latestChapterUrl } : {}),
+                ...(firstChapterUrl ? { firstChapterUrl } : {})
+            }
         }
     } catch {}
     return {}
@@ -76,13 +102,28 @@ function extractOgTitle(html: string): string | undefined {
         : undefined
 }
 
-async function fetchMangaData(slug: string, context: SourceContext): Promise<{ title: string; coverUrl?: string }> {
+async function fetchMangaData(
+    slug: string,
+    context: SourceContext
+): Promise<{
+    title: string
+    coverUrl?: string
+    latestChapter?: number
+    latestChapterUrl?: string
+    firstChapterUrl?: string
+}> {
     try {
         const html = await context.request.getText(new URL(`${ORIGIN}/title/${slug}`), {
             headers: BROWSER_HEADERS
         })
-        const { title, coverUrl } = extractFromInitialData(html)
-        return { title: title ?? extractOgTitle(html) ?? slug, ...(coverUrl ? { coverUrl } : {}) }
+        const detail = extractFromInitialData(html)
+        return {
+            title: detail.title ?? extractOgTitle(html) ?? slug,
+            ...(detail.coverUrl ? { coverUrl: detail.coverUrl } : {}),
+            ...(detail.latestChapter !== undefined ? { latestChapter: detail.latestChapter } : {}),
+            ...(detail.latestChapterUrl ? { latestChapterUrl: detail.latestChapterUrl } : {}),
+            ...(detail.firstChapterUrl ? { firstChapterUrl: detail.firstChapterUrl } : {})
+        }
     } catch {
         return { title: slug }
     }
@@ -130,10 +171,38 @@ export const comixAdapter: SourceAdapter = {
         }
     },
 
-    async listChapters(_input: ListChaptersInput, _context: SourceContext): Promise<SourceChapter[]> {
-        // Chapter list requires JavaScript execution — no static API available.
-        // Sidebar panel captures chapters as the user reads them.
-        return []
+    async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
+        // The full chapter feed is client-side only (React Query, no public API found),
+        // but the manga page's SSR "detail" data carries the first and latest chapter
+        // URLs/number directly — enough to keep latestChapterNumber from going stale.
+        // The on-page sidebar mines the rest as the user reads (mineAndCacheEpisodesFromHtml).
+        const slug = input.manga.sourceMangaId
+        const { latestChapter, latestChapterUrl, firstChapterUrl } = await fetchMangaData(slug, context)
+        const mangaId = input.manga.manga.id
+        const out: SourceChapter[] = []
+        for (const [href, fallbackNum] of [
+            [firstChapterUrl, 1],
+            [latestChapterUrl, latestChapter]
+        ] as const) {
+            if (!href) continue
+            const parts = matchChapterParts(new URL(href, ORIGIN))
+            if (!parts) continue
+            const chapterNum = parts.chapterNum
+            const sortKey = parseFloat(chapterNum) || fallbackNum || 0
+            const id = `${SOURCE_ID}:chapter:${slug}:${chapterNum}`
+            if (out.some(c => c.id === id)) continue
+            out.push({
+                id,
+                mangaId,
+                sourceId: SOURCE_ID,
+                sourceChapterId: chapterNum,
+                title: `Ch.${chapterNum}`,
+                url: new URL(href, ORIGIN).toString(),
+                sortKey,
+                language: "en"
+            })
+        }
+        return out.sort((a, b) => a.sortKey - b.sortKey)
     },
 
     async resolveCover(
