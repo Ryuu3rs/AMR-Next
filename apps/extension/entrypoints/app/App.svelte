@@ -125,6 +125,7 @@
         for (const m of group) {
             if (m.id !== primary.id) await sendRuntimeMessage({ type: "library:remove", mangaId: m.id })
         }
+        clearSelection()
         await load()
     }
     let failedCovers = $state<Set<string>>(new Set())
@@ -234,6 +235,14 @@
     let mirrorResults = $state<SearchResult[]>([])
     let mirrorChecking = $state(false)
     let mirrorCheckedFor = $state("")
+
+    function closeDetail() {
+        detailManga = null
+        relinkUrl = ""
+        relinkMessage = ""
+        mirrorResults = []
+        mirrorCheckedFor = ""
+    }
 
     function normTitle(s: string): string {
         return s
@@ -703,9 +712,9 @@
     async function rate(manga: LibraryManga, value: number) {
         const next = manga.rating === value ? 0 : value
         await sendRuntimeMessage({ type: "library:rate", mangaId: manga.id, rating: next })
-        library = library.map(m =>
-            m.id === manga.id ? { ...m, ...(next === 0 ? { rating: undefined } : { rating: next }) } : m
-        )
+        const nextRating = next === 0 ? undefined : next
+        library = library.map(m => (m.id === manga.id ? { ...m, rating: nextRating } : m))
+        if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, rating: nextRating }
         if (next > 0) {
             void sendRuntimeMessage({ type: "community:rate", mangaTitle: manga.title, rating: next }).catch(() => {})
         }
@@ -1935,6 +1944,11 @@
                         class="btn-sm"
                         disabled={selectedIds.size === 0}
                         onclick={() => void bulkManual(true)}>Mark manual</button>
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        disabled={selectedIds.size === 0}
+                        onclick={() => void bulkManual(false)}>Unmark manual</button>
                     <button
                         type="button"
                         class="btn-sm confirm-remove-btn"
@@ -3192,9 +3206,9 @@
         class="detail-overlay"
         role="button"
         tabindex="0"
-        onclick={() => (detailManga = null)}
+        onclick={closeDetail}
         onkeydown={e => {
-            if (e.key === "Escape" || e.key === "Enter") detailManga = null
+            if (e.key === "Escape" || e.key === "Enter") closeDetail()
         }}>
         <div
             class="detail-card"
@@ -3231,11 +3245,6 @@
                             aria-label={`${star} star`}
                             onclick={() => {
                                 if (detailManga) void rate(detailManga, star)
-                                if (detailManga)
-                                    detailManga = {
-                                        ...detailManga,
-                                        rating: detailManga.rating === star ? undefined : star
-                                    }
                             }}>★</button>
                     {/each}
                 </div>
@@ -3484,10 +3493,10 @@
                         onclick={() => {
                             if (detailManga) {
                                 void remove(detailManga.id)
-                                detailManga = null
+                                closeDetail()
                             }
                         }}>Remove</button>
-                    <button type="button" class="btn-outline" onclick={() => (detailManga = null)}>Close</button>
+                    <button type="button" class="btn-outline" onclick={closeDetail}>Close</button>
                 </div>
             </div>
         </div>

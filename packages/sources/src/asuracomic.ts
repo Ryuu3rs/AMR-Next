@@ -346,12 +346,10 @@ export const asuraComicAdapter: SourceAdapter = {
 
         if (imageUrls.length === 0) {
             // SSR HTML has no images — AsuraComic may render pages client-side.
-            // Throw as a network-origin error so isBotBlocked() returns true in
-            // background.ts, triggering the fetchChapterHtmlViaTab fallback which
-            // captures the fully JS-rendered DOM (Strategy 3 img scan will find them).
-            throw new SourceRequestError("Chapter requires JS rendering — no images in SSR HTML", undefined, {
-                url: input.url.toString()
-            })
+            // isBotBlocked() in background.ts matches on the literal message "blocked"
+            // to trigger the fetchChapterHtmlViaTab fallback, which captures the fully
+            // JS-rendered DOM (Strategy 3 img scan will find them).
+            throw new SourceRequestError("blocked", undefined, { url: input.url.toString() })
         }
 
         const title = extractTitle(html, mangaSlug)

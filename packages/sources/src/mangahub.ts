@@ -195,13 +195,17 @@ export const mangahubAdapter: SourceAdapter = {
         let html: string
         try {
             html = await ctx.request.getText(url, { headers: BROWSER_HEADERS })
-            // Cloudflare challenge response — treat as blocked
-            if (html.includes("__CF$cv$params") || html.includes("/cdn-cgi/challenge-platform/")) {
-                throw new SourceRequestError("blocked")
-            }
         } catch (e) {
-            if (e instanceof SourceRequestError && e.status === undefined) throw e
-            if (e instanceof SourceRequestError && e.status === 404) throw e
+            // Only convert known CDN/reverse-proxy block statuses to "blocked" — other
+            // errors (404, network timeout, parse failure) should surface as-is instead
+            // of masking the real cause and wasting a tab-render fallback attempt.
+            if (e instanceof SourceRequestError && (e.status === 403 || e.status === 502 || e.status === 503)) {
+                throw new SourceRequestError("blocked", e.status)
+            }
+            throw e
+        }
+        // Cloudflare challenge response — treat as blocked
+        if (html.includes("__CF$cv$params") || html.includes("/cdn-cgi/challenge-platform/")) {
             throw new SourceRequestError("blocked")
         }
 
