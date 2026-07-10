@@ -576,6 +576,18 @@ async function mineAndCacheEpisodesFromHtml(
 
     await db.chapters.bulkPut(dbChapters)
 
+    // Self-heal: delete any chapter rows under this mangaId left over from before the
+    // title_no filter above existed — those were mined from "Recommended for you"
+    // links and have an id embedding a DIFFERENT sourceMangaId, so this prefix check
+    // reliably identifies them without re-parsing every stored URL.
+    const validIdPrefix = `${sourceId}:chapter:${sourceMangaId}:`
+    const stale = await db.chapters
+        .where("mangaId")
+        .equals(mangaId)
+        .filter(c => !c.id.startsWith(validIdPrefix))
+        .toArray()
+    if (stale.length > 0) await db.chapters.bulkDelete(stale.map(c => c.id))
+
     const maxEpNo = Math.max(...epLinks.map(e => e.epNo))
     const existing = await db.manga.get(mangaId)
     if (existing && maxEpNo > (existing.latestChapterNumber ?? 0)) {
