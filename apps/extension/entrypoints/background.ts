@@ -525,6 +525,10 @@ async function inlineCover(url: string): Promise<string | undefined> {
 // Mine episode_no-style links from HTML and persist them as ChapterRecords.
 // Works for both tab-injected viewer HTML (which has all episodes in the dropdown)
 // and tab-injected list page HTML (which has the full paginated episode list).
+// The `viewer?...episode_no=N&title_no=M` URL shape and the title_no match-check below
+// are Webtoons-specific — this is only wired up for sources that implement
+// getChapterListUrl, which today is Webtoons alone. A future source using this path
+// with a different URL scheme would need its own title-match guard here.
 // Returns the number of new episodes stored (0 = nothing useful found).
 async function mineAndCacheEpisodesFromHtml(
     mangaId: string,
@@ -540,9 +544,20 @@ async function mineAndCacheEpisodesFromHtml(
         const rawHref = m[1] ?? ""
         const epNo = Number(m[2] ?? "")
         if (!rawHref || !Number.isFinite(epNo) || epNo < 1 || seen.has(epNo)) continue
-        seen.add(epNo)
         const decoded = rawHref.replace(/&amp;/g, "&")
         const epUrl = decoded.startsWith("http") ? decoded : `https://${hostname}${decoded}`
+        // Viewer pages show "Recommended for you" widgets linking to OTHER series'
+        // episodes, which also match this href pattern — only accept links whose
+        // title_no matches the manga we're mining for, or every mined chapter list
+        // gets polluted with wrong-series episodes (breaks Prev/Next entirely).
+        let linkTitleNo: string | null
+        try {
+            linkTitleNo = new URL(epUrl).searchParams.get("title_no")
+        } catch {
+            continue
+        }
+        if (linkTitleNo !== sourceMangaId) continue
+        seen.add(epNo)
         epLinks.push({ url: epUrl, epNo })
     }
 
