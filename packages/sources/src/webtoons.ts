@@ -90,14 +90,26 @@ function extractEpisodes(html: string, titleNo: string, prefix: string): SourceC
     for (const m of html.matchAll(/href="([^"]+\bviewer\?[^"]*\bepisode_no=(\d+)[^"]*)"/gi)) {
         const epNo = captureGroup(m, 2)
         if (!epNo || seen.has(epNo)) continue
-        seen.add(epNo)
-        const sortKey = Number(epNo)
 
         // Use the actual href from HTML (decoded) so the stored URL matches what the
         // browser shows — chapter:siblings lookup uses exact URL string comparison.
         const rawHref = captureGroup(m, 1) ?? ""
         const decodedHref = rawHref.replace(/&amp;/g, "&")
         const epUrl = decodedHref.startsWith("http") ? decodedHref : `${ORIGIN}${decodedHref}`
+
+        // List/viewer pages show "Recommended for you" widgets linking to OTHER
+        // series' episodes, which also match this href pattern — only accept links
+        // whose title_no matches this series, or the chapter list gets polluted with
+        // wrong-series episodes (breaks Prev/Next entirely).
+        let linkTitleNo: string | null
+        try {
+            linkTitleNo = new URL(epUrl).searchParams.get("title_no")
+        } catch {
+            continue
+        }
+        if (linkTitleNo !== titleNo) continue
+        seen.add(epNo)
+        const sortKey = Number(epNo)
 
         // Extract episode title from URL slug (e.g. "ep-5-some-title" → "Some Title").
         const slugMatch = decodedHref.match(/\/([^/]+)\/viewer\?/)
