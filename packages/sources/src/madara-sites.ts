@@ -6,8 +6,8 @@ import { createMadaraAdapter, type MadaraConfig } from "./madara"
 // (reachable, Madara template) by the source-probe; confirm a live chapter before
 // relying on any of them, and tune mangaPath/chapterPrefix if a site differs.
 const SITES: MadaraConfig[] = [
-    { id: "arvenscans", name: "Arven Scans", origin: "https://arvenscans.org", domains: ["arvenscans.org"] },
-    { id: "arvencomics", name: "Arven Comics", origin: "https://arvencomics.com", domains: ["arvencomics.com"] },
+    // { id: "arvenscans", name: "Arven Scans", origin: "https://arvenscans.org", domains: ["arvenscans.org"] }, // retired: site down 2026-07 — TLS certificate expired, verified 2026-07-11
+    // { id: "arvencomics", name: "Arven Comics", origin: "https://arvencomics.com", domains: ["arvencomics.com"] }, // retired: site down 2026-07 — TLS handshake fails, verified 2026-07-11
     { id: "novelmic", name: "Novelmic", origin: "https://novelmic.com", domains: ["novelmic.com"] },
     // Renamed 2026-07-11: aryascans.com now redirects to brainrotcomics.com. Verified it's
     // the same Madara-engine site (still /manga/<slug>/ URLs, wp-manga-chapter list markup,
@@ -73,7 +73,7 @@ const SITES: MadaraConfig[] = [
     { id: "hentalk", name: "HenTalk", origin: "https://hentalk.pw", domains: ["hentalk.pw"] },
     // User-requested additions — Cloudflare-gated; tab fallback handles first-read for new users
     { id: "likemanga", name: "LikeManga", origin: "https://likemanga.io", domains: ["likemanga.io"] },
-    { id: "suryatoon", name: "Surya Toon", origin: "https://suryatoon.com", domains: ["suryatoon.com"] },
+    // { id: "suryatoon", name: "Surya Toon", origin: "https://suryatoon.com", domains: ["suryatoon.com"] }, // retired: domain hijacked/stalled 2026-07 — 200s but body is a bare stuck "Loading..." placeholder, no real content, verified 2026-07-11
     // { id: "mangagalaxy", name: "Manga Galaxy", origin: "https://mangagalaxy.me", domains: ["mangagalaxy.me"] }, // retired: domain hijacked 2026-07 — homepage 200s with a JS redirect chain that lands on an unrelated TikTok video, verified 2026-07-11
     { id: "tritinia", name: "Tritinia Scans", origin: "https://tritinia.org", domains: ["tritinia.org"] },
     { id: "manhuaus", name: "ManhuaUS", origin: "https://manhuaus.com", domains: ["manhuaus.com"] },

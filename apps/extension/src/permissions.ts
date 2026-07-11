@@ -63,9 +63,11 @@ const BASE_SOURCE_ORIGINS = [
     "*://*.static.comix.to/*",
     // User-requested Madara sites
     "https://likemanga.io/*",
-    "*://*.likemanga.io/*",
-    "https://suryatoon.com/*",
-    "*://*.suryatoon.com/*"
+    "*://*.likemanga.io/*"
+    // Surya Toon — retired 2026-07: domain hijacked/stalled, serves a stuck "Loading..."
+    // placeholder with no real content — uncomment if suryatoon.com is ever restored
+    // "https://suryatoon.com/*",
+    // "*://*.suryatoon.com/*",
     // Manga Galaxy — retired 2026-07: domain hijacked, redirects to an unrelated TikTok
     // video via a JS redirect chain — uncomment if mangagalaxy.me is ever restored
     // "https://mangagalaxy.me/*",
