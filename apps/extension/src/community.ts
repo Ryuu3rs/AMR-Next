@@ -70,6 +70,12 @@ export type CommunityEvent = {
     date: string
 }
 
+// Silent auto-registration uses a generic, clearly-anonymous handle — never
+// anything that could pass for a real username someone chose deliberately.
+export function generateAnonymousUsername(): string {
+    return `Reader${1000 + Math.floor(Math.random() * 9000)}`
+}
+
 export async function apiRegister(username: string): Promise<{ userId: string }> {
     const res = await fetch(`${COMMUNITY_API_BASE}/register`, {
         method: "POST",

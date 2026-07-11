@@ -72,8 +72,12 @@
                 chapterTitle: chapter.chapter.title,
                 chapterUrl: chapter.chapter.url
             })
-            if (added) bookmarkedPages.add(currentPage)
-            else bookmarkedPages.delete(currentPage)
+            // Reassign instead of mutating in place — Svelte 5's $state proxy doesn't
+            // track plain Set.add/.delete, so isBookmarked wouldn't recompute otherwise.
+            const next = new Set(bookmarkedPages)
+            if (added) next.add(currentPage)
+            else next.delete(currentPage)
+            bookmarkedPages = next
         } catch {
             // ignore
         } finally {
@@ -260,6 +264,176 @@
             // ignore
         } finally {
             removingDownload = false
+        }
+    }
+
+    // A11: export a downloaded chapter as a real CBZ file on disk. A CBZ is just a
+    // ZIP of images, so we hand-roll a minimal STORED-mode (uncompressed) ZIP writer
+    // rather than pull in a dependency — images are already compressed, so STORED
+    // mode costs nothing and keeps this self-contained for the MV3 page context.
+    let exportingCbz = $state(false)
+    let exportCbzError = $state("")
+
+    function sanitizeFilenamePart(name: string): string {
+        return (
+            name
+                .replace(/[\\/:*?"<>|]/g, "_")
+                .replace(/\s+/g, " ")
+                .trim() || "untitled"
+        )
+    }
+
+    function extFromMime(mime: string): string {
+        switch (mime) {
+            case "image/png":
+                return ".png"
+            case "image/webp":
+                return ".webp"
+            case "image/gif":
+                return ".gif"
+            case "image/avif":
+                return ".avif"
+            default:
+                return ".jpg"
+        }
+    }
+
+    let crcTable: Uint32Array | undefined
+    function crc32(data: Uint8Array<ArrayBuffer>): number {
+        if (!crcTable) {
+            const table = new Uint32Array(256)
+            for (let n = 0; n < 256; n += 1) {
+                let c = n
+                for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+                table[n] = c >>> 0
+            }
+            crcTable = table
+        }
+        let crc = 0xffffffff
+        for (let i = 0; i < data.length; i += 1) {
+            crc = crcTable[(crc ^ data[i]!) & 0xff]! ^ (crc >>> 8)
+        }
+        return (crc ^ 0xffffffff) >>> 0
+    }
+
+    function dosDateTime(date: Date): { time: number; date: number } {
+        const time =
+            ((date.getHours() & 0x1f) << 11) | ((date.getMinutes() & 0x3f) << 5) | ((date.getSeconds() >> 1) & 0x1f)
+        const dosDate =
+            (((date.getFullYear() - 1980) & 0x7f) << 9) | (((date.getMonth() + 1) & 0xf) << 5) | (date.getDate() & 0x1f)
+        return { time, date: dosDate }
+    }
+
+    // Builds a valid ZIP (local file headers + central directory + EOCD record) using
+    // compression method 0 (STORED) so no deflate implementation is needed.
+    function buildZip(entries: { name: string; data: Uint8Array<ArrayBuffer> }[]): Blob {
+        const encoder = new TextEncoder()
+        const { time, date } = dosDateTime(new Date())
+        const localParts: Uint8Array<ArrayBuffer>[] = []
+        const centralParts: Uint8Array<ArrayBuffer>[] = []
+        let offset = 0
+
+        for (const entry of entries) {
+            const nameBytes = encoder.encode(entry.name)
+            const crc = crc32(entry.data)
+            const size = entry.data.length
+
+            const localHeader = new Uint8Array(30 + nameBytes.length)
+            const lv = new DataView(localHeader.buffer)
+            lv.setUint32(0, 0x04034b50, true)
+            lv.setUint16(4, 20, true)
+            lv.setUint16(6, 0, true)
+            lv.setUint16(8, 0, true)
+            lv.setUint16(10, time, true)
+            lv.setUint16(12, date, true)
+            lv.setUint32(14, crc, true)
+            lv.setUint32(18, size, true)
+            lv.setUint32(22, size, true)
+            lv.setUint16(26, nameBytes.length, true)
+            lv.setUint16(28, 0, true)
+            localHeader.set(nameBytes, 30)
+            localParts.push(localHeader, entry.data)
+
+            const centralHeader = new Uint8Array(46 + nameBytes.length)
+            const cv = new DataView(centralHeader.buffer)
+            cv.setUint32(0, 0x02014b50, true)
+            cv.setUint16(4, 20, true)
+            cv.setUint16(6, 20, true)
+            cv.setUint16(8, 0, true)
+            cv.setUint16(10, 0, true)
+            cv.setUint16(12, time, true)
+            cv.setUint16(14, date, true)
+            cv.setUint32(16, crc, true)
+            cv.setUint32(20, size, true)
+            cv.setUint32(24, size, true)
+            cv.setUint16(28, nameBytes.length, true)
+            cv.setUint16(30, 0, true)
+            cv.setUint16(32, 0, true)
+            cv.setUint16(34, 0, true)
+            cv.setUint16(36, 0, true)
+            cv.setUint32(38, 0, true)
+            cv.setUint32(42, offset, true)
+            centralHeader.set(nameBytes, 46)
+            centralParts.push(centralHeader)
+
+            offset += localHeader.length + entry.data.length
+        }
+
+        const centralDirSize = centralParts.reduce((sum, p) => sum + p.length, 0)
+        const centralDirOffset = offset
+
+        const eocd = new Uint8Array(22)
+        const ev = new DataView(eocd.buffer)
+        ev.setUint32(0, 0x06054b50, true)
+        ev.setUint16(4, 0, true)
+        ev.setUint16(6, 0, true)
+        ev.setUint16(8, entries.length, true)
+        ev.setUint16(10, entries.length, true)
+        ev.setUint32(12, centralDirSize, true)
+        ev.setUint32(16, centralDirOffset, true)
+        ev.setUint16(20, 0, true)
+
+        return new Blob([...localParts, ...centralParts, eocd], { type: "application/vnd.comicbook+zip" })
+    }
+
+    async function exportCbz() {
+        if (!chapter || exportingCbz) return
+        exportingCbz = true
+        exportCbzError = ""
+        let objectUrl = ""
+        try {
+            const record = await sendRuntimeMessage<{ pageBlobs: Blob[]; pageCount: number } | null>({
+                type: "chapter:download:get",
+                chapterId: chapter.chapter.id
+            })
+            if (!record || record.pageBlobs.length === 0) {
+                exportCbzError = "No offline pages to export"
+                return
+            }
+            const digits = String(record.pageBlobs.length).length
+            const entries: { name: string; data: Uint8Array<ArrayBuffer> }[] = []
+            for (let i = 0; i < record.pageBlobs.length; i += 1) {
+                const blob = record.pageBlobs[i]!
+                const data = new Uint8Array(await blob.arrayBuffer())
+                const name = `page_${String(i + 1).padStart(digits, "0")}${extFromMime(blob.type)}`
+                entries.push({ name, data })
+            }
+            const zipBlob = buildZip(entries)
+            const mangaTitle = sanitizeFilenamePart(chapter.manga.manga.title)
+            const chapterTitle = sanitizeFilenamePart(chapter.chapter.title)
+            objectUrl = URL.createObjectURL(zipBlob)
+            await browser.downloads.download({
+                url: objectUrl,
+                filename: `${mangaTitle} - ${chapterTitle}.cbz`,
+                saveAs: false
+            })
+        } catch (cause) {
+            exportCbzError = cause instanceof Error ? cause.message : "CBZ export failed"
+        } finally {
+            exportingCbz = false
+            // The download API reads the blob asynchronously; give it a head start
+            // before releasing the object URL.
+            if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 30000)
         }
     }
 
@@ -525,6 +699,9 @@
                         <option value={s.url}>{s.title}</option>
                     {/each}
                 </select>
+                {#if currentIndex >= 0}
+                    <span>Chapter {currentIndex + 1} of {siblings.length}</span>
+                {/if}
             {:else}
                 <span>{chapter.chapter.title}</span>
             {/if}
@@ -600,6 +777,17 @@
                     onclick={() => void downloadChapter()}>
                     {downloading ? "…" : "⬇"}
                 </button>
+            {/if}
+            {#if downloaded}
+                <button
+                    type="button"
+                    class="btn-sm"
+                    disabled={exportingCbz}
+                    title={exportCbzError || "Save this chapter as a CBZ file"}
+                    onclick={() => void exportCbz()}>
+                    {exportingCbz ? "…" : "CBZ ⤓"}
+                </button>
+                {#if exportCbzError}<span class="page-count">{exportCbzError}</span>{/if}
             {/if}
             <button
                 type="button"

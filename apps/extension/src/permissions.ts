@@ -65,9 +65,11 @@ const BASE_SOURCE_ORIGINS = [
     "https://likemanga.io/*",
     "*://*.likemanga.io/*",
     "https://suryatoon.com/*",
-    "*://*.suryatoon.com/*",
-    "https://mangagalaxy.me/*",
-    "*://*.mangagalaxy.me/*"
+    "*://*.suryatoon.com/*"
+    // Manga Galaxy — retired 2026-07: domain hijacked, redirects to an unrelated TikTok
+    // video via a JS redirect chain — uncomment if mangagalaxy.me is ever restored
+    // "https://mangagalaxy.me/*",
+    // "*://*.mangagalaxy.me/*"
 ] as const
 
 export const SOURCE_ORIGINS: readonly string[] = [
