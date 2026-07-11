@@ -147,7 +147,10 @@ describe("checkUpdates concurrency guard", () => {
 
         const first = checkUpdates()
         // Let the first call reach the in-flight fetch before starting the second.
-        await new Promise(r => setTimeout(r, 0))
+        // Poll rather than a fixed tick — how many microtasks the DB reads take
+        // before reaching listMangaChapters varies (much slower under coverage
+        // instrumentation), so a single setTimeout(0) is not reliably enough.
+        await vi.waitFor(() => expect(listMangaChaptersMock).toHaveBeenCalledTimes(1))
 
         const second = checkUpdates()
         const secondResult = await second
