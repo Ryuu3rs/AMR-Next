@@ -145,6 +145,95 @@ describe("runCommunitySync with no new events", () => {
     })
 })
 
+describe("runCommunitySync auto-registration", () => {
+    it("silently registers a generated anonymous username when enabled but never registered, then proceeds", async () => {
+        // Fresh profile: defaultProfile.enabled is true, userId is empty — this is the
+        // opt-out-by-default state that used to leave sync permanently a no-op.
+        apiRegister.mockResolvedValueOnce({ userId: "auto-1" })
+
+        await runCommunitySync()
+
+        expect(apiRegister).toHaveBeenCalledTimes(1)
+        expect(apiRegister.mock.calls[0]![0]).toMatch(/^Reader\d{4}$/)
+
+        const profile = await getCommunityProfile()
+        expect(profile.userId).toBe("auto-1")
+        expect(profile.username).toMatch(/^Reader\d{4}$/)
+        expect(apiFetchCommunityStats).toHaveBeenCalledTimes(1)
+    })
+
+    it("retries with a freshly generated name on a username collision", async () => {
+        apiRegister
+            .mockRejectedValueOnce(new Error("Username already taken"))
+            .mockResolvedValueOnce({ userId: "auto-2" })
+
+        await runCommunitySync()
+
+        expect(apiRegister).toHaveBeenCalledTimes(2)
+        const profile = await getCommunityProfile()
+        expect(profile.userId).toBe("auto-2")
+    })
+
+    it("gives up after repeated collisions without throwing and leaves sync a no-op", async () => {
+        apiRegister.mockRejectedValue(new Error("Username already taken"))
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+        await expect(runCommunitySync()).resolves.toBeUndefined()
+
+        expect(apiRegister).toHaveBeenCalledTimes(5)
+        expect(warnSpy).toHaveBeenCalled()
+        const profile = await getCommunityProfile()
+        expect(profile.userId).toBe("")
+        expect(apiSyncEvents).not.toHaveBeenCalled()
+    })
+
+    it("fails soft (no throw) on a non-collision registration error", async () => {
+        apiRegister.mockRejectedValueOnce(new Error("network down"))
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+        await expect(runCommunitySync()).resolves.toBeUndefined()
+
+        expect(apiRegister).toHaveBeenCalledTimes(1)
+        expect(warnSpy).toHaveBeenCalled()
+        const profile = await getCommunityProfile()
+        expect(profile.userId).toBe("")
+    })
+
+    it("does not auto-register when the user disabled community sync", async () => {
+        await updateCommunityProfile({ enabled: false })
+
+        await runCommunitySync()
+
+        expect(apiRegister).not.toHaveBeenCalled()
+    })
+})
+
+describe("community:status handler", () => {
+    it("auto-registers on status check when enabled but not yet registered, and returns the updated profile", async () => {
+        apiRegister.mockResolvedValueOnce({ userId: "auto-status-1" })
+
+        const result = await communityHandlers["community:status"]!(
+            { type: "community:status" },
+            { sender: {} as never }
+        )
+
+        expect(apiRegister).toHaveBeenCalledTimes(1)
+        expect((result as { userId: string }).userId).toBe("auto-status-1")
+    })
+
+    it("does not disturb an already-registered profile", async () => {
+        await updateCommunityProfile({ userId: "existing-user", username: "already-here", enabled: true })
+
+        const result = await communityHandlers["community:status"]!(
+            { type: "community:status" },
+            { sender: {} as never }
+        )
+
+        expect(apiRegister).not.toHaveBeenCalled()
+        expect((result as { userId: string }).userId).toBe("existing-user")
+    })
+})
+
 describe("community:register handler", () => {
     it("is idempotent — returns the existing profile without calling apiRegister when userId is already set", async () => {
         await updateCommunityProfile({ userId: "existing-user", username: "already-here", enabled: true })
@@ -156,6 +245,19 @@ describe("community:register handler", () => {
 
         expect(apiRegister).not.toHaveBeenCalled()
         expect((result as { userId: string }).userId).toBe("existing-user")
+    })
+
+    it("still lets a user register a chosen username manually when nothing has auto-registered yet", async () => {
+        apiRegister.mockResolvedValueOnce({ userId: "chosen-user" })
+
+        const result = await communityHandlers["community:register"]!(
+            { type: "community:register", username: "MyChosenName" },
+            { sender: {} as never }
+        )
+
+        expect(apiRegister).toHaveBeenCalledWith("MyChosenName")
+        expect((result as { userId: string; username: string }).userId).toBe("chosen-user")
+        expect((result as { userId: string; username: string }).username).toBe("MyChosenName")
     })
 })
 
@@ -181,5 +283,17 @@ describe("community:toggle handler", () => {
         )
 
         expect(createSpy).toHaveBeenCalledWith(communityAlarmName, expect.objectContaining({ periodInMinutes: 60 }))
+    })
+
+    it("auto-registers when enabling a profile that has never been registered", async () => {
+        apiRegister.mockResolvedValueOnce({ userId: "auto-toggle-1" })
+
+        const result = await communityHandlers["community:toggle"]!(
+            { type: "community:toggle", enabled: true },
+            { sender: {} as never }
+        )
+
+        expect(apiRegister).toHaveBeenCalledTimes(1)
+        expect((result as { userId: string }).userId).toBe("auto-toggle-1")
     })
 })

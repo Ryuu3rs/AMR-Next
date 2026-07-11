@@ -16,7 +16,7 @@ async function readCommunityApiOrigin() {
 
 const communityApiOrigin = await readCommunityApiOrigin()
 
-const allowedPermissions = ["alarms", "declarativeNetRequest", "scripting", "storage", "tabs"]
+const allowedPermissions = ["alarms", "declarativeNetRequest", "downloads", "scripting", "storage", "tabs"]
 
 // All source origins + GitHub API are required (granted at install, no per-source grant step).
 // VITE_COMMUNITY_API_ORIGIN is intentionally excluded — it comes from a local .env and must not be
@@ -30,7 +30,6 @@ const allowedRequiredHosts = [
     "*://*.likemanga.io/*",
     "*://*.mangadex.network/*",
     "*://*.mangafreak.me/*",
-    "*://*.mangagalaxy.me/*",
     "*://*.mangahere.com/*",
     "*://*.mangaread.org/*",
     "*://*.mghcdn.com/*",
@@ -42,12 +41,11 @@ const allowedRequiredHosts = [
     "https://api.github.com/*",
     "https://api.mangadex.org/*",
     "https://aquamanga.com/*",
-    "https://aquascans.com/*",
     "https://arvencomics.com/*",
     "https://arvenscans.org/*",
-    "https://aryascans.com/*",
     "https://asuracomic.net/*",
     "https://asurascans.com/*",
+    "https://brainrotcomics.com/*",
     "https://comix.to/*",
     "https://dynasty-scans.com/*",
     "https://eahentai.com/*",
@@ -63,17 +61,13 @@ const allowedRequiredHosts = [
     "https://likemanga.io/*",
     "https://mangadex.org/*",
     "https://mangadistrict.com/*",
-    "https://mangagalaxy.me/*",
-    "https://mangagalaxy.me/*",
     "https://mangahere.cc/*",
     "https://mangahub.io/*",
     "https://mangasushi.org/*",
     "https://manhuaplus.org/*",
     "https://manhuatop.org/*",
     "https://manhuaus.com/*",
-    "https://manhwahentai.me/*",
     "https://manhwatop.com/*",
-    "https://manytoon.com/*",
     "https://mgeko.cc/*",
     "https://mgread.io/*",
     "https://natomanga.com/*",
@@ -83,7 +77,6 @@ const allowedRequiredHosts = [
     "https://phoenixscans.com/*",
     "https://rawkuma.com/*",
     "https://read.oppai.stream/*",
-    "https://s2manga.com/*",
     "https://spiderscans.xyz/*",
     "https://suryatoon.com/*",
     "https://suryatoon.com/*",

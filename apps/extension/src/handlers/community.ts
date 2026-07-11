@@ -5,21 +5,72 @@ import {
     apiFetchCommunityStats,
     apiRate,
     apiFetchMangaStats,
+    generateAnonymousUsername,
     getCommunityProfile,
     updateCommunityProfile,
-    type CommunityEvent
+    type CommunityEvent,
+    type CommunityProfile
 } from "../community"
 import { configureCommunityAlarm, communityAlarmName } from "../background/alarms"
 import type { HandlerMap } from "../background/handler-types"
 
 let communityRunning = false
+let autoRegistering = false
+
+const MAX_AUTO_REGISTER_ATTEMPTS = 5
+
+// Silent auto-registration: sync defaults to opt-out (enabled: true), but the
+// community API requires a userId. Rather than making the user manually type a
+// name and click "Join" before sync can ever do anything, we register a generic
+// anonymous handle on their behalf the first time we notice enabled && !userId.
+// Manual registration (community:register) still works for anyone who wants a
+// custom name — this only fires when nothing has been registered yet.
+async function ensureRegistered(profile: CommunityProfile): Promise<CommunityProfile> {
+    if (!profile.enabled || profile.userId) return profile
+    if (autoRegistering) return await getCommunityProfile()
+    autoRegistering = true
+    try {
+        // Re-read in case a concurrent manual "Join" completed while we were waiting.
+        const current = await getCommunityProfile()
+        if (current.userId) return current
+
+        for (let attempt = 0; attempt < MAX_AUTO_REGISTER_ATTEMPTS; attempt++) {
+            const username = generateAnonymousUsername()
+            try {
+                const { userId } = await apiRegister(username)
+                const updated = await updateCommunityProfile({ username, userId, lastSyncAt: 0 })
+                await configureCommunityAlarm()
+                return updated
+            } catch (error) {
+                // The community server responds 409 with { error: "Username already taken" }
+                // for collisions — retry with a freshly generated name. Any other failure
+                // (network down, server error, etc.) should fail soft, not spin the retry loop.
+                const isCollision = error instanceof Error && /taken/i.test(error.message)
+                if (!isCollision) {
+                    console.warn("[AMR] Community auto-registration failed", error)
+                    return current
+                }
+            }
+        }
+        console.warn(
+            `[AMR] Community auto-registration gave up after ${MAX_AUTO_REGISTER_ATTEMPTS} username collisions`
+        )
+        return current
+    } finally {
+        autoRegistering = false
+    }
+}
 
 export async function runCommunitySync() {
     if (communityRunning) return
     communityRunning = true
     try {
-        const profile = await getCommunityProfile()
-        if (!profile.enabled || !profile.userId) return
+        let profile = await getCommunityProfile()
+        if (!profile.enabled) return
+        if (!profile.userId) {
+            profile = await ensureRegistered(profile)
+            if (!profile.userId) return
+        }
 
         // Capture the watermark before the read/network calls below, not after — a
         // history event recorded while this sync is in flight has occurredAt before
@@ -77,8 +128,17 @@ export async function runCommunitySync() {
 }
 
 export const communityHandlers: HandlerMap = {
+    // Settings/Achievements load this on every visit — since the alarm-driven sync
+    // can't run before a userId exists, this doubles as the main opportunistic
+    // trigger for silent first-time registration.
     "community:status": async () => {
-        return await getCommunityProfile()
+        const profile = await getCommunityProfile()
+        if (profile.enabled && !profile.userId) {
+            const updated = await ensureRegistered(profile)
+            if (updated.userId) void runCommunitySync()
+            return updated
+        }
+        return profile
     },
     "community:register": async request => {
         const existing = await getCommunityProfile()
@@ -99,9 +159,11 @@ export const communityHandlers: HandlerMap = {
         return null
     },
     "community:toggle": async request => {
-        const updated = await updateCommunityProfile({ enabled: request.enabled })
+        let updated = await updateCommunityProfile({ enabled: request.enabled })
         if (request.enabled) {
+            if (!updated.userId) updated = await ensureRegistered(updated)
             await configureCommunityAlarm()
+            if (updated.userId) void runCommunitySync()
         } else {
             await browser.alarms.clear(communityAlarmName)
         }

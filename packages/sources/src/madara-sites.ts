@@ -9,7 +9,16 @@ const SITES: MadaraConfig[] = [
     { id: "arvenscans", name: "Arven Scans", origin: "https://arvenscans.org", domains: ["arvenscans.org"] },
     { id: "arvencomics", name: "Arven Comics", origin: "https://arvencomics.com", domains: ["arvencomics.com"] },
     { id: "novelmic", name: "Novelmic", origin: "https://novelmic.com", domains: ["novelmic.com"] },
-    { id: "aryascans", name: "Arya Scans", origin: "https://aryascans.com", domains: ["aryascans.com"] },
+    // Renamed 2026-07-11: aryascans.com now redirects to brainrotcomics.com. Verified it's
+    // the same Madara-engine site (still /manga/<slug>/ URLs, wp-manga-chapter list markup,
+    // ?post_type=wp-manga search) — just a rebrand, not a hijack. id kept stable so existing
+    // library links still resolve; origin/domains/name updated to the new host.
+    {
+        id: "aryascans",
+        name: "BrainRotComics",
+        origin: "https://brainrotcomics.com",
+        domains: ["brainrotcomics.com"]
+    },
     // { id: "agrcomics", name: "AGR Comics", origin: "https://agrcomics.com", domains: ["agrcomics.com"] }, // retired: site down 2026-06 — re-enable when back
     { id: "manhuaplus", name: "ManhuaPlus", origin: "https://manhuaplus.org", domains: ["manhuaplus.org"] },
     { id: "rawkuma", name: "Rawkuma", origin: "https://rawkuma.com", domains: ["rawkuma.com"] },
@@ -35,7 +44,7 @@ const SITES: MadaraConfig[] = [
         origin: "https://mangadistrict.com",
         domains: ["mangadistrict.com"]
     },
-    { id: "manytoon", name: "ManyToon", origin: "https://manytoon.com", domains: ["manytoon.com"] },
+    // { id: "manytoon", name: "ManyToon", origin: "https://manytoon.com", domains: ["manytoon.com"] }, // retired: domain hijacked 2026-07 — resolves and returns 200 but redirects to an unrelated adult popunder ad network (purplesacam.com), verified 2026-07-11
     { id: "omegascans", name: "Omega Scans", origin: "https://omegascans.org", domains: ["omegascans.org"] },
     // { id: "kunmanga", name: "KunManga", origin: "https://kunmanga.com", domains: ["kunmanga.com"] }, // retired: site down 2026-06 — re-enable when back
     {
@@ -65,12 +74,12 @@ const SITES: MadaraConfig[] = [
     // User-requested additions — Cloudflare-gated; tab fallback handles first-read for new users
     { id: "likemanga", name: "LikeManga", origin: "https://likemanga.io", domains: ["likemanga.io"] },
     { id: "suryatoon", name: "Surya Toon", origin: "https://suryatoon.com", domains: ["suryatoon.com"] },
-    { id: "mangagalaxy", name: "Manga Galaxy", origin: "https://mangagalaxy.me", domains: ["mangagalaxy.me"] },
+    // { id: "mangagalaxy", name: "Manga Galaxy", origin: "https://mangagalaxy.me", domains: ["mangagalaxy.me"] }, // retired: domain hijacked 2026-07 — homepage 200s with a JS redirect chain that lands on an unrelated TikTok video, verified 2026-07-11
     { id: "tritinia", name: "Tritinia Scans", origin: "https://tritinia.org", domains: ["tritinia.org"] },
     { id: "manhuaus", name: "ManhuaUS", origin: "https://manhuaus.com", domains: ["manhuaus.com"] },
     { id: "mgread", name: "MgRead", origin: "https://mgread.io", domains: ["mgread.io"] },
-    { id: "aquascans", name: "Aqua Scans", origin: "https://aquascans.com", domains: ["aquascans.com"] },
-    { id: "s2manga", name: "S2Manga", origin: "https://s2manga.com", domains: ["s2manga.com"] },
+    // { id: "aquascans", name: "Aqua Scans", origin: "https://aquascans.com", domains: ["aquascans.com"] }, // retired: site down 2026-07 — domain has a registrar SOA record but no A/AAAA (doesn't resolve to a host), verified 2026-07-11
+    // { id: "s2manga", name: "S2Manga", origin: "https://s2manga.com", domains: ["s2manga.com"] }, // retired: site down 2026-07 — NXDOMAIN, verified 2026-07-11
     { id: "manhwatop", name: "ManhwaTop", origin: "https://manhwatop.com", domains: ["manhwatop.com"] },
     {
         id: "aquamanga",
@@ -78,14 +87,8 @@ const SITES: MadaraConfig[] = [
         origin: "https://aquamanga.com",
         domains: ["aquamanga.com"],
         mangaPath: "read"
-    },
-    {
-        id: "manhwahentai",
-        name: "Manhwa Hentai",
-        origin: "https://manhwahentai.me",
-        domains: ["manhwahentai.me"],
-        mangaPath: "webtoon"
     }
+    // { id: "manhwahentai", name: "Manhwa Hentai", origin: "https://manhwahentai.me", domains: ["manhwahentai.me"], mangaPath: "webtoon" }, // retired: domain hijacked 2026-07 — resolves and returns 200 but redirects to the same unrelated adult popunder ad network as manytoon (purplesacam.com), verified 2026-07-11
 ]
 
 export const madaraAdapters: readonly SourceAdapter[] = SITES.map(createMadaraAdapter)

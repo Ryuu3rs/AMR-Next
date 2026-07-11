@@ -144,6 +144,28 @@ export async function resolveChapterFromHtml(urlStr: string, html: string) {
     return source.resolveChapter({ url: parsedUrl }, context)
 }
 
+// Normalize a title the same way entrypoints/app/App.svelte's normTitle does
+// (lowercase, non-alphanumeric runs collapsed to a single space, trimmed) so
+// matching behaves consistently between the mirror-check UI and search here.
+function normTitle(s: string): string {
+    return s
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+}
+
+// Some per-site adapters' own search endpoints are fuzzy/broad server-side (e.g.
+// typing "best" can return titles that don't contain "best" at all). Require every
+// whitespace-separated token in the normalized query to appear as a substring
+// somewhere in the normalized title — plain substring/token containment, no
+// fuzzy scoring or edit-distance matching.
+export function matchesQuery(title: string, query: string): boolean {
+    const normalizedTitle = normTitle(title)
+    const tokens = normTitle(query).split(" ").filter(Boolean)
+    if (tokens.length === 0) return true
+    return tokens.every(token => normalizedTitle.includes(token))
+}
+
 // Aggregate search across every adapter that supports it. Sources without
 // granted host permission fail their origin check and are skipped (allSettled).
 // sourceHealth is intentionally NOT used here — a source can be flagged dead for
@@ -157,7 +179,9 @@ export async function searchManga(query: string): Promise<SourceSearchResult[]> 
             withTimeout(adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)), 10000)
         )
     )
-    return settled.flatMap(result => (result.status === "fulfilled" ? result.value : []))
+    return settled
+        .flatMap(result => (result.status === "fulfilled" ? result.value : []))
+        .filter(result => matchesQuery(result.title, query))
 }
 
 // Streaming variant — fires all adapters concurrently and calls onPartial as each
@@ -178,7 +202,8 @@ export function searchMangaStreaming(
     for (const adapter of searchable) {
         withTimeout(adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)), 10000)
             .then(results => {
-                if (results.length > 0) onPartial(results, adapter.manifest.id)
+                const matched = results.filter(result => matchesQuery(result.title, query))
+                if (matched.length > 0) onPartial(matched, adapter.manifest.id)
             })
             .catch(() => {})
             .finally(() => {

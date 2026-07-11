@@ -1,4 +1,5 @@
 import { sourceRegistry } from "@amr/sources"
+import { matchesSourceDomain } from "@amr/source-sdk"
 import { db, type LibraryManga } from "../database"
 import { checkSourcePermission, getMangaChapters, listMangaChapters, resolveGenresFor, searchManga } from "../sources"
 import { getSettings } from "../settings"
@@ -184,28 +185,51 @@ export const updatesSourcesHandlers: HandlerMap = {
                 const origin =
                     adapter.manifest.homepage ??
                     (adapter.manifest.domains[0] ? `https://${adapter.manifest.domains[0]}` : undefined)
-                if (!origin) return { id: adapter.manifest.id, alive: false }
+                if (!origin) return { id: adapter.manifest.id, alive: false, status: "dead" as const }
                 const controller = new AbortController()
                 const timer = setTimeout(() => controller.abort(), 10000)
                 try {
                     // Background fetches are privileged — no CORS restriction for origins
-                    // in host_permissions. Distinguish three states:
-                    //   live  — server answered normally (2xx/3xx)
+                    // in host_permissions. Distinguish four states:
+                    //   live  — server answered normally (2xx/3xx) from a domain the adapter
+                    //           actually registers
+                    //   moved — server answered normally, but the final URL (after redirects —
+                    //           fetch follows them by default) lands on a domain the adapter
+                    //           doesn't register. Likely a hijacked/parked/repurposed domain
+                    //           still returning 200s, not the real source anymore
                     //   gated — bot-blocked (403/429 from CF or rate-limiting);
                     //           chapter reads still work via the tab fallback
                     //   dead  — truly unreachable (timeout, DNS, 5xx)
-                    const res = await fetch(origin, {
+                    let res = await fetch(origin, {
                         method: "HEAD",
                         signal: controller.signal,
                         credentials: "omit"
                     })
-                    const status =
-                        res.status < 400
-                            ? ("live" as const)
-                            : res.status === 403 || res.status === 429
-                              ? ("gated" as const)
-                              : ("dead" as const)
-                    return { id: adapter.manifest.id, alive: status !== "dead", status }
+                    // Some live sites reject HEAD outright (404/405) even though a normal
+                    // GET succeeds — retry once with GET before declaring the source dead.
+                    if (res.status === 404 || res.status === 405) {
+                        res = await fetch(origin, {
+                            method: "GET",
+                            signal: controller.signal,
+                            credentials: "omit"
+                        })
+                    }
+                    if (res.status === 403 || res.status === 429) {
+                        return { id: adapter.manifest.id, alive: true, status: "gated" as const }
+                    }
+                    if (res.status >= 400) {
+                        return { id: adapter.manifest.id, alive: false, status: "dead" as const }
+                    }
+                    let finalHost: string | undefined
+                    try {
+                        finalHost = res.url ? new URL(res.url).hostname : undefined
+                    } catch {
+                        finalHost = undefined
+                    }
+                    if (finalHost && !matchesSourceDomain(finalHost, adapter.manifest.domains)) {
+                        return { id: adapter.manifest.id, alive: true, status: "moved" as const, finalHost }
+                    }
+                    return { id: adapter.manifest.id, alive: true, status: "live" as const }
                 } catch {
                     return { id: adapter.manifest.id, alive: false, status: "dead" as const }
                 } finally {

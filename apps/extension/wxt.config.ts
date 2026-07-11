@@ -27,7 +27,7 @@ export default defineConfig({
                   key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuFs/Zy3z054Tl4XnWmlr+CBQ8vsvnzIUNJBJ/o/ltpGW3vsNypznLvMDeDlZ3yMhNCA0ZkEuy0o2cfyQ6BtBE+wEZu/teb0AKyRzVEOVo3gy//lcPhVaewqfAVF4woFG5lWnEoOS5Fg+88NBdZp6/rY+OyjFgLv6oX1PWnCfX7WRYnAwi90KJK9c27MtgNRJfMaQGHAK4vieUdLcyObKoHxZlVQXqMQOFtUR3WJIQI3AVKg3wheXF8IvBHKHxueyR2f3C5EAWfBI7mm/F051ivpnQT9foV9ED6R9rF3mqfflHZLjqcfoq64qMCYsHkR/9J8BpWTFNfcYmSR21sCE+wIDAQAB"
               }
             : {}),
-        permissions: ["alarms", "declarativeNetRequest", "scripting", "storage", "tabs"],
+        permissions: ["alarms", "declarativeNetRequest", "downloads", "scripting", "storage", "tabs"],
         declarative_net_request: {
             rule_resources: [{ id: "pstatic-referer", enabled: true, path: "rules/pstatic-referer.json" }]
         },
