@@ -32,6 +32,7 @@ const allowedRequiredHosts = [
     "*://*.mangafreak.me/*",
     "*://*.mangagalaxy.me/*",
     "*://*.mangahere.com/*",
+    "*://*.mangaread.org/*",
     "*://*.mghcdn.com/*",
     "*://*.mhcdn.net/*",
     "*://*.pstatic.net/*",
@@ -73,6 +74,7 @@ const allowedRequiredHosts = [
     "https://manhwahentai.me/*",
     "https://manhwatop.com/*",
     "https://manytoon.com/*",
+    "https://mgeko.cc/*",
     "https://mgread.io/*",
     "https://natomanga.com/*",
     "https://novelmic.com/*",
@@ -97,7 +99,6 @@ const allowedRequiredHosts = [
     "https://www.fanfox.net/*",
     "https://www.mangahere.cc/*",
     "https://www.mangahub.io/*",
-    "https://www.mangaread.org/*",
     "https://www.mgeko.cc/*",
     "https://www.natomanga.com/*",
     "https://www.olympustaff.com/*",
@@ -111,6 +112,14 @@ async function readManifest(extensionDirectory) {
     const manifestPath = path.join(extensionDirectory, "manifest.json")
     return JSON.parse(await readFile(manifestPath, "utf8"))
 }
+
+// Must match the "key" literal in apps/extension/wxt.config.ts exactly. This pins the
+// Chromium extension id (bbhdbcfjedbbgaeafdfffcadbgafjgai) so it never again depends on
+// the unpacked folder's path — a data-loss bug (every manual update reset IndexedDB,
+// since a new path meant a new id) was fixed by adding this key. Losing it in a future
+// edit would silently reintroduce that bug.
+const EXPECTED_CHROMIUM_KEY =
+    "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuFs/Zy3z054Tl4XnWmlr+CBQ8vsvnzIUNJBJ/o/ltpGW3vsNypznLvMDeDlZ3yMhNCA0ZkEuy0o2cfyQ6BtBE+wEZu/teb0AKyRzVEOVo3gy//lcPhVaewqfAVF4woFG5lWnEoOS5Fg+88NBdZp6/rY+OyjFgLv6oX1PWnCfX7WRYnAwi90KJK9c27MtgNRJfMaQGHAK4vieUdLcyObKoHxZlVQXqMQOFtUR3WJIQI3AVKg3wheXF8IvBHKHxueyR2f3C5EAWfBI7mm/F051ivpnQT9foV9ED6R9rF3mqfflHZLjqcfoq64qMCYsHkR/9J8BpWTFNfcYmSR21sCE+wIDAQAB"
 
 function packagedPaths(manifest) {
     return [
@@ -148,6 +157,8 @@ test("browser-specific manifest policy is preserved", async () => {
     const firefox = await readManifest(firefoxExtension)
 
     assert.equal(chromium.browser_specific_settings, undefined)
+    assert.equal(chromium.key, EXPECTED_CHROMIUM_KEY)
+    assert.equal(firefox.key, undefined)
     assert.equal(firefox.browser_specific_settings?.gecko?.id, "amr-next@ryuu3rs.dev")
     assert.deepEqual(firefox.browser_specific_settings?.gecko?.data_collection_permissions, {
         required: ["none"]
