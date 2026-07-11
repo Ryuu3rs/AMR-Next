@@ -60,6 +60,7 @@ describe("runCommunitySync watermark", () => {
         // Simulate a history event recorded WHILE the sync's network call is in flight:
         // apiSyncEvents resolves only after we've inserted the event, mimicking the
         // real-world race between syncStartedAt capture and the completed fetch.
+        // eslint-disable-next-line prefer-const -- assigned below; the `!` tells eslint it's never reassigned, but it is
         let recordDuringSync!: () => Promise<void>
         apiSyncEvents.mockImplementation(async () => {
             await recordDuringSync()

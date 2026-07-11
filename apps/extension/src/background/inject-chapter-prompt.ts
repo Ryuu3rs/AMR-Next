@@ -9,7 +9,6 @@ export function injectChapterPrompt(chapterUrl: string): void {
     // closure is broken — 'browser' from wxt/browser compiles to a minified module-local var
     // that is undefined in the re-evaluated isolated world. globalThis.browser (Chrome 121+
     // native) or globalThis.chrome (all Chrome/Edge) are always available in the isolated world.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ext: any = (globalThis as any).browser ?? (globalThis as any).chrome
 
     // Auto-detect light background and switch to dark for comfortable reading.
@@ -212,7 +211,6 @@ export function injectChapterPrompt(chapterUrl: string): void {
         } catch {}
     })()
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ext.runtime
         .sendMessage({ type: "chapter:siblings", url: chapterUrl })
         .then((resp: any) => {
