@@ -1,3 +1,14 @@
+// Side-effect-only import, deliberately first: @amr/contracts/src/domain.ts's
+// disableZodEvalProbe() disables zod's eval capability probe (which otherwise
+// trips a CSP console warning under MV3's `script-src 'self'`) and runs once
+// at that module's own top level, as a side effect of importing it — no call
+// needed here. Declaring the import first guarantees @amr/contracts evaluates
+// before @amr/sources (imported next) constructs its own schemas — see
+// packages/sources/src/mangadex.ts, which builds zod schemas without
+// importing @amr/contracts. Per ES module evaluation order, a module's
+// *imports* (unlike its own plain statements) always evaluate before any
+// subsequent sibling import, so import declaration order is what matters.
+import "@amr/contracts"
 import { sourceRegistry } from "@amr/sources"
 import { runtimeRequestSchema, type RuntimeRequest } from "../src/runtime"
 import { SOURCE_ORIGINS } from "../src/permissions"
