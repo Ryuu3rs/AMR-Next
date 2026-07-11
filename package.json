@@ -1,6 +1,6 @@
 {
     "name": "all-mangas-reader",
-    "version": "0.9.1",
+    "version": "0.9.10",
     "private": true,
     "description": "A lightweight cross-browser manga reader extension",
     "type": "module",
@@ -22,7 +22,7 @@
         "build:firefox": "npm run build:firefox --workspace @amr/extension",
         "zip": "npm run zip --workspace @amr/extension",
         "zip:firefox": "npm run zip:firefox --workspace @amr/extension",
-        "sign:firefox": "web-ext sign --channel=unlisted --source-dir=apps/extension/.output/firefox-mv3 --artifacts-dir=apps/extension/.output",
+        "sign:firefox": "web-ext sign --channel=listed --source-dir=apps/extension/.output/firefox-mv3 --artifacts-dir=apps/extension/.output",
         "typecheck": "npm run typecheck --workspaces --if-present",
         "lint": "eslint .",
         "test": "npm run test --workspaces --if-present",
