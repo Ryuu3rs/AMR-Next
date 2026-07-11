@@ -69,11 +69,10 @@ describe("manganatoAdapter.resolveChapter", () => {
         expect(requests[0]).toBe(`GET https://chapmanganato.to${CHAPTER_PATH}`)
     })
 
-    it("throws when no images found", async () => {
+    it("resolves with empty pages when no images found, so siblings can still be cached", async () => {
         const context = createContext({ [CHAPTER_PATH]: "<html><body>nope</body></html>" }, [])
-        await expect(manganatoAdapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)).rejects.toMatchObject({
-            code: "invalid-response"
-        })
+        const result = await manganatoAdapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)
+        expect(result.pages).toEqual([])
     })
 })
 

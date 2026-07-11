@@ -376,7 +376,7 @@ export async function trackExternalChapter(input: {
     // here so we use a stable, correct ID and series prefix URL instead of deriveSlug/deriveMangaUrl.
     // Important for sites like Webtoons where deriveSlug yields just "en".
     mangaInfo?: { sourceMangaId: string; mangaUrl: string }
-}): Promise<{ tracked: boolean; title: string; chapterNumber: number | null }> {
+}): Promise<{ tracked: boolean; title: string; chapterNumber: number | null; mangaId: string }> {
     const now = Date.now()
     const u = new URL(input.url)
     // Some sites (e.g. Webtoons) never put the literal word "chapter" in the URL —
