@@ -96,13 +96,15 @@ describe("weebCentralAdapter.resolveChapter", () => {
         expect(result.manga.manga.title).toBe("Solo Leveling")
     })
 
-    it("throws when no images found", async () => {
+    it("resolves with empty pages when no images found, preserving series metadata for panel nav", async () => {
         const ctx = makeContext({
             [`${ORIGIN}/chapters/${CHAPTER_ID}/`]: chapterPageHtml,
             [`${ORIGIN}/chapters/${CHAPTER_ID}/images`]: "<html><body>Loading…</body></html>",
             [`${ORIGIN}/series/${SERIES_ID}`]: seriesHtml
         })
-        await expect(adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, ctx as never)).rejects.toThrow("No images")
+        const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, ctx as never)
+        expect(result.pages).toEqual([])
+        expect(result.manga.manga.title).toBe("Solo Leveling")
     })
 })
 

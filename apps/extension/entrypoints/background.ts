@@ -436,7 +436,7 @@ async function doCaptureChapter(url: string) {
                 url,
                 sourceId: source.manifest.id,
                 completed: false,
-                mangaInfo
+                ...(mangaInfo ? { mangaInfo } : {})
             })
         } catch (trackError) {
             console.warn("[AMR] Failed to track external chapter", { url, trackError })
@@ -639,7 +639,7 @@ async function listChaptersWithTabFallback(
     if (existing && maxSortKey > (existing.latestChapterNumber ?? 0)) {
         await db.manga.update(mangaId, {
             latestChapterNumber: maxSortKey,
-            latestChapterId: latestChapter?.id
+            ...(latestChapter?.id ? { latestChapterId: latestChapter.id } : {})
         })
     }
 }
@@ -1807,7 +1807,7 @@ export default defineBackground(() => {
                         const tracked = await trackExternalChapter({
                             url: request.url,
                             sourceId: source.manifest.id,
-                            mangaInfo
+                            ...(mangaInfo ? { mangaInfo } : {})
                         })
                         if (mangaInfo) {
                             const mangaKey = `${source.manifest.id}:${mangaInfo.sourceMangaId}`
