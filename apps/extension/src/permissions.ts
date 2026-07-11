@@ -9,8 +9,11 @@ const BASE_SOURCE_ORIGINS = [
     "https://api.mangadex.org/*",
     "https://uploads.mangadex.org/*",
     "*://*.mangadex.network/*",
-    "https://www.mangaread.org/*",
+    // mangaread.org — page images served from cdn.mangaread.org, and the adapter
+    // accepts the bare domain too, so a single wildcard covers both.
+    "*://*.mangaread.org/*",
     "https://www.mgeko.cc/*",
+    "https://mgeko.cc/*",
     "*://*.imgsrv4.com/*",
     // MangaNato — retired 2026-06: chapmanganato.to down, manganato.com hijacked — uncomment when a working domain is found
     // "https://chapmanganato.to/*",
