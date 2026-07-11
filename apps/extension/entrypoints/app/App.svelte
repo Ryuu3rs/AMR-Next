@@ -24,7 +24,7 @@
         "Tags",
         "Updates",
         "History",
-        "Achievements",
+        "Stats",
         "Sources",
         "Data",
         "Settings"
@@ -36,6 +36,7 @@
     let query = $state("")
     let librarySort = $state<"recent-read" | "recent-added" | "title" | "latest-chapter">("recent-read")
     let categoryFilter = $state("")
+    let genreFilter = $state("")
     let sourceFilter = $state("")
     let ratingFilter = $state(0)
     let updatedSinceFilter = $state(0)
@@ -344,9 +345,29 @@
     let searchLoading = $state(false)
     let searchTotal = $state(0)
     let searchSettled = $state(0)
+    let expandedSourceGroups = $state<Set<string>>(new Set())
+    function toggleSourceGroup(sourceId: string) {
+        const next = new Set(expandedSourceGroups)
+        if (next.has(sourceId)) next.delete(sourceId)
+        else next.add(sourceId)
+        expandedSourceGroups = next
+    }
     let selectedManga = $state<{ title: string } | null>(null)
     let mangaChapters = $state<Array<{ id: string; title: string; chapter?: string; url: string }>>([])
     let chaptersLoading = $state(false)
+    // True while the chapter list or global search results are showing on Home — the
+    // continue-reading/recently-added shelves aren't relevant then and would otherwise
+    // render directly underneath with no separation, reading as a layout glitch.
+    const searchActive = $derived(
+        Boolean(selectedManga) || (browseQuery.trim().length > 0 && (searchLoading || searchResults.length > 0))
+    )
+    // If the title being browsed in the chapters panel is already in the library,
+    // match it by normalized title so the last-read chapter can be highlighted.
+    const selectedMangaLibraryEntry = $derived.by(() => {
+        if (!selectedManga) return undefined
+        const want = normTitle(selectedManga.title)
+        return library.find(m => normTitle(m.title) === want)
+    })
     type HistoryEntry = {
         mangaId: string
         title: string
@@ -1011,15 +1032,33 @@
         hasPermission = await browser.permissions.request({ origins: sourceOrigins() })
     }
 
+    // Only one search-stream port should ever be in flight — a new search (typed or
+    // submitted) disconnects whatever the previous one started so rapid typing doesn't
+    // pile up concurrent streaming searches.
+    let searchPort: ReturnType<typeof browser.runtime.connect> | null = null
+    let searchDebounceHandle: ReturnType<typeof setTimeout> | null = null
+    const SEARCH_DEBOUNCE_MS = 450
+    const SEARCH_MIN_LENGTH = 3
+
     function doSearch() {
         if (!browseQuery.trim()) return
+        if (searchDebounceHandle) {
+            clearTimeout(searchDebounceHandle)
+            searchDebounceHandle = null
+        }
+        if (searchPort) {
+            searchPort.disconnect()
+            searchPort = null
+        }
         searchLoading = true
         searchResults = []
         searchTotal = 0
         searchSettled = 0
+        expandedSourceGroups = new Set()
         selectedManga = null
 
         const port = browser.runtime.connect({ name: "search-stream" })
+        searchPort = port
         const query = browseQuery.trim()
 
         port.onMessage.addListener(
@@ -1032,15 +1071,28 @@
                 } else if (msg.type === "done") {
                     searchLoading = false
                     port.disconnect()
+                    if (searchPort === port) searchPort = null
                 }
             }
         )
 
         port.onDisconnect.addListener(() => {
             searchLoading = false
+            if (searchPort === port) searchPort = null
         })
 
         port.postMessage({ type: "manga:search", query })
+    }
+
+    // Debounced type-to-search: fires ~450ms after the user stops typing, once the
+    // query is at least 3 characters. Enter/submit (doSearch called directly) always
+    // fires immediately regardless of this timer or the minimum length.
+    function scheduleAutoSearch() {
+        if (searchDebounceHandle) clearTimeout(searchDebounceHandle)
+        searchDebounceHandle = setTimeout(() => {
+            searchDebounceHandle = null
+            if (browseQuery.trim().length >= SEARCH_MIN_LENGTH) doSearch()
+        }, SEARCH_DEBOUNCE_MS)
     }
 
     // MangaDex can list chapters; other sources open the manga page directly.
@@ -1073,6 +1125,9 @@
     const allCategories = $derived(
         [...new Set(library.flatMap(m => m.categories ?? []))].sort((a, b) => a.localeCompare(b))
     )
+
+    // Genres come from the source (backfilled per-title), unlike tags which are user-created.
+    const allGenres = $derived([...new Set(library.flatMap(m => m.genres ?? []))].sort((a, b) => a.localeCompare(b)))
 
     // Tag organisation: counts per tag, plus rename/delete across the whole library.
     const tagCounts = $derived.by(() => {
@@ -1152,6 +1207,7 @@
         ratingFilter = 0
         updatedSinceFilter = 0
         categoryFilter = ""
+        genreFilter = ""
     }
 
     const visibleLibrary = $derived.by(() => {
@@ -1160,6 +1216,7 @@
             m =>
                 m.title.toLowerCase().includes(q) &&
                 (!categoryFilter || (m.categories ?? []).includes(categoryFilter)) &&
+                (!genreFilter || (m.genres ?? []).includes(genreFilter)) &&
                 matchesFilter(m)
         )
         const sorted = [...filtered]
@@ -1202,6 +1259,7 @@
         // Reset paging whenever the filtered view changes.
         void query
         void categoryFilter
+        void genreFilter
         void librarySort
         void libraryFilter
         void sourceFilter
@@ -1333,11 +1391,11 @@
         if (detailManga && detailManga.id === manga.id) detailManga = applyNote(detailManga, manga.id, note)
     }
 
-    // Reading-activity heatmap (Achievements tab).
+    // Reading-activity heatmap (Stats tab).
     let activity = $state<Array<{ date: string; count: number }>>([])
     let activityLoaded = $state(false)
     $effect(() => {
-        if (activeSection === "Achievements" && !activityLoaded) {
+        if (activeSection === "Stats" && !activityLoaded) {
             activityLoaded = true
             void sendRuntimeMessage<Array<{ date: string; count: number }>>({ type: "activity:get" })
                 .then(d => (activity = d))
@@ -1366,7 +1424,7 @@
     let analyticsSummary = $state<AnalyticsSummary | null>(null)
     let analyticsLoaded = $state(false)
     $effect(() => {
-        if (activeSection === "Achievements" && !analyticsLoaded) {
+        if (activeSection === "Stats" && !analyticsLoaded) {
             analyticsLoaded = true
             void sendRuntimeMessage<AnalyticsSummary>({ type: "analytics:summary" })
                 .then(d => (analyticsSummary = d))
@@ -1394,7 +1452,7 @@
     let communityUsernameInput = $state("")
     let communityRegisterError = $state("")
     $effect(() => {
-        if ((activeSection === "Achievements" || activeSection === "Settings") && !communityLoaded) {
+        if ((activeSection === "Stats" || activeSection === "Settings") && !communityLoaded) {
             communityLoaded = true
             void sendRuntimeMessage<CommunityProfile>({ type: "community:status" })
                 .then(p => (communityProfile = p))
@@ -1654,6 +1712,7 @@
                 }}>
                 <input
                     bind:value={browseQuery}
+                    oninput={scheduleAutoSearch}
                     placeholder="Search every source for a title…"
                     aria-label="Search all sources" />
                 <button type="submit" disabled={searchLoading || !browseQuery.trim()}>
@@ -1675,10 +1734,22 @@
                     {:else if mangaChapters.length === 0}
                         <p class="muted">No English chapters found.</p>
                     {:else}
+                        <p class="muted chapters-count">
+                            {mangaChapters.length} chapter{mangaChapters.length === 1 ? "" : "s"}
+                            {#if selectedMangaLibraryEntry?.lastReadChapterNumber !== undefined}
+                                · last read ch {selectedMangaLibraryEntry.lastReadChapterNumber}
+                            {/if}
+                        </p>
                         <div class="chapter-list">
                             {#each mangaChapters as ch}
-                                <div class="chapter-row">
-                                    <p class="chapter-title">{ch.title}</p>
+                                {@const isLastRead =
+                                    !!selectedMangaLibraryEntry &&
+                                    selectedMangaLibraryEntry.lastReadChapterId === ch.id}
+                                <div class="chapter-row" class:chapter-row-current={isLastRead}>
+                                    <p class="chapter-title">
+                                        {ch.title}
+                                        {#if isLastRead}<span class="chapter-lastread-badge">Last read</span>{/if}
+                                    </p>
                                     <button type="button" onclick={() => void readChapter(ch.url)}>Read</button>
                                 </div>
                             {/each}
@@ -1700,32 +1771,41 @@
                                 : "s"} so far
                         </p>
                     {/if}
-                    {#each searchBySource as [sourceId, results]}
+                    {#each searchBySource as [sourceId, results], i}
+                        {@const expanded =
+                            expandedSourceGroups.has(sourceId) || (expandedSourceGroups.size === 0 && i === 0)}
                         <div class="source-group">
-                            <div class="source-group-head">
+                            <button
+                                type="button"
+                                class="source-group-head"
+                                aria-expanded={expanded}
+                                onclick={() => toggleSourceGroup(sourceId)}>
                                 <span class="source-name">{sourceMeta.get(sourceId)?.name ?? sourceId}</span>
                                 <span class="muted">{results.length} result{results.length === 1 ? "" : "s"}</span>
-                            </div>
-                            <div class="search-results">
-                                {#each results as result}
-                                    <div class="search-result">
-                                        <div class="result-cover">
-                                            {#if result.coverUrl}<img
-                                                    src={result.coverUrl}
-                                                    alt={result.title} />{:else}<span>{result.title[0]}</span>{/if}
+                                <span class="source-caret">{expanded ? "▾" : "▸"}</span>
+                            </button>
+                            {#if expanded}
+                                <div class="search-results">
+                                    {#each results as result}
+                                        <div class="search-result">
+                                            <div class="result-cover">
+                                                {#if result.coverUrl}<img
+                                                        src={result.coverUrl}
+                                                        alt={result.title} />{:else}<span>{result.title[0]}</span>{/if}
+                                            </div>
+                                            <div class="result-info">
+                                                <p class="result-title">{result.title}</p>
+                                                <p class="muted">
+                                                    {#if result.latestChapter}latest ch {result.latestChapter}{:else}—{/if}
+                                                </p>
+                                            </div>
+                                            <button type="button" onclick={() => void openResult(result)}>
+                                                {result.sourceId === "mangadex" ? "Chapters" : "Open"}
+                                            </button>
                                         </div>
-                                        <div class="result-info">
-                                            <p class="result-title">{result.title}</p>
-                                            <p class="muted">
-                                                {#if result.latestChapter}latest ch {result.latestChapter}{:else}—{/if}
-                                            </p>
-                                        </div>
-                                        <button type="button" onclick={() => void openResult(result)}>
-                                            {result.sourceId === "mangadex" ? "Chapters" : "Open"}
-                                        </button>
-                                    </div>
-                                {/each}
-                            </div>
+                                    {/each}
+                                </div>
+                            {/if}
                         </div>
                     {/each}
                 {:else if browseQuery.trim() && !searchLoading}
@@ -1752,82 +1832,85 @@
                     {#if addMessage}<p class="notice">{addMessage}</p>{/if}
                 </div>
             {:else}
-                {#if continueReading}
-                    <div class="home-feature">
-                        <div class="home-feature-cover">
-                            {#if (coverSrcs[continueReading.id] ?? continueReading.coverUrl) && !failedCovers.has(continueReading.id)}<img
-                                    src={coverSrcs[continueReading.id] ?? continueReading.coverUrl}
-                                    alt=""
-                                    class:nsfw-blur={continueReading.nsfw && (settings?.blurNsfw ?? true)}
-                                    onerror={() => continueReading && coverFailed(continueReading.id)} />{:else}<span
-                                    class="cover-initial">{continueReading.title[0]}</span
-                                >{/if}
-                        </div>
-                        <div class="home-feature-body">
-                            <p class="eyebrow">Continue reading</p>
-                            <h2 class="feature-title">{continueReading.title}</h2>
-                            <p class="muted">
-                                {#if continueReading.mangaUrl}
-                                    <button
-                                        class="source-link"
-                                        type="button"
-                                        title="Open on source site"
-                                        onclick={e => {
-                                            e.stopPropagation()
-                                            void browser.tabs.create({ url: continueReading!.mangaUrl! })
-                                        }}>
+                {#if !searchActive}
+                    {#if continueReading}
+                        <div class="home-feature">
+                            <div class="home-feature-cover">
+                                {#if (coverSrcs[continueReading.id] ?? continueReading.coverUrl) && !failedCovers.has(continueReading.id)}<img
+                                        src={coverSrcs[continueReading.id] ?? continueReading.coverUrl}
+                                        alt=""
+                                        class:nsfw-blur={continueReading.nsfw && (settings?.blurNsfw ?? true)}
+                                        onerror={() =>
+                                            continueReading && coverFailed(continueReading.id)} />{:else}<span
+                                        class="cover-initial">{continueReading.title[0]}</span
+                                    >{/if}
+                            </div>
+                            <div class="home-feature-body">
+                                <p class="eyebrow">Continue reading</p>
+                                <h2 class="feature-title">{continueReading.title}</h2>
+                                <p class="muted">
+                                    {#if continueReading.mangaUrl}
+                                        <button
+                                            class="source-link"
+                                            type="button"
+                                            title="Open on source site"
+                                            onclick={e => {
+                                                e.stopPropagation()
+                                                void browser.tabs.create({ url: continueReading!.mangaUrl! })
+                                            }}>
+                                            {sourceMeta.get(continueReading.sourceId)?.name ?? continueReading.sourceId}
+                                        </button>
+                                    {:else}
                                         {sourceMeta.get(continueReading.sourceId)?.name ?? continueReading.sourceId}
-                                    </button>
-                                {:else}
-                                    {sourceMeta.get(continueReading.sourceId)?.name ?? continueReading.sourceId}
-                                {/if}
-                                {#if continueReading.lastReadChapterNumber !== undefined}
-                                    · ch {continueReading.lastReadChapterNumber}{/if}
-                            </p>
-                            <button type="button" onclick={() => continueReading && read(continueReading)}
-                                >Open reader</button>
+                                    {/if}
+                                    {#if continueReading.lastReadChapterNumber !== undefined}
+                                        · ch {continueReading.lastReadChapterNumber}{/if}
+                                </p>
+                                <button type="button" onclick={() => continueReading && read(continueReading)}
+                                    >Open reader</button>
+                            </div>
                         </div>
-                    </div>
-                {/if}
+                    {/if}
 
-                {#if missingCoverCount > 0 && hasPermission}
-                    <button
-                        type="button"
-                        class="cover-hint"
-                        onclick={() => void backfillCovers()}
-                        disabled={refreshingCovers}>
-                        {refreshingCovers
-                            ? "Fetching covers…"
-                            : `Load ${missingCoverCount} missing cover${missingCoverCount === 1 ? "" : "s"}`}
-                    </button>
-                {/if}
+                    {#if missingCoverCount > 0 && hasPermission}
+                        <button
+                            type="button"
+                            class="cover-hint"
+                            onclick={() => void backfillCovers()}
+                            disabled={refreshingCovers}>
+                            {refreshingCovers
+                                ? "Fetching covers…"
+                                : `Load ${missingCoverCount} missing cover${missingCoverCount === 1 ? "" : "s"}`}
+                        </button>
+                    {/if}
 
-                {#if recentlyAdded.length > 0}
-                    <p class="shelf-label">Recently added</p>
-                    <div class="poster-grid">
-                        {#each recentlyAdded as manga (manga.id)}
-                            <article>
-                                <div class="poster-wrap">
-                                    <button
-                                        type="button"
-                                        class="poster"
-                                        onclick={e => read(manga, e)}
-                                        onauxclick={e => read(manga, e)}>
-                                        {#if (coverSrcs[manga.id] ?? manga.coverUrl) && !failedCovers.has(manga.id)}<img
-                                                src={coverSrcs[manga.id] ?? manga.coverUrl}
-                                                alt={manga.title}
-                                                data-source={manga.sourceId}
-                                                class:nsfw-blur={manga.nsfw && (settings?.blurNsfw ?? true)}
-                                                onerror={() => coverFailed(manga.id)} />{:else}<span
-                                                class="cover-initial">{manga.title[0]}</span
-                                            >{/if}
-                                    </button>
-                                    <div class="poster-hover"><span>Open</span></div>
-                                </div>
-                                <p class="poster-title">{manga.title}</p>
-                            </article>
-                        {/each}
-                    </div>
+                    {#if recentlyAdded.length > 0}
+                        <p class="shelf-label">Recently added</p>
+                        <div class="poster-grid">
+                            {#each recentlyAdded as manga (manga.id)}
+                                <article>
+                                    <div class="poster-wrap">
+                                        <button
+                                            type="button"
+                                            class="poster"
+                                            onclick={e => read(manga, e)}
+                                            onauxclick={e => read(manga, e)}>
+                                            {#if (coverSrcs[manga.id] ?? manga.coverUrl) && !failedCovers.has(manga.id)}<img
+                                                    src={coverSrcs[manga.id] ?? manga.coverUrl}
+                                                    alt={manga.title}
+                                                    data-source={manga.sourceId}
+                                                    class:nsfw-blur={manga.nsfw && (settings?.blurNsfw ?? true)}
+                                                    onerror={() => coverFailed(manga.id)} />{:else}<span
+                                                    class="cover-initial">{manga.title[0]}</span
+                                                >{/if}
+                                        </button>
+                                        <div class="poster-hover"><span>Open</span></div>
+                                    </div>
+                                    <p class="poster-title">{manga.title}</p>
+                                </article>
+                            {/each}
+                        </div>
+                    {/if}
                 {/if}
 
                 <form
@@ -1866,10 +1949,18 @@
                         <option value="latest-chapter">Latest chapter</option>
                     </select>
                     {#if allCategories.length > 0}
-                        <select aria-label="Filter by category" bind:value={categoryFilter}>
-                            <option value="">All categories</option>
+                        <select aria-label="Filter by tag" bind:value={categoryFilter}>
+                            <option value="">All tags</option>
                             {#each allCategories as cat}
                                 <option value={cat}>{cat}</option>
+                            {/each}
+                        </select>
+                    {/if}
+                    {#if allGenres.length > 0}
+                        <select aria-label="Filter by genre" bind:value={genreFilter}>
+                            <option value="">All genres</option>
+                            {#each allGenres as genre}
+                                <option value={genre}>{genre}</option>
                             {/each}
                         </select>
                     {/if}
@@ -2059,6 +2150,7 @@
                                             src={coverSrcs[manga.id] ?? manga.coverUrl}
                                             alt={manga.title}
                                             data-source={manga.sourceId}
+                                            class:nsfw-blur={manga.nsfw && (settings?.blurNsfw ?? true)}
                                             onerror={() => coverFailed(manga.id)} />{:else}<span class="cover-initial"
                                             >{manga.title[0]}</span
                                         >{/if}
@@ -2137,6 +2229,7 @@
                                         src={coverSrcs[manga.id] ?? manga.coverUrl}
                                         alt=""
                                         data-source={manga.sourceId}
+                                        class:nsfw-blur={manga.nsfw && (settings?.blurNsfw ?? true)}
                                         onerror={() => coverFailed(manga.id)} />{:else}<span class="cover-initial"
                                         >{manga.title[0]}</span
                                     >{/if}
@@ -2462,7 +2555,7 @@
                     {/each}
                 </div>
             {/if}
-        {:else if activeSection === "Achievements"}
+        {:else if activeSection === "Stats"}
             <h1>Stats &amp; achievements</h1>
             <div class="stat-row">
                 <div class="stat-box"><strong>{stats?.completedChapters ?? 0}</strong><span>Completed</span></div>
@@ -2844,8 +2937,10 @@
                     <div>
                         <p class="row-label">Offline downloads</p>
                         <p class="muted">
-                            Chapters saved for offline reading. Download from the reader's ⬇ button; they're served
-                            automatically when you reopen the chapter.
+                            Chapters saved for offline reading, stored inside the extension (not a folder on disk).
+                            Download from the reader's ⬇ button; they're served automatically when you reopen the
+                            chapter. Use the reader's CBZ ⤓ button to export a downloaded chapter to a real CBZ file on
+                            disk.
                         </p>
                     </div>
                     <span class="data-count">{downloadsCount} {downloadsCount === 1 ? "chapter" : "chapters"}</span>
@@ -3318,6 +3413,7 @@
                 {#if (coverSrcs[detailManga.id] ?? detailManga.coverUrl) && !failedCovers.has(detailManga.id)}<img
                         src={coverSrcs[detailManga.id] ?? detailManga.coverUrl}
                         alt=""
+                        class:nsfw-blur={detailManga.nsfw && (settings?.blurNsfw ?? true)}
                         onerror={() => detailManga && coverFailed(detailManga.id)} />{:else}<span class="cover-initial"
                         >{detailManga.title[0]}</span
                     >{/if}
@@ -3364,7 +3460,14 @@
                         <div class="tag-chips">
                             {#each detailManga.categories ?? [] as tag}
                                 <span class="tag-chip">
-                                    {tag}
+                                    <button
+                                        type="button"
+                                        class="tag-chip-label"
+                                        title={`Filter library by "${tag}"`}
+                                        onclick={() => {
+                                            filterByTag(tag)
+                                            closeDetail()
+                                        }}>{tag}</button>
                                     <button
                                         type="button"
                                         class="tag-x"

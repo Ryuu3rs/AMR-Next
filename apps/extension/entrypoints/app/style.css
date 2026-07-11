@@ -1893,6 +1893,23 @@ button:disabled {
     letter-spacing: -0.02em;
 }
 
+.chapters-count {
+    margin-top: -4px;
+}
+
+.chapter-row-current {
+    border: 1px solid var(--accent);
+}
+
+.chapter-lastread-badge {
+    margin-left: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--accent);
+    white-space: nowrap;
+}
+
 .chapter-list {
     display: grid;
     gap: 4px;
@@ -2211,22 +2228,38 @@ button:disabled {
     font-size: 12px;
 }
 .source-group {
-    margin-bottom: 18px;
+    margin-bottom: 10px;
 }
 .source-group-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
+    gap: 10px;
+    width: 100%;
     margin-bottom: 6px;
-    padding-bottom: 4px;
+    padding: 0 0 4px;
+    background: transparent;
+    border: 0;
     border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    min-height: 0;
+}
+.source-group-head:hover {
+    border-bottom-color: var(--accent);
 }
 .source-group-head .source-name {
     font-weight: 700;
     font-size: 13px;
 }
+.source-caret {
+    color: var(--muted);
+    font-size: 12px;
+}
 
-/* Achievements grouping */
+/* Stats & achievements grouping */
 .ach-category {
     display: flex;
     align-items: baseline;
@@ -2643,6 +2676,19 @@ button:disabled {
     min-height: 0;
     color: var(--accent);
     font-weight: 600;
+}
+.tag-chip-label {
+    min-height: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.tag-chip-label:hover {
+    text-decoration: underline;
+    color: var(--accent);
 }
 .tag-chip.add:hover {
     background: var(--accent);
