@@ -1,5 +1,5 @@
 import type { ChapterRecord, ReadingProgress, SourceLinkRecord } from "@amr/contracts"
-import { SourceError, SourceRequestError, type ResolvedChapter } from "@amr/source-sdk"
+import { SourceError, SourceRequestError } from "@amr/source-sdk"
 import { sourceRegistry } from "@amr/sources"
 import {
     db,
@@ -156,6 +156,12 @@ async function runCommunitySync() {
         const profile = await getCommunityProfile()
         if (!profile.enabled || !profile.userId) return
 
+        // Capture the watermark before the read/network calls below, not after — a
+        // history event recorded while this sync is in flight has occurredAt before
+        // syncStartedAt, so the next sync's "above(lastSyncAt)" query still picks it up.
+        // Using Date.now() captured at the END would silently skip it forever.
+        const syncStartedAt = Date.now()
+
         const newHistory = await db.historyEvents
             .where("occurredAt")
             .above(profile.lastSyncAt)
@@ -192,7 +198,7 @@ async function runCommunitySync() {
         const communityStats = await apiFetchCommunityStats().catch(() => profile.communityStats)
 
         await updateCommunityProfile({
-            lastSyncAt: Date.now(),
+            lastSyncAt: syncStartedAt,
             communityRank: rank,
             recommendations,
             newAchievements: [...(profile.newAchievements ?? []), ...newAchievements],
@@ -265,7 +271,10 @@ async function checkUpdates(sourceId?: string) {
 
         // Keep only the most recent handful of errors so the status stays small.
         const status = { checked, updated, failed, checkedAt: Date.now(), errors: errors.slice(0, 20) }
-        await browser.storage.local.set({ updateStatus: status })
+        // Only a full, all-sources check represents the library-wide status the Updates
+        // page displays — a single-source "refresh this source" run would otherwise
+        // clobber that global status with counts computed from just one source's manga.
+        if (!sourceId) await browser.storage.local.set({ updateStatus: status })
         return status
     } finally {
         updateCheckRunning = false
@@ -1166,6 +1175,7 @@ export default defineBackground(() => {
                             ...(existing.manualTracking !== undefined
                                 ? { manualTracking: existing.manualTracking }
                                 : {}),
+                            ...(existing.onHold !== undefined ? { onHold: existing.onHold } : {}),
                             ...(existing.readingDirection !== undefined
                                 ? { readingDirection: existing.readingDirection }
                                 : {}),
@@ -1303,6 +1313,14 @@ export default defineBackground(() => {
                             chapters[0]
                         )
                         await db.transaction("rw", db.manga, db.sourceLinks, db.chapters, async () => {
+                            // Old mirror's chapters are stale by definition after switching source —
+                            // otherwise they coexist with the new mirror's under the same mangaId and
+                            // chapter:siblings interleaves dead and live URLs in prev/next.
+                            await db.chapters
+                                .where("mangaId")
+                                .equals(request.mangaId)
+                                .and(c => c.sourceId !== request.sourceId)
+                                .delete()
                             await db.chapters.bulkPut(chapters)
                             await db.manga.update(request.mangaId, {
                                 sourceId: request.sourceId,

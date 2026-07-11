@@ -94,13 +94,13 @@ function extractTitle(html: string, fallbackSlug: string): string {
         html.match(/<meta\s[^>]*\bcontent="([^"]+)"\s[^>]*\bproperty="og:title"/i)
     const og = ogMatch ? captureGroup(ogMatch, 1) : undefined
     if (og) {
-        const cleaned = og.split(/\s*[-–|]\s*/)[0]?.trim()
+        const cleaned = og.split(/\s+[-–|]\s+/)[0]?.trim()
         if (cleaned) return cleaned
     }
     const titleMatch = html.match(/<title>([^<]+)<\/title>/i)
     const title = titleMatch ? captureGroup(titleMatch, 1) : undefined
     if (title) {
-        const cleaned = title.split(/\s*[-–|]\s*/)[0]?.trim()
+        const cleaned = title.split(/\s+[-–|]\s+/)[0]?.trim()
         if (cleaned) return cleaned
     }
     return fallbackSlug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
