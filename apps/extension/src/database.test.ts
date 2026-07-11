@@ -6,11 +6,14 @@ import {
     exportDatabase,
     getLocalStats,
     importDatabase,
+    rekeyManga,
     removeManga,
     saveProgress,
     saveResolvedChapter,
-    seedDatabase
+    seedDatabase,
+    trackExternalChapter
 } from "./database"
+import type { LibraryManga } from "./database"
 
 const manga: MangaRecord = {
     id: "mangadex:manga:abc",
@@ -229,5 +232,268 @@ describe("export / import integrity", () => {
         expect(second.data.sourceLinks).toEqual(first.data.sourceLinks)
         expect(second.data.progress).toEqual(first.data.progress)
         expect(second.data.historyEvents).toEqual(first.data.historyEvents)
+    })
+})
+
+describe("import merge — progress and history", () => {
+    it("does not regress a completed chapter when the imported progress record is older", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await saveProgress({
+            mangaId: manga.id,
+            chapterId: chapter.id,
+            pageIndex: 9,
+            pageCount: 10,
+            completed: true,
+            updatedAt: 2_000
+        })
+
+        const staleEnvelope = {
+            format: "all-mangas-reader" as const,
+            version: 1 as const,
+            data: {
+                manga: [],
+                sourceLinks: [],
+                chapters: [],
+                progress: [
+                    {
+                        mangaId: manga.id,
+                        chapterId: chapter.id,
+                        pageIndex: 2,
+                        pageCount: 10,
+                        completed: false,
+                        updatedAt: 1_000 // older than what's stored
+                    }
+                ],
+                historyEvents: []
+            }
+        }
+
+        await importDatabase(staleEnvelope)
+        const stored = await db.progress.get(chapter.id)
+        expect(stored?.completed).toBe(true)
+        expect(stored?.updatedAt).toBe(2_000)
+    })
+
+    it("does overwrite when the imported progress record is newer", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await saveProgress({
+            mangaId: manga.id,
+            chapterId: chapter.id,
+            pageIndex: 2,
+            pageCount: 10,
+            completed: false,
+            updatedAt: 1_000
+        })
+
+        await importDatabase({
+            format: "all-mangas-reader",
+            version: 1,
+            data: {
+                manga: [],
+                sourceLinks: [],
+                chapters: [],
+                progress: [
+                    {
+                        mangaId: manga.id,
+                        chapterId: chapter.id,
+                        pageIndex: 9,
+                        pageCount: 10,
+                        completed: true,
+                        updatedAt: 2_000
+                    }
+                ],
+                historyEvents: []
+            }
+        })
+        const stored = await db.progress.get(chapter.id)
+        expect(stored?.completed).toBe(true)
+    })
+
+    it("does not let a foreign backup's history event id collide with local history", async () => {
+        // Simulate a local history event that happens to occupy auto-increment id 1.
+        await db.historyEvents.add({
+            mangaId: manga.id,
+            chapterId: "local-chapter",
+            type: "started",
+            occurredAt: 1_000
+        })
+        const localEvents = await db.historyEvents.toArray()
+        expect(localEvents).toHaveLength(1)
+        const localId = localEvents[0]!.id!
+
+        // A backup from a different profile whose own auto-increment also started at 1 —
+        // importing it must not silently overwrite the unrelated local event above.
+        await importDatabase({
+            format: "all-mangas-reader",
+            version: 1,
+            data: {
+                manga: [],
+                sourceLinks: [],
+                chapters: [],
+                progress: [],
+                historyEvents: [
+                    {
+                        id: localId,
+                        mangaId: "other:manga:xyz",
+                        chapterId: "foreign-chapter",
+                        type: "completed",
+                        occurredAt: 5_000
+                    }
+                ]
+            }
+        })
+
+        const allEvents = await db.historyEvents.toArray()
+        expect(allEvents).toHaveLength(2)
+        expect(allEvents.some(e => e.chapterId === "local-chapter")).toBe(true)
+        expect(allEvents.some(e => e.chapterId === "foreign-chapter")).toBe(true)
+    })
+
+    it("unions categories instead of one side winning outright on merge", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await db.manga.update(manga.id, { categories: ["local-tag"] })
+
+        const importedManga: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/title/abc",
+            categories: ["imported-tag"]
+        }
+
+        await importDatabase(
+            {
+                format: "all-mangas-reader",
+                version: 1,
+                data: {
+                    manga: [importedManga],
+                    sourceLinks: [],
+                    chapters: [],
+                    progress: [],
+                    historyEvents: []
+                }
+            },
+            { [manga.id]: "merge" }
+        )
+
+        const stored = await db.manga.get(manga.id)
+        expect(stored?.categories?.sort()).toEqual(["imported-tag", "local-tag"])
+    })
+})
+
+describe("trackExternalChapter", () => {
+    it("derives distinct chapter records from episode_no query params, not just the word 'chapter'", async () => {
+        const first = await trackExternalChapter({
+            url: "https://www.webtoons.com/en/fantasy/slug/ep-1/viewer?title_no=99&episode_no=1",
+            sourceId: "webtoons",
+            mangaInfo: { sourceMangaId: "99", mangaUrl: "https://www.webtoons.com/en/fantasy/slug/" }
+        })
+        const second = await trackExternalChapter({
+            url: "https://www.webtoons.com/en/fantasy/slug/ep-2/viewer?title_no=99&episode_no=2",
+            sourceId: "webtoons",
+            mangaInfo: { sourceMangaId: "99", mangaUrl: "https://www.webtoons.com/en/fantasy/slug/" }
+        })
+
+        expect(first.mangaId).toBe(second.mangaId)
+        expect(first.chapterNumber).toBe(1)
+        expect(second.chapterNumber).toBe(2)
+
+        const chapters = await db.chapters.where("mangaId").equals(first.mangaId).toArray()
+        expect(chapters).toHaveLength(2)
+        expect(new Set(chapters.map(c => c.id)).size).toBe(2)
+    })
+
+    it("matches an existing manga by sourceId:manga:sourceMangaId instead of creating a duplicate", async () => {
+        const existing: LibraryManga = {
+            id: "webtoons:manga:99",
+            title: "Existing Series",
+            normalizedTitle: "existing series",
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "webtoons",
+            sourceUrl: "https://www.webtoons.com/en/fantasy/slug/",
+            mangaUrl: "https://www.webtoons.com/en/fantasy/slug/"
+        }
+        await db.manga.put(existing)
+
+        const result = await trackExternalChapter({
+            url: "https://www.webtoons.com/en/fantasy/slug/ep-3/viewer?title_no=99&episode_no=3",
+            sourceId: "webtoons",
+            mangaInfo: { sourceMangaId: "99", mangaUrl: "https://www.webtoons.com/en/fantasy/slug/" }
+        })
+
+        expect(result.mangaId).toBe(existing.id)
+        expect(await db.manga.count()).toBe(1)
+    })
+})
+
+describe("rekeyManga", () => {
+    const oldId = manga.id
+    const newId = "mangadex:manga:new"
+    const newSourceLink: SourceLinkRecord = { ...sourceLink, mangaId: newId }
+
+    it("preserves onHold, unions categories, and deletes old-id chapters when merging into an existing duplicate", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await db.manga.update(oldId, { onHold: true, categories: ["old-tag"], rating: 5, notes: "old notes" })
+
+        // A duplicate already exists at the new canonical id (e.g. auto-captured earlier).
+        const duplicate: LibraryManga = {
+            ...manga,
+            id: newId,
+            sourceId: "mangadex",
+            sourceUrl: newSourceLink.url,
+            categories: ["new-tag"],
+            addedAt: 500
+        }
+        await db.manga.put(duplicate)
+
+        // Mirrors what library:relink actually does: build `next` from the old record's
+        // preserved user fields before calling rekeyManga — rekeyManga only merges
+        // whatever `next` is handed against whatever's already at the new id, it doesn't
+        // re-fetch the old record itself.
+        const existing = await db.manga.get(oldId)
+        const next: LibraryManga = {
+            ...manga,
+            id: newId,
+            sourceId: "mangadex",
+            sourceUrl: newSourceLink.url,
+            ...(existing?.onHold !== undefined ? { onHold: existing.onHold } : {}),
+            ...(existing?.categories !== undefined ? { categories: existing.categories } : {}),
+            ...(existing?.rating !== undefined ? { rating: existing.rating } : {}),
+            ...(existing?.notes !== undefined ? { notes: existing.notes } : {})
+        }
+
+        await rekeyManga(oldId, next, newSourceLink)
+
+        const merged = await db.manga.get(newId)
+        expect(merged?.onHold).toBe(true)
+        expect(merged?.categories?.sort()).toEqual(["new-tag", "old-tag"])
+        expect(merged?.rating).toBe(5)
+        expect(merged?.notes).toBe("old notes")
+        expect(merged?.addedAt).toBe(1) // min() of the two addedAt values (1 from `manga`, 500 from the duplicate)
+
+        expect(await db.manga.get(oldId)).toBeUndefined()
+        expect(await db.chapters.where("mangaId").equals(oldId).count()).toBe(0)
+    })
+
+    it("migrates progress and history events to the new id", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await saveProgress({
+            mangaId: oldId,
+            chapterId: chapter.id,
+            pageIndex: 9,
+            pageCount: 10,
+            completed: true,
+            updatedAt: 1_700_000_000_000
+        })
+
+        const next: LibraryManga = { ...manga, id: newId, sourceId: "mangadex", sourceUrl: newSourceLink.url }
+        await rekeyManga(oldId, next, newSourceLink)
+
+        expect(await db.progress.where("mangaId").equals(oldId).count()).toBe(0)
+        expect(await db.progress.where("mangaId").equals(newId).count()).toBe(1)
+        expect(await db.historyEvents.where("mangaId").equals(oldId).count()).toBe(0)
+        expect(await db.historyEvents.where("mangaId").equals(newId).count()).toBeGreaterThan(0)
     })
 })
