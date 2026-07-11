@@ -1,0 +1,164 @@
+import type { ReadingProgress } from "@amr/contracts"
+import { db, recordAnalyticsEvent, saveProgress, trackExternalChapter } from "../database"
+import { findSource, listChaptersBySource, resolveChapterFromHtml, resolveChapterUrl } from "../sources"
+import { mineAndCacheEpisodesFromHtml, scheduleChapterListRefresh } from "../background/chapter-cache"
+import { fetchChapterHtmlViaTab } from "../background/tab-fetch"
+import { captureChapter, isBotBlocked } from "../background/capture"
+import type { HandlerMap } from "../background/handler-types"
+
+export const readerHandlers: HandlerMap = {
+    "page:current": async (_request, ctx) => {
+        const tab = ctx.sender.tab ?? (await browser.tabs.query({ active: true, currentWindow: true }))[0]
+        const url = tab?.url
+        if (!url) return { supported: false }
+        let parsedUrl: URL
+        try {
+            parsedUrl = new URL(url)
+        } catch {
+            return { supported: false }
+        }
+        const source = findSource(parsedUrl)
+        const pageType = source?.match(parsedUrl) ?? "none"
+        return {
+            supported: Boolean(source) && pageType !== "none",
+            pageType,
+            url,
+            ...(source ? { sourceName: source.manifest.name } : {})
+        }
+    },
+
+    "page:capture": async request => {
+        return await captureChapter(request.url)
+    },
+
+    "reader:resolve": async request => {
+        let resolved
+        try {
+            resolved = await resolveChapterUrl(request.url)
+            const directSrcId = findSource(new URL(request.url))?.manifest.id
+            void recordAnalyticsEvent({
+                event: "resolve_direct",
+                ...(directSrcId ? { sourceId: directSrcId } : {}),
+                ts: Date.now()
+            })
+        } catch (fetchError) {
+            if (isBotBlocked(fetchError)) {
+                const srcId = findSource(new URL(request.url))?.manifest.id
+                void recordAnalyticsEvent({
+                    event: "resolve_tab",
+                    ...(srcId ? { sourceId: srcId } : {}),
+                    ts: Date.now()
+                })
+                const html = await fetchChapterHtmlViaTab(request.url)
+                resolved = await resolveChapterFromHtml(request.url, html)
+                // Mine all episode links from the rendered viewer DOM and cache
+                // them so the on-site panel's prev/next and mark-as-read work.
+                void mineAndCacheEpisodesFromHtml(
+                    resolved.manga.manga.id,
+                    resolved.manga.sourceId,
+                    resolved.manga.sourceMangaId,
+                    new URL(request.url).hostname,
+                    html
+                ).catch(() => {})
+            } else {
+                throw fetchError
+            }
+        }
+        // Persist chapter so saveProgress can look up its sortKey for lastReadChapterNumber
+        await db.chapters.put(resolved.chapter)
+        // Backfill coverUrl into library entry if missing
+        if (resolved.manga.manga.coverUrl) {
+            const existing = await db.manga.get(resolved.manga.manga.id)
+            if (existing && !existing.coverUrl) {
+                await db.manga.update(resolved.manga.manga.id, {
+                    coverUrl: resolved.manga.manga.coverUrl
+                })
+            }
+        }
+        return resolved
+    },
+
+    "chapter:siblings": async request => {
+        // Look up cached chapters from DB — no network call needed.
+        // auto-capture already stored chapters when the user first visited.
+        const chRecord = await db.chapters.filter(c => c.url === request.url).first()
+        if (!chRecord) return { prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null }
+        const manga = await db.manga.get(chRecord.mangaId)
+        if (!manga) return { prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null }
+        const siblings = await db.chapters.where("mangaId").equals(chRecord.mangaId).sortBy("sortKey")
+        const idx = siblings.findIndex(c => c.url === request.url)
+        const prev = idx > 0 ? siblings[idx - 1] : null
+        const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null
+        return {
+            prevUrl: prev?.url ?? null,
+            nextUrl: next?.url ?? null,
+            mangaTitle: manga.title,
+            chapterTitle: chRecord.title ?? null
+        }
+    },
+
+    "reader:chapters": async request => {
+        try {
+            const chapters = await listChaptersBySource(request.sourceId, request.sourceMangaId, request.mangaUrl)
+            return chapters
+                .map(c => ({ url: c.url, sortKey: c.sortKey, title: c.title }))
+                .sort((a, b) => a.sortKey - b.sortKey)
+        } catch {
+            // Source can't list chapters (e.g. mgeko) — no nav.
+            return []
+        }
+    },
+
+    "reader:progress:get": async request => {
+        return (await db.progress.get(request.chapterId)) ?? null
+    },
+
+    "reader:progress": async request => {
+        const progress: ReadingProgress = {
+            mangaId: request.mangaId,
+            chapterId: request.chapterId,
+            pageIndex: request.pageIndex,
+            pageCount: request.pageCount,
+            completed: request.completed,
+            updatedAt: Date.now()
+        }
+        await saveProgress(progress)
+        return progress
+    },
+
+    "chapter:track": async request => {
+        const parsedUrl = new URL(request.url)
+        const source = findSource(parsedUrl)
+        if (!source || source.match(parsedUrl) !== "chapter") {
+            return { supported: false as const }
+        }
+        void recordAnalyticsEvent({
+            event: "on_site_track",
+            sourceId: source.manifest.id,
+            ts: Date.now()
+        })
+        const mangaInfo = source.parseMangaUrl?.(parsedUrl) ?? undefined
+        const tracked = await trackExternalChapter({
+            url: request.url,
+            sourceId: source.manifest.id,
+            ...(mangaInfo ? { mangaInfo } : {})
+        })
+        if (mangaInfo) {
+            scheduleChapterListRefresh(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
+        }
+        return { supported: true as const, ...tracked }
+    },
+
+    "chapter:open-in-reader": async request => {
+        const srcId = findSource(new URL(request.url))?.manifest.id
+        void recordAnalyticsEvent({
+            event: "reader_opened",
+            ...(srcId ? { sourceId: srcId } : {}),
+            ts: Date.now()
+        })
+        void captureChapter(request.url).catch(() => {})
+        const readerUrl = browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(request.url)}`)
+        await browser.tabs.create({ url: readerUrl })
+        return null
+    }
+}
