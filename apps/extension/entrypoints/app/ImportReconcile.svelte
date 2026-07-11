@@ -118,6 +118,7 @@
     let removingAll = $state(false)
 
     async function removeAll() {
+        if (!confirm(`Remove all ${mangas.length} titles from your library? This cannot be undone.`)) return
         removingAll = true
         try {
             for (const manga of mangas) {
@@ -134,6 +135,10 @@
         card.searching = true
         card.message = ""
         card.error = false
+        // Clear stale results from a previous attempt — otherwise a retry that finds
+        // nothing (or errors) leaves the old, no-longer-relevant results on screen
+        // alongside a message saying no match was found.
+        card.results = []
         try {
             let all: SearchResult[]
             try {
@@ -164,6 +169,8 @@
                 } else {
                     card.message = "No close title match found — pick manually if any look right."
                 }
+            } else {
+                card.message = "No live source found for this title."
             }
             card.searched = true
             if (card.results.length === 0) card.message = "No live source found for this title."

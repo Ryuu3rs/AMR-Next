@@ -175,7 +175,7 @@ function extractTitle(html: string, fallbackSlug: string): string {
     const titleMatch = html.match(/<title>([^<]+)<\/title>/)
     const titleText = titleMatch ? captureGroup(titleMatch, 1) : undefined
     if (titleText) {
-        const cleaned = titleText.split(/\s*[-–|]\s*/)[0]?.trim()
+        const cleaned = titleText.split(/\s+[-–|]\s+/)[0]?.trim()
         if (cleaned) return cleaned
     }
     return fallbackSlug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())

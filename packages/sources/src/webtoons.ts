@@ -82,7 +82,7 @@ function seriesPrefixUrl(url: URL): string {
 }
 
 // Parse episode links from a list page, returning chapters oldest-first.
-function extractEpisodes(html: string, titleNo: string, prefix: string): SourceChapter[] {
+function extractEpisodes(html: string, titleNo: string): SourceChapter[] {
     const mangaId = `${SOURCE_ID}:manga:${titleNo}`
     const out: SourceChapter[] = []
     const seen = new Set<string>()
@@ -234,7 +234,7 @@ export const webtoonsAdapter: SourceAdapter = {
             const pageUrl = new URL(listBase.toString())
             pageUrl.searchParams.set("page", String(page))
             const html = await ctx.request.getText(pageUrl, { headers: BROWSER_HEADERS })
-            const episodes = extractEpisodes(html, titleNo, prefix)
+            const episodes = extractEpisodes(html, titleNo)
             if (episodes.length === 0) break
             let added = 0
             for (const ep of episodes) {
@@ -265,11 +265,14 @@ export const webtoonsAdapter: SourceAdapter = {
     },
 
     getChapterListUrl(sourceMangaId: string, mangaUrl: string): string | null {
-        // mangaUrl is the series prefix e.g. https://www.webtoons.com/en/fantasy/slug/
-        // The list page is that prefix + "list?title_no=<id>".
+        // mangaUrl may be the new series prefix (https://www.webtoons.com/en/fantasy/slug/)
+        // or, for library entries added before that format existed, the old list URL
+        // itself (.../slug/list?title_no=X) — pathPrefix() normalizes either shape to
+        // the bare /lang/genre/slug prefix, same as listChapters does below.
         try {
             const base = new URL(mangaUrl)
-            return `${base.origin}${base.pathname}list?title_no=${encodeURIComponent(sourceMangaId)}`
+            const prefix = pathPrefix(base)
+            return `${ORIGIN}${prefix}/list?title_no=${encodeURIComponent(sourceMangaId)}`
         } catch {
             return null
         }

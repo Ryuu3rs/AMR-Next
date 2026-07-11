@@ -82,7 +82,7 @@ function extractCover(html: string): string | undefined {
 // chSlug may differ from manga slug (e.g. solo-leveling_105 vs solo-leveling).
 // Extract N as a float for sort order.
 function parseChapterNumber(chapterPath: string): number | undefined {
-    const m = chapterPath.match(/\/chapter-(\d+(?:\.\d+)?)$/i)
+    const m = chapterPath.match(/\/chapter-(\d+(?:\.\d+)?)\/?$/i)
     return m?.[1] !== undefined ? Number(m[1]) : undefined
 }
 

@@ -443,17 +443,24 @@ button:disabled {
     padding: 0 6px;
 }
 
-.manual-chip {
+.poster-badges {
     position: absolute;
     top: 8px;
     left: 8px;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.manual-chip {
     padding: 2px 7px;
     border-radius: 6px;
     font-size: 10px;
     font-weight: 600;
     background: rgba(245, 177, 74, 0.92);
     color: #1a1205;
-    z-index: 3;
 }
 
 .sample-chip {
@@ -569,6 +576,7 @@ button:disabled {
     gap: 8px;
     max-width: 540px;
     margin-top: 16px;
+    margin-bottom: 20px;
 }
 
 .url-form input {
@@ -1925,9 +1933,6 @@ button:disabled {
 }
 
 .new-chip {
-    position: absolute;
-    top: 8px;
-    left: 8px;
     padding: 3px 7px;
     border-radius: 99px;
     background: rgba(139, 92, 246, 0.9);
@@ -1940,9 +1945,6 @@ button:disabled {
 }
 
 .added-chip {
-    position: absolute;
-    top: 6px;
-    left: 6px;
     background: #0d9488;
     color: #fff;
     font-size: 9px;
@@ -1952,13 +1954,9 @@ button:disabled {
     padding: 2px 5px;
     border-radius: 4px;
     pointer-events: none;
-    z-index: 2;
 }
 
 .updated-chip {
-    position: absolute;
-    top: 26px;
-    left: 6px;
     background: #7c3aed;
     color: #fff;
     font-size: 9px;
@@ -1968,10 +1966,17 @@ button:disabled {
     padding: 2px 5px;
     border-radius: 4px;
     pointer-events: none;
-    z-index: 2;
 }
 
 /* List view inline badges */
+.list-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+    margin-bottom: 2px;
+}
+
 .list-badge {
     display: inline-block;
     font-size: 9px;
@@ -1980,7 +1985,6 @@ button:disabled {
     letter-spacing: 0.06em;
     padding: 2px 5px;
     border-radius: 4px;
-    margin-right: 4px;
     vertical-align: middle;
 }
 

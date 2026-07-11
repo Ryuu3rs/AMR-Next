@@ -161,6 +161,18 @@ export async function getCachedCover(mangaId: string): Promise<Blob | undefined>
     return (await db.covers.get(mangaId))?.blob
 }
 
+// Batched lookup for loading a whole library's covers at once — one IndexedDB
+// round-trip instead of one per manga, which matters once the library has
+// hundreds of entries.
+export async function getCachedCovers(mangaIds: readonly string[]): Promise<Map<string, Blob>> {
+    const records = await db.covers.bulkGet([...mangaIds])
+    const out = new Map<string, Blob>()
+    records.forEach((record, i) => {
+        if (record) out.set(mangaIds[i]!, record.blob)
+    })
+    return out
+}
+
 export async function clearLibrary(): Promise<void> {
     await db.transaction(
         "rw",
@@ -233,7 +245,10 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                 const mergedLastReadAt = Math.max(existing.lastReadAt ?? 0, next.lastReadAt ?? 0) || undefined
                 const lastReadChapterId = next.lastReadChapterId ?? existing.lastReadChapterId
                 const rating = next.rating ?? existing.rating
-                const categories = next.categories ?? existing.categories
+                // Categories are a list — union them instead of letting one side's tags
+                // silently disappear just because the other record also had some set.
+                const mergedCategories = [...new Set([...(existing.categories ?? []), ...(next.categories ?? [])])]
+                const categories = mergedCategories.length > 0 ? mergedCategories : undefined
                 const notes = next.notes ?? existing.notes
                 const nsfw = next.nsfw ?? existing.nsfw
                 const manualTracking = next.manualTracking ?? existing.manualTracking
@@ -364,7 +379,11 @@ export async function trackExternalChapter(input: {
 }): Promise<{ tracked: boolean; title: string; chapterNumber: number | null }> {
     const now = Date.now()
     const u = new URL(input.url)
-    const numberMatch = input.url.match(/chapter[-_ ]?(\d+(?:\.\d+)?)/i)
+    // Some sites (e.g. Webtoons) never put the literal word "chapter" in the URL —
+    // they use an episode_no query param instead — so also match that generic shape.
+    const numberMatch =
+        input.url.match(/chapter[-_ ]?(\d+(?:\.\d+)?)/i) ??
+        input.url.match(/[?&](?:episode|chapter|ep)[-_]?no=(\d+(?:\.\d+)?)/i)
     const number = numberMatch?.[1] !== undefined ? Number(numberMatch[1]) : undefined
 
     // When caller supplies series-level info, try direct ID lookup first — finds the manga
@@ -534,7 +553,10 @@ function parseImportData(value: unknown) {
 
 function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryManga {
     const rating = existing.rating ?? imported.rating
-    const categories = existing.categories ?? imported.categories
+    // Categories are a list — union them instead of letting one side's tags silently
+    // disappear just because the other record also had some set.
+    const mergedCategories = [...new Set([...(existing.categories ?? []), ...(imported.categories ?? [])])]
+    const categories = mergedCategories.length > 0 ? mergedCategories : undefined
     const notes = existing.notes ?? imported.notes
     const nsfw = existing.nsfw ?? imported.nsfw
     const manualTracking = existing.manualTracking ?? imported.manualTracking
@@ -606,8 +628,9 @@ export async function importDatabase(
             const im = data.manga[i]!
             const ex = existing[i]
             // Default to merge (not overwrite) so read progress is never silently lost
-            // when no explicit resolution is chosen. Merge takes Math.max of progress
-            // fields, so it's strictly non-destructive.
+            // when no explicit resolution is chosen. Merge takes Math.max of the manga
+            // record's own chapter-number fields; the progress table below is merged
+            // separately by updatedAt recency, since it isn't covered by mergeManga.
             const resolution = ex ? (resolutions[im.id] ?? "merge") : "overwrite"
             if (resolution === "skip") {
                 skippedIds.add(im.id)
@@ -621,14 +644,32 @@ export async function importDatabase(
 
     const sourceLinksToWrite = data.sourceLinks.filter(sl => !skippedIds.has(sl.mangaId))
     const chaptersToWrite = data.chapters.filter(ch => !skippedIds.has(ch.mangaId))
-    const progressToWrite = data.progress.filter(p => !skippedIds.has(p.mangaId))
-    const historyToWrite = data.historyEvents.filter(h => !skippedIds.has(h.mangaId))
+    const candidateProgress = data.progress.filter(p => !skippedIds.has(p.mangaId))
+    // Drop the auto-increment id from imported history events — a backup from a
+    // different profile has its own id sequence starting at 1, so bulkPut-ing those
+    // ids raw would silently overwrite unrelated local history at the same keys.
+    // historyEvents.id isn't referenced as a foreign key anywhere else, so letting
+    // Dexie assign fresh ids on insert is safe.
+    const historyToWrite = data.historyEvents
+        .filter(h => !skippedIds.has(h.mangaId))
+        .map(({ id: _id, ...rest }) => rest)
 
     await db.transaction("rw", [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents], async () => {
         if (mangaToWrite.length > 0) await db.manga.bulkPut(mangaToWrite)
         if (sourceLinksToWrite.length > 0) await db.sourceLinks.bulkPut(sourceLinksToWrite)
         if (chaptersToWrite.length > 0) await db.chapters.bulkPut(chaptersToWrite)
-        if (progressToWrite.length > 0) await db.progress.bulkPut(progressToWrite)
+        if (candidateProgress.length > 0) {
+            // Progress isn't covered by mergeManga's Math.max logic — bulkPut-ing it raw
+            // let a stale imported record (e.g. completed: false) regress a chapter that's
+            // locally marked completed: true. Only overwrite when the incoming record is
+            // at least as recent as what's already stored.
+            const existingProgress = await db.progress.bulkGet(candidateProgress.map(p => p.chapterId))
+            const progressToWrite = candidateProgress.filter((p, i) => {
+                const existing = existingProgress[i]
+                return !existing || p.updatedAt >= existing.updatedAt
+            })
+            if (progressToWrite.length > 0) await db.progress.bulkPut(progressToWrite)
+        }
         if (historyToWrite.length > 0) await db.historyEvents.bulkPut(historyToWrite)
     })
     return { manga: mangaToWrite.length, chapters: chaptersToWrite.length }

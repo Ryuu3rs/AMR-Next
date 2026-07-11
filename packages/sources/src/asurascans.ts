@@ -69,12 +69,12 @@ function extractTitle(html: string, slug: string): string {
         html.match(/<meta\b[^>]*\bproperty=["']og:title["'][^>]*\bcontent=["']([^"']+)["']/i) ??
         html.match(/<meta\b[^>]*\bcontent=["']([^"']+)["'][^>]*\bproperty=["']og:title["']/i)
     if (og?.[1]) {
-        const t = og[1].split(/\s*[-|]\s*/)[0]?.trim()
+        const t = og[1].split(/\s+[-|]\s+/)[0]?.trim()
         if (t) return t
     }
     const t = html
         .match(/<title>([^<]+)<\/title>/i)?.[1]
-        ?.split(/\s*[-|]\s*/)[0]
+        ?.split(/\s+[-|]\s+/)[0]
         ?.trim()
     if (t) return t
     return slug
@@ -230,8 +230,13 @@ export const asuraScansAdapter: SourceAdapter = {
         if (imageUrls.length === 0) {
             const isBlocked =
                 /cf_chl|challenge-platform|cf-browser-verification|__cf_chl_captcha|ddos-guard\.net/i.test(html)
+            if (isBlocked) {
+                // Real bot-block — signal it so isBotBlocked() triggers the tab-render
+                // fallback, instead of silently resolving with an empty reader.
+                throw new SourceRequestError("blocked")
+            }
             context.logger.warn(
-                `No images found [html:${html.length}b blocked=${isBlocked}] — returning pages:[] so siblings can be cached`,
+                `No images found [html:${html.length}b] — returning pages:[] so siblings can be cached`,
                 {
                     url: input.url.toString()
                 }

@@ -147,12 +147,12 @@ function extractTitle(html: string, slug: string): string {
         html.match(/<meta\b[^>]*\bproperty=["']og:title["'][^>]*\bcontent=["']([^"']+)["']/i) ??
         html.match(/<meta\b[^>]*\bcontent=["']([^"']+)["'][^>]*\bproperty=["']og:title["']/i)
     if (og?.[1]) {
-        const t = og[1].split(/\s*[-|]\s*/)[0]?.trim()
+        const t = og[1].split(/\s+[-|]\s+/)[0]?.trim()
         if (t) return t
     }
     const t = html
         .match(/<title>([^<]+)<\/title>/i)?.[1]
-        ?.split(/\s*[-|]\s*/)[0]
+        ?.split(/\s+[-|]\s+/)[0]
         ?.trim()
     if (t) return t
     // Strip trailing UUID suffix common in AsuraComic slugs

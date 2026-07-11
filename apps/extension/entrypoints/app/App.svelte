@@ -5,7 +5,7 @@
     import { sendRuntimeMessage } from "../../src/runtime"
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
     import { migrateLegacyImport } from "../../src/legacy-import"
-    import { getCachedCover } from "../../src/database"
+    import { getCachedCovers } from "../../src/database"
     import ActivityHeatmap from "./ActivityHeatmap.svelte"
     import ImportReconcile from "./ImportReconcile.svelte"
 
@@ -104,23 +104,40 @@
 
     async function mergeDuplicates(group: LibraryManga[]) {
         // Keep the entry with the most progress (then most recent) as primary.
+        const byProgress = [...group].sort((a, b) => (b.lastReadChapterNumber ?? 0) - (a.lastReadChapterNumber ?? 0))
         const primary = [...group].sort(
             (a, b) => (b.lastReadChapterNumber ?? 0) - (a.lastReadChapterNumber ?? 0) || b.updatedAt - a.updatedAt
         )[0]
         if (!primary) return
-        const maxRead = Math.max(...group.map(m => m.lastReadChapterNumber ?? 0))
+        const mostRead = byProgress[0]
+        const maxRead = mostRead?.lastReadChapterNumber ?? 0
         const maxLatest = Math.max(...group.map(m => m.latestChapterNumber ?? 0))
         const categories = [...new Set(group.flatMap(m => m.categories ?? []))]
+        // Carry over fields that don't have an obvious "biggest wins" number, rather than
+        // silently dropping them just because they only lived on a non-primary duplicate.
+        const rating = group.find(m => m.rating !== undefined)?.rating
+        const notes = [...new Set(group.map(m => m.notes?.trim()).filter((n): n is string => Boolean(n)))].join("\n\n")
+        const nsfw = group.some(m => m.nsfw)
         if (maxRead > 0 || maxLatest > 0) {
             await sendRuntimeMessage({
                 type: "library:numbers",
                 mangaId: primary.id,
                 lastReadChapterNumber: maxRead > 0 ? maxRead : null,
-                latestChapterNumber: maxLatest > 0 ? maxLatest : null
+                latestChapterNumber: maxLatest > 0 ? maxLatest : null,
+                ...(maxRead > 0 && mostRead?.lastReadChapterId ? { lastReadChapterId: mostRead.lastReadChapterId } : {})
             })
         }
         if (categories.length > 0) {
             await sendRuntimeMessage({ type: "library:categories", mangaId: primary.id, categories })
+        }
+        if (rating !== undefined) {
+            await sendRuntimeMessage({ type: "library:rate", mangaId: primary.id, rating })
+        }
+        if (notes) {
+            await sendRuntimeMessage({ type: "library:note", mangaId: primary.id, note: notes })
+        }
+        if (nsfw) {
+            await sendRuntimeMessage({ type: "library:nsfw", mangaId: primary.id, nsfw: true })
         }
         for (const m of group) {
             if (m.id !== primary.id) await sendRuntimeMessage({ type: "library:remove", mangaId: m.id })
@@ -191,12 +208,7 @@
     let importError = $state("")
 
     const showRestoreBanner = $derived(
-        !loading &&
-            !restoreBannerDismissed &&
-            library.length === 0 &&
-            Boolean(syncStatus?.hasToken) &&
-            !importWorking &&
-            !syncing
+        !loading && !restoreBannerDismissed && library.length === 0 && Boolean(syncStatus?.hasToken) && !importWorking
     )
 
     let clearConfirm = $state<"" | "history" | "all">("")
@@ -391,8 +403,13 @@
     })
 
     async function loadBookmarks() {
-        bookmarks = await sendRuntimeMessage<PageBookmark[]>({ type: "bookmark:list" })
-        bookmarksLoaded = true
+        try {
+            bookmarks = await sendRuntimeMessage<PageBookmark[]>({ type: "bookmark:list" })
+        } catch {
+            bookmarks = []
+        } finally {
+            bookmarksLoaded = true
+        }
     }
 
     $effect(() => {
@@ -450,15 +467,13 @@
         } catch {
             // optional
         }
-        // Load cached cover blobs from IndexedDB and create object URLs.
-        void loadCachedCovers()
     })
 
     async function loadCachedCovers() {
+        const blobs = await getCachedCovers(library.map(m => m.id))
         const next: Record<string, string> = {}
-        for (const m of library) {
-            const blob = await getCachedCover(m.id)
-            if (blob) next[m.id] = URL.createObjectURL(blob)
+        for (const [mangaId, blob] of blobs) {
+            next[mangaId] = URL.createObjectURL(blob)
         }
         coverSrcs = next
     }
@@ -530,17 +545,23 @@
         if (refreshingCovers) return
         refreshingCovers = true
         try {
+            let anyUpdated = false
             for (;;) {
                 const res = await sendRuntimeMessage<{ updated: number; remaining: number }>({
                     type: "library:covers:backfill"
                 })
-                if (res.updated > 0) {
-                    failedCovers = new Set()
-                    void load()
-                }
+                if (res.updated > 0) anyUpdated = true
                 if (res.remaining === 0) break
                 // Brief pause between batches so the service worker doesn't timeout
                 await new Promise<void>(r => setTimeout(r, 300))
+            }
+            // Refresh once at the end instead of after every batch — a backfill can span
+            // many batches, and reloading the whole library (stats/settings/updates +
+            // every cached cover) after each one was the actual bottleneck, not the
+            // backfill itself.
+            if (anyUpdated) {
+                failedCovers = new Set()
+                void load()
             }
         } catch {
             // covers are best-effort
@@ -552,12 +573,18 @@
     async function load() {
         loading = true
         try {
-            ;[library, settings, stats, updateStatus] = await Promise.all([
+            ;[library, settings] = await Promise.all([
                 sendRuntimeMessage<LibraryManga[]>({ type: "library:list" }),
-                sendRuntimeMessage<AppSettings>({ type: "settings:get" }),
-                sendRuntimeMessage<typeof stats>({ type: "stats:get" }),
-                sendRuntimeMessage<typeof updateStatus>({ type: "updates:get" })
+                sendRuntimeMessage<AppSettings>({ type: "settings:get" })
             ])
+            // stats:get scans the whole progress/history tables and isn't needed to paint
+            // the library — fetch it in the background instead of blocking the grid on it.
+            void sendRuntimeMessage<typeof stats>({ type: "stats:get" }).then(result => {
+                stats = result
+            })
+            void sendRuntimeMessage<typeof updateStatus>({ type: "updates:get" }).then(result => {
+                updateStatus = result
+            })
             const stored = (await browser.storage.local.get("extensionUpdate"))["extensionUpdate"] as
                 | typeof extensionUpdate
                 | undefined
@@ -588,6 +615,8 @@
     }
 
     function openSeriesPage(manga: LibraryManga, e?: MouseEvent) {
+        // auxclick fires for right-click too — don't hijack the context menu.
+        if (e?.button === 2) return
         if (selectMode) {
             toggleSelect(manga.id)
             return
@@ -606,6 +635,8 @@
     // Primary click honors the openChapterIn setting. Ctrl/middle-click always
     // opens the source page directly in a background tab (G11).
     function read(manga: LibraryManga, event?: MouseEvent) {
+        // auxclick fires for right-click too — don't hijack the context menu.
+        if (event?.button === 2) return
         if (selectMode) {
             toggleSelect(manga.id)
             return
@@ -673,11 +704,14 @@
         genresLoading = true
         genreSuggestions = []
         try {
-            genreSuggestions = await sendRuntimeMessage<string[]>({ type: "manga:genres", mangaId: manga.id })
+            const result = await sendRuntimeMessage<string[]>({ type: "manga:genres", mangaId: manga.id })
+            // Guard against a stale response landing after the user already switched
+            // to a different title — don't overwrite what's now on screen.
+            if (detailManga?.id === manga.id) genreSuggestions = result
         } catch {
-            genreSuggestions = []
+            if (detailManga?.id === manga.id) genreSuggestions = []
         } finally {
-            genresLoading = false
+            if (detailManga?.id === manga.id) genresLoading = false
         }
     }
     $effect(() => {
@@ -689,14 +723,18 @@
     })
 
     $effect(() => {
+        const id = detailManga?.id
         const title = detailManga?.title
         detailCommunityStats = null
-        if (title) {
+        if (id && title) {
             void sendRuntimeMessage<{ avgRating: number | null; ratingCount: number; readerCount: number }>({
                 type: "community:manga-stats",
                 mangaTitle: title
             })
-                .then(s => (detailCommunityStats = s))
+                .then(s => {
+                    // Guard against a stale response landing after the user switched titles.
+                    if (detailManga?.id === id) detailCommunityStats = s
+                })
                 .catch(() => {})
         }
     })
@@ -729,6 +767,7 @@
     async function setManual(manga: LibraryManga, manual: boolean) {
         await sendRuntimeMessage({ type: "library:manual", mangaId: manga.id, manual })
         library = library.map(m => (m.id === manga.id ? { ...m, manualTracking: manual } : m))
+        if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, manualTracking: manual }
     }
 
     async function setHold(manga: LibraryManga, onHold: boolean) {
@@ -742,13 +781,14 @@
         const value = trimmed === "" ? null : Math.max(0, Number(trimmed))
         if (value !== null && !Number.isFinite(value)) return
         await sendRuntimeMessage({ type: "library:numbers", mangaId: manga.id, [field]: value })
-        library = library.map(m => {
-            if (m.id !== manga.id) return m
+        const applyNumber = (m: LibraryManga): LibraryManga => {
             const next = { ...m }
             if (value === null) delete next[field]
             else next[field] = value
             return next
-        })
+        }
+        library = library.map(m => (m.id === manga.id ? applyNumber(m) : m))
+        if (detailManga && detailManga.id === manga.id) detailManga = applyNumber(detailManga)
     }
 
     async function setReadingDirection(manga: LibraryManga, raw: string) {
@@ -921,6 +961,8 @@
                 ...(sourceId ? { sourceId } : {})
             })
             await load()
+        } catch (cause) {
+            console.error("[AMR] Update check failed", cause)
         } finally {
             checkingUpdates = false
         }
@@ -941,6 +983,8 @@
             })
             extensionUpdate = result
             updateBannerDismissed = false
+        } catch (cause) {
+            console.error("[AMR] Extension update check failed", cause)
         } finally {
             checkingExtUpdate = false
         }
@@ -1048,6 +1092,9 @@
                     (m.categories ?? []).map(t => (t === oldTag ? newTag : t))
                 )
             }
+            // A tag currently used as the active filter no longer matches anything once
+            // renamed away — follow the rename so the view doesn't silently go empty.
+            if (categoryFilter === oldTag) categoryFilter = newTag
         } finally {
             tagBusy = false
         }
@@ -1056,6 +1103,10 @@
         tagBusy = true
         try {
             for (const m of library.filter(x => (x.categories ?? []).includes(tag))) await removeTag(m, tag)
+            // Same reasoning as renameTag — a deleted tag can't stay the active filter,
+            // or the library view is stuck on "no titles match" with no way to clear it
+            // (the category dropdown itself disappears once no tags remain).
+            if (categoryFilter === tag) categoryFilter = ""
         } finally {
             tagBusy = false
         }
@@ -1104,9 +1155,10 @@
     }
 
     const visibleLibrary = $derived.by(() => {
+        const q = query.trim().toLowerCase()
         const filtered = library.filter(
             m =>
-                m.title.toLowerCase().includes(query.trim().toLowerCase()) &&
+                m.title.toLowerCase().includes(q) &&
                 (!categoryFilter || (m.categories ?? []).includes(categoryFilter)) &&
                 matchesFilter(m)
         )
@@ -1216,6 +1268,9 @@
         const pool = unreadPool.length > 0 ? unreadPool : library
         if (pool.length === 0) return
         const pick = pool[Math.floor(Math.random() * pool.length)]
+        // Surprise Me is a navigation action, not a card click — it should always
+        // open the pick, even if select mode happens to be active.
+        if (selectMode) clearSelection()
         if (pick) read(pick)
     }
 
@@ -1239,7 +1294,12 @@
     })
     function runPalette(item: PaletteItem) {
         if (item.kind === "tab") activeSection = item.section
-        else read(item.manga)
+        else {
+            // The palette is a navigation shortcut — jumping to a title should always
+            // open it, even if select mode happens to be active in the library view.
+            if (selectMode) clearSelection()
+            read(item.manga)
+        }
         paletteOpen = false
     }
     function onGlobalKey(e: KeyboardEvent) {
@@ -1397,8 +1457,9 @@
     const updatedManga = $derived(
         library.filter(
             m =>
-                (m.latestChapterId && m.latestChapterId !== m.lastReadChapterId) ||
-                (m.latestChapterId && !m.lastReadChapterId)
+                !isSeedData(m) &&
+                ((m.latestChapterId && m.latestChapterId !== m.lastReadChapterId) ||
+                    (m.latestChapterId && !m.lastReadChapterId))
         )
     )
     const pagedUpdates = $derived(updatedManga.slice(0, updatesLimit))
@@ -1553,6 +1614,7 @@
             <div class="restore-banner" role="alert">
                 <span>
                     <strong>Your library appears empty.</strong> You have a Gist backup configured — restore it now?
+                    {#if syncMessage && !syncing}<br /><span class="muted">{syncMessage}</span>{/if}
                 </span>
                 <button type="button" class="btn-sm" disabled={syncing} onclick={() => void pullSync()}>
                     {syncing ? "Restoring…" : "Restore from Gist"}
@@ -1743,7 +1805,7 @@
                 {#if recentlyAdded.length > 0}
                     <p class="shelf-label">Recently added</p>
                     <div class="poster-grid">
-                        {#each recentlyAdded as manga}
+                        {#each recentlyAdded as manga (manga.id)}
                             <article>
                                 <div class="poster-wrap">
                                     <button
@@ -1984,7 +2046,7 @@
                 </p>
             {:else if libraryView === "grid"}
                 <div class="poster-grid">
-                    {#each pagedLibrary as manga}
+                    {#each pagedLibrary as manga (manga.id)}
                         <article class:selected={selectMode && selectedIds.has(manga.id)}>
                             <div class="poster-wrap">
                                 <button
@@ -2001,12 +2063,14 @@
                                             >{manga.title[0]}</span
                                         >{/if}
                                     {#if isSeedData(manga)}<span class="sample-chip">Sample</span>{/if}
-                                    {#if manga.manualTracking}<span class="manual-chip">Manual</span>{/if}
-                                    {#if !isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId}
-                                        <span class="new-chip">Unread</span>
-                                    {/if}
-                                    {#if isRecentlyAdded(manga)}<span class="added-chip">New</span>{/if}
-                                    {#if isRecentlyUpdated(manga)}<span class="updated-chip">Updated</span>{/if}
+                                    <div class="poster-badges">
+                                        {#if manga.manualTracking}<span class="manual-chip">Manual</span>{/if}
+                                        {#if !isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId}
+                                            <span class="new-chip">Unread</span>
+                                        {/if}
+                                        {#if isRecentlyAdded(manga)}<span class="added-chip">New</span>{/if}
+                                        {#if isRecentlyUpdated(manga)}<span class="updated-chip">Updated</span>{/if}
+                                    </div>
                                 </button>
                                 <button
                                     type="button"
@@ -2059,7 +2123,7 @@
                 </div>
             {:else}
                 <div class="list-view">
-                    {#each pagedLibrary as manga}
+                    {#each pagedLibrary as manga (manga.id)}
                         {@const status = statusOf(manga)}
                         <div class="list-row" class:selected={selectMode && selectedIds.has(manga.id)}>
                             <button
@@ -2098,11 +2162,17 @@
                                     {#if manga.manualTracking}· manual{/if}
                                     {#if manga.notes}· 📝{/if}
                                 </p>
-                                {#if !isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId}
-                                    <span class="list-badge badge-unread">Unread</span>
+                                {#if (!isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId) || isRecentlyAdded(manga) || isRecentlyUpdated(manga)}
+                                    <div class="list-badges">
+                                        {#if !isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId}
+                                            <span class="list-badge badge-unread">Unread</span>
+                                        {/if}
+                                        {#if isRecentlyAdded(manga)}<span class="list-badge badge-added">New</span>{/if}
+                                        {#if isRecentlyUpdated(manga)}<span class="list-badge badge-updated"
+                                                >Updated</span
+                                            >{/if}
+                                    </div>
                                 {/if}
-                                {#if isRecentlyAdded(manga)}<span class="list-badge badge-added">New</span>{/if}
-                                {#if isRecentlyUpdated(manga)}<span class="list-badge badge-updated">Updated</span>{/if}
                                 {#if rowMessage && rowMessage.id === manga.id}
                                     <p class="muted list-rowmsg">{rowMessage.text}</p>
                                 {/if}
@@ -2133,9 +2203,10 @@
                                 <button
                                     type="button"
                                     class="btn-sm"
-                                    disabled={manga.latestChapterNumber === undefined}
-                                    title="Mark read up to the latest chapter"
-                                    onclick={() => void markCaughtUp(manga)}>Mark read</button>
+                                    disabled={manga.latestChapterNumber === undefined ||
+                                        statusOf(manga) === "completed"}
+                                    title="Mark caught up to the latest chapter"
+                                    onclick={() => void markCaughtUp(manga)}>Caught up</button>
                                 <button type="button" class="btn-sm" onclick={() => (detailManga = manga)}>⋯</button>
                             </div>
                         </div>
@@ -2751,7 +2822,11 @@
                             type="file"
                             accept="application/json,.json"
                             onchange={e => {
-                                const f = e.currentTarget.files?.[0]
+                                const input = e.currentTarget
+                                const f = input.files?.[0]
+                                // Reset so selecting the same file again (e.g. after a
+                                // cancelled/failed import) still fires a change event.
+                                input.value = ""
                                 if (f) void importData(f)
                             }} />
                     </label>
