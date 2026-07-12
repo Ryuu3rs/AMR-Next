@@ -306,9 +306,23 @@ export const libraryHandlers: HandlerMap = {
         for (const m of targets.slice(0, COVER_BACKFILL_BATCH)) {
             coverBackfillAttempted.add(m.id)
             try {
-                const remote = m.coverUrl && /^https?:\/\//.test(m.coverUrl) ? m.coverUrl : await resolveCoverFor(m)
+                const storedRemoteCover = m.coverUrl && /^https?:\/\//.test(m.coverUrl) ? m.coverUrl : undefined
+                let remote = storedRemoteCover ?? (await resolveCoverFor(m))
                 if (!remote) continue
-                const inlined = await inlineCover(remote)
+                let inlined = await inlineCover(remote)
+                // A stored remote cover URL can go stale over time (e.g. Webtoons
+                // rotates its thumbnail CDN URLs) — if inlining the existing URL
+                // failed and the adapter can re-resolve, fetch a fresh one before
+                // giving up. Without this, titles that already had a (now-dead)
+                // coverUrl never retry, since the `!m.coverUrl` branch below only
+                // covers titles with no cover at all.
+                if (!inlined && storedRemoteCover && sourceRegistry.get(m.sourceId)?.resolveCover) {
+                    const fresh = await resolveCoverFor(m)
+                    if (fresh && fresh !== storedRemoteCover) {
+                        remote = fresh
+                        inlined = await inlineCover(remote)
+                    }
+                }
                 if (inlined) {
                     await db.manga.update(m.id, { coverUrl: inlined })
                     updated += 1

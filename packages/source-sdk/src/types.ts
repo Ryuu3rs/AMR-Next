@@ -67,6 +67,10 @@ export type SourceSearchResult = {
     // Latest hosted chapter number/label if the search surface exposes it — lets
     // the UI show which mirrors are actively updated (G7).
     latestChapter?: string
+    // Alternate/native/romanized titles the source's search API returned for this
+    // result. Optional — most adapters don't populate it. Lets client-side query
+    // filters match on alt titles even when the query doesn't appear in `title`.
+    altTitles?: string[]
 }
 
 export type SourceRequestOptions = {

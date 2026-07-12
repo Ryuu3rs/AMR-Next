@@ -15,6 +15,7 @@
     let direction = $state<ReadingDirection>("ltr")
     let pageFit = $state<PageFit>("width")
     let showPageNumber = $state(true)
+    let noGapContinuous = $state(false)
     let preloadPages = $state(3)
     let chapterUrl = $state("")
     let siblings = $state<Array<{ url: string; sortKey: number; title: string }>>([])
@@ -542,6 +543,7 @@
                         readingDirection: ReadingDirection
                         pageFit: PageFit
                         showPageNumber: boolean
+                        noGapContinuous: boolean
                         preloadPages: number
                     }>({ type: "settings:get" }),
                     browser.storage.local.get([modeKey, dirKey]).catch(() => ({}) as Record<string, unknown>),
@@ -561,6 +563,7 @@
                         : settings.readingDirection)
                 pageFit = libraryManga?.pageFit ?? settings.pageFit
                 showPageNumber = settings.showPageNumber
+                noGapContinuous = settings.noGapContinuous
                 preloadPages = settings.preloadPages
             } catch {
                 // keep defaults
@@ -857,7 +860,10 @@
     </div>
 {/if}
 
-<main class:single={effectiveMode === "single"} class="fit-{effectivePageFit} dir-{direction}">
+<main
+    class:single={effectiveMode === "single"}
+    class:no-gap={effectiveMode === "continuous" && noGapContinuous}
+    class="fit-{effectivePageFit} dir-{direction}">
     {#if chapter && !error && !resolving && zeroPages}
         <div class="mirror-banner">
             <span>No reader pages available — open on site and use the AMR sidebar to navigate.</span>

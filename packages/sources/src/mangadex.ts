@@ -296,13 +296,22 @@ export const mangadexAdapter: SourceAdapter = {
                     ? `${UPLOADS_ORIGIN}/covers/${item.id}/${encodeURIComponent(fileName)}.256.jpg`
                     : undefined
             const lastChapter = item.attributes.lastChapter
+            const altTitles = [
+                ...new Set(
+                    (item.attributes.altTitles ?? [])
+                        .flatMap(entry => Object.values(entry))
+                        .map(value => value.trim())
+                        .filter(Boolean)
+                )
+            ]
             return {
                 sourceId: SOURCE_ID,
                 sourceMangaId: item.id,
                 title: pickLocalized(item.attributes.title) ?? "Unknown",
                 url: mangaUrl(item.id),
                 ...(coverUrl ? { coverUrl } : {}),
-                ...(lastChapter ? { latestChapter: lastChapter } : {})
+                ...(lastChapter ? { latestChapter: lastChapter } : {}),
+                ...(altTitles.length > 0 ? { altTitles } : {})
             }
         })
     },

@@ -24,7 +24,7 @@ vi.mock("../background/chapter-cache", () => ({
 }))
 
 const { libraryHandlers } = await import("./library")
-const { resolveChapterUrl, listChaptersForSource, findSource } = await import("../sources")
+const { resolveChapterUrl, listChaptersForSource, findSource, resolveCoverFor } = await import("../sources")
 const { inlineCover } = await import("../background/covers")
 
 const ctx = { sender: {} } as never
@@ -256,6 +256,45 @@ describe("library:covers:backfill", () => {
         // tracked in coverBackfillAttempted from the first pass.
         await handler({ type: "library:covers:backfill" } as never, ctx)
         expect(inlineCover).not.toHaveBeenCalledWith("https://cdn.example/cover.jpg")
+
+        vi.unstubAllGlobals()
+    })
+
+    it("re-resolves a fresh cover when the stored remote URL is stale and the adapter supports resolveCover", async () => {
+        const { libraryHandlers } = await import("./library")
+
+        const staleCover: LibraryManga = {
+            ...manga,
+            id: "webtoons:manga:8579",
+            sourceId: "webtoons",
+            sourceMangaId: "8579",
+            mangaUrl: "https://www.webtoons.com/en/romance/daisy-how-to-become-the-dukes-fiancee/list?title_no=8579",
+            sourceUrl:
+                "https://www.webtoons.com/en/romance/daisy-how-to-become-the-dukes-fiancee/episode-1/viewer?title_no=8579&episode_no=1",
+            coverUrl: "https://stale-cdn.example/old-cover.jpg"
+        }
+        await db.manga.put(staleCover)
+
+        // The stale stored URL fails to inline; a freshly resolved URL succeeds.
+        vi.mocked(inlineCover).mockImplementation(async url =>
+            url === "https://fresh-cdn.example/new-cover.jpg" ? "data:image/png;base64,ZZZZ" : undefined
+        )
+        vi.mocked(resolveCoverFor).mockResolvedValue("https://fresh-cdn.example/new-cover.jpg")
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }))
+
+        const handler = libraryHandlers["library:covers:backfill"]!
+        const result = (await handler({ type: "library:covers:backfill" } as never, ctx)) as {
+            updated: number
+            remaining: number
+        }
+
+        expect(inlineCover).toHaveBeenCalledWith("https://stale-cdn.example/old-cover.jpg")
+        expect(inlineCover).toHaveBeenCalledWith("https://fresh-cdn.example/new-cover.jpg")
+        expect(resolveCoverFor).toHaveBeenCalledWith(expect.objectContaining({ id: "webtoons:manga:8579" }))
+        expect(result.updated).toBe(1)
+
+        const stored = await db.manga.get("webtoons:manga:8579")
+        expect(stored?.coverUrl).toBe("data:image/png;base64,ZZZZ")
 
         vi.unstubAllGlobals()
     })

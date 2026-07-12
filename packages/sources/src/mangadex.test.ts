@@ -168,6 +168,64 @@ describe("mangadexAdapter", () => {
         expect(requests[0]).toContain("title=test")
     })
 
+    it("surfaces alt titles from search results as a flat string array", async () => {
+        const searchFixture = {
+            result: "ok",
+            data: [
+                {
+                    id: MANGA_ID,
+                    type: "manga",
+                    attributes: {
+                        title: { en: "Test Manga" },
+                        altTitles: [
+                            { ja: "テストマンガ" },
+                            { "ja-ro": "Tesuto Manga" },
+                            { en: "" },
+                            { fr: "Tesuto Manga" }
+                        ],
+                        status: "ongoing",
+                        lastChapter: "152",
+                        createdAt: "2024-01-02T03:04:05+00:00",
+                        updatedAt: "2025-02-03T04:05:06+00:00"
+                    },
+                    relationships: [{ id: "c", type: "cover_art", attributes: { fileName: "cover.jpg" } }]
+                }
+            ]
+        }
+        const requests: string[] = []
+        const context = createContext({ "/manga": searchFixture }, requests)
+
+        const results = await mangadexAdapter.search!("test", context)
+
+        expect(results).toHaveLength(1)
+        expect(results[0]?.altTitles).toEqual(["テストマンガ", "Tesuto Manga"])
+    })
+
+    it("omits altTitles entirely when the source has none", async () => {
+        const searchFixture = {
+            result: "ok",
+            data: [
+                {
+                    id: MANGA_ID,
+                    type: "manga",
+                    attributes: {
+                        title: { en: "Test Manga" },
+                        altTitles: [],
+                        status: "ongoing",
+                        createdAt: "2024-01-02T03:04:05+00:00",
+                        updatedAt: "2025-02-03T04:05:06+00:00"
+                    },
+                    relationships: []
+                }
+            ]
+        }
+        const context = createContext({ "/manga": searchFixture }, [])
+
+        const results = await mangadexAdapter.search!("test", context)
+
+        expect(results[0]).not.toHaveProperty("altTitles")
+    })
+
     it("rejects malformed API responses", async () => {
         const context = createContext(
             {
