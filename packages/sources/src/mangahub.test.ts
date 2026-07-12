@@ -1,6 +1,10 @@
 import { createBoundedRequestClient, type FetchFunction, type SourceContext } from "@amr/source-sdk"
 import { describe, expect, it } from "vitest"
 import {
+    COVER_PATH,
+    COVER_SLUG,
+    COVER_URL,
+    mangaDetailHtml,
     SEARCH_PATH_PAGE_1,
     SEARCH_PATH_PAGE_2,
     SEARCH_PATH_PAGE_3,
@@ -100,5 +104,27 @@ describe("mangahubAdapter.search", () => {
 
         expect(results).toHaveLength(0)
         expect(requests).toHaveLength(0)
+    })
+})
+
+describe("mangahubAdapter.resolveCover", () => {
+    it("fetches the manga detail page and returns the og:image cover URL", async () => {
+        const requests: string[] = []
+        const context = createContext({ [COVER_PATH]: mangaDetailHtml }, requests)
+
+        const cover = await mangahubAdapter.resolveCover!({ sourceMangaId: COVER_SLUG }, context)
+
+        expect(cover).toBe(COVER_URL)
+        expect(requests).toHaveLength(1)
+        expect(requests[0]).toBe(`GET https://mangahub.io${COVER_PATH}`)
+    })
+
+    it("returns undefined when the fetch fails", async () => {
+        const requests: string[] = []
+        const context = createContext({}, requests)
+
+        const cover = await mangahubAdapter.resolveCover!({ sourceMangaId: "nonexistent-manga" }, context)
+
+        expect(cover).toBeUndefined()
     })
 })

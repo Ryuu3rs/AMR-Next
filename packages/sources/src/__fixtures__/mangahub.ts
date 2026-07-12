@@ -23,3 +23,10 @@ export const searchPage2Html = `<!doctype html><html><body><div id="app"><div cl
 
 // Empty result page — matches MangaHub's real "No Manga found!" markup.
 export const searchEmptyHtml = `<!doctype html><html><body><div id="app"><div class="row"><div class="col-xs-12"><strong>No Manga found!</strong></div></div></body></html>`
+
+// Manga detail page — used for resolveCover, mirrors the og:image markup
+// extractCover looks for.
+export const COVER_SLUG = "solo-leveling_105"
+export const COVER_PATH = "/manga/solo-leveling_105"
+export const COVER_URL = "https://thumb.mghcdn.com/mh/solo-leveling.jpg"
+export const mangaDetailHtml = `<!doctype html><html><head><title>Read Solo Leveling Manga Online for Free</title><meta property="og:title" content="Solo Leveling"/><meta property="og:image" content="${COVER_URL}"/></head><body></body></html>`
