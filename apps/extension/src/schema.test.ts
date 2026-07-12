@@ -87,6 +87,23 @@ describe("exportEnvelopeSchema", () => {
         }
     })
 
+    it("round-trips onHold/readingDirection/pageFit (were previously missing from the strict schema)", () => {
+        const env = validEnvelope()
+        env.data.manga[0] = {
+            ...env.data.manga[0],
+            onHold: true,
+            readingDirection: "rtl",
+            pageFit: "height"
+        } as (typeof env.data.manga)[0]
+        const parsed = exportEnvelopeSchema.safeParse(env)
+        expect(parsed.success).toBe(true)
+        if (parsed.success) {
+            expect(parsed.data.data.manga[0]?.onHold).toBe(true)
+            expect(parsed.data.data.manga[0]?.readingDirection).toBe("rtl")
+            expect(parsed.data.data.manga[0]?.pageFit).toBe("height")
+        }
+    })
+
     it("drops unknown extra tables but keeps known ones", () => {
         const env = validEnvelope() as Record<string, unknown> & { data: Record<string, unknown> }
         env.data["futureTable"] = [{ anything: true }]

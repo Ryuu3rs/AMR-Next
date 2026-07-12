@@ -21,7 +21,10 @@ export const libraryMangaSchema = mangaRecordSchema.extend({
     nsfw: z.boolean().optional(),
     notes: z.string().optional(),
     genres: z.array(z.string()).optional(),
-    noGapContinuous: z.boolean().optional()
+    noGapContinuous: z.boolean().optional(),
+    onHold: z.boolean().optional(),
+    readingDirection: z.enum(["ltr", "rtl", "vertical"]).optional(),
+    pageFit: z.enum(["width", "height", "contain", "original"]).optional()
 })
 
 export const historyEventSchema = z.object({
