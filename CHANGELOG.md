@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/Ryuu3rs/AMR-Next/compare/v0.10.0...v0.10.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* manifest-policy test didn't detect VITE_COMMUNITY_API_ORIGIN when set as a build env var ([5cf44a8](https://github.com/Ryuu3rs/AMR-Next/commit/5cf44a8622b9d289618015e22c7f2660c232853c))
+
 ## [0.10.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.9.10...v0.10.0) (2026-07-12)
 
 
