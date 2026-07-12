@@ -166,6 +166,14 @@ export function matchesQuery(title: string, query: string): boolean {
     return tokens.every(token => normalizedTitle.includes(token))
 }
 
+// A result passes if the query matches the main title OR any alt title the source
+// surfaced (e.g. MangaDex's Japanese/romanized alternate titles). Results without
+// altTitles behave exactly as before — title-only match.
+function matchesQueryWithAltTitles(result: SourceSearchResult, query: string): boolean {
+    if (matchesQuery(result.title, query)) return true
+    return (result.altTitles ?? []).some(altTitle => matchesQuery(altTitle, query))
+}
+
 // Aggregate search across every adapter that supports it. Sources without
 // granted host permission fail their origin check and are skipped (allSettled).
 // sourceHealth is intentionally NOT used here — a source can be flagged dead for
@@ -181,7 +189,7 @@ export async function searchManga(query: string): Promise<SourceSearchResult[]> 
     )
     return settled
         .flatMap(result => (result.status === "fulfilled" ? result.value : []))
-        .filter(result => matchesQuery(result.title, query))
+        .filter(result => matchesQueryWithAltTitles(result, query))
 }
 
 // Streaming variant — fires all adapters concurrently and calls onPartial as each
@@ -202,7 +210,7 @@ export function searchMangaStreaming(
     for (const adapter of searchable) {
         withTimeout(adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)), 10000)
             .then(results => {
-                const matched = results.filter(result => matchesQuery(result.title, query))
+                const matched = results.filter(result => matchesQueryWithAltTitles(result, query))
                 if (matched.length > 0) onPartial(matched, adapter.manifest.id)
             })
             .catch(() => {})

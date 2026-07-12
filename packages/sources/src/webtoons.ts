@@ -256,6 +256,25 @@ export const webtoonsAdapter: SourceAdapter = {
         return all
     },
 
+    async resolveCover(input: { sourceMangaId?: string; url?: URL }, ctx: SourceContext): Promise<string | undefined> {
+        const titleNo = input.sourceMangaId ?? input.url?.searchParams.get("title_no") ?? undefined
+        if (!titleNo) return undefined
+        // Build the list URL the same way getChapterListUrl does below: reuse the
+        // series path prefix from a stored mangaUrl (handles both the legacy
+        // .../list?title_no=X shape and the newer series-prefix shape), or fall back
+        // to the /en/fantasy/unknown/ trick from resolveManga when only the bare
+        // title_no is known — Webtoons redirects that to the canonical genre/slug URL.
+        const fetchUrl = input.url
+            ? new URL(`${ORIGIN}${pathPrefix(input.url)}/list?title_no=${encodeURIComponent(titleNo)}`)
+            : new URL(`${ORIGIN}/en/fantasy/unknown/list?title_no=${encodeURIComponent(titleNo)}`)
+        try {
+            const html = await ctx.request.getText(fetchUrl, { headers: BROWSER_HEADERS })
+            return extractCover(html)
+        } catch {
+            return undefined
+        }
+    },
+
     parseMangaUrl(url: URL): { sourceMangaId: string; mangaUrl: string } | null {
         const titleNo = url.searchParams.get("title_no")
         if (!titleNo) return null

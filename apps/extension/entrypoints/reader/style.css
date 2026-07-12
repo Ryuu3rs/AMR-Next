@@ -140,6 +140,12 @@ main {
     padding: 8px;
 }
 
+main.no-gap {
+    gap: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
 .page {
     position: relative;
     display: flex;
@@ -232,6 +238,7 @@ main.dir-rtl .page-num {
     z-index: 1;
     height: 3px;
     background: rgba(255, 255, 255, 0.06);
+    transition: top 0.25s ease;
 }
 
 .progress-fill {
@@ -250,6 +257,12 @@ header.chrome-hidden {
     transform: translateY(-100%);
     opacity: 0;
     pointer-events: none;
+}
+
+/* The progress bar is a sibling of header, not a child, so it doesn't hide with
+   the header's translateY — instead it slides up to sit flush at the top. */
+header.chrome-hidden + .progress-bar {
+    top: 0;
 }
 
 .btn-sm.active {

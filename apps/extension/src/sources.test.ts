@@ -22,11 +22,12 @@ function makeAdapter(id: string, results: SourceSearchResult[]) {
     }
 }
 
-const result = (title: string, sourceId = "test-source"): SourceSearchResult => ({
+const result = (title: string, sourceId = "test-source", altTitles?: string[]): SourceSearchResult => ({
     sourceId,
     sourceMangaId: title.toLowerCase().replace(/\s+/g, "-"),
     title,
-    url: `https://example.com/${title}`
+    url: `https://example.com/${title}`,
+    ...(altTitles ? { altTitles } : {})
 })
 
 vi.mock("@amr/sources", async importOriginal => {
@@ -88,6 +89,40 @@ describe("searchManga result filtering", () => {
 
         expect(results.map(r => r.title).sort()).toEqual(["Best Manga", "The Best Story"])
     })
+
+    it("passes a result whose main title doesn't match but an altTitle does", async () => {
+        listMock = () => [
+            makeAdapter("mangadex", [
+                result("Attack on Titan", "mangadex", ["Shingeki no Kyojin"]),
+                result("One Piece", "mangadex", ["Wan Pisu"])
+            ])
+        ]
+        const { searchManga } = await import("./sources")
+
+        const results = await searchManga("shingeki")
+
+        expect(results.map(r => r.title)).toEqual(["Attack on Titan"])
+    })
+
+    it("still filters out results with no title or altTitle match", async () => {
+        listMock = () => [makeAdapter("mangadex", [result("One Piece", "mangadex", ["Wan Pisu"])])]
+        const { searchManga } = await import("./sources")
+
+        const results = await searchManga("naruto")
+
+        expect(results).toEqual([])
+    })
+
+    it("keeps title-only matching behavior unchanged for results without altTitles", async () => {
+        listMock = () => [
+            makeAdapter("test-source", [result("The Best Manga"), result("One Piece"), result("Best Friends")])
+        ]
+        const { searchManga } = await import("./sources")
+
+        const results = await searchManga("best")
+
+        expect(results.map(r => r.title).sort()).toEqual(["Best Friends", "The Best Manga"])
+    })
 })
 
 describe("searchMangaStreaming result filtering", () => {
@@ -110,5 +145,26 @@ describe("searchMangaStreaming result filtering", () => {
         })
 
         expect(partials).toEqual([{ sourceId: "source-a", titles: ["Best Manga"] }])
+    })
+
+    it("emits results matched only via altTitles", async () => {
+        listMock = () => [
+            makeAdapter("mangadex", [result("Attack on Titan", "mangadex", ["Shingeki no Kyojin"])]),
+            makeAdapter("source-b", [result("Unrelated Title", "source-b")])
+        ]
+        const { searchMangaStreaming } = await import("./sources")
+
+        const partials: Array<{ sourceId: string; titles: string[] }> = []
+        await new Promise<void>(resolveDone => {
+            searchMangaStreaming(
+                "shingeki",
+                (results, sourceId) => {
+                    partials.push({ sourceId, titles: results.map(r => r.title) })
+                },
+                () => resolveDone()
+            )
+        })
+
+        expect(partials).toEqual([{ sourceId: "mangadex", titles: ["Attack on Titan"] }])
     })
 })

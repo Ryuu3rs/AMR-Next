@@ -426,6 +426,101 @@ describe("trackExternalChapter", () => {
         expect(result.mangaId).toBe(existing.id)
         expect(await db.manga.count()).toBe(1)
     })
+
+    it("does not cross-contaminate progress onto an unrelated Webtoons title when the direct id lookup misses", async () => {
+        // Every Webtoons URL has the shape /<locale>/<genre>/<slug>/... — none of that
+        // matches MANGA_PATH_MARKERS, so a naive slug fallback degenerates to the locale
+        // token ("en") for every title and spuriously "matches" any two Webtoons titles.
+        const unrelated: LibraryManga = {
+            id: "webtoons:manga:legacy-unrelated",
+            title: "Unrelated Manga",
+            normalizedTitle: "unrelated manga",
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "webtoons",
+            sourceUrl: "https://www.webtoons.com/en/fantasy/some-other-manga/list?title_no=1111",
+            mangaUrl: "https://www.webtoons.com/en/fantasy/some-other-manga/list?title_no=1111"
+        }
+        await db.manga.put(unrelated)
+
+        const result = await trackExternalChapter({
+            url: "https://www.webtoons.com/en/action/hero-killer/episode-271/viewer?title_no=2745&episode_no=271",
+            sourceId: "webtoons",
+            mangaInfo: {
+                sourceMangaId: "2745",
+                mangaUrl: "https://www.webtoons.com/en/action/hero-killer/list?title_no=2745"
+            }
+        })
+
+        // Must create/track a distinct "Hero Killer" (title_no=2745) record — not silently
+        // attach progress to the unrelated title_no=1111 record via the degenerate
+        // host+locale slug match.
+        expect(result.mangaId).not.toBe(unrelated.id)
+        expect(await db.manga.count()).toBe(2)
+        const untouched = await db.manga.get(unrelated.id)
+        expect(untouched?.lastReadChapterNumber).toBeUndefined()
+    })
+
+    it("reuses an existing Webtoons entry matched by title_no when its id predates the sourceId:manga:sourceMangaId scheme", async () => {
+        // Simulates a legacy-imported (or otherwise differently-keyed) library entry whose
+        // stored mangaUrl is the older .../list?title_no=X shape, matched against a newer
+        // series-prefix chapter URL that also carries title_no.
+        const legacyHeroKiller: LibraryManga = {
+            id: "webtoons:manga:legacy-hero-killer",
+            title: "Hero Killer",
+            normalizedTitle: "hero killer",
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "webtoons",
+            sourceUrl: "https://www.webtoons.com/en/action/hero-killer/list?title_no=2745",
+            mangaUrl: "https://www.webtoons.com/en/action/hero-killer/list?title_no=2745"
+        }
+        await db.manga.put(legacyHeroKiller)
+
+        const result = await trackExternalChapter({
+            url: "https://www.webtoons.com/en/action/hero-killer/episode-271/viewer?title_no=2745&episode_no=271",
+            sourceId: "webtoons",
+            mangaInfo: {
+                sourceMangaId: "2745",
+                mangaUrl: "https://www.webtoons.com/en/action/hero-killer/list?title_no=2745"
+            }
+        })
+
+        expect(result.mangaId).toBe(legacyHeroKiller.id)
+        expect(await db.manga.count()).toBe(1)
+        const stored = await db.manga.get(legacyHeroKiller.id)
+        expect(stored?.lastReadChapterNumber).toBe(271)
+    })
+
+    it("still matches non-Webtoons hosts via the path-marker slug fallback (regression guard)", async () => {
+        const existing: LibraryManga = {
+            id: "genericsource:manga:legacy-one-piece",
+            title: "One Piece",
+            normalizedTitle: "one piece",
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "genericsource",
+            sourceUrl: "https://example.com/manga/one-piece/",
+            mangaUrl: "https://example.com/manga/one-piece/"
+        }
+        await db.manga.put(existing)
+
+        // Different marker segment ("read" vs "manga") so the raw startsWith prefix check
+        // fails and this only succeeds via the marker-based slug fallback.
+        const result = await trackExternalChapter({
+            url: "https://example.com/read/one-piece/chapter-5",
+            sourceId: "genericsource"
+        })
+
+        expect(result.mangaId).toBe(existing.id)
+        expect(await db.manga.count()).toBe(1)
+    })
 })
 
 describe("rekeyManga", () => {

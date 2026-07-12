@@ -144,6 +144,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
             readingDirection: z.enum(["ltr", "rtl", "vertical"]).optional(),
             pageFit: z.enum(["width", "height", "contain", "original"]).optional(),
             showPageNumber: z.boolean().optional(),
+            noGapContinuous: z.boolean().optional(),
             preloadPages: z.number().int().min(0).max(10).optional(),
             openChapterIn: z.enum(["reader", "browser"]).optional(),
             theme: z.enum(["dark", "light", "system"]).optional(),

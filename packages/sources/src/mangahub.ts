@@ -9,12 +9,20 @@ import {
     type SourceChapter,
     type SourceContext,
     type SourceManga,
-    type SourcePageMatch
+    type SourcePageMatch,
+    type SourceSearchResult
 } from "@amr/source-sdk"
 
 const SOURCE_ID = "mangahub"
 const ORIGIN = "https://mangahub.io"
 const DOMAIN = "mangahub.io"
+
+// MangaHub's /search route is server-rendered (confirmed via direct fetch — no
+// __NEXT_DATA__ blob, no GraphQL call needed): each result is a plain
+// `<div class="media-manga media">` card in the initial HTML response, and
+// pagination is a normal link-driven `/search/page/{n}` route. Fetch a handful
+// of pages and concatenate, same approach as browsing the site with JS off.
+const SEARCH_MAX_PAGES = 3
 
 const BROWSER_HEADERS = {
     "User-Agent":
@@ -37,6 +45,7 @@ function decodeEntities(s: string): string {
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
         .replace(/&#0*(\d+);/g, (_, c: string) => String.fromCodePoint(Number(c)))
+        .replace(/&#x([0-9a-f]+);/gi, (_, c: string) => String.fromCodePoint(parseInt(c, 16)))
         .replace(/&nbsp;/g, " ")
         .trim()
 }
@@ -135,6 +144,58 @@ function extractImages(html: string): string[] {
     return urls
 }
 
+// Search result cards look like:
+// <div class="media-manga media">
+//   <div class="media-left"><a href=".../manga/SLUG"><img src="COVER" alt="TITLE"/></a></div>
+//   <div class="media-body"><h4 class="media-heading">[optional hot label]<a href=".../manga/SLUG">TITLE</a>...
+//     <span><a href=".../chapter/SLUG/chapter-N">#N</a> chapters published (...)</span>
+//     <p>...genre links...</p>
+//   </div>
+// </div>
+// Split on the card marker so each block is scoped to one card; the last block
+// trails off into unrelated page content (e.g. the "Popular" slider), but since
+// only the *first* match of each field is taken per block, that trailing junk
+// is never reached.
+function extractSearchResults(html: string): SourceSearchResult[] {
+    const blocks = [
+        ...html.matchAll(/<div class="media-manga media">([\s\S]*?)(?=<div class="media-manga media">|$)/gi)
+    ]
+    const out: SourceSearchResult[] = []
+    const seen = new Set<string>()
+    const linkRe = /<a\s+href="https?:\/\/(?:www\.)?mangahub\.io\/manga\/([^"/]+)"[^>]*>([\s\S]*?)<\/a>/gi
+    for (const block of blocks) {
+        const scope = captureGroup(block, 1) ?? ""
+        const anchors = [...scope.matchAll(linkRe)]
+        const slug = anchors[0] ? captureGroup(anchors[0], 1) : undefined
+        if (!slug || seen.has(slug)) continue
+        seen.add(slug)
+        // The thumbnail anchor wraps only an <img> (no text); the heading anchor
+        // has the title text — take the first anchor with non-empty text.
+        let title = ""
+        for (const a of anchors) {
+            const text = decodeEntities((captureGroup(a, 2) ?? "").replace(/<[^>]+>/g, "").trim())
+            if (text.length > 0) {
+                title = text
+                break
+            }
+        }
+        if (!title) title = slug.replace(/-/g, " ")
+        const imgMatch = scope.match(/<img\b[^>]+src="(https?:\/\/[^"]+)"/i)
+        const coverUrl = imgMatch ? captureGroup(imgMatch, 1) : undefined
+        const chapMatch = scope.match(/chapter-(\d+(?:\.\d+)?)/i)
+        const latestChapter = chapMatch ? captureGroup(chapMatch, 1) : undefined
+        out.push({
+            sourceId: SOURCE_ID,
+            sourceMangaId: slug,
+            title,
+            url: `${ORIGIN}/manga/${slug}`,
+            ...(coverUrl ? { coverUrl } : {}),
+            ...(latestChapter ? { latestChapter } : {})
+        })
+    }
+    return out
+}
+
 export const mangahubAdapter: SourceAdapter = {
     manifest: {
         id: SOURCE_ID,
@@ -183,6 +244,39 @@ export const mangahubAdapter: SourceAdapter = {
         const mangaUrl = new URL(manga.url)
         const html = await ctx.request.getText(mangaUrl, { headers: BROWSER_HEADERS })
         return extractChapters(html, manga.manga.id)
+    },
+
+    async search(query: string, ctx: SourceContext): Promise<SourceSearchResult[]> {
+        const trimmed = query.trim()
+        if (!trimmed) return []
+
+        const out: SourceSearchResult[] = []
+        const seen = new Set<string>()
+        for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
+            const url = new URL(`${ORIGIN}/search/page/${page}`)
+            url.searchParams.set("q", trimmed)
+            url.searchParams.set("order", "POPULAR")
+            url.searchParams.set("genre", "all")
+
+            let html: string
+            try {
+                html = await ctx.request.getText(url, { headers: BROWSER_HEADERS })
+            } catch {
+                // Stop paginating on a request failure but keep whatever earlier
+                // pages already yielded rather than discarding partial results.
+                break
+            }
+
+            const pageResults = extractSearchResults(html)
+            if (pageResults.length === 0) break
+
+            for (const r of pageResults) {
+                if (seen.has(r.sourceMangaId)) continue
+                seen.add(r.sourceMangaId)
+                out.push(r)
+            }
+        }
+        return out
     },
 
     async resolveChapter(input: ResolveChapterInput, ctx: SourceContext): Promise<ResolvedChapter> {

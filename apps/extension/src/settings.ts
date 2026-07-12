@@ -9,6 +9,7 @@ export type AppSettings = {
     readingDirection: ReadingDirection
     pageFit: PageFit
     showPageNumber: boolean
+    noGapContinuous: boolean
     preloadPages: number
     openChapterIn: OpenChapterIn
     theme: "dark" | "light" | "system"
@@ -26,6 +27,7 @@ export const defaultSettings: AppSettings = {
     readingDirection: "ltr",
     pageFit: "width",
     showPageNumber: true,
+    noGapContinuous: false,
     preloadPages: 3,
     openChapterIn: "reader",
     theme: "dark",

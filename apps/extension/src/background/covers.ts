@@ -6,9 +6,11 @@ const MAX_COVER_BYTES = 2 * 1024 * 1024
 export async function inlineCover(url: string): Promise<string | undefined> {
     if (url.startsWith("data:")) return url
     try {
-        const headers: HeadersInit = {}
-        if (url.includes("pstatic.net")) headers["Referer"] = "https://www.webtoons.com"
-        const res = await fetch(url, Object.keys(headers).length ? { headers } : undefined)
+        // Note: `Referer` is a forbidden header name per the fetch spec, so a
+        // service-worker fetch can never set it — Naver's pstatic.net CDN (which
+        // serves Webtoons covers) has been verified to serve images fine without
+        // one, so no header is needed here.
+        const res = await fetch(url)
         if (!res.ok) return undefined
         const blob = await res.blob()
         if (blob.size === 0 || blob.size > MAX_COVER_BYTES || !blob.type.startsWith("image/")) return undefined

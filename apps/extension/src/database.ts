@@ -326,8 +326,11 @@ export async function saveResolvedChapter(input: {
 }
 
 const MANGA_PATH_MARKERS = ["manga", "comic", "comics", "series", "manhwa", "manhua", "title", "read"]
+const WEBTOONS_HOSTNAMES = new Set(["www.webtoons.com", "webtoons.com"])
 
-function deriveSlug(u: URL): string {
+// Returns null when no reliable per-title slug can be derived — callers must treat
+// null as "unknown", never as a value that can match another null (see sameHostSlug).
+function deriveSlug(u: URL): string | null {
     const segments = u.pathname.split("/").filter(Boolean)
     const markerIndex = segments.findIndex(s => MANGA_PATH_MARKERS.includes(s.toLowerCase()))
     const afterMarker = markerIndex >= 0 ? segments[markerIndex + 1] : undefined
@@ -335,10 +338,20 @@ function deriveSlug(u: URL): string {
     const last = segments[segments.length - 1] ?? ""
     const readerStyle = last.match(/^(.*?)-chapter[-_]/i)
     if (readerStyle?.[1]) return readerStyle[1]
-    return segments[0] ?? ""
+    // Webtoons paths are always /<locale>/<genre>/<slug>/... with no MANGA_PATH_MARKERS
+    // segment, so falling back to segments[0] degenerates to the locale token ("en") for
+    // EVERY Webtoons URL — making sameHostSlug() spuriously match any two Webtoons titles.
+    // Use the title_no query param (unique per series, present on both the .../list?title_no=X
+    // and .../<series>/episode-N/viewer?title_no=X shapes) instead, and return null — never a
+    // spuriously-matchable value — when even that's absent.
+    if (WEBTOONS_HOSTNAMES.has(u.hostname)) {
+        const titleNo = u.searchParams.get("title_no")
+        return titleNo ? `title_no:${titleNo}` : null
+    }
+    return segments[0] || null
 }
 
-function deriveMangaUrl(u: URL, slug: string): string {
+function deriveMangaUrl(u: URL, slug: string | null): string {
     const segments = u.pathname.split("/").filter(Boolean)
     const markerIndex = segments.findIndex(s => MANGA_PATH_MARKERS.includes(s.toLowerCase()))
     const marker = markerIndex >= 0 ? segments[markerIndex] : undefined
@@ -352,6 +365,7 @@ function sameHostSlug(a: string, b: string): boolean {
         const ub = new URL(b)
         if (ua.hostname !== ub.hostname) return false
         const sa = deriveSlug(ua)
+        // Boolean(sa) rejects null (and "") so two undeterminable slugs never match.
         return Boolean(sa) && sa === deriveSlug(ub)
     } catch {
         return false
@@ -374,7 +388,7 @@ export async function trackExternalChapter(input: {
     completed?: boolean
     // When the source adapter can parse series-level info from the chapter URL, pass it
     // here so we use a stable, correct ID and series prefix URL instead of deriveSlug/deriveMangaUrl.
-    // Important for sites like Webtoons where deriveSlug yields just "en".
+    // Important for sites like Webtoons where the path alone carries no per-title slug.
     mangaInfo?: { sourceMangaId: string; mangaUrl: string }
 }): Promise<{ tracked: boolean; title: string; chapterNumber: number | null; mangaId: string }> {
     const now = Date.now()
@@ -403,7 +417,7 @@ export async function trackExternalChapter(input: {
 
     if (!manga) {
         const slug = deriveSlug(u)
-        const title = humanizeSlug(slug) || u.hostname
+        const title = humanizeSlug(slug ?? "") || u.hostname
         const mangaId = input.mangaInfo
             ? `${input.sourceId}:manga:${input.mangaInfo.sourceMangaId}`
             : `${input.sourceId}:manga:${slug || u.pathname}`

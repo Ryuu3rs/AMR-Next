@@ -253,6 +253,7 @@
         detailManga = null
         relinkUrl = ""
         relinkMessage = ""
+        openSourceError = ""
         mirrorResults = []
         mirrorCheckedFor = ""
     }
@@ -631,8 +632,41 @@
         void loadCachedCovers()
     }
 
-    function openInBrowser(manga: LibraryManga, active = true) {
-        void browser.tabs.create({ url: manga.sourceUrl, active })
+    function isValidUrl(value: string | undefined | null): value is string {
+        if (!value) return false
+        try {
+            new URL(value)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    // Best-effort link for a manga: the series/detail page is more durable than
+    // a last-captured chapter URL, which can 404 once a site reslugs chapters.
+    // Falls back to the adapter's homepage/domain if neither stored URL is usable.
+    function resolveSourceLink(manga: LibraryManga): string | undefined {
+        if (isValidUrl(manga.mangaUrl)) return manga.mangaUrl
+        if (isValidUrl(manga.sourceUrl)) return manga.sourceUrl
+        const meta = sourceMeta.get(manga.sourceId)
+        const homepage = meta?.homepage ?? (meta?.domains[0] ? `https://${meta.domains[0]}` : undefined)
+        return isValidUrl(homepage) ? homepage : undefined
+    }
+
+    let openSourceError = $state("")
+
+    function openInBrowser(manga: LibraryManga, active = true, opts: { fallback?: boolean } = {}) {
+        if (!opts.fallback) {
+            void browser.tabs.create({ url: manga.sourceUrl, active })
+            return
+        }
+        openSourceError = ""
+        const url = resolveSourceLink(manga)
+        if (!url) {
+            openSourceError = "Couldn't open — no working link found for this source."
+            return
+        }
+        void browser.tabs.create({ url, active })
     }
 
     function openSeriesPage(manga: LibraryManga, e?: MouseEvent) {
@@ -1581,6 +1615,10 @@
         const url = src.homepage ?? (src.domains[0] ? `https://${src.domains[0]}` : undefined)
         if (url) void browser.tabs.create({ url })
     }
+
+    // Display-only ordering for the Sources page — registration order in
+    // packages/sources/src/index.ts stays untouched for anything that depends on it.
+    const sourcesListAlpha = $derived([...sourcesList].sort((a, b) => a.name.localeCompare(b.name)))
 
     let pingState = $state<Map<string, "live" | "gated" | "dead">>(new Map())
     let pinging = $state(false)
@@ -2857,7 +2895,7 @@
                     (chapters still load via tab), red = unreachable, grey = not checked yet.
                 </p>
                 <div class="adapter-grid">
-                    {#each sourcesList as src}
+                    {#each sourcesListAlpha as src}
                         {@const pingStatus = pingState.get(src.id)}
                         {@const count = sourceTitleCounts.get(src.id) ?? 0}
                         <button
@@ -3185,6 +3223,19 @@
                             type="checkbox"
                             checked={settings?.showPageNumber ?? true}
                             onchange={e => void updateSetting({ showPageNumber: e.currentTarget.checked })} />
+                        <span class="track"></span>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Remove gaps between pages (continuous mode)</p>
+                        <p class="muted">Seamless webtoon-style scroll with no vertical gap between page images.</p>
+                    </div>
+                    <label class="toggle">
+                        <input
+                            type="checkbox"
+                            checked={settings?.noGapContinuous ?? false}
+                            onchange={e => void updateSetting({ noGapContinuous: e.currentTarget.checked })} />
                         <span class="track"></span>
                     </label>
                 </div>
@@ -3692,9 +3743,14 @@
                 </div>
                 <div class="detail-actions">
                     <button type="button" onclick={() => detailManga && openInReader(detailManga)}>Open reader</button>
-                    <button type="button" class="btn-outline" onclick={() => detailManga && openInBrowser(detailManga)}>
+                    <button
+                        type="button"
+                        class="btn-outline"
+                        onclick={() => detailManga && openInBrowser(detailManga, true, { fallback: true })}>
                         Open source
                     </button>
+                    {#if openSourceError}<span class="muted" style="color:var(--color-warn)">{openSourceError}</span
+                        >{/if}
                     <div class="detail-actions-spacer"></div>
                     <button
                         type="button"
