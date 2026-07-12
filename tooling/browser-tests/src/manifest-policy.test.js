@@ -5,6 +5,10 @@ import test from "node:test"
 import { chromiumExtension, firefoxExtension, repositoryRoot } from "./paths.js"
 
 async function readCommunityApiOrigin() {
+    // The release pipeline bakes this in as a build-time env var (no .env file involved —
+    // see .github/workflows/release-please.yml), while local dev sets it via apps/extension/.env.
+    // Check both sources so the manifest built either way excludes it from the policy check.
+    if (process.env.VITE_COMMUNITY_API_ORIGIN) return process.env.VITE_COMMUNITY_API_ORIGIN.trim()
     try {
         const content = await readFile(path.join(repositoryRoot, "apps", "extension", ".env"), "utf8")
         const match = /^VITE_COMMUNITY_API_ORIGIN=(.+)$/m.exec(content)
