@@ -87,6 +87,23 @@ function extractTitle(html: string): string | undefined {
     return undefined
 }
 
+// Real per-manga cover extracted from the manga detail page's og:image/twitter:image
+// meta tags. Falls back to the blind CDN-path guess (see cdnSlug) only when this fails.
+function extractCoverUrl(html: string): string | undefined {
+    const patterns = [
+        /<meta\s[^>]*\bproperty="og:image"\s[^>]*\bcontent="(https?:\/\/[^"]+)"/i,
+        /<meta\s[^>]*\bcontent="(https?:\/\/[^"]+)"\s[^>]*\bproperty="og:image"/i,
+        /<meta\s[^>]*\bname="twitter:image"\s[^>]*\bcontent="(https?:\/\/[^"]+)"/i,
+        /<meta\s[^>]*\bcontent="(https?:\/\/[^"]+)"\s[^>]*\bname="twitter:image"/i
+    ]
+    for (const p of patterns) {
+        const m = html.match(p)
+        const v = m ? captureGroup(m, 1) : undefined
+        if (v) return v
+    }
+    return undefined
+}
+
 function extractImages(html: string): string[] {
     const urls: string[] = []
     const seen = new Set<string>()
@@ -132,12 +149,18 @@ function extractSearchResults(html: string): SourceSearchResult[] {
         seen.add(slug)
         const title = decodeHtml(inner.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "))
         if (title.length < 2) continue
+        // Result rows embed a real thumbnail <img>; prefer it over the blind CDN guess.
+        const imgMatch =
+            inner.match(/<img\b[^>]*\bsrc="(https?:\/\/[^"]+)"/i) ??
+            inner.match(/<img\b[^>]*\bdata-src="(https?:\/\/[^"]+)"/i)
+        const coverUrl =
+            (imgMatch ? captureGroup(imgMatch, 1) : undefined) ?? `${CDN}/manga_images/${cdnSlug(slug)}.jpg`
         out.push({
             sourceId: SOURCE_ID,
             sourceMangaId: slug,
             title,
             url: `${ORIGIN}/Manga/${slug}`,
-            coverUrl: `${CDN}/manga_images/${cdnSlug(slug)}.jpg`
+            coverUrl
         })
         if (out.length >= 20) break
     }
@@ -167,13 +190,14 @@ export const mangafreakAdapter: SourceAdapter = {
         if (!slug) throw new SourceError("invalid-input", "A valid MangaFreak manga URL is required")
         const now = context.now()
         const origin = hostOrigin(input.url)
-        const coverUrl = `${CDN}/manga_images/${cdnSlug(slug)}.jpg`
         let title = slug.replace(/_/g, " ")
+        let coverUrl = `${CDN}/manga_images/${cdnSlug(slug)}.jpg`
         try {
             const html = await context.request.getText(new URL(`${origin}/Manga/${slug}`), {
                 headers: BROWSER_HEADERS
             })
             title = extractTitle(html) ?? title
+            coverUrl = extractCoverUrl(html) ?? coverUrl
         } catch {}
         return {
             manga: {
@@ -216,10 +240,18 @@ export const mangafreakAdapter: SourceAdapter = {
 
     async resolveCover(
         input: { sourceMangaId?: string; url?: URL },
-        _context: SourceContext
+        context: SourceContext
     ): Promise<string | undefined> {
         const slug = input.sourceMangaId ?? (input.url ? matchMangaSlug(input.url) : undefined)
         if (!slug) return undefined
+        const origin = hostOrigin(input.url)
+        try {
+            const html = await context.request.getText(new URL(`${origin}/Manga/${slug}`), {
+                headers: BROWSER_HEADERS
+            })
+            const cover = extractCoverUrl(html)
+            if (cover) return cover
+        } catch {}
         return `${CDN}/manga_images/${cdnSlug(slug)}.jpg`
     },
 
@@ -247,7 +279,6 @@ export const mangafreakAdapter: SourceAdapter = {
         const now = context.now()
         const origin = hostOrigin(input.url)
         const mangaId = `${SOURCE_ID}:manga:${slug}`
-        const coverUrl = `${CDN}/manga_images/${cdnSlug(slug)}.jpg`
 
         const html = await context.request.getText(input.url, { headers: BROWSER_HEADERS })
         const imageUrls = extractImages(html)
@@ -256,11 +287,13 @@ export const mangafreakAdapter: SourceAdapter = {
         }
 
         let title = slug.replace(/_/g, " ")
+        let coverUrl = `${CDN}/manga_images/${cdnSlug(slug)}.jpg`
         try {
             const mangaHtml = await context.request.getText(new URL(`${origin}/Manga/${slug}`), {
                 headers: BROWSER_HEADERS
             })
             title = extractTitle(mangaHtml) ?? title
+            coverUrl = extractCoverUrl(mangaHtml) ?? coverUrl
         } catch {}
 
         const manga: SourceManga = {

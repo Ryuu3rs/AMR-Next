@@ -230,4 +230,30 @@ describe("createMadaraAdapter", () => {
         expect(results[0]?.coverUrl).toBe("https://cdn.example/cool.jpg")
         expect(results[1]?.sourceMangaId).toBe("other-title")
     })
+
+    it("prefers data-src over src for search result covers on standard sites (lazy-load decoy in src)", async () => {
+        // Realistic lazy-load markup: src holds a base64 placeholder, data-src holds the real cover.
+        const searchHtml = `<html><body>
+<div class="c-tabs-item__content">
+  <div class="tab-thumb"><a href="https://test-madara.example/series/cool-manga/"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" data-src="https://cdn.example/real-cool.jpg" /></a></div>
+  <div class="post-title"><h3><a href="https://test-madara.example/series/cool-manga/">Cool Manga</a></h3></div>
+</div>
+</body></html>`
+        const context = createContext({ "/": searchHtml })
+        const results = await adapter.search!("cool", context)
+        expect(results[0]?.coverUrl).toBe("https://cdn.example/real-cool.jpg")
+    })
+
+    it("prefers src over data-src for search result covers when preferSrcAttribute is set (mangaread.org)", async () => {
+        // Anti-scraping markup: real cover is in src, decoy protected URL is in data-src.
+        const searchHtml = `<html><body>
+<div class="c-tabs-item__content">
+  <div class="tab-thumb"><a href="https://test-madara.example/series/cool-manga/"><img src="https://cdn.example/real-cool.jpg" data-src="https://prot.example/token/cover" /></a></div>
+  <div class="post-title"><h3><a href="https://test-madara.example/series/cool-manga/">Cool Manga</a></h3></div>
+</div>
+</body></html>`
+        const context = createContext({ "/": searchHtml })
+        const results = await srcFirstAdapter.search!("cool", context)
+        expect(results[0]?.coverUrl).toBe("https://cdn.example/real-cool.jpg")
+    })
 })

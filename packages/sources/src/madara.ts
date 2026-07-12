@@ -309,9 +309,13 @@ function extractSearchResults(html: string, config: MadaraConfig, mangaPath: str
         if (!title) title = slug.replace(/-/g, " ")
         if (isJunkTitle(title)) continue
         const imgTag = block.match(/<img\b[^>]*>/i)
-        const coverUrl = imgTag
-            ? getImgAttr(captureGroup(imgTag, 0) ?? "", "src", "data-src", "data-lazy-src")
-            : undefined
+        // Attribute order matches extractImagesFromHtml: standard Madara lazy-loads the real
+        // URL into data-src with a decoy in src; sites with preferSrcAttribute (mangaread.org)
+        // invert that, so search thumbnails must agree with the reader's per-site behavior.
+        const coverAttrs = config.preferSrcAttribute
+            ? (["src", "data-src", "data-lazy-src"] as const)
+            : (["data-src", "data-lazy-src", "src"] as const)
+        const coverUrl = imgTag ? getImgAttr(captureGroup(imgTag, 0) ?? "", ...coverAttrs) : undefined
         const chap = block.match(/chapter[\s-]*(\d+(?:\.\d+)?)/i)
         const latestChapter = chap ? captureGroup(chap, 1) : undefined
         out.push({

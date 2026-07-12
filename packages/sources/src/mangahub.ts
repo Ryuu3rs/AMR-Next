@@ -239,6 +239,18 @@ export const mangahubAdapter: SourceAdapter = {
         }
     },
 
+    async resolveCover(input: { sourceMangaId?: string; url?: URL }, ctx: SourceContext): Promise<string | undefined> {
+        const slug = input.sourceMangaId ?? input.url?.pathname.split("/").filter(Boolean)[1]
+        if (!slug) return undefined
+        try {
+            const url = new URL(`${ORIGIN}/manga/${slug}`)
+            const html = await ctx.request.getText(url, { headers: BROWSER_HEADERS })
+            return extractCover(html)
+        } catch {
+            return undefined
+        }
+    },
+
     async listChapters(input: ListChaptersInput, ctx: SourceContext): Promise<SourceChapter[]> {
         const { manga } = input
         const mangaUrl = new URL(manga.url)
