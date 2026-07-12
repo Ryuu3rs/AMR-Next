@@ -41,6 +41,9 @@ export type LibraryManga = MangaRecord & {
     // the global reading settings for chapters of this title.
     readingDirection?: "ltr" | "rtl" | "vertical"
     pageFit?: "width" | "height" | "contain" | "original"
+    // Per-series override for the global "no gap continuous" reader setting —
+    // undefined means "no override, use the global default".
+    noGapContinuous?: boolean
 }
 
 export type HistoryEvent = {
@@ -255,6 +258,7 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                 const onHold = next.onHold ?? existing.onHold
                 const readingDirection = next.readingDirection ?? existing.readingDirection
                 const pageFit = next.pageFit ?? existing.pageFit
+                const noGapContinuous = next.noGapContinuous ?? existing.noGapContinuous
                 next = {
                     ...next,
                     addedAt: Math.min(existing.addedAt, next.addedAt),
@@ -268,7 +272,8 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                     ...(manualTracking !== undefined ? { manualTracking } : {}),
                     ...(onHold !== undefined ? { onHold } : {}),
                     ...(readingDirection !== undefined ? { readingDirection } : {}),
-                    ...(pageFit !== undefined ? { pageFit } : {})
+                    ...(pageFit !== undefined ? { pageFit } : {}),
+                    ...(noGapContinuous !== undefined ? { noGapContinuous } : {})
                 }
             }
             await db.manga.put(next)
@@ -316,6 +321,7 @@ export async function saveResolvedChapter(input: {
             ...(existing?.notes !== undefined ? { notes: existing.notes } : {}),
             ...(existing?.readingDirection !== undefined ? { readingDirection: existing.readingDirection } : {}),
             ...(existing?.pageFit !== undefined ? { pageFit: existing.pageFit } : {}),
+            ...(existing?.noGapContinuous !== undefined ? { noGapContinuous: existing.noGapContinuous } : {}),
             // rating lives in MangaRecord — prefer existing if the source didn't supply one
             ...(!input.manga.rating && existing?.rating !== undefined ? { rating: existing.rating } : {})
         }
@@ -577,6 +583,7 @@ function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryMang
     const onHold = existing.onHold ?? imported.onHold
     const readingDirection = existing.readingDirection ?? imported.readingDirection
     const pageFit = existing.pageFit ?? imported.pageFit
+    const noGapContinuous = existing.noGapContinuous ?? imported.noGapContinuous
     const lastReadChapterNumber =
         Math.max(existing.lastReadChapterNumber ?? 0, imported.lastReadChapterNumber ?? 0) || undefined
     const latestChapterNumber =
@@ -596,6 +603,7 @@ function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryMang
         ...(onHold !== undefined ? { onHold } : {}),
         ...(readingDirection !== undefined ? { readingDirection } : {}),
         ...(pageFit !== undefined ? { pageFit } : {}),
+        ...(noGapContinuous !== undefined ? { noGapContinuous } : {}),
         ...(lastReadChapterNumber !== undefined ? { lastReadChapterNumber } : {}),
         ...(latestChapterNumber !== undefined ? { latestChapterNumber } : {}),
         ...(lastReadAt !== undefined ? { lastReadAt } : {}),

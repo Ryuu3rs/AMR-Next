@@ -133,6 +133,7 @@ export const libraryHandlers: HandlerMap = {
             ...(existing.onHold !== undefined ? { onHold: existing.onHold } : {}),
             ...(existing.readingDirection !== undefined ? { readingDirection: existing.readingDirection } : {}),
             ...(existing.pageFit !== undefined ? { pageFit: existing.pageFit } : {}),
+            ...(existing.noGapContinuous !== undefined ? { noGapContinuous: existing.noGapContinuous } : {}),
             updatedAt: now
         }
         const newSourceLink: SourceLinkRecord = {
@@ -424,9 +425,11 @@ export const libraryHandlers: HandlerMap = {
         const patch: {
             readingDirection?: LibraryManga["readingDirection"] | undefined
             pageFit?: LibraryManga["pageFit"] | undefined
+            noGapContinuous?: boolean | undefined
         } = {}
         if (request.readingDirection !== undefined) patch.readingDirection = request.readingDirection ?? undefined
         if (request.pageFit !== undefined) patch.pageFit = request.pageFit ?? undefined
+        if (request.noGapContinuous !== undefined) patch.noGapContinuous = request.noGapContinuous ?? undefined
         if (Object.keys(patch).length > 0) {
             await db.manga.update(request.mangaId, patch as Partial<LibraryManga>)
         }

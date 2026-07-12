@@ -100,6 +100,33 @@ describe("library:reading-prefs schema", () => {
             }).success
         ).toBe(false)
     })
+
+    it("accepts a boolean noGapContinuous override and null to clear it", () => {
+        expect(
+            runtimeRequestSchema.safeParse({
+                type: "library:reading-prefs",
+                mangaId: "m1",
+                noGapContinuous: true
+            }).success
+        ).toBe(true)
+        expect(
+            runtimeRequestSchema.safeParse({
+                type: "library:reading-prefs",
+                mangaId: "m1",
+                noGapContinuous: null
+            }).success
+        ).toBe(true)
+    })
+
+    it("rejects a non-boolean noGapContinuous", () => {
+        expect(
+            runtimeRequestSchema.safeParse({
+                type: "library:reading-prefs",
+                mangaId: "m1",
+                noGapContinuous: "yes"
+            }).success
+        ).toBe(false)
+    })
 })
 
 describe("manual tracking schema (G2)", () => {

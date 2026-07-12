@@ -32,6 +32,15 @@
     let activeSection = $state<(typeof sections)[number]>("Home")
     let library = $state<LibraryManga[]>([])
     let settings = $state<AppSettings | undefined>()
+    // Local optimistic mirrors of specific settings controls — driven synchronously by
+    // user interaction rather than by the settings:update round trip, so the displayed
+    // value never appears to "go blank" or reset on any timing hiccup while it saves.
+    let updateIntervalSelection = $state<0 | 6 | 12 | 24>(12)
+    let updateIntervalSaved = $state(false)
+    let updateIntervalSavedTimer: ReturnType<typeof setTimeout> | undefined
+    let noGapSelection = $state(false)
+    let noGapSelectionSaved = $state(false)
+    let noGapSelectionSavedTimer: ReturnType<typeof setTimeout> | undefined
     let loading = $state(true)
     let query = $state("")
     let librarySort = $state<"recent-read" | "recent-added" | "title" | "latest-chapter">("recent-read")
@@ -599,6 +608,8 @@
                 sendRuntimeMessage<LibraryManga[]>({ type: "library:list" }),
                 sendRuntimeMessage<AppSettings>({ type: "settings:get" })
             ])
+            updateIntervalSelection = settings.updateIntervalHours
+            noGapSelection = settings.noGapContinuous
             // stats:get scans the whole progress/history tables and isn't needed to paint
             // the library — fetch it in the background instead of blocking the grid on it.
             void sendRuntimeMessage<typeof stats>({ type: "stats:get" }).then(result => {
@@ -1046,10 +1057,32 @@
     }
 
     async function changeUpdateInterval(value: string) {
+        const next = Number(value) as 0 | 6 | 12 | 24
+        // Update the local selection synchronously, before the await, so the <select>
+        // never appears to reset/go blank while the round trip is in flight.
+        updateIntervalSelection = next
         settings = await sendRuntimeMessage<AppSettings>({
             type: "settings:update",
-            settings: { updateIntervalHours: Number(value) as 0 | 6 | 12 | 24 }
+            settings: { updateIntervalHours: next }
         })
+        updateIntervalSaved = true
+        if (updateIntervalSavedTimer) clearTimeout(updateIntervalSavedTimer)
+        updateIntervalSavedTimer = setTimeout(() => {
+            updateIntervalSaved = false
+        }, 1500)
+    }
+
+    async function changeNoGapContinuous(enabled: boolean) {
+        noGapSelection = enabled
+        settings = await sendRuntimeMessage<AppSettings>({
+            type: "settings:update",
+            settings: { noGapContinuous: enabled }
+        })
+        noGapSelectionSaved = true
+        if (noGapSelectionSavedTimer) clearTimeout(noGapSelectionSavedTimer)
+        noGapSelectionSavedTimer = setTimeout(() => {
+            noGapSelectionSaved = false
+        }, 1500)
     }
 
     async function seedData() {
@@ -3137,15 +3170,18 @@
                         <p class="row-label">Update schedule</p>
                         <p class="muted">How often background checks run for new chapters.</p>
                     </div>
-                    <select
-                        aria-label="Update schedule"
-                        value={settings?.updateIntervalHours ?? 12}
-                        onchange={e => changeUpdateInterval(e.currentTarget.value)}>
-                        <option value="0">Manual only</option>
-                        <option value="6">Every 6 h</option>
-                        <option value="12">Every 12 h</option>
-                        <option value="24">Daily</option>
-                    </select>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <select
+                            aria-label="Update schedule"
+                            value={updateIntervalSelection}
+                            onchange={e => changeUpdateInterval(e.currentTarget.value)}>
+                            <option value="0">Manual only</option>
+                            <option value="6">Every 6 h</option>
+                            <option value="12">Every 12 h</option>
+                            <option value="24">Daily</option>
+                        </select>
+                        {#if updateIntervalSaved}<span class="saved-flash">✓ Saved</span>{/if}
+                    </div>
                 </div>
                 <div class="settings-row">
                     <div>
@@ -3231,13 +3267,16 @@
                         <p class="row-label">Remove gaps between pages (continuous mode)</p>
                         <p class="muted">Seamless webtoon-style scroll with no vertical gap between page images.</p>
                     </div>
-                    <label class="toggle">
-                        <input
-                            type="checkbox"
-                            checked={settings?.noGapContinuous ?? false}
-                            onchange={e => void updateSetting({ noGapContinuous: e.currentTarget.checked })} />
-                        <span class="track"></span>
-                    </label>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <label class="toggle">
+                            <input
+                                type="checkbox"
+                                checked={noGapSelection}
+                                onchange={e => void changeNoGapContinuous(e.currentTarget.checked)} />
+                            <span class="track"></span>
+                        </label>
+                        {#if noGapSelectionSaved}<span class="saved-flash">✓ Saved</span>{/if}
+                    </div>
                 </div>
                 <div class="settings-row">
                     <div>

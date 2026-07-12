@@ -16,6 +16,12 @@
     let pageFit = $state<PageFit>("width")
     let showPageNumber = $state(true)
     let noGapContinuous = $state(false)
+    // Per-series "Webtoon view" override: null = no override (inherits the global
+    // default), true/false = explicit per-series value saved via library:reading-prefs.
+    let noGapOverride = $state<boolean | null>(null)
+    let noGapDefault = $state(false)
+    let noGapSaved = $state(false)
+    let noGapSavedTimer: ReturnType<typeof setTimeout> | undefined
     let preloadPages = $state(3)
     let chapterUrl = $state("")
     let siblings = $state<Array<{ url: string; sortKey: number; title: string }>>([])
@@ -455,6 +461,46 @@
         void setDirection(next)
     }
 
+    // Per-series "Webtoon view" (no-gap continuous) override — mirrors setDirection's
+    // shape, but persists to the library record via library:reading-prefs instead of
+    // local storage, since this is a per-manga DB override rather than a device-local one.
+    function flashNoGapSaved() {
+        noGapSaved = true
+        if (noGapSavedTimer) clearTimeout(noGapSavedTimer)
+        noGapSavedTimer = setTimeout(() => {
+            noGapSaved = false
+        }, 1500)
+    }
+
+    async function setSeriesNoGap(value: boolean) {
+        if (!mangaId) return
+        // Optimistic — flip the visual state immediately, don't wait on the round trip.
+        noGapOverride = value
+        noGapContinuous = value
+        try {
+            await sendRuntimeMessage({ type: "library:reading-prefs", mangaId, noGapContinuous: value })
+            flashNoGapSaved()
+        } catch {
+            // best-effort; local state already reflects the intended value
+        }
+    }
+
+    function toggleSeriesNoGap() {
+        void setSeriesNoGap(!(noGapOverride ?? noGapContinuous))
+    }
+
+    async function resetSeriesNoGap() {
+        if (!mangaId) return
+        noGapOverride = null
+        noGapContinuous = noGapDefault
+        try {
+            await sendRuntimeMessage({ type: "library:reading-prefs", mangaId, noGapContinuous: null })
+            flashNoGapSaved()
+        } catch {
+            // best-effort; local state already reflects the intended value
+        }
+    }
+
     // Vertical (webtoon) direction always scrolls continuously.
     const effectiveMode = $derived(direction === "vertical" ? "continuous" : mode)
     // A5: double-click toggles between the configured fit and original (zoom).
@@ -550,6 +596,7 @@
                     sendRuntimeMessage<{
                         readingDirection?: ReadingDirection
                         pageFit?: PageFit
+                        noGapContinuous?: boolean
                     } | null>({ type: "library:get", mangaId }).catch(() => null)
                 ])
                 const modeOverride = stored[modeKey]
@@ -563,7 +610,9 @@
                         : settings.readingDirection)
                 pageFit = libraryManga?.pageFit ?? settings.pageFit
                 showPageNumber = settings.showPageNumber
-                noGapContinuous = settings.noGapContinuous
+                noGapDefault = settings.noGapContinuous
+                noGapOverride = libraryManga?.noGapContinuous ?? null
+                noGapContinuous = libraryManga?.noGapContinuous ?? settings.noGapContinuous
                 preloadPages = settings.preloadPages
             } catch {
                 // keep defaults
@@ -591,7 +640,10 @@
         }
     })
 
-    onDestroy(() => revokeOfflinePages())
+    onDestroy(() => {
+        revokeOfflinePages()
+        if (noGapSavedTimer) clearTimeout(noGapSavedTimer)
+    })
 
     function recordProgress(pageIndex: number) {
         if (!chapter) return
@@ -751,6 +803,30 @@
                 onclick={cycleDirection}>
                 {direction === "ltr" ? "→" : direction === "rtl" ? "←" : "↓"}
             </button>
+            {#if effectiveMode === "continuous"}
+                <button
+                    type="button"
+                    class="btn-sm"
+                    class:active={noGapOverride === true}
+                    class:off-override={noGapOverride === false}
+                    title={noGapOverride === null
+                        ? "Webtoon view (no gaps) — using the global default, click to set for this series"
+                        : noGapOverride
+                          ? "Webtoon view is ON for this series — click to turn off"
+                          : "Webtoon view is OFF for this series — click to turn on"}
+                    onclick={toggleSeriesNoGap}>
+                    Webtoon view
+                </button>
+                {#if noGapOverride !== null}
+                    <button
+                        type="button"
+                        class="reset-link"
+                        title="Reset Webtoon view to the global default for this series"
+                        aria-label="Reset Webtoon view to default"
+                        onclick={resetSeriesNoGap}>×</button>
+                {/if}
+                {#if noGapSaved}<span class="saved-flash">✓ Saved</span>{/if}
+            {/if}
         {/if}
         {#if chapter}
             <button

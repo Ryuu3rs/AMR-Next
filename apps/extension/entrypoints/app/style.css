@@ -1621,6 +1621,12 @@ button:disabled {
     transform: translateX(18px);
 }
 
+.saved-flash {
+    font-size: 12px;
+    color: var(--success);
+    white-space: nowrap;
+}
+
 .settings-row select {
     min-height: 36px;
     padding: 0 10px;
