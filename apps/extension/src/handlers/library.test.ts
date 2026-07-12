@@ -360,3 +360,50 @@ describe("library:numbers", () => {
         expect(stored?.lastReadChapterNumber).toBe(5)
     })
 })
+
+describe("library:reading-prefs", () => {
+    it("sets an explicit per-series noGapContinuous override", async () => {
+        const { libraryHandlers } = await import("./library")
+        const handler = libraryHandlers["library:reading-prefs"]!
+
+        const existing: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/1"
+        }
+        await db.manga.put(existing)
+
+        await handler({ type: "library:reading-prefs", mangaId: manga.id, noGapContinuous: true } as never, ctx)
+
+        const stored = await db.manga.get(manga.id)
+        expect(stored?.noGapContinuous).toBe(true)
+    })
+
+    it("clears noGapContinuous back to undefined when set to null, leaving readingDirection untouched", async () => {
+        const { libraryHandlers } = await import("./library")
+        const handler = libraryHandlers["library:reading-prefs"]!
+
+        const existing: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/1",
+            readingDirection: "rtl",
+            noGapContinuous: true
+        }
+        await db.manga.put(existing)
+
+        await handler(
+            {
+                type: "library:reading-prefs",
+                mangaId: manga.id,
+                noGapContinuous: null
+                // readingDirection intentionally omitted
+            } as never,
+            ctx
+        )
+
+        const stored = await db.manga.get(manga.id)
+        expect(stored?.noGapContinuous).toBeUndefined()
+        expect(stored?.readingDirection).toBe("rtl")
+    })
+})

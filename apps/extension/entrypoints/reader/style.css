@@ -271,6 +271,34 @@ header.chrome-hidden + .progress-bar {
     color: #fff;
 }
 
+/* Explicit per-series "off" override — distinct from the unset/default state,
+   which just renders as a plain .btn-sm with no active/off styling. */
+.btn-sm.off-override {
+    border-color: #6b7a8d;
+    color: #9faab7;
+}
+
+.reset-link {
+    min-height: unset;
+    padding: 0 4px;
+    border: none;
+    background: none;
+    color: #9faab7;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+}
+
+.reset-link:hover {
+    color: #ef4444;
+}
+
+.saved-flash {
+    font-size: 12px;
+    color: #34d399;
+    white-space: nowrap;
+}
+
 .cat-panel {
     grid-column: 1 / -1;
     display: flex;

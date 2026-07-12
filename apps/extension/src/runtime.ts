@@ -41,7 +41,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         type: z.literal("library:reading-prefs"),
         mangaId: z.string().min(1),
         readingDirection: z.union([z.enum(["ltr", "rtl", "vertical"]), z.null()]).optional(),
-        pageFit: z.union([z.enum(["width", "height", "contain", "original"]), z.null()]).optional()
+        pageFit: z.union([z.enum(["width", "height", "contain", "original"]), z.null()]).optional(),
+        noGapContinuous: z.union([z.boolean(), z.null()]).optional()
     }),
     z.object({ type: z.literal("activity:get"), days: z.number().int().positive().optional() }),
     z.object({ type: z.literal("data:export") }),

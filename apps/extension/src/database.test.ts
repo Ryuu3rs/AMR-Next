@@ -378,6 +378,36 @@ describe("import merge — progress and history", () => {
         const stored = await db.manga.get(manga.id)
         expect(stored?.categories?.sort()).toEqual(["imported-tag", "local-tag"])
     })
+
+    it("preserves an existing per-series noGapContinuous override over an imported one", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await db.manga.update(manga.id, { noGapContinuous: true })
+
+        const importedManga: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/title/abc",
+            noGapContinuous: false
+        }
+
+        await importDatabase(
+            {
+                format: "all-mangas-reader",
+                version: 1,
+                data: {
+                    manga: [importedManga],
+                    sourceLinks: [],
+                    chapters: [],
+                    progress: [],
+                    historyEvents: []
+                }
+            },
+            { [manga.id]: "merge" }
+        )
+
+        const stored = await db.manga.get(manga.id)
+        expect(stored?.noGapContinuous).toBe(true)
+    })
 })
 
 describe("trackExternalChapter", () => {
@@ -530,7 +560,13 @@ describe("rekeyManga", () => {
 
     it("preserves onHold, unions categories, and deletes old-id chapters when merging into an existing duplicate", async () => {
         await saveResolvedChapter({ manga, chapter, sourceLink })
-        await db.manga.update(oldId, { onHold: true, categories: ["old-tag"], rating: 5, notes: "old notes" })
+        await db.manga.update(oldId, {
+            onHold: true,
+            categories: ["old-tag"],
+            rating: 5,
+            notes: "old notes",
+            noGapContinuous: true
+        })
 
         // A duplicate already exists at the new canonical id (e.g. auto-captured earlier).
         const duplicate: LibraryManga = {
@@ -556,7 +592,8 @@ describe("rekeyManga", () => {
             ...(existing?.onHold !== undefined ? { onHold: existing.onHold } : {}),
             ...(existing?.categories !== undefined ? { categories: existing.categories } : {}),
             ...(existing?.rating !== undefined ? { rating: existing.rating } : {}),
-            ...(existing?.notes !== undefined ? { notes: existing.notes } : {})
+            ...(existing?.notes !== undefined ? { notes: existing.notes } : {}),
+            ...(existing?.noGapContinuous !== undefined ? { noGapContinuous: existing.noGapContinuous } : {})
         }
 
         await rekeyManga(oldId, next, newSourceLink)
@@ -566,6 +603,7 @@ describe("rekeyManga", () => {
         expect(merged?.categories?.sort()).toEqual(["new-tag", "old-tag"])
         expect(merged?.rating).toBe(5)
         expect(merged?.notes).toBe("old notes")
+        expect(merged?.noGapContinuous).toBe(true)
         expect(merged?.addedAt).toBe(1) // min() of the two addedAt values (1 from `manga`, 500 from the duplicate)
 
         expect(await db.manga.get(oldId)).toBeUndefined()
