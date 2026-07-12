@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.10.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.9.10...v0.10.0) (2026-07-12)
+
+
+### Features
+
+* per-series webtoon view toggle, saved indicators, fix update-schedule dropdown ([8f1c77c](https://github.com/Ryuu3rs/AMR-Next/commit/8f1c77c84a6b7897dc2523ac0d8872c544a5a055))
+
+
+### Bug Fixes
+
+* App.svelte UX polish — NSFW blur in Library, search grouping, filters, discoverability ([253391f](https://github.com/Ryuu3rs/AMR-Next/commit/253391f9aa8a495ff7575522210269ad8c32ce58))
+* audit-driven correctness fixes across UI, background, and adapters ([ea6551b](https://github.com/Ryuu3rs/AMR-Next/commit/ea6551b420ab3f8784b2fe6a2fc81d64b6b248fa))
+* cover-loading reliability — mangafreak real extraction, madara lazy-load attribute order, mangahub resolveCover ([4a607a6](https://github.com/Ryuu3rs/AMR-Next/commit/4a607a6ef058e349036328469053bf359c2ed9cd))
+* export/import schema missing onHold, readingDirection, pageFit ([1793d54](https://github.com/Ryuu3rs/AMR-Next/commit/1793d54c2e046f9a675ee5d79e25a9cb5ccc0dec))
+* flaky checkUpdates concurrency test — poll for mock call instead of fixed tick ([0b0738b](https://github.com/Ryuu3rs/AMR-Next/commit/0b0738bf01aa3f9cac97a74104881372afaf71f7))
+* prefer-const lint error in community sync test, drop dead eslint-disable directives ([1eaf052](https://github.com/Ryuu3rs/AMR-Next/commit/1eaf05225e5fbd28094867f4d9cf9015f9da68b6))
+* reader bookmark reactivity, chapter counter, CBZ export, community auto-register, tighter search, source health accuracy ([57225fe](https://github.com/Ryuu3rs/AMR-Next/commit/57225fe59986d091891bf93de838563490e61102))
+* repair release-please state and harden the release pipeline ([ed18793](https://github.com/Ryuu3rs/AMR-Next/commit/ed18793f6bffafa650e0f813c37e18191bbf26ab))
+* retire arvenscans, arvencomics, suryatoon — all confirmed dead ([3a6a2d6](https://github.com/Ryuu3rs/AMR-Next/commit/3a6a2d65a875733d59700ffc288fd8cdea8dbc85))
+* suppress zod eval-probe CSP violation in MV3 background context ([43770aa](https://github.com/Ryuu3rs/AMR-Next/commit/43770aa03652c5ee9863413ebd0d134d87575ae8))
+* unblock CI — 6 pre-existing typecheck errors + 2 stale test assertions ([58131a6](https://github.com/Ryuu3rs/AMR-Next/commit/58131a69e3f8c8ee7a3034ca2f176a0b8b0946cd))
+* Webtoons covers + tracking, reader header collapse, mangahub search, alt-title search, UX polish ([d551d0a](https://github.com/Ryuu3rs/AMR-Next/commit/d551d0afd183af34c8a90c1c8789d3c4e4109d80))
+
 ## [0.9.1](https://github.com/Ryuu3rs/AMR-Next/compare/v0.9.0...v0.9.1) (2026-07-04)
 
 
