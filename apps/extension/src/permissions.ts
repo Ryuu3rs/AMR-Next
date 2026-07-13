@@ -63,7 +63,14 @@ const BASE_SOURCE_ORIGINS = [
     "*://*.static.comix.to/*",
     // User-requested Madara sites
     "https://likemanga.io/*",
-    "*://*.likemanga.io/*"
+    "*://*.likemanga.io/*",
+    // Kagane — Next.js RSC adapter. kagane.to itself sits behind a Cloudflare
+    // managed challenge (series/reader pages + /api/integrity); the data API
+    // (yuzuki.kagane.to: series metadata, search, covers, DRM page manifest) and
+    // the page-image CDN (kstatic.to) are not gated.
+    "https://kagane.to/*",
+    "https://yuzuki.kagane.to/*",
+    "https://kstatic.to/*"
     // Surya Toon — retired 2026-07: domain hijacked/stalled, serves a stuck "Loading..."
     // placeholder with no real content — uncomment if suryatoon.com is ever restored
     // "https://suryatoon.com/*",

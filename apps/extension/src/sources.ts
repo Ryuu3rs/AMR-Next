@@ -132,7 +132,8 @@ export async function resolveChapterFromHtml(urlStr: string, html: string) {
                 return fallbackClient.getText(url, opts)
             },
             getJson: (url, schema, opts) => fallbackClient.getJson(url, schema, opts),
-            postForm: (url, params, opts) => fallbackClient.postForm(url, params, opts)
+            postForm: (url, params, opts) => fallbackClient.postForm(url, params, opts),
+            postJson: (url, body, schema, opts) => fallbackClient.postJson(url, body, schema, opts)
         },
         now: () => Date.now(),
         logger: {

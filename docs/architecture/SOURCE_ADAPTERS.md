@@ -51,7 +51,7 @@ Every async method receives a `SourceContext`:
 
 ```ts
 type SourceContext = {
-    request: SourceRequestClient // getJson(url, schema, opts) / getText(url, opts) / postForm(url, params, opts)
+    request: SourceRequestClient // getJson(url, schema, opts) / getText(url, opts) / postForm(url, params, opts) / postJson(url, body, schema, opts)
     now(): number
     logger: { debug; warn }
 }
@@ -62,7 +62,9 @@ origin allowlist, a max request count, a response-byte cap, and a timeout. You
 **cannot** fetch an origin that isn't wired into the allowlist (see §3) — the
 request throws. `getJson` validates against a Zod schema; use it for JSON APIs
 (see MangaDex). For HTML sources use `getText` / `postForm` and parse with
-regex.
+regex. `postJson` sends a real `application/json` request body (validated
+against a Zod schema on the way back) — use it instead of `postForm` when an
+API rejects form-urlencoded bodies (see Kagane's integrity/manifest handshake).
 
 ---
 

@@ -258,6 +258,43 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
                 },
                 false
             )
+        },
+
+        async postJson<T>(
+            url: URL,
+            body: unknown,
+            schema: ZodType<T>,
+            requestOptions?: SourceRequestOptions
+        ): Promise<T> {
+            const raw = await requestText(
+                url,
+                {
+                    method: "POST",
+                    body: JSON.stringify(body),
+                    headers: {
+                        "Content-Type": "application/json",
+                        ...(requestOptions?.headers ?? {})
+                    }
+                },
+                false
+            )
+            let json: unknown
+            try {
+                json = raw ? JSON.parse(raw) : {}
+            } catch (error) {
+                throw new SourceError("invalid-response", "Response was not valid JSON", {
+                    url: url.toString(),
+                    cause: String(error)
+                })
+            }
+            const result = schema.safeParse(json)
+            if (!result.success) {
+                throw new SourceError("invalid-response", "Response did not match the expected schema", {
+                    url: url.toString(),
+                    issues: result.error.issues
+                })
+            }
+            return result.data
         }
     }
 }
