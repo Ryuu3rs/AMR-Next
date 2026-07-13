@@ -32,7 +32,7 @@
     let activeSection = $state<(typeof sections)[number]>("Home")
     let library = $state<LibraryManga[]>([])
     let settings = $state<AppSettings | undefined>()
-    // Local optimistic mirrors of specific settings controls — driven synchronously by
+    // Local optimistic mirrors of specific settings controls - driven synchronously by
     // user interaction rather than by the settings:update round trip, so the displayed
     // value never appears to "go blank" or reset on any timing hiccup while it saves.
     let updateIntervalSelection = $state<0 | 6 | 12 | 24>(12)
@@ -365,7 +365,7 @@
     let selectedManga = $state<{ title: string } | null>(null)
     let mangaChapters = $state<Array<{ id: string; title: string; chapter?: string; url: string }>>([])
     let chaptersLoading = $state(false)
-    // True while the chapter list or global search results are showing on Home — the
+    // True while the chapter list or global search results are showing on Home - the
     // continue-reading/recently-added shelves aren't relevant then and would otherwise
     // render directly underneath with no separation, reading as a layout glitch.
     const searchActive = $derived(
@@ -586,7 +586,7 @@
                 // Brief pause between batches so the service worker doesn't timeout
                 await new Promise<void>(r => setTimeout(r, 300))
             }
-            // Refresh once at the end instead of after every batch — a backfill can span
+            // Refresh once at the end instead of after every batch - a backfill can span
             // many batches, and reloading the whole library (stats/settings/updates +
             // every cached cover) after each one was the actual bottleneck, not the
             // backfill itself.
@@ -611,7 +611,7 @@
             updateIntervalSelection = settings.updateIntervalHours
             noGapSelection = settings.noGapContinuous
             // stats:get scans the whole progress/history tables and isn't needed to paint
-            // the library — fetch it in the background instead of blocking the grid on it.
+            // the library - fetch it in the background instead of blocking the grid on it.
             void sendRuntimeMessage<typeof stats>({ type: "stats:get" }).then(result => {
                 stats = result
             })
@@ -674,14 +674,14 @@
         openSourceError = ""
         const url = resolveSourceLink(manga)
         if (!url) {
-            openSourceError = "Couldn't open — no working link found for this source."
+            openSourceError = "Couldn't open - no working link found for this source."
             return
         }
         void browser.tabs.create({ url, active })
     }
 
     function openSeriesPage(manga: LibraryManga, e?: MouseEvent) {
-        // auxclick fires for right-click too — don't hijack the context menu.
+        // auxclick fires for right-click too - don't hijack the context menu.
         if (e?.button === 2) return
         if (selectMode) {
             toggleSelect(manga.id)
@@ -701,7 +701,7 @@
     // Primary click honors the openChapterIn setting. Ctrl/middle-click always
     // opens the source page directly in a background tab (G11).
     function read(manga: LibraryManga, event?: MouseEvent) {
-        // auxclick fires for right-click too — don't hijack the context menu.
+        // auxclick fires for right-click too - don't hijack the context menu.
         if (event?.button === 2) return
         if (selectMode) {
             toggleSelect(manga.id)
@@ -772,7 +772,7 @@
         try {
             const result = await sendRuntimeMessage<string[]>({ type: "manga:genres", mangaId: manga.id })
             // Guard against a stale response landing after the user already switched
-            // to a different title — don't overwrite what's now on screen.
+            // to a different title - don't overwrite what's now on screen.
             if (detailManga?.id === manga.id) genreSuggestions = result
         } catch {
             if (detailManga?.id === manga.id) genreSuggestions = []
@@ -971,8 +971,11 @@
     ) {
         const result = await sendRuntimeMessage<{ manga: number; chapters: number }>({
             type: "data:import",
-            envelope,
-            resolutions
+            // envelope/resolutions can be $state proxies (importEnvelope/importResolutions) when
+            // called from confirmImport() - extension messaging structurally clones the payload,
+            // which throws on a Proxy ("Proxy object could not be cloned"). Snapshot to plain data.
+            envelope: $state.snapshot(envelope),
+            resolutions: $state.snapshot(resolutions)
         })
         importConflicts = []
         importEnvelope = null
@@ -985,7 +988,7 @@
                 `Imported ${meta.converted} manga from old AMR backup.` +
                 (meta.skipped > 0 ? ` ${meta.skipped} entries skipped (no title or URL).` : "") +
                 (meta.needsAttention.length > 0
-                    ? ` ${meta.needsAttention.length} titles need a live source — see below.`
+                    ? ` ${meta.needsAttention.length} titles need a live source - see below.`
                     : "")
             if (meta.needsAttention.length > 0) activeSection = "Data"
         } else {
@@ -1099,7 +1102,7 @@
         hasPermission = await browser.permissions.request({ origins: sourceOrigins() })
     }
 
-    // Only one search-stream port should ever be in flight — a new search (typed or
+    // Only one search-stream port should ever be in flight - a new search (typed or
     // submitted) disconnects whatever the previous one started so rapid typing doesn't
     // pile up concurrent streaming searches.
     let searchPort: ReturnType<typeof browser.runtime.connect> | null = null
@@ -1215,7 +1218,7 @@
                 )
             }
             // A tag currently used as the active filter no longer matches anything once
-            // renamed away — follow the rename so the view doesn't silently go empty.
+            // renamed away - follow the rename so the view doesn't silently go empty.
             if (categoryFilter === oldTag) categoryFilter = newTag
         } finally {
             tagBusy = false
@@ -1225,7 +1228,7 @@
         tagBusy = true
         try {
             for (const m of library.filter(x => (x.categories ?? []).includes(tag))) await removeTag(m, tag)
-            // Same reasoning as renameTag — a deleted tag can't stay the active filter,
+            // Same reasoning as renameTag - a deleted tag can't stay the active filter,
             // or the library view is stuck on "no titles match" with no way to clear it
             // (the category dropdown itself disappears once no tags remain).
             if (categoryFilter === tag) categoryFilter = ""
@@ -1393,7 +1396,7 @@
         const pool = unreadPool.length > 0 ? unreadPool : library
         if (pool.length === 0) return
         const pick = pool[Math.floor(Math.random() * pool.length)]
-        // Surprise Me is a navigation action, not a card click — it should always
+        // Surprise Me is a navigation action, not a card click - it should always
         // open the pick, even if select mode happens to be active.
         if (selectMode) clearSelection()
         if (pick) read(pick)
@@ -1420,7 +1423,7 @@
     function runPalette(item: PaletteItem) {
         if (item.kind === "tab") activeSection = item.section
         else {
-            // The palette is a navigation shortcut — jumping to a title should always
+            // The palette is a navigation shortcut - jumping to a title should always
             // open it, even if select mode happens to be active in the library view.
             if (selectMode) clearSelection()
             read(item.manga)
@@ -1649,7 +1652,7 @@
         if (url) void browser.tabs.create({ url })
     }
 
-    // Display-only ordering for the Sources page — registration order in
+    // Display-only ordering for the Sources page - registration order in
     // packages/sources/src/index.ts stays untouched for anything that depends on it.
     const sourcesListAlpha = $derived([...sourcesList].sort((a, b) => a.name.localeCompare(b.name)))
 
@@ -1742,7 +1745,7 @@
         {#if showRestoreBanner}
             <div class="restore-banner" role="alert">
                 <span>
-                    <strong>Your library appears empty.</strong> You have a Gist backup configured — restore it now?
+                    <strong>Your library appears empty.</strong> You have a Gist backup configured - restore it now?
                     {#if syncMessage && !syncing}<br /><span class="muted">{syncMessage}</span>{/if}
                 </span>
                 <button type="button" class="btn-sm" disabled={syncing} onclick={() => void pullSync()}>
@@ -1759,7 +1762,7 @@
                 <div class="onboarding">
                     <h2>Welcome to AMR Next</h2>
                     <p class="muted">
-                        Track and read manga from many sources — everything stays local in your browser.
+                        Track and read manga from many sources - everything stays local in your browser.
                     </p>
                     <ol class="onboarding-steps">
                         <li>Grant access to the manga sites you use.</li>
@@ -1836,7 +1839,7 @@
                 {#if searchResults.length > 0}
                     {#if searchLoading}
                         <p class="muted search-progress">
-                            Searching… {searchSettled}/{searchTotal} sources — {searchResults.length} result{searchResults.length ===
+                            Searching… {searchSettled}/{searchTotal} sources - {searchResults.length} result{searchResults.length ===
                             1
                                 ? ""
                                 : "s"} so far
@@ -1867,7 +1870,7 @@
                                             <div class="result-info">
                                                 <p class="result-title">{result.title}</p>
                                                 <p class="muted">
-                                                    {#if result.latestChapter}latest ch {result.latestChapter}{:else}—{/if}
+                                                    {#if result.latestChapter}latest ch {result.latestChapter}{:else}-{/if}
                                                 </p>
                                             </div>
                                             <button type="button" onclick={() => void openResult(result)}>
@@ -2016,7 +2019,7 @@
                     <select aria-label="Sort library" bind:value={librarySort}>
                         <option value="recent-read">Recently read</option>
                         <option value="recent-added">Recently added</option>
-                        <option value="title">Title (A–Z)</option>
+                        <option value="title">Title (A-Z)</option>
                         <option value="latest-chapter">Latest chapter</option>
                     </select>
                     {#if allCategories.length > 0}
@@ -2399,7 +2402,7 @@
                         <li class="bookmark-card">
                             <div class="bookmark-info">
                                 <span class="bookmark-manga">{bm.mangaTitle}</span>
-                                <span class="bookmark-chapter muted">{bm.chapterTitle} — page {bm.pageIndex + 1}</span>
+                                <span class="bookmark-chapter muted">{bm.chapterTitle} - page {bm.pageIndex + 1}</span>
                                 <span class="bookmark-date muted">{new Date(bm.addedAt).toLocaleDateString()}</span>
                             </div>
                             <div class="bookmark-actions">
@@ -2479,7 +2482,7 @@
             {/if}
             <p class="muted" style="margin-bottom:20px">
                 {updateStatus
-                    ? `Last checked ${new Date(updateStatus.checkedAt).toLocaleString()} — ${updateStatus.updated} updated, ${updateStatus.failed} failed`
+                    ? `Last checked ${new Date(updateStatus.checkedAt).toLocaleString()} - ${updateStatus.updated} updated, ${updateStatus.failed} failed`
                     : "No update check has run yet. Click Check all to scan for new chapters."}
             </p>
             {#if updateStatus?.errors && updateStatus.errors.length > 0}
@@ -2537,7 +2540,7 @@
                                         <p class="muted update-loading">Loading…</p>
                                     {:else if chapters.length === 0}
                                         <p class="muted update-loading">
-                                            No cached chapters — open the manga page to load them.
+                                            No cached chapters - open the manga page to load them.
                                         </p>
                                     {:else}
                                         {#each chapters.slice().reverse() as ch (ch.id)}
@@ -2947,7 +2950,7 @@
                                         : pingStatus === "live"
                                           ? "Live"
                                           : pingStatus === "gated"
-                                            ? "Bot-gated — Cloudflare or rate-limited. Chapters still load via tab."
+                                            ? "Bot-gated - Cloudflare or rate-limited. Chapters still load via tab."
                                             : "Unreachable"}></span>
                                 <span class="adapter-name">{src.name}</span>
                             </span>
@@ -3022,7 +3025,7 @@
             {:else if importConflicts.length > 0}
                 <div class="conflict-panel">
                     <p class="conflict-title">
-                        {importConflicts.length} conflict{importConflicts.length !== 1 ? "s" : ""} — {importConflicts.length}
+                        {importConflicts.length} conflict{importConflicts.length !== 1 ? "s" : ""} - {importConflicts.length}
                         title{importConflicts.length !== 1 ? "s" : ""} already exist in your library.
                     </p>
                     <div class="conflict-bulk">
@@ -3078,7 +3081,7 @@
             {#if libScanIds.length > 0}
                 <ImportReconcile
                     mangas={library.filter(m => libScanIds.includes(m.id))}
-                    heading="Find better sources — {libScanIds.length} {libScanIds.length === 1 ? 'title' : 'titles'}"
+                    heading="Find better sources - {libScanIds.length} {libScanIds.length === 1 ? 'title' : 'titles'}"
                     hint="Search all sources for each manga in your library. Use this to find a source with more chapters or better availability."
                     onLinked={id => {
                         libScanIds = libScanIds.filter(lid => lid !== id)
@@ -3281,7 +3284,7 @@
                 <div class="settings-row">
                     <div>
                         <p class="row-label">Preload pages</p>
-                        <p class="muted">How many upcoming pages load eagerly (0–10).</p>
+                        <p class="muted">How many upcoming pages load eagerly (0-10).</p>
                     </div>
                     <input
                         type="number"
@@ -3388,7 +3391,7 @@
                     <div>
                         <p class="row-label">Community stats</p>
                         <p class="muted">
-                            Share anonymous reading stats — no IP, no identity info collected. Enables the community
+                            Share anonymous reading stats - no IP, no identity info collected. Enables the community
                             leaderboard, trending manga, and personalised recommendations in the Stats &amp;
                             achievements tab.
                         </p>
@@ -3410,7 +3413,7 @@
                                     Registered as <strong>{communityProfile.username}</strong>. Your reading data syncs
                                     hourly.
                                 {:else}
-                                    Choose a display name for the leaderboard. Letters, numbers, _ and – only.
+                                    Choose a display name for the leaderboard. Letters, numbers, _ and - only.
                                 {/if}
                             </p>
                         </div>
@@ -3593,7 +3596,7 @@
                             {#if genresLoading}
                                 Loading suggested tags…
                             {:else if suggestedTags.length > 0}
-                                Suggested from source — click to add:
+                                Suggested from source - click to add:
                             {:else}
                                 Sorry, we couldn't find recommended tags for this title.
                             {/if}
@@ -3759,7 +3762,7 @@
                                     <div class="mirror-row">
                                         <span class="mirror-source">{r.sourceId}</span>
                                         <span class="muted"
-                                            >{r.latestChapter ? `latest ch ${r.latestChapter}` : "—"}</span>
+                                            >{r.latestChapter ? `latest ch ${r.latestChapter}` : "-"}</span>
                                         {#if detailManga && r.sourceId !== detailManga.sourceId}
                                             <button
                                                 type="button"
