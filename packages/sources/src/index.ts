@@ -1,4 +1,5 @@
 import { SourceRegistry, type SourceAdapter } from "@amr/source-sdk"
+import { kaganeAdapter } from "./kagane"
 import { mangadexAdapter } from "./mangadex"
 import { mangareadAdapter } from "./mangaread"
 import { mgekoAdapter } from "./mgeko"
@@ -18,6 +19,7 @@ import { olympusstaffAdapter } from "./olympustaff"
 import { mangafreakAdapter } from "./mangafreak"
 import { comixAdapter } from "./comix"
 
+export { kaganeAdapter } from "./kagane"
 export { mangadexAdapter } from "./mangadex"
 export { mangareadAdapter } from "./mangaread"
 export { mgekoAdapter } from "./mgeko"
@@ -42,6 +44,7 @@ export { mangafreakAdapter } from "./mangafreak"
 export { comixAdapter } from "./comix"
 
 export const sourceAdapters: readonly SourceAdapter[] = [
+    kaganeAdapter,
     mangadexAdapter,
     mangareadAdapter,
     mgekoAdapter,

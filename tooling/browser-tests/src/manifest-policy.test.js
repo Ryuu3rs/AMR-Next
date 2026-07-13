@@ -56,7 +56,9 @@ const allowedRequiredHosts = [
     "https://hentairead.com/*",
     "https://hentalk.pw/*",
     "https://hivetoon.com/*",
+    "https://kagane.to/*",
     "https://kappabeast.com/*",
+    "https://kstatic.to/*",
     "https://lhtranslation.net/*",
     "https://likemanga.io/*",
     "https://likemanga.io/*",
@@ -97,6 +99,7 @@ const allowedRequiredHosts = [
     "https://www.phoenixscans.com/*",
     "https://www.webtoons.com/*",
     "https://www.weebcentral.com/*",
+    "https://yuzuki.kagane.to/*",
     "https://z-fanfox.net/*"
 ]
 

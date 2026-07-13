@@ -81,6 +81,11 @@ export interface SourceRequestClient {
     getJson<T>(url: URL, schema: ZodType<T>, options?: SourceRequestOptions): Promise<T>
     getText(url: URL, options?: SourceRequestOptions): Promise<string>
     postForm(url: URL, params: Record<string, string>, options?: SourceRequestOptions): Promise<string>
+    // POST a JSON body (Content-Type: application/json) and validate the JSON response
+    // against a schema. For APIs that require a real `application/json` request body —
+    // postForm always sends `application/x-www-form-urlencoded`, which some JSON-only
+    // APIs reject outright.
+    postJson<T>(url: URL, body: unknown, schema: ZodType<T>, options?: SourceRequestOptions): Promise<T>
 }
 
 export type SourceLogger = {
