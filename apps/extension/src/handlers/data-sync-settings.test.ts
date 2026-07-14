@@ -66,7 +66,9 @@ beforeEach(async () => {
         db.progress.clear(),
         db.historyEvents.clear(),
         db.downloads.clear(),
-        db.covers.clear()
+        db.covers.clear(),
+        db.pageBookmarks.clear(),
+        db.backups.clear()
     ])
 })
 
@@ -115,13 +117,61 @@ describe("data:export / data:import round-trip", () => {
         const importResult = (await dataSyncSettingsHandlers["data:import"]!(
             { type: "data:import", envelope: exported },
             ctx
-        )) as { manga: number; chapters: number }
+        )) as { manga: number; chapters: number; skipped: unknown[] }
 
         expect(importResult.manga).toBe(1)
         expect(importResult.chapters).toBe(1)
+        expect(importResult.skipped).toEqual([])
         expect(await db.manga.count()).toBe(1)
         expect(await db.chapters.count()).toBe(1)
         expect(await db.progress.count()).toBe(1)
+    })
+
+    it("snapshots a pre-import backup before applying the import", async () => {
+        const { dataSyncSettingsHandlers } = await import("./data-sync-settings")
+
+        await db.manga.add(manga)
+        const exported = await dataSyncSettingsHandlers["data:export"]!({ type: "data:export" }, ctx)
+
+        expect(await db.backups.count()).toBe(0)
+        await dataSyncSettingsHandlers["data:import"]!({ type: "data:import", envelope: exported }, ctx)
+
+        const backups = (await dataSyncSettingsHandlers["data:backup:list"]!(
+            { type: "data:backup:list" },
+            ctx
+        )) as Array<{ id: number; createdAt: number; reason: string }>
+        expect(backups).toHaveLength(1)
+        expect(backups[0]).toMatchObject({ reason: "pre-import" })
+        expect(backups[0]).not.toHaveProperty("envelope")
+    })
+})
+
+describe("data:backup:restore", () => {
+    it("restores a prior snapshot and reports counts through the handler", async () => {
+        const { dataSyncSettingsHandlers } = await import("./data-sync-settings")
+
+        await db.manga.add(manga)
+        await dataSyncSettingsHandlers["data:import"]!(
+            {
+                type: "data:import",
+                envelope: await dataSyncSettingsHandlers["data:export"]!({ type: "data:export" }, ctx)
+            },
+            ctx
+        )
+        const [backup] = (await dataSyncSettingsHandlers["data:backup:list"]!(
+            { type: "data:backup:list" },
+            ctx
+        )) as Array<{ id: number }>
+
+        await db.manga.clear()
+
+        const restoreResult = (await dataSyncSettingsHandlers["data:backup:restore"]!(
+            { type: "data:backup:restore", id: backup!.id },
+            ctx
+        )) as { manga: number; chapters: number; skipped: unknown[] }
+
+        expect(restoreResult.manga).toBe(1)
+        expect(await db.manga.get(manga.id)).toBeDefined()
     })
 })
 
@@ -180,7 +230,7 @@ describe("settings:update", () => {
         )) as { autoAdd: boolean; theme: string }
 
         expect(result.autoAdd).toBe(false)
-        // theme untouched by the undefined patch value — falls back to default
+        // theme untouched by the undefined patch value - falls back to default
         expect(result.theme).toBe("dark")
     })
 
@@ -244,5 +294,10 @@ describe("sync:pull", () => {
         expect(pullFromGist).toHaveBeenCalled()
         const stored = await db.manga.get(pulledManga.id)
         expect(stored?.title).toBe("Pulled Manga")
+
+        // Same safety net as data:import: a pull overwrites/merges local data too.
+        const backups = await db.backups.toArray()
+        expect(backups).toHaveLength(1)
+        expect(backups[0]?.reason).toBe("pre-sync-pull")
     })
 })

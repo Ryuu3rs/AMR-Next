@@ -1,8 +1,8 @@
 // Validation schema for the import/export envelope as the extension actually
-// stores it. This mirrors the runtime Dexie shape (LibraryManga + historyEvents),
-// which is leaner than the aspirational contracts ImportExportEnvelope (no
-// pages/preferences/sourceHealth tables here). Built from the contract record
-// schemas so record-level rules stay shared.
+// stores it. This mirrors the runtime Dexie shape (LibraryManga + historyEvents +
+// pageBookmarks), which is leaner than the aspirational contracts ImportExportEnvelope
+// (no preferences/sourceHealth tables here). Built from the contract record schemas
+// so record-level rules stay shared.
 import { chapterRecordSchema, mangaRecordSchema, readingProgressSchema, sourceLinkRecordSchema } from "@amr/contracts"
 import { z } from "zod"
 
@@ -27,6 +27,17 @@ export const libraryMangaSchema = mangaRecordSchema.extend({
     pageFit: z.enum(["width", "height", "contain", "original"]).optional()
 })
 
+// Every real chapter-write path stores `SourceChapter` (packages/source-sdk), which is
+// `ChapterRecord & { sourceChapterId: string; language: string }` - a superset of the
+// bare, `.strict()` contract schema. Importing real library data through the raw
+// `chapterRecordSchema` therefore rejected virtually every chapter on the extra
+// `sourceChapterId` field. Mirrors the `libraryMangaSchema` pattern above: extend the
+// contract schema at the import/export boundary instead of loosening the contract
+// schema itself (which other, stricter consumers rely on).
+export const importChapterSchema = chapterRecordSchema.extend({
+    sourceChapterId: z.string().optional()
+})
+
 export const historyEventSchema = z.object({
     id: z.number().int().nonnegative().optional(),
     mangaId: z.string().trim().min(1),
@@ -35,9 +46,33 @@ export const historyEventSchema = z.object({
     occurredAt: z.number().int().nonnegative()
 })
 
+// Matches database.ts's PageBookmark Dexie record. Previously not exported/imported
+// at all - db.pageBookmarks was silently excluded from export/import, and
+// clearLibrary() wipes it, so an export -> fresh install -> import cycle used to
+// permanently destroy bookmarks with no way to recover them.
+export const pageBookmarkSchema = z.object({
+    id: z.string().trim().min(1),
+    mangaId: z.string().trim().min(1),
+    chapterId: z.string().trim().min(1),
+    pageIndex: z.number().int().nonnegative(),
+    mangaTitle: z.string(),
+    chapterTitle: z.string(),
+    chapterUrl: z.string(),
+    addedAt: z.number().int().nonnegative()
+})
+
 // Envelope is intentionally non-strict on the data object so a future export with
 // extra tables still imports (unknown keys are dropped, known tables validated).
 // Accepts both strict v1 format and legacy loose format for backward compatibility.
+//
+// NOTE: this schema validates a *whole array* per table in one shot - if any single
+// record in `data.chapters` (etc.) fails, the whole array (and therefore the whole
+// envelope) fails to parse. That's intentional for these "is this a well-formed
+// envelope shape" tests, but the real import path (database.ts's parseImportData)
+// does NOT use this schema to decide what to write: it validates records one at a
+// time via the per-record schemas above so a single malformed record is skipped and
+// reported instead of aborting the entire import. See envelopeStructureSchema below
+// for the lenient structural check that path uses instead.
 export const exportEnvelopeSchema = z
     .object({
         format: z.literal("all-mangas-reader"),
@@ -46,9 +81,10 @@ export const exportEnvelopeSchema = z
         data: z.object({
             manga: z.array(libraryMangaSchema).optional(),
             sourceLinks: z.array(sourceLinkRecordSchema).optional(),
-            chapters: z.array(chapterRecordSchema).optional(),
+            chapters: z.array(importChapterSchema).optional(),
             progress: z.array(readingProgressSchema).optional(),
-            historyEvents: z.array(historyEventSchema).optional()
+            historyEvents: z.array(historyEventSchema).optional(),
+            pageBookmarks: z.array(pageBookmarkSchema).optional()
         })
     })
     .passthrough()
@@ -59,8 +95,25 @@ export const exportEnvelopeSchema = z
             sourceLinks: envelope.data.sourceLinks ?? [],
             chapters: envelope.data.chapters ?? [],
             progress: envelope.data.progress ?? [],
-            historyEvents: envelope.data.historyEvents ?? []
+            historyEvents: envelope.data.historyEvents ?? [],
+            pageBookmarks: envelope.data.pageBookmarks ?? []
         }
     }))
 
 export type ExportEnvelope = z.infer<typeof exportEnvelopeSchema>
+
+// Lenient structural check used by the real import path (database.ts's
+// parseImportData): only confirms this is genuinely an AMR envelope (right format
+// marker, right version, `data` is an object) and hard-fails on anything else - a
+// JSON file from some other tool, or a future version this build doesn't understand.
+// It deliberately does NOT validate the shape of the arrays inside `data`; that is
+// done per-record so one bad row never takes down the whole import (see Bug 3 in the
+// batch notes: "make it a weak link no more").
+export const envelopeStructureSchema = z
+    .object({
+        format: z.literal("all-mangas-reader"),
+        version: z.literal(1),
+        exportedAt: z.number().int().nonnegative().optional(),
+        data: z.object({}).passthrough()
+    })
+    .passthrough()
