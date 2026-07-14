@@ -15,7 +15,7 @@
     font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Light palette — applied when theme is "light", or "system" + OS prefers light. */
+/* Light palette - applied when theme is "light", or "system" + OS prefers light. */
 :root[data-theme="light"],
 :root[data-theme="system"] {
     color-scheme: light dark;
@@ -682,6 +682,45 @@ button:disabled {
     margin-bottom: 20px;
     display: grid;
     gap: 6px;
+}
+
+.update-progress-wrap {
+    border: 1px solid var(--border, #29313b);
+    background: var(--panel, #11161d);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.update-progress-wrap .progress-track {
+    margin-top: 0;
+}
+
+.progress-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    flex-wrap: wrap;
+}
+
+.progress-count {
+    font-weight: 500;
+}
+
+.progress-current {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 260px;
+}
+
+.progress-done {
+    color: var(--success, #22c55e);
+    font-weight: 500;
 }
 
 .error-row {
@@ -2026,6 +2065,11 @@ button:disabled {
     color: #fff;
 }
 
+.badge-keep {
+    background: #0d9488;
+    color: #fff;
+}
+
 @media (max-width: 680px) {
     .shell {
         grid-template-columns: 1fr;
@@ -2058,7 +2102,7 @@ button:disabled {
     }
 }
 
-/* G14: phone viewports — stack the shell, shrink the grid, let controls wrap. */
+/* G14: phone viewports - stack the shell, shrink the grid, let controls wrap. */
 @media (max-width: 600px) {
     .shell {
         display: flex;

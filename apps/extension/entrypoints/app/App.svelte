@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { ImportConflict, ImportResolution, LibraryManga, PageBookmark } from "../../src/database"
     import type { AppSettings } from "../../src/settings"
+    import type { ReadingProgress } from "@amr/contracts"
     import { onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
@@ -112,12 +113,74 @@
         return [...byKey.values()].filter(group => group.length > 1)
     })
 
+    // Deterministic primary pick, shared by mergeDuplicates and the merge-suggestion UI
+    // so the badge shown before confirming always matches who actually wins the merge.
+    function primaryOfGroup(group: LibraryManga[]): LibraryManga | undefined {
+        return [...group].sort(
+            (a, b) => (b.lastReadChapterNumber ?? 0) - (a.lastReadChapterNumber ?? 0) || b.updatedAt - a.updatedAt
+        )[0]
+    }
+
+    // Migrate a losing duplicate's progress and page bookmarks onto the surviving entry
+    // before it gets deleted, so merging duplicates doesn't silently erase reading
+    // history just because that history happened to live on the "losing" copy.
+    //
+    // historyEvents are deliberately NOT migrated here: there's no existing message
+    // type that can write a historyEvents row for an arbitrary mangaId/occurredAt
+    // (reader:progress only creates one under narrow conditions and stamps it with the
+    // current time, and there's no direct "history:add" handler) - so a duplicate merge
+    // still loses the loser's started/completed event log. Fixing that needs a
+    // dedicated backend migration (a rekeyManga-style function scoped to progress/
+    // historyEvents/pageBookmarks), not something buildable from existing message types.
+    async function migrateLoserData(loserId: string, primary: LibraryManga) {
+        // Progress rows are keyed by chapterId in the DB, so writing one back under the
+        // same chapterId with mangaId set to the primary's id just re-points that row.
+        try {
+            const envelope = await sendRuntimeMessage<{ data: { progress: ReadingProgress[] } }>({
+                type: "data:export"
+            })
+            const loserProgress = envelope.data.progress.filter(p => p.mangaId === loserId)
+            for (const p of loserProgress) {
+                await sendRuntimeMessage({
+                    type: "reader:progress",
+                    mangaId: primary.id,
+                    chapterId: p.chapterId,
+                    pageIndex: p.pageIndex,
+                    pageCount: p.pageCount,
+                    completed: p.completed
+                })
+            }
+        } catch (cause) {
+            console.error("[AMR] Failed to migrate reading progress during merge", cause)
+        }
+
+        // Page bookmarks: a bookmark's id is `${chapterId}:${pageIndex}` - mangaId isn't
+        // part of the key - so removing the old row and re-adding under the primary's id
+        // re-points it at the surviving entry instead of creating a duplicate.
+        try {
+            const bookmarks = await sendRuntimeMessage<PageBookmark[]>({ type: "bookmark:list" })
+            const loserBookmarks = bookmarks.filter(b => b.mangaId === loserId)
+            for (const b of loserBookmarks) {
+                await sendRuntimeMessage({ type: "bookmark:remove", id: b.id })
+                await sendRuntimeMessage({
+                    type: "bookmark:toggle",
+                    mangaId: primary.id,
+                    chapterId: b.chapterId,
+                    pageIndex: b.pageIndex,
+                    mangaTitle: primary.title,
+                    chapterTitle: b.chapterTitle,
+                    chapterUrl: b.chapterUrl
+                })
+            }
+        } catch (cause) {
+            console.error("[AMR] Failed to migrate page bookmarks during merge", cause)
+        }
+    }
+
     async function mergeDuplicates(group: LibraryManga[]) {
         // Keep the entry with the most progress (then most recent) as primary.
         const byProgress = [...group].sort((a, b) => (b.lastReadChapterNumber ?? 0) - (a.lastReadChapterNumber ?? 0))
-        const primary = [...group].sort(
-            (a, b) => (b.lastReadChapterNumber ?? 0) - (a.lastReadChapterNumber ?? 0) || b.updatedAt - a.updatedAt
-        )[0]
+        const primary = primaryOfGroup(group)
         if (!primary) return
         const mostRead = byProgress[0]
         const maxRead = mostRead?.lastReadChapterNumber ?? 0
@@ -128,6 +191,16 @@
         const rating = group.find(m => m.rating !== undefined)?.rating
         const notes = [...new Set(group.map(m => m.notes?.trim()).filter((n): n is string => Boolean(n)))].join("\n\n")
         const nsfw = group.some(m => m.nsfw)
+
+        // Migrate the losing duplicates' data onto the primary before the authoritative
+        // numbers are set below - reader:progress (used by the migration) has the side
+        // effect of overwriting the target manga's lastRead*/updatedAt fields from
+        // whichever chapter is currently being migrated, so library:numbers must run
+        // after migration to be the one that actually sticks.
+        for (const m of group) {
+            if (m.id !== primary.id) await migrateLoserData(m.id, primary)
+        }
+
         if (maxRead > 0 || maxLatest > 0) {
             await sendRuntimeMessage({
                 type: "library:numbers",
@@ -236,6 +309,14 @@
         failed: number
         checkedAt: number
         errors?: Array<{ mangaId: string; title: string; message: string }>
+    } | null>(null)
+    let updateProgress = $state<{
+        running: boolean
+        done: number
+        total: number
+        currentTitle?: string
+        sourceId?: string
+        startedAt: number
     } | null>(null)
     let sourcesList = $state<
         Array<{
@@ -498,6 +579,37 @@
         } catch {
             // optional
         }
+        try {
+            const stored = (await browser.storage.local.get("updateProgress"))["updateProgress"] as
+                | typeof updateProgress
+                | undefined
+            if (stored) {
+                updateProgress = stored
+                checkingUpdates = stored.running
+            }
+        } catch {
+            // optional
+        }
+        // An update check (this popup's own, or the background alarm's) writes its
+        // live progress to storage as it goes - reflect it here instead of awaiting
+        // the `updates:check` message, which is now fire-and-forget (see checkForUpdates).
+        browser.storage.onChanged.addListener((changes, area) => {
+            if (area !== "local") return
+            if (changes["updateProgress"]) {
+                const next = (changes["updateProgress"].newValue as typeof updateProgress) ?? null
+                const wasRunning = (changes["updateProgress"].oldValue as typeof updateProgress | undefined)?.running
+                updateProgress = next
+                if (wasRunning && !next?.running) {
+                    checkingUpdates = false
+                    // The check just finished - the library data it touched (latest
+                    // chapter ids/numbers) needs a refresh to show up in the UI.
+                    void load()
+                }
+            }
+            if (changes["updateStatus"]) {
+                updateStatus = (changes["updateStatus"].newValue as typeof updateStatus) ?? null
+            }
+        })
     })
 
     async function loadCachedCovers() {
@@ -1025,17 +1137,29 @@
     async function checkForUpdates(sourceId?: string) {
         checkingUpdates = true
         try {
-            updateStatus = await sendRuntimeMessage<NonNullable<typeof updateStatus>>({
+            // Fire-and-forget: a full library check can run for minutes, longer than an
+            // MV3 message channel survives. The background handler starts the check and
+            // acks immediately; progress/completion are picked up via the
+            // browser.storage.onChanged listener registered in onMount.
+            const ack = await sendRuntimeMessage<{ started: boolean; alreadyRunning?: boolean }>({
                 type: "updates:check",
                 ...(sourceId ? { sourceId } : {})
             })
-            await load()
+            if (!ack.started) {
+                // A check is already running (this popup's own alarm-triggered check, or
+                // one started elsewhere) - leave checkingUpdates on, the storage listener
+                // will clear it when that check completes.
+                return
+            }
         } catch (cause) {
             console.error("[AMR] Update check failed", cause)
-        } finally {
             checkingUpdates = false
         }
     }
+
+    const updateProgressPct = $derived(
+        updateProgress && updateProgress.total > 0 ? Math.round((updateProgress.done / updateProgress.total) * 100) : 0
+    )
 
     const librarySources = $derived([...new Set(library.filter(m => !isSeedData(m)).map(m => m.sourceId))].sort())
 
@@ -2169,9 +2293,17 @@
                 <div class="dup-panel">
                     <p class="row-label">Possible duplicates</p>
                     {#each duplicateGroups as group}
+                        {@const primary = primaryOfGroup(group)}
                         <div class="dup-group">
                             <span class="dup-title">{group[0]?.title}</span>
                             <span class="muted">{group.map(m => m.sourceId).join(", ")}</span>
+                            {#if primary}
+                                <span
+                                    class="list-badge badge-keep"
+                                    title="This copy is kept; the rest are merged into it">
+                                    Keeps: {primary.sourceId}
+                                </span>
+                            {/if}
                             <button type="button" class="btn-sm" onclick={() => void mergeDuplicates(group)}>
                                 Merge {group.length}
                             </button>
@@ -2478,6 +2610,27 @@
                             {src}
                         </button>
                     {/each}
+                </div>
+            {/if}
+            {#if updateProgress && (updateProgress.running || updateProgress.done > 0)}
+                <div class="update-progress-wrap">
+                    <div class="progress-track">
+                        <div class="progress-fill" style="width: {updateProgressPct}%"></div>
+                    </div>
+                    <div class="progress-meta">
+                        <span class="progress-count">
+                            {updateProgress.done} / {updateProgress.total} checked
+                            {#if updateProgress.sourceId}
+                                <span class="muted">({updateProgress.sourceId})</span>
+                            {/if}
+                        </span>
+                        {#if updateProgress.running && updateProgress.currentTitle}
+                            <span class="progress-current muted"
+                                >- currently checking {updateProgress.currentTitle}</span>
+                        {:else if !updateProgress.running}
+                            <span class="progress-done">Done ✓</span>
+                        {/if}
+                    </div>
                 </div>
             {/if}
             <p class="muted" style="margin-bottom:20px">

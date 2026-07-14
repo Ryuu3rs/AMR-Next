@@ -10,60 +10,119 @@ import { delay, type HandlerMap } from "../background/handler-types"
 let updateCheckRunning = false
 let genreBackfillRunning = false
 
+type UpdateProgress = {
+    running: boolean
+    done: number
+    total: number
+    currentTitle?: string
+    sourceId?: string
+    startedAt: number
+}
+
 export async function checkUpdates(sourceId?: string) {
     if (updateCheckRunning) return
     updateCheckRunning = true
+    const startedAt = Date.now()
     try {
-        const settings = await getSettings()
-        const all = await db.manga.toArray()
-        const manga = sourceId ? all.filter(item => item.sourceId === sourceId) : all
+        let manga: LibraryManga[]
+        let language: string
+        try {
+            const settings = await getSettings()
+            const all = await db.manga.toArray()
+            const scoped = sourceId ? all.filter(item => item.sourceId === sourceId) : all
+            manga = scoped.filter(item => !item.manualTracking && !item.onHold)
+            language = settings.language
+        } catch (error) {
+            // Loading settings/the library itself failed before the loop could even
+            // start - record a failure state instead of leaving an unhandled rejection
+            // (which the old request/response contract would also have surfaced badly)
+            // and a progress indicator stuck showing "running" forever.
+            const message = error instanceof Error ? error.message : "Update check failed to start"
+            console.error("[AMR] Update check failed to start", error)
+            const failure: Record<string, unknown> = {
+                updateProgress: { running: false, done: 0, total: 0, startedAt } satisfies UpdateProgress
+            }
+            if (!sourceId) {
+                failure["updateStatus"] = {
+                    checked: 0,
+                    updated: 0,
+                    failed: 0,
+                    checkedAt: Date.now(),
+                    errors: [{ mangaId: "", title: "Update check", message }]
+                }
+            }
+            await browser.storage.local.set(failure)
+            return
+        }
+
         let checked = 0
         let updated = 0
         let failed = 0
-
+        let done = 0
+        const total = manga.length
         const errors: Array<{ mangaId: string; title: string; message: string }> = []
 
-        for (const item of manga) {
-            if (item.manualTracking || item.onHold) continue
-            const link = await db.sourceLinks.get(item.id)
-            if (!link) continue
-            try {
-                const chapters = await listMangaChapters(item, link, settings.language)
-                const latest = chapters.reduce(
-                    (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
-                    chapters[0]
-                )
-                await db.transaction("rw", db.chapters, db.manga, async () => {
-                    await db.chapters.bulkPut(chapters)
-                    if (latest && latest.id !== item.latestChapterId) {
-                        updated += 1
-                        await db.manga.update(item.id, {
-                            latestChapterId: latest.id,
-                            sourceUrl: latest.url,
-                            ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
-                            updatedAt: Date.now()
-                        })
-                    }
-                })
-                checked += 1
-            } catch (error) {
-                failed += 1
-                const message = error instanceof Error ? error.message : "Update failed"
-                errors.push({ mangaId: item.id, title: item.title, message })
-                console.warn("[AMR] Update check failed", { mangaId: item.id, error })
-            } finally {
-                // Pause between every iteration (success or failure) so sites don't
-                // rate-limit when the library has many titles from the same source.
-                await delay(400)
+        const writeProgress = async (currentTitle?: string) => {
+            const progress: UpdateProgress = {
+                running: true,
+                done,
+                total,
+                ...(currentTitle ? { currentTitle } : {}),
+                ...(sourceId ? { sourceId } : {}),
+                startedAt
             }
+            await browser.storage.local.set({ updateProgress: progress })
+        }
+
+        await writeProgress()
+
+        for (const item of manga) {
+            const link = await db.sourceLinks.get(item.id)
+            if (link) {
+                await writeProgress(item.title)
+                try {
+                    const chapters = await listMangaChapters(item, link, language)
+                    const latest = chapters.reduce(
+                        (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
+                        chapters[0]
+                    )
+                    await db.transaction("rw", db.chapters, db.manga, async () => {
+                        await db.chapters.bulkPut(chapters)
+                        if (latest && latest.id !== item.latestChapterId) {
+                            updated += 1
+                            await db.manga.update(item.id, {
+                                latestChapterId: latest.id,
+                                sourceUrl: latest.url,
+                                ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
+                                updatedAt: Date.now()
+                            })
+                        }
+                    })
+                    checked += 1
+                } catch (error) {
+                    failed += 1
+                    const message = error instanceof Error ? error.message : "Update failed"
+                    errors.push({ mangaId: item.id, title: item.title, message })
+                    console.warn("[AMR] Update check failed", { mangaId: item.id, error })
+                } finally {
+                    // Pause between every iteration (success or failure) so sites don't
+                    // rate-limit when the library has many titles from the same source.
+                    await delay(400)
+                }
+            }
+            done += 1
         }
 
         // Keep only the most recent handful of errors so the status stays small.
         const status = { checked, updated, failed, checkedAt: Date.now(), errors: errors.slice(0, 20) }
+        const finalWrite: Record<string, unknown> = {
+            updateProgress: { running: false, done, total, startedAt } satisfies UpdateProgress
+        }
         // Only a full, all-sources check represents the library-wide status the Updates
-        // page displays — a single-source "refresh this source" run would otherwise
+        // page displays - a single-source "refresh this source" run would otherwise
         // clobber that global status with counts computed from just one source's manga.
-        if (!sourceId) await browser.storage.local.set({ updateStatus: status })
+        if (!sourceId) finalWrite["updateStatus"] = status
+        await browser.storage.local.set(finalWrite)
         return status
     } finally {
         updateCheckRunning = false
@@ -105,7 +164,7 @@ export async function backfillMangaGenres(): Promise<void> {
     if (genreBackfillRunning) return
     genreBackfillRunning = true
     try {
-        // Only process titles with a manga URL or source ID — sourceUrl is a chapter URL
+        // Only process titles with a manga URL or source ID - sourceUrl is a chapter URL
         // and genre resolvers expect a series page, so passing it silently fails.
         const toFetch = await db.manga
             .filter(m => (!m.genres || m.genres.length === 0) && (!!m.mangaUrl || !!m.sourceMangaId))
@@ -122,7 +181,7 @@ export async function backfillMangaGenres(): Promise<void> {
                     await db.manga.update(manga.id, { genres } as Partial<LibraryManga>)
                 }
             } catch {
-                // Skip — source may not support genres or fetch failed transiently
+                // Skip - source may not support genres or fetch failed transiently
             }
             // Respect the source rate limit (3 req/s) between requests.
             await new Promise<void>(r => setTimeout(r, 350))
@@ -133,7 +192,7 @@ export async function backfillMangaGenres(): Promise<void> {
 }
 
 // Chapters with a sortKey newer than the manga's last-read position, falling back
-// to the last 3 chapters (by sortKey) when nothing is newer — e.g. a freshly added
+// to the last 3 chapters (by sortKey) when nothing is newer - e.g. a freshly added
 // title with no read progress yet still gets a short preview list.
 async function newChaptersFor(mangaId: string) {
     const manga = await db.manga.get(mangaId)
@@ -151,7 +210,18 @@ async function newChaptersFor(mangaId: string) {
 
 export const updatesSourcesHandlers: HandlerMap = {
     "updates:check": async request => {
-        return await checkUpdates(request.sourceId)
+        // Fire-and-forget: a full library check can take several minutes (rate-limited
+        // network calls per title), far longer than an MV3 message channel/service-worker
+        // lifetime reliably survives. Awaiting checkUpdates() here caused "message channel
+        // closed before a response was received" once the channel died mid-loop. Callers
+        // now track progress via the updateProgress/updateStatus storage keys instead.
+        if (updateCheckRunning) {
+            return { started: false, alreadyRunning: true }
+        }
+        void checkUpdates(request.sourceId).catch(error => {
+            console.error("[AMR] Update check crashed unexpectedly", error)
+        })
+        return { started: true }
     },
     "updates:get": async () => {
         const stored = await browser.storage.local.get("updateStatus")
@@ -189,24 +259,24 @@ export const updatesSourcesHandlers: HandlerMap = {
                 const controller = new AbortController()
                 const timer = setTimeout(() => controller.abort(), 10000)
                 try {
-                    // Background fetches are privileged — no CORS restriction for origins
+                    // Background fetches are privileged - no CORS restriction for origins
                     // in host_permissions. Distinguish four states:
-                    //   live  — server answered normally (2xx/3xx) from a domain the adapter
+                    //   live  - server answered normally (2xx/3xx) from a domain the adapter
                     //           actually registers
-                    //   moved — server answered normally, but the final URL (after redirects —
+                    //   moved - server answered normally, but the final URL (after redirects -
                     //           fetch follows them by default) lands on a domain the adapter
                     //           doesn't register. Likely a hijacked/parked/repurposed domain
                     //           still returning 200s, not the real source anymore
-                    //   gated — bot-blocked (403/429 from CF or rate-limiting);
+                    //   gated - bot-blocked (403/429 from CF or rate-limiting);
                     //           chapter reads still work via the tab fallback
-                    //   dead  — truly unreachable (timeout, DNS, 5xx)
+                    //   dead  - truly unreachable (timeout, DNS, 5xx)
                     let res = await fetch(origin, {
                         method: "HEAD",
                         signal: controller.signal,
                         credentials: "omit"
                     })
                     // Some live sites reject HEAD outright (404/405) even though a normal
-                    // GET succeeds — retry once with GET before declaring the source dead.
+                    // GET succeeds - retry once with GET before declaring the source dead.
                     if (res.status === 404 || res.status === 405) {
                         res = await fetch(origin, {
                             method: "GET",

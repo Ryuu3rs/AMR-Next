@@ -16,7 +16,7 @@ vi.mock("../sources", () => ({
     searchManga: vi.fn()
 }))
 
-// Minimal in-memory stand-in for browser.storage.local — a plain Map-backed
+// Minimal in-memory stand-in for browser.storage.local - a plain Map-backed
 // get/set/remove is enough for these tests; no existing helper covers this
 // (settings.ts/background.ts use the real WXT-injected `browser` global at
 // runtime, which vitest never provides).
@@ -129,6 +129,80 @@ describe("checkUpdates storage writes", () => {
     })
 })
 
+describe("checkUpdates progress writes", () => {
+    it("writes incremental updateProgress and marks it done when the loop finishes", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const mangaA = makeManga({ id: "m-a", title: "Manga A" })
+        const mangaB = makeManga({ id: "m-b", title: "Manga B" })
+        await db.manga.bulkPut([mangaA, mangaB])
+        await db.sourceLinks.bulkPut([makeLink(mangaA.id), makeLink(mangaB.id)])
+        listMangaChaptersMock.mockResolvedValue([])
+
+        await checkUpdates()
+
+        const finalProgress = storageLocal.store.get("updateProgress") as {
+            running: boolean
+            done: number
+            total: number
+        }
+        expect(finalProgress.running).toBe(false)
+        expect(finalProgress.done).toBe(2)
+        expect(finalProgress.total).toBe(2)
+    })
+
+    it("records a failure state instead of throwing when loading the library fails", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        vi.spyOn(db.manga, "toArray").mockRejectedValueOnce(new Error("db exploded"))
+
+        await expect(checkUpdates()).resolves.toBeUndefined()
+
+        const finalProgress = storageLocal.store.get("updateProgress") as { running: boolean }
+        expect(finalProgress.running).toBe(false)
+        const status = storageLocal.store.get("updateStatus") as {
+            errors: Array<{ message: string }>
+        }
+        expect(status.errors[0]?.message).toBe("db exploded")
+    })
+})
+
+describe("updates:check handler", () => {
+    it("acks immediately without awaiting the full check, and reports alreadyRunning on a concurrent call", async () => {
+        const { updatesSourcesHandlers } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-1" })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id))
+
+        let resolveFirst: (() => void) | undefined
+        listMangaChaptersMock.mockImplementation(
+            () =>
+                new Promise(resolve => {
+                    resolveFirst = () => resolve([])
+                })
+        )
+
+        const handler = updatesSourcesHandlers["updates:check"]
+        if (!handler) throw new Error("handler missing")
+
+        const ack = (await handler({ type: "updates:check" }, { sender: {} })) as { started: boolean }
+        expect(ack.started).toBe(true)
+
+        await vi.waitFor(() => expect(listMangaChaptersMock).toHaveBeenCalledTimes(1))
+
+        const secondAck = (await handler({ type: "updates:check" }, { sender: {} })) as {
+            started: boolean
+            alreadyRunning?: boolean
+        }
+        expect(secondAck.started).toBe(false)
+        expect(secondAck.alreadyRunning).toBe(true)
+
+        resolveFirst?.()
+        await vi.waitFor(() => expect(storageLocal.store.get("updateStatus")).toBeTruthy())
+    })
+})
+
 describe("checkUpdates concurrency guard", () => {
     it("a second concurrent call returns immediately instead of running the loop twice", async () => {
         const { checkUpdates } = await import("./updates-sources")
@@ -147,7 +221,7 @@ describe("checkUpdates concurrency guard", () => {
 
         const first = checkUpdates()
         // Let the first call reach the in-flight fetch before starting the second.
-        // Poll rather than a fixed tick — how many microtasks the DB reads take
+        // Poll rather than a fixed tick - how many microtasks the DB reads take
         // before reaching listMangaChapters varies (much slower under coverage
         // instrumentation), so a single setTimeout(0) is not reliably enough.
         await vi.waitFor(() => expect(listMangaChaptersMock).toHaveBeenCalledTimes(1))
