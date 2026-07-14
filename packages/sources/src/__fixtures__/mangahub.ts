@@ -21,10 +21,22 @@ export const searchPage2Html = `<!doctype html><html><body><div id="app"><div cl
 </div></div>
 </body></html>`
 
-// Empty result page — matches MangaHub's real "No Manga found!" markup.
+// Empty result page - matches MangaHub's real "No Manga found!" markup.
 export const searchEmptyHtml = `<!doctype html><html><body><div id="app"><div class="row"><div class="col-xs-12"><strong>No Manga found!</strong></div></div></body></html>`
 
-// Manga detail page — used for resolveCover, mirrors the og:image markup
+// A single card whose cover CDN URL contains a "chapter-N"-shaped substring
+// (thumb.mghcdn.com/.../chapter-1-cover.jpg) BEFORE the real chapter-link
+// anchor (chapter-52) in card source order. Exercises the fix scoping the
+// latestChapter match to the chapter-link anchor's own href instead of a bare
+// scan over the whole card block, which would otherwise grab "1" from the
+// cover URL instead of the real "52".
+export const SEARCH_DECOY_SLUG = "decoy-chapter-number"
+export const searchDecoyChapterNumberHtml = `<!doctype html><html><body><div id="app"><div class="row">
+<div class="_1KYcM col-sm-6 col-xs-12"><div class="media-manga media"><div class="media-left"><a href="https://mangahub.io/manga/decoy-chapter-number"><img loading="lazy" width="80" src="https://thumb.mghcdn.com/decoy/chapter-1-cover.jpg" alt="Decoy Chapter Number" class="manga-thumb list-item-thumb"/></a></div><div class="media-body"><h4 class="media-heading"><a href="https://mangahub.io/manga/decoy-chapter-number">Decoy Chapter Number</a></h4><span><a href="https://mangahub.io/chapter/decoy-chapter-number/chapter-52" rel="noindex nofollow">#<!-- -->52</a> <!-- -->chapters published <!-- -->(Ongoing)</span></div></div></div>
+</div></div>
+</body></html>`
+
+// Manga detail page - used for resolveCover, mirrors the og:image markup
 // extractCover looks for.
 export const COVER_SLUG = "solo-leveling_105"
 export const COVER_PATH = "/manga/solo-leveling_105"

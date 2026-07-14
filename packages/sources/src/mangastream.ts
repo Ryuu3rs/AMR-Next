@@ -15,7 +15,7 @@ import {
 } from "@amr/source-sdk"
 
 // Config-driven adapter for the MangaStream / MangaReader (Theme: ts) WordPress
-// family. One factory covers the whole template — a new site is a config row.
+// family. One factory covers the whole template - a new site is a config row.
 // Chapter pages embed images in a `ts_reader.run({...sources:[{images:[]}]})`
 // blob and/or a `#readerarea` block.
 export type MangaStreamConfig = {
@@ -30,6 +30,9 @@ export type MangaStreamConfig = {
     // "hierarchical": chapters live at /<mangaPath>/<manga-slug>/<num>/ instead of
     // the flat root slug containing "chapter". Use for sites like KappaBeast.
     chapterFormat?: "flat" | "hierarchical"
+    // Extra origin patterns for a cover/page-image CDN host that differs from this
+    // site's own domain(s) - see SourceManifest.imageOrigins in @amr/source-sdk.
+    imageOrigins?: readonly string[]
 }
 
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
@@ -175,7 +178,7 @@ function extractTitle(html: string, fallbackSlug: string): string {
     const titleMatch = html.match(/<title>([^<]+)<\/title>/)
     const titleText = titleMatch ? captureGroup(titleMatch, 1) : undefined
     if (titleText) {
-        const cleaned = titleText.split(/\s+[-–|]\s+/)[0]?.trim()
+        const cleaned = titleText.split(/\s+[--|]\s+/)[0]?.trim()
         if (cleaned) return cleaned
     }
     return fallbackSlug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
@@ -307,7 +310,8 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
             capabilities: ["pages", "chapters"],
             requestRateLimit: config.rateLimit ?? { requests: 3, intervalMs: 1000 },
             fixtureVersion: 1,
-            homepage: config.origin
+            homepage: config.origin,
+            ...(config.imageOrigins ? { imageOrigins: config.imageOrigins } : {})
         },
 
         match(url: URL): SourcePageMatch {

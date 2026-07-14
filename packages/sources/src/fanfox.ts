@@ -18,6 +18,9 @@ export type FanfoxFamilyConfig = {
     name: string
     origin: string
     domains: string[]
+    // Extra origin patterns for a cover/page-image CDN host that differs from this
+    // site's own domain(s) - see SourceManifest.imageOrigins in @amr/source-sdk.
+    imageOrigins?: readonly string[]
 }
 
 // /manga/<slug>/                           → manga page
@@ -152,7 +155,7 @@ function slugToTitle(slug: string): string {
 }
 
 export function createFanfoxFamilyAdapter(cfg: FanfoxFamilyConfig): SourceAdapter {
-    const { id, name, origin, domains } = cfg
+    const { id, name, origin, domains, imageOrigins } = cfg
     const headers = {
         "User-Agent": BROWSER_UA,
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -185,7 +188,8 @@ export function createFanfoxFamilyAdapter(cfg: FanfoxFamilyConfig): SourceAdapte
             capabilities: ["chapters"],
             requestRateLimit: { requests: 3, intervalMs: 1000 },
             fixtureVersion: 1,
-            homepage: origin
+            homepage: origin,
+            ...(imageOrigins ? { imageOrigins } : {})
         },
 
         match(url: URL): SourcePageMatch {
@@ -312,7 +316,7 @@ export function createFanfoxFamilyAdapter(cfg: FanfoxFamilyConfig): SourceAdapte
                 sortKey: parseFloat(chapterNum) || 0,
                 language: "en"
             }
-            // Images require JavaScript — chapter captured for panel prev/next, pages empty.
+            // Images require JavaScript - chapter captured for panel prev/next, pages empty.
             return { manga, chapter, pages: [] }
         }
     }

@@ -5,7 +5,7 @@ import test from "node:test"
 import { chromiumExtension, firefoxExtension, repositoryRoot } from "./paths.js"
 
 async function readCommunityApiOrigin() {
-    // The release pipeline bakes this in as a build-time env var (no .env file involved —
+    // The release pipeline bakes this in as a build-time env var (no .env file involved -
     // see .github/workflows/release-please.yml), while local dev sets it via apps/extension/.env.
     // Check both sources so the manifest built either way excludes it from the policy check.
     if (process.env.VITE_COMMUNITY_API_ORIGIN) return process.env.VITE_COMMUNITY_API_ORIGIN.trim()
@@ -23,12 +23,13 @@ const communityApiOrigin = await readCommunityApiOrigin()
 const allowedPermissions = ["alarms", "declarativeNetRequest", "downloads", "scripting", "storage", "tabs"]
 
 // All source origins + GitHub API are required (granted at install, no per-source grant step).
-// VITE_COMMUNITY_API_ORIGIN is intentionally excluded — it comes from a local .env and must not be
+// VITE_COMMUNITY_API_ORIGIN is intentionally excluded - it comes from a local .env and must not be
 // part of the policy check (CI has no .env, local builds may have it set).
 const allowedRequiredHosts = [
     "*://*.asuracomic.net/*",
     "*://*.asurascans.com/*",
     "*://*.compsci88.com/*",
+    "*://*.hivetoon.com/*",
     "*://*.images.mangafreak.me/*",
     "*://*.imgsrv4.com/*",
     "*://*.likemanga.io/*",
@@ -36,10 +37,13 @@ const allowedRequiredHosts = [
     "*://*.mangafreak.me/*",
     "*://*.mangahere.com/*",
     "*://*.mangaread.org/*",
+    "*://*.manhwatop.com/*",
+    "*://*.mfcdn.net/*",
     "*://*.mghcdn.com/*",
     "*://*.mhcdn.net/*",
     "*://*.pstatic.net/*",
     "*://*.static.comix.to/*",
+    "*://*.vortexscans.org/*",
     "*://*.weebcentral.com/*",
     "https://api.github.com/*",
     "https://api.mangadex.org/*",
@@ -56,6 +60,7 @@ const allowedRequiredHosts = [
     "https://hentairead.com/*",
     "https://hentalk.pw/*",
     "https://hivetoon.com/*",
+    "https://img.hentai1.io/*",
     "https://kagane.to/*",
     "https://kappabeast.com/*",
     "https://kstatic.to/*",
@@ -67,7 +72,6 @@ const allowedRequiredHosts = [
     "https://mangahere.cc/*",
     "https://mangahub.io/*",
     "https://mangasushi.org/*",
-    "https://manhuaplus.org/*",
     "https://manhuatop.org/*",
     "https://manhuaus.com/*",
     "https://manhwatop.com/*",
@@ -81,7 +85,6 @@ const allowedRequiredHosts = [
     "https://rawkuma.com/*",
     "https://read.oppai.stream/*",
     "https://spiderscans.xyz/*",
-    "https://templescan.net/*",
     "https://tritinia.org/*",
     "https://uploads.mangadex.org/*",
     "https://utoon.net/*",
@@ -91,6 +94,7 @@ const allowedRequiredHosts = [
     "https://www.comix.to/*",
     "https://www.dynasty-scans.com/*",
     "https://www.fanfox.net/*",
+    "https://www.mangadex.org/*",
     "https://www.mangahere.cc/*",
     "https://www.mangahub.io/*",
     "https://www.mgeko.cc/*",
@@ -110,7 +114,7 @@ async function readManifest(extensionDirectory) {
 
 // Must match the "key" literal in apps/extension/wxt.config.ts exactly. This pins the
 // Chromium extension id (bbhdbcfjedbbgaeafdfffcadbgafjgai) so it never again depends on
-// the unpacked folder's path — a data-loss bug (every manual update reset IndexedDB,
+// the unpacked folder's path - a data-loss bug (every manual update reset IndexedDB,
 // since a new path meant a new id) was fixed by adding this key. Losing it in a future
 // edit would silently reintroduce that bug.
 const EXPECTED_CHROMIUM_KEY =

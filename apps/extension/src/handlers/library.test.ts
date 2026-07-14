@@ -115,6 +115,88 @@ describe("library:switch", () => {
         expect(stored?.categories).toEqual(["fav"])
         expect(stored?.sourceId).toBe("othermirror")
     })
+
+    it("flags chapterNumberingUnreliable when switching to mangahub from a different source with existing read progress", async () => {
+        const libraryManga: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: sourceLink.url,
+            sourceMangaId: "abc",
+            mangaUrl: "https://mangadex.org/title/abc",
+            lastReadChapterNumber: 50
+        }
+        await db.manga.put(libraryManga)
+        await db.sourceLinks.put(sourceLink)
+
+        const newChapter: ChapterRecord = {
+            id: "mangahub:chapter:new-1",
+            mangaId: manga.id,
+            sourceId: "mangahub",
+            title: "Chapter 45",
+            url: "https://mangahub.io/chapter/new-src-id/chapter-45",
+            sortKey: 45
+        }
+        vi.mocked(listChaptersForSource).mockResolvedValue([newChapter] as never)
+
+        const handler = libraryHandlers["library:switch"]!
+        await handler(
+            {
+                type: "library:switch",
+                mangaId: manga.id,
+                sourceId: "mangahub",
+                sourceMangaId: "new-src-id",
+                mangaUrl: "https://mangahub.io/manga/new-src-id"
+            } as never,
+            ctx
+        )
+
+        const stored = (await db.manga.get(manga.id)) as
+            | (LibraryManga & { chapterNumberingUnreliable?: boolean })
+            | undefined
+        expect(stored?.chapterNumberingUnreliable).toBe(true)
+        // The old source's read-progress number itself is left untouched by the switch.
+        expect(stored?.lastReadChapterNumber).toBe(50)
+    })
+
+    it("does not flag chapterNumberingUnreliable when switching between two non-mangahub sources", async () => {
+        const libraryManga: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: sourceLink.url,
+            sourceMangaId: "abc",
+            mangaUrl: "https://mangadex.org/title/abc",
+            lastReadChapterNumber: 50
+        }
+        await db.manga.put(libraryManga)
+        await db.sourceLinks.put(sourceLink)
+
+        const newChapter: ChapterRecord = {
+            id: "othermirror:chapter:new-1",
+            mangaId: manga.id,
+            sourceId: "othermirror",
+            title: "New Chapter 1",
+            url: "https://othermirror.example/chapter/new-1",
+            sortKey: 1
+        }
+        vi.mocked(listChaptersForSource).mockResolvedValue([newChapter] as never)
+
+        const handler = libraryHandlers["library:switch"]!
+        await handler(
+            {
+                type: "library:switch",
+                mangaId: manga.id,
+                sourceId: "othermirror",
+                sourceMangaId: "new-src-id",
+                mangaUrl: "https://othermirror.example/title/new-src-id"
+            } as never,
+            ctx
+        )
+
+        const stored = (await db.manga.get(manga.id)) as
+            | (LibraryManga & { chapterNumberingUnreliable?: boolean })
+            | undefined
+        expect(stored?.chapterNumberingUnreliable).toBeUndefined()
+    })
 })
 
 describe("library:relink", () => {
@@ -222,7 +304,7 @@ describe("library:covers:backfill", () => {
             coverUrl: "https://cdn.example/cover.jpg"
         }
         // Pad past the 20-item batch size with extra targets so `remaining` stays > 0 after
-        // the first pass — otherwise the handler clears its dedup Set at the end of the pass
+        // the first pass - otherwise the handler clears its dedup Set at the end of the pass
         // and the "don't retry" behavior below wouldn't actually be exercised.
         const padding: LibraryManga[] = Array.from({ length: 25 }, (_, i) => ({
             ...manga,
@@ -252,7 +334,7 @@ describe("library:covers:backfill", () => {
 
         vi.mocked(inlineCover).mockClear()
 
-        // Second call in the same run must not retry needsBackfill again — it's already
+        // Second call in the same run must not retry needsBackfill again - it's already
         // tracked in coverBackfillAttempted from the first pass.
         await handler({ type: "library:covers:backfill" } as never, ctx)
         expect(inlineCover).not.toHaveBeenCalledWith("https://cdn.example/cover.jpg")

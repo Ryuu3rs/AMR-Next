@@ -14,7 +14,7 @@ import {
 } from "@amr/source-sdk"
 
 // Config-driven adapter for the MangaBuddy bespoke reader family. One factory
-// covers the whole template — a new mirror is a config row. Chapter pages embed
+// covers the whole template - a new mirror is a config row. Chapter pages embed
 // images either in a JS variable (chapImages/chapterImages/images) or inside a
 // #chapter-images / .chapter-content container.
 export type MangaBuddyConfig = {
@@ -26,6 +26,9 @@ export type MangaBuddyConfig = {
     mangaPath?: string
     language?: string
     rateLimit?: { requests: number; intervalMs: number }
+    // Extra origin patterns for a cover/page-image CDN host that differs from this
+    // site's own domain(s) - see SourceManifest.imageOrigins in @amr/source-sdk.
+    imageOrigins?: readonly string[]
 }
 
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
@@ -189,9 +192,9 @@ function extractTitle(html: string, fallbackSlug: string): string {
     const titleMatch = html.match(/<title>([^<]+)<\/title>/)
     const titleText = titleMatch ? captureGroup(titleMatch, 1) : undefined
     if (titleText) {
-        // Whitespace required on both sides — a bare hyphen inside a word (e.g.
+        // Whitespace required on both sides - a bare hyphen inside a word (e.g.
         // "Max-Level") isn't a "<title> - <site>" boundary and shouldn't be split on.
-        const cleaned = titleText.split(/\s+[-–|]\s+/)[0]?.trim()
+        const cleaned = titleText.split(/\s+[--|]\s+/)[0]?.trim()
         if (cleaned) return cleaned
     }
     return fallbackSlug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
@@ -229,7 +232,7 @@ export function createMangaBuddyAdapter(config: MangaBuddyConfig): SourceAdapter
         if (!matchesSourceDomain(url.hostname, config.domains)) return undefined
         const withPath = url.pathname.match(mangaWithPathRe)?.[1]
         if (withPath) return withPath
-        // Bare /<slug>: conservative — reject chapter-looking slugs so non-manga
+        // Bare /<slug>: conservative - reject chapter-looking slugs so non-manga
         // pages (and chapter URLs handled above) don't classify as manga.
         const bare = url.pathname.match(mangaBareRe)?.[1]
         if (!bare || /chapter/i.test(bare)) return undefined
@@ -244,7 +247,7 @@ export function createMangaBuddyAdapter(config: MangaBuddyConfig): SourceAdapter
 
     // Require an explicit `title` attribute on the anchor: MangaBuddy's result
     // cards carry one, while the nav/sidebar links that share the manga path do
-    // not — so this keeps control labels out of the results.
+    // not - so this keeps control labels out of the results.
     function extractSearchResults(html: string): SourceSearchResult[] {
         const linkRe = /<a\s+href="([^"]+)"[^>]*\stitle="([^"]+)"[^>]*>/gi
         const out: SourceSearchResult[] = []
@@ -317,7 +320,8 @@ export function createMangaBuddyAdapter(config: MangaBuddyConfig): SourceAdapter
             capabilities: ["pages", "chapters"],
             requestRateLimit: config.rateLimit ?? { requests: 3, intervalMs: 1000 },
             fixtureVersion: 1,
-            homepage: config.origin
+            homepage: config.origin,
+            ...(config.imageOrigins ? { imageOrigins: config.imageOrigins } : {})
         },
 
         match(url: URL): SourcePageMatch {
@@ -412,7 +416,7 @@ export function createMangaBuddyAdapter(config: MangaBuddyConfig): SourceAdapter
             if (imageUrls.length === 0) {
                 const hasCf = /cf-browser-verification|cf_chl_jschl|__cf_chl_captcha/.test(html)
                 context.logger.warn(
-                    `No images found [html:${html.length}b cf=${hasCf}] — returning pages:[] so siblings can be cached`,
+                    `No images found [html:${html.length}b cf=${hasCf}] - returning pages:[] so siblings can be cached`,
                     {
                         url: input.url.toString()
                     }

@@ -164,9 +164,9 @@ export const libraryHandlers: HandlerMap = {
         if (!adapter || adapter.match(url) !== "manga")
             throw new SourceError(
                 "unsupported-url",
-                "That URL is not a recognized manga page — make sure it's the series page, not a chapter"
+                "That URL is not a recognized manga page - make sure it's the series page, not a chapter"
             )
-        // Delegate ID extraction to the adapter — handles MangaDex-style URLs
+        // Delegate ID extraction to the adapter - handles MangaDex-style URLs
         // where the last segment is an SEO slug, not the internal ID.
         // Fallback to last path segment for CF-gated adapters that reject direct fetches.
         let sourceMangaId: string
@@ -246,7 +246,7 @@ export const libraryHandlers: HandlerMap = {
             chapters[0]
         )
         await db.transaction("rw", db.manga, db.sourceLinks, db.chapters, async () => {
-            // Old mirror's chapters are stale by definition after switching source —
+            // Old mirror's chapters are stale by definition after switching source -
             // otherwise they coexist with the new mirror's under the same mangaId and
             // chapter:siblings interleaves dead and live URLs in prev/next.
             await db.chapters
@@ -271,6 +271,23 @@ export const libraryHandlers: HandlerMap = {
             await db.manga.update(request.mangaId, {
                 manualTracking: undefined
             } as unknown as Partial<{ manualTracking: boolean }>)
+            // MangaHub numbers chapters by its own internal sequential URL slug
+            // (chapter-N), which can diverge from the numbering other sources use for
+            // the same manga. This handler never touches the existing
+            // lastReadChapterNumber, so after switching TO mangahub from a different
+            // source it sits next to mangahub's latestChapterNumber with nothing
+            // indicating the two may not be directly comparable. Flag it so a future
+            // UI can warn instead of silently comparing chapter counts that don't mean
+            // what they look like they mean. Not part of LibraryManga's typed
+            // interface - written via the same ad-hoc cast as manualTracking above,
+            // since database.ts is out of scope for this change.
+            const numberingMayMismatch =
+                request.sourceId === "mangahub" &&
+                existing.sourceId !== "mangahub" &&
+                existing.lastReadChapterNumber !== undefined
+            await db.manga.update(request.mangaId, {
+                chapterNumberingUnreliable: numberingMayMismatch ? true : undefined
+            } as unknown as Partial<{ chapterNumberingUnreliable: boolean }>)
             await db.sourceLinks.put({
                 mangaId: request.mangaId,
                 sourceId: request.sourceId,
@@ -312,7 +329,7 @@ export const libraryHandlers: HandlerMap = {
                 if (!remote) continue
                 let inlined = await inlineCover(remote)
                 // A stored remote cover URL can go stale over time (e.g. Webtoons
-                // rotates its thumbnail CDN URLs) — if inlining the existing URL
+                // rotates its thumbnail CDN URLs) - if inlining the existing URL
                 // failed and the adapter can re-resolve, fetch a fresh one before
                 // giving up. Without this, titles that already had a (now-dead)
                 // coverUrl never retry, since the `!m.coverUrl` branch below only

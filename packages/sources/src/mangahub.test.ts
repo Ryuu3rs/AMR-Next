@@ -5,10 +5,12 @@ import {
     COVER_SLUG,
     COVER_URL,
     mangaDetailHtml,
+    SEARCH_DECOY_SLUG,
     SEARCH_PATH_PAGE_1,
     SEARCH_PATH_PAGE_2,
     SEARCH_PATH_PAGE_3,
     SEARCH_QUERY,
+    searchDecoyChapterNumberHtml,
     searchEmptyHtml,
     searchPage1Html,
     searchPage2Html
@@ -104,6 +106,19 @@ describe("mangahubAdapter.search", () => {
 
         expect(results).toHaveLength(0)
         expect(requests).toHaveLength(0)
+    })
+
+    it("takes latestChapter from the chapter-link anchor, not a coincidental chapter-N elsewhere in the card", async () => {
+        const requests: string[] = []
+        const context = createContext(
+            { [SEARCH_PATH_PAGE_1]: searchDecoyChapterNumberHtml, [SEARCH_PATH_PAGE_2]: searchEmptyHtml },
+            requests
+        )
+
+        const results = await mangahubAdapter.search!("decoy", context)
+
+        expect(results).toHaveLength(1)
+        expect(results[0]).toMatchObject({ sourceMangaId: SEARCH_DECOY_SLUG, latestChapter: "52" })
     })
 })
 
