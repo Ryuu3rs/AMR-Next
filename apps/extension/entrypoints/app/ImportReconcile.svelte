@@ -30,9 +30,13 @@
         searched: boolean
         urlInput: string
         urlLinking: boolean
+        copied: boolean
     }
 
     const cards: Record<string, CardState> = $state({})
+    // Per-manga "Copied" flash timers - keyed outside $state since the timer handle
+    // itself isn't rendered, only the `copied` flag on the card is.
+    const copyTimers: Record<string, ReturnType<typeof setTimeout>> = {}
 
     const PAGE_SIZE = 20
     let visibleCount = $state(PAGE_SIZE)
@@ -57,7 +61,8 @@
                     error: false,
                     searched: false,
                     urlInput: "",
-                    urlLinking: false
+                    urlLinking: false,
+                    copied: false
                 }
             })
         }
@@ -135,7 +140,7 @@
         card.searching = true
         card.message = ""
         card.error = false
-        // Clear stale results from a previous attempt — otherwise a retry that finds
+        // Clear stale results from a previous attempt - otherwise a retry that finds
         // nothing (or errors) leaves the old, no-longer-relevant results on screen
         // alongside a message saying no match was found.
         card.results = []
@@ -167,7 +172,7 @@
                 if (scored.length === 0) {
                     card.message = "No live source found for this title."
                 } else {
-                    card.message = "No close title match found — pick manually if any look right."
+                    card.message = "No close title match found - pick manually if any look right."
                 }
             } else {
                 card.message = "No live source found for this title."
@@ -250,7 +255,7 @@
             onLinked(manga.id)
         } catch (cause) {
             card.error = true
-            card.message = cause instanceof Error ? cause.message : "Link failed — the source may be unreachable."
+            card.message = cause instanceof Error ? cause.message : "Link failed - the source may be unreachable."
             card.linking = null
         }
     }
@@ -282,6 +287,32 @@
         }
     }
 
+    // Always render an explicit statement of progress - "no recorded progress" instead
+    // of just omitting the line - so absence of data reads as a fact, not a silent gap.
+    function progressLine(manga: LibraryManga): string {
+        if (manga.lastReadChapterNumber != null) return `read ch ${manga.lastReadChapterNumber}`
+        if (manga.latestChapterNumber != null) return `latest ch ${manga.latestChapterNumber}`
+        return "no recorded progress"
+    }
+
+    async function copyTitle(manga: LibraryManga) {
+        const card = cardOf(manga.id)
+        try {
+            await navigator.clipboard.writeText(manga.title)
+        } catch {
+            return // clipboard access denied/unavailable - nothing more we can do
+        }
+        card.copied = true
+        if (copyTimers[manga.id]) clearTimeout(copyTimers[manga.id])
+        copyTimers[manga.id] = setTimeout(() => {
+            card.copied = false
+        }, 1500)
+    }
+
+    function openResult(result: SearchResult) {
+        void browser.tabs.create({ url: result.url })
+    }
+
     const progressPct = $derived(
         searchProgress.total > 0 ? Math.round((searchProgress.done / searchProgress.total) * 100) : 0
     )
@@ -291,7 +322,7 @@
     <section class="reconcile-section">
         <h2 class="reconcile-heading">
             {heading ??
-                `Source issues — ${mangas.length} ${mangas.length === 1 ? "title needs" : "titles need"} a live source`}
+                `Source issues - ${mangas.length} ${mangas.length === 1 ? "title needs" : "titles need"} a live source`}
         </h2>
         <p class="reconcile-hint muted">
             {hint ??
@@ -335,7 +366,7 @@
                         {/if}
                     </span>
                     {#if searchProgress.current && searchingAll}
-                        <span class="progress-current muted">— {searchProgress.current}</span>
+                        <span class="progress-current muted">- {searchProgress.current}</span>
                     {/if}
                     {#if !searchingAll && searchProgress.done >= searchProgress.total && searchProgress.total > 0}
                         <span class="progress-done">Done ✓</span>
@@ -352,12 +383,19 @@
                 {@const card = cardOf(manga.id)}
                 <li class="reconcile-card">
                     <div class="reconcile-meta">
-                        <span class="reconcile-title">{manga.title}</span>
+                        <span class="reconcile-title-row">
+                            <span class="reconcile-title">{manga.title}</span>
+                            <button
+                                type="button"
+                                class="btn-ghost btn-sm copy-title-btn"
+                                title="Copy title to clipboard"
+                                onclick={() => void copyTitle(manga)}>
+                                {card.copied ? "Copied" : "Copy title"}
+                            </button>
+                            {#if card.copied}<span class="saved-flash">✓</span>{/if}
+                        </span>
                         <span class="reconcile-source muted">
-                            Could not find: {sourceDomain(manga)}
-                            {#if manga.lastReadChapterNumber != null}
-                                · read ch {manga.lastReadChapterNumber}
-                            {/if}
+                            Could not find: {sourceDomain(manga)} · {progressLine(manga)}
                         </span>
                     </div>
                     <div class="reconcile-actions">
@@ -446,10 +484,15 @@
                                         <div class="mirror-info">
                                             <span class="mirror-source">{result.sourceId}</span>
                                             <span class="mirror-title muted">{result.title}</span>
-                                            {#if result.latestChapter}
-                                                <span class="mirror-ch muted">ch {result.latestChapter}</span>
-                                            {/if}
+                                            <span class="mirror-ch muted">ch {result.latestChapter ?? "?"}</span>
                                         </div>
+                                        <button
+                                            type="button"
+                                            class="btn-ghost btn-sm"
+                                            title="Open this result in a new tab"
+                                            onclick={() => openResult(result)}>
+                                            Open
+                                        </button>
                                         <button
                                             type="button"
                                             class="btn-sm"
@@ -608,9 +651,26 @@
         gap: 2px;
     }
 
+    .reconcile-title-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
     .reconcile-title {
         font-weight: 500;
         font-size: 0.95rem;
+    }
+
+    .copy-title-btn {
+        padding: 2px 6px;
+        font-size: 0.75rem;
+    }
+
+    .saved-flash {
+        font-size: 12px;
+        color: var(--success);
+        white-space: nowrap;
     }
 
     .reconcile-source {
