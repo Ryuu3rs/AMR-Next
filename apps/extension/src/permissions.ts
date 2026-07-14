@@ -2,81 +2,91 @@ import { madaraOrigins, mangaStreamOrigins, mangaBuddyOrigins, fanfoxFamilyOrigi
 
 // Single source of truth for source host origins. Consumed by the manifest
 // (wxt.config.ts), the background permission helpers, and every UI grant prompt.
-// Base origins are the bespoke adapters; the generic Madara sites contribute
-// their origins from the sources package so adding a Madara site stays a one-liner.
+// Base origins are the bespoke adapters; the generic per-family sites (Madara,
+// MangaStream, MangaBuddy, FanFox family) contribute their origins from the
+// sources package, including each site's optional imageOrigins for a separate
+// cover/page-image CDN host - see SourceManifest.imageOrigins in @amr/source-sdk.
+// That keeps adding a site (and its image CDN) a config-row change instead of a
+// manual BASE_SOURCE_ORIGINS patch every time a user hits a console CORS error.
 const BASE_SOURCE_ORIGINS = [
     "https://mangadex.org/*",
+    // mangadex.ts's manifest.domains also lists www.mangadex.org (match() accepts
+    // it), but no permission pattern covered it - found by the new coverage test
+    // in permissions.test.ts, not by a user report; fixed alongside the mfcdn.net gap.
+    "https://www.mangadex.org/*",
     "https://api.mangadex.org/*",
     "https://uploads.mangadex.org/*",
     "*://*.mangadex.network/*",
-    // mangaread.org — page images served from cdn.mangaread.org, and the adapter
+    // mangaread.org - page images served from cdn.mangaread.org, and the adapter
     // accepts the bare domain too, so a single wildcard covers both.
     "*://*.mangaread.org/*",
     "https://www.mgeko.cc/*",
     "https://mgeko.cc/*",
     "*://*.imgsrv4.com/*",
-    // MangaNato — retired 2026-06: chapmanganato.to down, manganato.com hijacked — uncomment when a working domain is found
+    // MangaNato - retired 2026-06: chapmanganato.to down, manganato.com hijacked - uncomment when a working domain is found
     // "https://chapmanganato.to/*",
     // "*://*.mkklcdnv6tempv3.com/*",
     // "*://*.mkklcdnv6temp.com/*",
-    // Weeb Central (MangaSee successor) — main domain + image CDN subdomains
+    // Weeb Central (MangaSee successor) - main domain + image CDN subdomains
     "https://weebcentral.com/*",
     "https://www.weebcentral.com/*",
     "*://*.weebcentral.com/*",
-    // Dynasty Scans — images served from the same origin, no separate CDN
+    // Dynasty Scans - images served from the same origin, no separate CDN
     "https://dynasty-scans.com/*",
     "https://www.dynasty-scans.com/*",
-    // MangaPark — retired 2026-06 (site down); uncomment when back
+    // MangaPark - retired 2026-06 (site down); uncomment when back
     // "https://mangapark.net/*",
     // "*://*.mangapark.net/*",
     // "*://*.mangapark.me/*",
-    // AsuraComic (Next.js adapter) — chapter images served from subdomains (e.g. gg.asuracomic.net)
+    // AsuraComic (Next.js adapter) - chapter images served from subdomains (e.g. gg.asuracomic.net)
     "https://asuracomic.net/*",
     "*://*.asuracomic.net/*",
-    // AsuraScans (React RSC adapter) — chapter images served from cdn.asurascans.com
+    // AsuraScans (React RSC adapter) - chapter images served from cdn.asurascans.com
     "https://asurascans.com/*",
     "*://*.asurascans.com/*",
-    // WEBTOON — images served from Naver's pstatic CDN (webtoon-phinf.pstatic.net)
+    // WEBTOON - images served from Naver's pstatic CDN (webtoon-phinf.pstatic.net)
     "https://www.webtoons.com/*",
     "https://webtoons.com/*",
     "*://*.pstatic.net/*",
-    // MangaHub — manga list pages load without CF; chapter images from mhcdn/mghcdn CDN
+    // MangaHub - manga list pages load without CF; chapter images from mhcdn/mghcdn CDN
     "https://mangahub.io/*",
     "https://www.mangahub.io/*",
     "*://*.mhcdn.net/*",
     "*://*.mghcdn.com/*",
-    // OlympusStaff — Next.js SSR; images in standard src, full reader works
+    // OlympusStaff - Next.js SSR; images in standard src, full reader works
     "https://olympustaff.com/*",
     "https://www.olympustaff.com/*",
-    // FanFox / MangaHere family — images JS-only; panel nav works via listChapters
+    // FanFox / MangaHere family - chapter images JS-only (panel nav works via
+    // listChapters); fanfox.net's covers come from fmcdn.mfcdn.net, folded in
+    // automatically via the fanfox config's imageOrigins (see fanfox-sites.ts).
     ...fanfoxFamilyOrigins,
     "https://z-fanfox.net/*",
-    // MangaHere cover CDN — separate host from the manga/chapter pages above
+    // MangaHere cover CDN - separate host from the manga/chapter pages above
     "*://*.mangahere.com/*",
     "*://*.compsci88.com/*",
-    // MangaFreak — all wwN mirrors + image CDN
+    // MangaFreak - all wwN mirrors + image CDN
     "*://*.mangafreak.me/*",
     "*://*.images.mangafreak.me/*",
-    // Comix — images are JS-only; sidebar tracking works
+    // Comix - images are JS-only; sidebar tracking works
     "https://comix.to/*",
     "https://www.comix.to/*",
     "*://*.static.comix.to/*",
     // User-requested Madara sites
     "https://likemanga.io/*",
     "*://*.likemanga.io/*",
-    // Kagane — Next.js RSC adapter. kagane.to itself sits behind a Cloudflare
+    // Kagane - Next.js RSC adapter. kagane.to itself sits behind a Cloudflare
     // managed challenge (series/reader pages + /api/integrity); the data API
     // (yuzuki.kagane.to: series metadata, search, covers, DRM page manifest) and
     // the page-image CDN (kstatic.to) are not gated.
     "https://kagane.to/*",
     "https://yuzuki.kagane.to/*",
     "https://kstatic.to/*"
-    // Surya Toon — retired 2026-07: domain hijacked/stalled, serves a stuck "Loading..."
-    // placeholder with no real content — uncomment if suryatoon.com is ever restored
+    // Surya Toon - retired 2026-07: domain hijacked/stalled, serves a stuck "Loading..."
+    // placeholder with no real content - uncomment if suryatoon.com is ever restored
     // "https://suryatoon.com/*",
     // "*://*.suryatoon.com/*",
-    // Manga Galaxy — retired 2026-07: domain hijacked, redirects to an unrelated TikTok
-    // video via a JS redirect chain — uncomment if mangagalaxy.me is ever restored
+    // Manga Galaxy - retired 2026-07: domain hijacked, redirects to an unrelated TikTok
+    // video via a JS redirect chain - uncomment if mangagalaxy.me is ever restored
     // "https://mangagalaxy.me/*",
     // "*://*.mangagalaxy.me/*"
 ] as const
@@ -93,12 +103,12 @@ export const SOURCE_ORIGINS: readonly string[] = [
 // is NOT repeated in optional_host_permissions to avoid manifest conflicts.
 export const GITHUB_API_ORIGIN = "https://api.github.com/*" as const
 
-// Gist sync origins — still requested optionally in the UI so the user knows
+// Gist sync origins - still requested optionally in the UI so the user knows
 // they are authorising Gist access (the network-level permission is already
 // granted via host_permissions; this optional grant is for the UI prompt only).
 export const SYNC_ORIGINS = [GITHUB_API_ORIGIN] as const
 
-// All optional host origins for the manifest (source sites only — GitHub API
+// All optional host origins for the manifest (source sites only - GitHub API
 // is in required host_permissions instead).
 export const ALL_OPTIONAL_ORIGINS: readonly string[] = [...SOURCE_ORIGINS]
 

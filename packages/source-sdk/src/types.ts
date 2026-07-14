@@ -17,6 +17,15 @@ export type SourceManifest = {
     }
     fixtureVersion: number
     homepage?: string
+    // Optional extra host-permission origin patterns for cover/page-image CDN hosts
+    // that differ from the adapter's own site domain(s) - e.g. a separate subdomain
+    // (storage.example.com) or an entirely different CDN host. Additive: adapters
+    // that omit this are unaffected. Per-family origin generators (madaraOrigins,
+    // mangaStreamOrigins, mangaBuddyOrigins, fanfoxFamilyOrigins) fold this into the
+    // origins they export, and permissions.ts folds those into SOURCE_ORIGINS - so a
+    // site's image CDN is granted automatically instead of needing a manual patch to
+    // BASE_SOURCE_ORIGINS every time a user hits a CORS error in the console.
+    imageOrigins?: readonly string[]
 }
 
 export type SourceManga = {
@@ -64,11 +73,11 @@ export type SourceSearchResult = {
     title: string
     url: string
     coverUrl?: string
-    // Latest hosted chapter number/label if the search surface exposes it — lets
+    // Latest hosted chapter number/label if the search surface exposes it - lets
     // the UI show which mirrors are actively updated (G7).
     latestChapter?: string
     // Alternate/native/romanized titles the source's search API returned for this
-    // result. Optional — most adapters don't populate it. Lets client-side query
+    // result. Optional - most adapters don't populate it. Lets client-side query
     // filters match on alt titles even when the query doesn't appear in `title`.
     altTitles?: string[]
 }
@@ -82,7 +91,7 @@ export interface SourceRequestClient {
     getText(url: URL, options?: SourceRequestOptions): Promise<string>
     postForm(url: URL, params: Record<string, string>, options?: SourceRequestOptions): Promise<string>
     // POST a JSON body (Content-Type: application/json) and validate the JSON response
-    // against a schema. For APIs that require a real `application/json` request body —
+    // against a schema. For APIs that require a real `application/json` request body -
     // postForm always sends `application/x-www-form-urlencoded`, which some JSON-only
     // APIs reject outright.
     postJson<T>(url: URL, body: unknown, schema: ZodType<T>, options?: SourceRequestOptions): Promise<T>
@@ -110,7 +119,7 @@ export interface SourceAdapter {
     // added by reading a chapter (which may not carry a reliable cover).
     resolveCover?(input: { sourceMangaId?: string; url?: URL }, context: SourceContext): Promise<string | undefined>
     // Optional: fetch a title's genre/tag names so the app can suggest tags. Best
-    // effort — adapters return [] rather than throwing when genres aren't available.
+    // effort - adapters return [] rather than throwing when genres aren't available.
     resolveGenres?(input: { sourceMangaId?: string; url?: URL }, context: SourceContext): Promise<string[]>
     // Optional: search this source for a title. Adapters that can't search omit it.
     search?(query: string, context: SourceContext): Promise<SourceSearchResult[]>

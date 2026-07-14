@@ -16,7 +16,7 @@ import {
 } from "@amr/source-sdk"
 
 // Config-driven adapter for the Madara WordPress manga theme. One factory covers
-// the whole template family — a new Madara site is a config row, not new code.
+// the whole template family - a new Madara site is a config row, not new code.
 export type MadaraConfig = {
     id: string
     name: string
@@ -33,9 +33,12 @@ export type MadaraConfig = {
     // Matches the legacy Madara adapter's img_src:"src" default.
     preferSrcAttribute?: boolean
     // Override adapter capabilities. Omit for the default ["pages", "chapters"].
-    // Set to ["chapters"] for sites that block background fetches or use ad-gates —
+    // Set to ["chapters"] for sites that block background fetches or use ad-gates -
     // sidebar tracking works but the reader returns pages:[] (shows "open on site" screen).
     capabilities?: readonly SourceCapability[]
+    // Extra origin patterns for a cover/page-image CDN host that differs from this
+    // site's own domain(s) - see SourceManifest.imageOrigins in @amr/source-sdk.
+    imageOrigins?: readonly string[]
 }
 
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
@@ -128,7 +131,7 @@ export function extractImagesFromHtml(html: string, preferSrc = false): string[]
 
     const imgTags = [...scope.matchAll(/<img\b[^>]*>/gi)].map(m => captureGroup(m, 0) ?? "").filter(Boolean)
 
-    // Strategy 0: id="image-N" — always reads src first (real URL in src, decoy in data-src).
+    // Strategy 0: id="image-N" - always reads src first (real URL in src, decoy in data-src).
     const imageIdTags = imgTags.filter(t => /\bid="image-\d+"/.test(t))
     if (imageIdTags.length > 0) {
         const urls = imageIdTags
@@ -260,11 +263,11 @@ function extractMangaTitle(html: string, mangaSlug: string): string {
     const titleMatch = html.match(/<title>([^<]+)<\/title>/)
     const titleText = titleMatch ? captureGroup(titleMatch, 1) : undefined
     if (titleText) {
-        // Require whitespace on both sides of the separator — a bare hyphen inside a
+        // Require whitespace on both sides of the separator - a bare hyphen inside a
         // word (e.g. "Max-Level") is not a "<title> - <chapter/site>" boundary and must
         // not be split on, or a hyphenated manga title gets truncated to one fragment.
-        const parts = titleText.split(/\s+[-–|]\s+/).filter(Boolean)
-        // "<Manga Title> - Chapter N - <Site Name>" or "<Manga Title> - <Site Name>" —
+        const parts = titleText.split(/\s+[--|]\s+/).filter(Boolean)
+        // "<Manga Title> - Chapter N - <Site Name>" or "<Manga Title> - <Site Name>" -
         // the manga title is always the first segment, never the middle/last ones.
         const title = parts[0]?.trim()
         if (title) return title
@@ -284,7 +287,7 @@ function extractSearchResults(html: string, config: MadaraConfig, mangaPath: str
     const blocks = [
         ...html.matchAll(/<div[^>]*\bc-tabs-item__content\b[^>]*>([\s\S]*?)(?=<div[^>]*\bc-tabs-item__content\b|$)/gi)
     ].map(m => captureGroup(m, 1) ?? "")
-    // No result wrappers means no hits — scanning the whole page only yields nav junk.
+    // No result wrappers means no hits - scanning the whole page only yields nav junk.
     if (blocks.length === 0) return []
     const linkRe = new RegExp(`<a\\s+href="(${originPath}/([^"/]+)/?)"[^>]*>([\\s\\S]*?)</a>`, "gi")
 
@@ -297,7 +300,7 @@ function extractSearchResults(html: string, config: MadaraConfig, mangaPath: str
         const slug = first ? captureGroup(first, 2) : undefined
         if (!url || !slug || seen.has(slug)) continue
         seen.add(slug)
-        // The thumbnail anchor has no text; the title anchor does — take the first non-empty.
+        // The thumbnail anchor has no text; the title anchor does - take the first non-empty.
         let title = ""
         for (const a of anchors) {
             const text = decodeEntities((captureGroup(a, 3) ?? "").replace(/<[^>]+>/g, "")).trim()
@@ -464,7 +467,8 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             capabilities: config.capabilities ? [...config.capabilities] : ["pages", "chapters"],
             requestRateLimit: config.rateLimit ?? { requests: 3, intervalMs: 1000 },
             fixtureVersion: 1,
-            homepage: config.origin
+            homepage: config.origin,
+            ...(config.imageOrigins ? { imageOrigins: config.imageOrigins } : {})
         },
 
         match(url: URL): SourcePageMatch {

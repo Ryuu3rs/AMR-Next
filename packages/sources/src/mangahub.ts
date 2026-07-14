@@ -17,7 +17,7 @@ const SOURCE_ID = "mangahub"
 const ORIGIN = "https://mangahub.io"
 const DOMAIN = "mangahub.io"
 
-// MangaHub's /search route is server-rendered (confirmed via direct fetch — no
+// MangaHub's /search route is server-rendered (confirmed via direct fetch - no
 // __NEXT_DATA__ blob, no GraphQL call needed): each result is a plain
 // `<div class="media-manga media">` card in the initial HTML response, and
 // pagination is a normal link-driven `/search/page/{n}` route. Fetch a handful
@@ -119,7 +119,7 @@ function extractChapters(html: string, mangaId: string): SourceChapter[] {
     return out
 }
 
-// Chapter page images — extracted after tab render (JS-driven reader).
+// Chapter page images - extracted after tab render (JS-driven reader).
 // MangaHub renders <img> tags with src pointing to their CDN (mhcdn.net / mghcdn.com).
 function extractImages(html: string): string[] {
     const urls: string[] = []
@@ -153,9 +153,15 @@ function extractImages(html: string): string[] {
 //   </div>
 // </div>
 // Split on the card marker so each block is scoped to one card; the last block
-// trails off into unrelated page content (e.g. the "Popular" slider), but since
-// only the *first* match of each field is taken per block, that trailing junk
-// is never reached.
+// trails off into unrelated page content (e.g. the "Popular" slider). The title
+// match is already anchor-scoped (mangahub.io/manga/SLUG) so it can't leak, but
+// the chapter number used to be a bare `chapter-(\d+)` scan over the WHOLE card
+// block - for the last card that block runs to end-of-page, so a coincidental
+// "chapter-N" anywhere in that trailing junk (or a future markup change putting
+// the CDN cover URL or another link before the real chapter anchor) could win
+// instead of the real one. Scope it to the actual chapter-link anchor's href.
+const CHAPTER_LINK_RE = /<a\s+href="https?:\/\/(?:www\.)?mangahub\.io\/chapter\/[^"/]+\/chapter-(\d+(?:\.\d+)?)"/i
+
 function extractSearchResults(html: string): SourceSearchResult[] {
     const blocks = [
         ...html.matchAll(/<div class="media-manga media">([\s\S]*?)(?=<div class="media-manga media">|$)/gi)
@@ -170,7 +176,7 @@ function extractSearchResults(html: string): SourceSearchResult[] {
         if (!slug || seen.has(slug)) continue
         seen.add(slug)
         // The thumbnail anchor wraps only an <img> (no text); the heading anchor
-        // has the title text — take the first anchor with non-empty text.
+        // has the title text - take the first anchor with non-empty text.
         let title = ""
         for (const a of anchors) {
             const text = decodeEntities((captureGroup(a, 2) ?? "").replace(/<[^>]+>/g, "").trim())
@@ -182,7 +188,7 @@ function extractSearchResults(html: string): SourceSearchResult[] {
         if (!title) title = slug.replace(/-/g, " ")
         const imgMatch = scope.match(/<img\b[^>]+src="(https?:\/\/[^"]+)"/i)
         const coverUrl = imgMatch ? captureGroup(imgMatch, 1) : undefined
-        const chapMatch = scope.match(/chapter-(\d+(?:\.\d+)?)/i)
+        const chapMatch = scope.match(CHAPTER_LINK_RE)
         const latestChapter = chapMatch ? captureGroup(chapMatch, 1) : undefined
         out.push({
             sourceId: SOURCE_ID,
@@ -295,14 +301,14 @@ export const mangahubAdapter: SourceAdapter = {
         if (!input.url) throw new SourceError("invalid-input", "Chapter URL required for MangaHub")
         const url = input.url
 
-        // Chapter pages are behind Cloudflare JS challenge — tab render required.
+        // Chapter pages are behind Cloudflare JS challenge - tab render required.
         // When the user is already on the page the browser has cf_clearance; SW fetch
         // may succeed. If blocked (403/challenge HTML), fall through to tab render.
         let html: string
         try {
             html = await ctx.request.getText(url, { headers: BROWSER_HEADERS })
         } catch (e) {
-            // Only convert known CDN/reverse-proxy block statuses to "blocked" — other
+            // Only convert known CDN/reverse-proxy block statuses to "blocked" - other
             // errors (404, network timeout, parse failure) should surface as-is instead
             // of masking the real cause and wasting a tab-render fallback attempt.
             if (e instanceof SourceRequestError && (e.status === 403 || e.status === 502 || e.status === 503)) {
@@ -310,7 +316,7 @@ export const mangahubAdapter: SourceAdapter = {
             }
             throw e
         }
-        // Cloudflare challenge response — treat as blocked
+        // Cloudflare challenge response - treat as blocked
         if (html.includes("__CF$cv$params") || html.includes("/cdn-cgi/challenge-platform/")) {
             throw new SourceRequestError("blocked")
         }
