@@ -1,4 +1,12 @@
-import { exportDatabase, importDatabase, previewImport, seedDatabase } from "../database"
+import {
+    createBackup,
+    exportDatabase,
+    importDatabase,
+    listBackups,
+    previewImport,
+    restoreBackup,
+    seedDatabase
+} from "../database"
 import { getSettings, updateSettings } from "../settings"
 import { getSyncConfig, getSyncStatus, pullFromGist, pushToGist, setSyncConfig } from "../sync"
 import { configureSyncAlarm, configureUpdateAlarm } from "../background/alarms"
@@ -12,10 +20,22 @@ export const dataSyncSettingsHandlers: HandlerMap = {
         return await previewImport(request.envelope)
     },
     "data:import": async request => {
+        // Pre-import safety net: snapshot the current library before applying any
+        // mutation, so a bad import/merge can always be undone via data:backup:restore.
+        await createBackup("pre-import")
         return await importDatabase(request.envelope, request.resolutions)
     },
     "data:seed": async () => {
         return await seedDatabase()
+    },
+    // Response: BackupSummary[] = { id, createdAt, reason }[] - small and safe to
+    // render directly in a list; call data:backup:restore with the chosen `id` to
+    // apply it. See database.ts's BackupSummary/listBackups for the full contract.
+    "data:backup:list": async () => {
+        return await listBackups()
+    },
+    "data:backup:restore": async request => {
+        return await restoreBackup(request.id)
     },
     "sync:status": async () => {
         return await getSyncStatus()
@@ -36,6 +56,9 @@ export const dataSyncSettingsHandlers: HandlerMap = {
     },
     "sync:pull": async () => {
         const envelope = await pullFromGist()
+        // Same pre-mutation safety net as data:import - a pull overwrites/merges local
+        // data too, so it deserves the same undo-via-backup guarantee.
+        await createBackup("pre-sync-pull")
         return await importDatabase(envelope)
     },
     "settings:get": async () => {

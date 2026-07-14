@@ -53,6 +53,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         resolutions: z.record(z.string(), z.enum(["overwrite", "skip", "merge"])).optional()
     }),
     z.object({ type: z.literal("data:seed") }),
+    z.object({ type: z.literal("data:backup:list") }),
+    z.object({ type: z.literal("data:backup:restore"), id: z.number().int().nonnegative() }),
     z.object({ type: z.literal("sync:status") }),
     z.object({
         type: z.literal("sync:config"),

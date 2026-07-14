@@ -1,19 +1,24 @@
 import "fake-indexeddb/auto"
 import type { ChapterRecord, MangaRecord, ReadingProgress, SourceLinkRecord } from "@amr/contracts"
+import type { SourceChapter } from "@amr/source-sdk"
 import { beforeEach, describe, expect, it } from "vitest"
 import {
+    createBackup,
     db,
     exportDatabase,
     getLocalStats,
     importDatabase,
+    listBackups,
     rekeyManga,
     removeManga,
+    restoreBackup,
     saveProgress,
     saveResolvedChapter,
     seedDatabase,
     trackExternalChapter
 } from "./database"
-import type { LibraryManga } from "./database"
+import type { LibraryManga, PageBookmark } from "./database"
+import { exportEnvelopeSchema } from "./schema"
 
 const manga: MangaRecord = {
     id: "mangadex:manga:abc",
@@ -50,7 +55,9 @@ beforeEach(async () => {
         db.progress.clear(),
         db.historyEvents.clear(),
         db.downloads.clear(),
-        db.covers.clear()
+        db.covers.clear(),
+        db.pageBookmarks.clear(),
+        db.backups.clear()
     ])
 })
 
@@ -144,7 +151,7 @@ describe("export / import round-trip", () => {
 })
 
 describe("seedDatabase", () => {
-    it("is idempotent — re-seeding does not duplicate", async () => {
+    it("is idempotent - re-seeding does not duplicate", async () => {
         await seedDatabase()
         const first = await db.manga.where("id").startsWith("seed-").count()
         await seedDatabase()
@@ -235,7 +242,315 @@ describe("export / import integrity", () => {
     })
 })
 
-describe("import merge — progress and history", () => {
+// Bug 5: the tests below are what should have caught Bugs 1 and 2 in the first
+// place - a full-fidelity round-trip across every table and every optional field,
+// a structural guard against future DB-shape/import-schema drift, and coverage for
+// the partial-success import path from Bug 3.
+describe("export / import full round-trip (Bug 5)", () => {
+    it("preserves every table and every optional manga/chapter field (modulo autoincrement history ids)", async () => {
+        const fullManga: LibraryManga = {
+            id: "mangadex:manga:full",
+            title: "Full Fixture Manga",
+            normalizedTitle: "full fixture manga",
+            coverUrl: "https://mangadex.org/covers/full.jpg",
+            description: "A manga with every optional field set.",
+            rating: 5,
+            authors: ["Author One", "Author Two"],
+            status: "ongoing",
+            addedAt: 1_000,
+            updatedAt: 2_000,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/full-1",
+            sourceMangaId: "full-src-id",
+            mangaUrl: "https://mangadex.org/title/full-src-id",
+            latestChapterId: "mangadex:chapter:full-2",
+            lastReadChapterId: "mangadex:chapter:full-1",
+            latestChapterNumber: 2,
+            lastReadChapterNumber: 1,
+            lastReadAt: 1_500,
+            manualTracking: true,
+            categories: ["favorites", "action"],
+            nsfw: true,
+            notes: "Reread before the next volume drops.",
+            genres: ["Action", "Drama"],
+            noGapContinuous: true,
+            onHold: false,
+            readingDirection: "rtl",
+            pageFit: "height"
+        }
+        const fullSourceLink: SourceLinkRecord = {
+            mangaId: fullManga.id,
+            sourceId: "mangadex",
+            url: fullManga.mangaUrl!,
+            sourceMangaId: fullManga.sourceMangaId,
+            title: fullManga.title,
+            language: "en",
+            addedAt: 1_000,
+            updatedAt: 2_000
+        }
+        // DB-shaped chapters: every real chapter-write path stores a SourceChapter
+        // (ChapterRecord & { sourceChapterId, language }), never a bare ChapterRecord -
+        // this is exactly the shape that used to break import (Bug 1).
+        const fullChapter1: SourceChapter = {
+            id: "mangadex:chapter:full-1",
+            mangaId: fullManga.id,
+            sourceId: "mangadex",
+            title: "Chapter 1",
+            url: "https://mangadex.org/chapter/full-1",
+            sortKey: 1,
+            chapterNumber: 1,
+            volumeNumber: 1,
+            publishedAt: 900,
+            fetchedAt: 950,
+            sourceChapterId: "full-1",
+            language: "en"
+        }
+        const fullChapter2: SourceChapter = {
+            ...fullChapter1,
+            id: "mangadex:chapter:full-2",
+            title: "Chapter 2",
+            url: "https://mangadex.org/chapter/full-2",
+            sortKey: 2,
+            chapterNumber: 2,
+            sourceChapterId: "full-2"
+        }
+
+        await db.transaction("rw", db.manga, db.sourceLinks, db.chapters, async () => {
+            await db.manga.put(fullManga)
+            await db.sourceLinks.put(fullSourceLink)
+            await db.chapters.bulkPut([fullChapter1, fullChapter2])
+        })
+        await db.progress.put({
+            mangaId: fullManga.id,
+            chapterId: fullChapter1.id,
+            pageIndex: 9,
+            pageCount: 10,
+            completed: true,
+            updatedAt: 1_400
+        })
+        await db.historyEvents.bulkAdd([
+            { mangaId: fullManga.id, chapterId: fullChapter1.id, type: "started", occurredAt: 1_300 },
+            { mangaId: fullManga.id, chapterId: fullChapter1.id, type: "completed", occurredAt: 1_400 }
+        ])
+        const bookmark: PageBookmark = {
+            id: `${fullChapter1.id}:0`,
+            mangaId: fullManga.id,
+            chapterId: fullChapter1.id,
+            pageIndex: 0,
+            mangaTitle: fullManga.title,
+            chapterTitle: fullChapter1.title,
+            chapterUrl: fullChapter1.url,
+            addedAt: 1_350
+        }
+        await db.pageBookmarks.put(bookmark)
+
+        const exported = await exportDatabase()
+
+        await Promise.all([
+            db.manga.clear(),
+            db.sourceLinks.clear(),
+            db.chapters.clear(),
+            db.progress.clear(),
+            db.historyEvents.clear(),
+            db.pageBookmarks.clear()
+        ])
+
+        const result = await importDatabase(exported)
+        expect(result.skipped).toEqual([])
+
+        const reimported = await exportDatabase()
+
+        expect(reimported.data.manga).toEqual(exported.data.manga)
+        expect(reimported.data.sourceLinks).toEqual(exported.data.sourceLinks)
+        expect(reimported.data.chapters).toEqual(exported.data.chapters)
+        expect(reimported.data.progress).toEqual(exported.data.progress)
+        expect(reimported.data.pageBookmarks).toEqual(exported.data.pageBookmarks)
+        // historyEvents ids are intentionally NOT preserved on import (see
+        // importDatabase's comment on stripping foreign auto-increment ids) - compare
+        // modulo id, but still assert both events survived the round-trip.
+        expect(reimported.data.historyEvents.map(({ id: _id, ...rest }) => rest)).toEqual(
+            exported.data.historyEvents.map(({ id: _id, ...rest }) => rest)
+        )
+        expect(reimported.data.historyEvents).toHaveLength(2)
+    })
+})
+
+describe("chapter DB-shape vs import-schema drift guard (Bug 5)", () => {
+    it("chapters written through saveResolvedChapter (the real chapter-write path) validate cleanly against the export/import schema", async () => {
+        // sourceChapter is typed as the real @amr/source-sdk SourceChapter - if that
+        // type ever grows a new required field, this object literal fails to compile,
+        // forcing the schema below to be updated in the same change instead of a user
+        // discovering the mismatch via a failed import.
+        const sourceChapter: SourceChapter = {
+            id: "mangadex:chapter:drift-1",
+            mangaId: manga.id,
+            sourceId: "mangadex",
+            title: "Chapter 1",
+            url: "https://mangadex.org/chapter/drift-1",
+            sortKey: 1,
+            sourceChapterId: "drift-1",
+            language: "en"
+        }
+        await saveResolvedChapter({ manga, chapter: sourceChapter, sourceLink })
+
+        const exported = await exportDatabase()
+        const parsed = exportEnvelopeSchema.safeParse(exported)
+        expect(parsed.success).toBe(true)
+    })
+})
+
+describe("partial-success import (Bug 3)", () => {
+    it("imports valid chapters and reports the invalid one instead of aborting the whole import", async () => {
+        const envelope = {
+            format: "all-mangas-reader" as const,
+            version: 1 as const,
+            data: {
+                manga: [{ ...manga, sourceId: "mangadex", sourceUrl: "https://mangadex.org/chapter/1" }],
+                sourceLinks: [sourceLink],
+                chapters: [
+                    {
+                        id: "mangadex:chapter:1",
+                        mangaId: manga.id,
+                        sourceId: "mangadex",
+                        title: "Chapter 1",
+                        url: "https://mangadex.org/chapter/1",
+                        sortKey: 1
+                    },
+                    // Deliberately broken: missing the required `url` field.
+                    {
+                        id: "mangadex:chapter:2",
+                        mangaId: manga.id,
+                        sourceId: "mangadex",
+                        title: "Chapter 2",
+                        sortKey: 2
+                    },
+                    {
+                        id: "mangadex:chapter:3",
+                        mangaId: manga.id,
+                        sourceId: "mangadex",
+                        title: "Chapter 3",
+                        url: "https://mangadex.org/chapter/3",
+                        sortKey: 3
+                    }
+                ],
+                progress: [],
+                historyEvents: [],
+                pageBookmarks: []
+            }
+        }
+
+        const result = await importDatabase(envelope)
+
+        expect(result.manga).toBe(1)
+        expect(result.chapters).toBe(2)
+        expect(await db.chapters.get("mangadex:chapter:1")).toBeDefined()
+        expect(await db.chapters.get("mangadex:chapter:2")).toBeUndefined()
+        expect(await db.chapters.get("mangadex:chapter:3")).toBeDefined()
+
+        expect(result.skipped).toHaveLength(1)
+        expect(result.skipped[0]).toMatchObject({
+            table: "chapters",
+            index: 1,
+            id: "mangadex:chapter:2",
+            code: "MISSING_REQUIRED_FIELD"
+        })
+    })
+
+    it("skips dependents of a manga record that itself failed validation (referential integrity)", async () => {
+        const envelope = {
+            format: "all-mangas-reader" as const,
+            version: 1 as const,
+            data: {
+                manga: [
+                    // Missing required sourceId/sourceUrl - fails libraryMangaSchema.
+                    {
+                        id: "broken:manga:1",
+                        title: "Broken Manga",
+                        normalizedTitle: "broken manga",
+                        authors: [],
+                        status: "ongoing",
+                        addedAt: 1,
+                        updatedAt: 1
+                    }
+                ],
+                sourceLinks: [],
+                chapters: [
+                    {
+                        id: "broken:chapter:1",
+                        mangaId: "broken:manga:1",
+                        sourceId: "mangadex",
+                        title: "Chapter 1",
+                        url: "https://mangadex.org/chapter/1",
+                        sortKey: 1
+                    }
+                ],
+                progress: [],
+                historyEvents: [],
+                pageBookmarks: []
+            }
+        }
+
+        const result = await importDatabase(envelope)
+
+        expect(result.manga).toBe(0)
+        expect(result.chapters).toBe(0)
+        expect(result.skipped).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ table: "manga", index: 0, id: "broken:manga:1" }),
+                expect.objectContaining({ table: "chapters", index: 0, id: "broken:manga:1", code: "PARENT_SKIPPED" })
+            ])
+        )
+        expect(await db.chapters.get("broken:chapter:1")).toBeUndefined()
+    })
+})
+
+describe("pre-import backups (Bug 4)", () => {
+    it("createBackup snapshots the current library and listBackups returns it without the full envelope", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+
+        await createBackup("pre-import")
+
+        const summaries = await listBackups()
+        expect(summaries).toHaveLength(1)
+        expect(summaries[0]).toMatchObject({ reason: "pre-import" })
+        expect(summaries[0]).not.toHaveProperty("envelope")
+
+        const stored = await db.backups.toArray()
+        expect(stored[0]?.envelope.data.manga).toHaveLength(1)
+    })
+
+    it("prunes to the last 3 backups", async () => {
+        for (let i = 0; i < 5; i++) {
+            await createBackup("pre-import")
+        }
+        expect(await db.backups.count()).toBe(3)
+    })
+
+    it("restoreBackup re-imports the snapshot and itself snapshots a pre-restore backup first", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await createBackup("pre-import")
+        const [backup] = await listBackups()
+
+        // Simulate a bad import wiping the library after the backup was taken.
+        await db.manga.clear()
+        await db.chapters.clear()
+        await db.sourceLinks.clear()
+
+        const result = await restoreBackup(backup!.id)
+
+        expect(result.manga).toBe(1)
+        expect(await db.manga.get(manga.id)).toBeDefined()
+        // Restoring is itself undoable: it should have snapshotted the (now-empty)
+        // pre-restore state before applying the restore.
+        expect(await db.backups.count()).toBe(2)
+    })
+
+    it("restoreBackup throws for an unknown id", async () => {
+        await expect(restoreBackup(999)).rejects.toThrow(/no backup/i)
+    })
+})
+
+describe("import merge - progress and history", () => {
     it("does not regress a completed chapter when the imported progress record is older", async () => {
         await saveResolvedChapter({ manga, chapter, sourceLink })
         await saveProgress({
@@ -321,7 +636,7 @@ describe("import merge — progress and history", () => {
         expect(localEvents).toHaveLength(1)
         const localId = localEvents[0]!.id!
 
-        // A backup from a different profile whose own auto-increment also started at 1 —
+        // A backup from a different profile whose own auto-increment also started at 1 -
         // importing it must not silently overwrite the unrelated local event above.
         await importDatabase({
             format: "all-mangas-reader",
@@ -458,7 +773,7 @@ describe("trackExternalChapter", () => {
     })
 
     it("does not cross-contaminate progress onto an unrelated Webtoons title when the direct id lookup misses", async () => {
-        // Every Webtoons URL has the shape /<locale>/<genre>/<slug>/... — none of that
+        // Every Webtoons URL has the shape /<locale>/<genre>/<slug>/... - none of that
         // matches MANGA_PATH_MARKERS, so a naive slug fallback degenerates to the locale
         // token ("en") for every title and spuriously "matches" any two Webtoons titles.
         const unrelated: LibraryManga = {
@@ -484,7 +799,7 @@ describe("trackExternalChapter", () => {
             }
         })
 
-        // Must create/track a distinct "Hero Killer" (title_no=2745) record — not silently
+        // Must create/track a distinct "Hero Killer" (title_no=2745) record - not silently
         // attach progress to the unrelated title_no=1111 record via the degenerate
         // host+locale slug match.
         expect(result.mangaId).not.toBe(unrelated.id)
@@ -580,7 +895,7 @@ describe("rekeyManga", () => {
         await db.manga.put(duplicate)
 
         // Mirrors what library:relink actually does: build `next` from the old record's
-        // preserved user fields before calling rekeyManga — rekeyManga only merges
+        // preserved user fields before calling rekeyManga - rekeyManga only merges
         // whatever `next` is handed against whatever's already at the new id, it doesn't
         // re-fetch the old record itself.
         const existing = await db.manga.get(oldId)
