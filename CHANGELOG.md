@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.10.1...v0.11.0) (2026-07-14)
+
+
+### Features
+
+* add kagane.to source adaptor ([62616aa](https://github.com/Ryuu3rs/AMR-Next/commit/62616aa7205b74c2893f2123b1d6a1751213991e))
+
+
+### Bug Fixes
+
+* add missing playwright devDependency to browser-tests/runner ([3627645](https://github.com/Ryuu3rs/AMR-Next/commit/362764555c650705745252515ffcb984339ac799))
+* strip Svelte 5 $state proxies before sending import envelope over runtime messaging ([90c35b4](https://github.com/Ryuu3rs/AMR-Next/commit/90c35b42510b309ed64b683d9108d99334f9aeae))
+* tab-injection bot-block fallback captured the Cloudflare challenge page, not the real content ([ebc1c3a](https://github.com/Ryuu3rs/AMR-Next/commit/ebc1c3a2888833b5893186cdfdf3f47496136b72))
+
 ## [0.10.1](https://github.com/Ryuu3rs/AMR-Next/compare/v0.10.0...v0.10.1) (2026-07-12)
 
 
