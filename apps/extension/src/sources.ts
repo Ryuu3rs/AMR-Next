@@ -13,6 +13,10 @@ export function findSource(url: URL) {
     return sourceRegistry.match(url)
 }
 
+export function getSourceById(sourceId: string) {
+    return sourceRegistry.get(sourceId)
+}
+
 const wrapFetch = (requestUrl: string, init: Parameters<typeof fetch>[1]) =>
     fetch(requestUrl, init).then(r => ({ ok: r.ok, status: r.status, url: r.url, text: () => r.text() }))
 
@@ -20,7 +24,7 @@ function createSourceContext(rateLimit?: { requests: number; intervalMs: number 
     const request = createBoundedRequestClient({
         fetch: wrapFetch,
         // Wildcard patterns (e.g. *://*.mangadex.network/*) are manifest permission
-        // entries for image CDNs — not valid URLs. Strip them; only exact origins
+        // entries for image CDNs - not valid URLs. Strip them; only exact origins
         // are needed by the bounded request client for API/HTML fetches.
         allowedOrigins: SOURCE_ORIGINS.filter(o => !o.startsWith("*://")).map(o => o.replace(/\/\*$/, "")),
         maxRequests: 20,
@@ -158,7 +162,7 @@ function normTitle(s: string): string {
 // Some per-site adapters' own search endpoints are fuzzy/broad server-side (e.g.
 // typing "best" can return titles that don't contain "best" at all). Require every
 // whitespace-separated token in the normalized query to appear as a substring
-// somewhere in the normalized title — plain substring/token containment, no
+// somewhere in the normalized title - plain substring/token containment, no
 // fuzzy scoring or edit-distance matching.
 export function matchesQuery(title: string, query: string): boolean {
     const normalizedTitle = normTitle(title)
@@ -169,7 +173,7 @@ export function matchesQuery(title: string, query: string): boolean {
 
 // A result passes if the query matches the main title OR any alt title the source
 // surfaced (e.g. MangaDex's Japanese/romanized alternate titles). Results without
-// altTitles behave exactly as before — title-only match.
+// altTitles behave exactly as before - title-only match.
 function matchesQueryWithAltTitles(result: SourceSearchResult, query: string): boolean {
     if (matchesQuery(result.title, query)) return true
     return (result.altTitles ?? []).some(altTitle => matchesQuery(altTitle, query))
@@ -177,7 +181,7 @@ function matchesQueryWithAltTitles(result: SourceSearchResult, query: string): b
 
 // Aggregate search across every adapter that supports it. Sources without
 // granted host permission fail their origin check and are skipped (allSettled).
-// sourceHealth is intentionally NOT used here — a source can be flagged dead for
+// sourceHealth is intentionally NOT used here - a source can be flagged dead for
 // chapter fetching but still have a working search endpoint.
 export async function searchManga(query: string): Promise<SourceSearchResult[]> {
     const searchable = sourceRegistry.list().filter(adapter => !!adapter.search)
@@ -193,7 +197,7 @@ export async function searchManga(query: string): Promise<SourceSearchResult[]> 
         .filter(result => matchesQueryWithAltTitles(result, query))
 }
 
-// Streaming variant — fires all adapters concurrently and calls onPartial as each
+// Streaming variant - fires all adapters concurrently and calls onPartial as each
 // adapter settles, then calls onDone when all are complete. Enables progressive UI.
 export function searchMangaStreaming(
     query: string,
@@ -249,7 +253,7 @@ export async function requestSourcePermission(): Promise<boolean> {
 }
 
 // List chapters from an arbitrary source/mirror for a manga already in the
-// library — used to switch a title to a different mirror (G8).
+// library - used to switch a title to a different mirror (G8).
 export async function listChaptersForSource(
     manga: LibraryManga,
     sourceId: string,

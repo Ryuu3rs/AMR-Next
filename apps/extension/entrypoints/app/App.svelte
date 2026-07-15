@@ -2,7 +2,7 @@
     import type { ImportConflict, ImportResolution, LibraryManga, PageBookmark } from "../../src/database"
     import type { AppSettings } from "../../src/settings"
     import type { ReadingProgress } from "@amr/contracts"
-    import { onMount } from "svelte"
+    import { onDestroy, onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
     import { migrateLegacyImport } from "../../src/legacy-import"
@@ -557,10 +557,19 @@
         return !!(manga.latestChapterId && manga.latestChapterId !== manga.lastReadChapterId)
     }
 
+    // When a dashboard tab that's already open regains focus (e.g. the reader's
+    // "back to dashboard" refocuses it rather than opening a fresh one), pick up any
+    // progress changes from the reading session with a cheap indexed re-query -
+    // without re-triggering the cover backfill cascade.
+    function onVisibilityChange() {
+        if (document.visibilityState === "visible") void load()
+    }
+
     onMount(async () => {
+        document.addEventListener("visibilitychange", onVisibilityChange)
         await load()
         hasPermission = await sendRuntimeMessage<boolean>({ type: "source:permission:check" })
-        if (hasPermission) void backfillCovers()
+        if (hasPermission) void maybeBackfillCovers()
         try {
             const stored = await browser.storage.local.get("onboardingDismissed")
             onboardingDismissed = Boolean(stored["onboardingDismissed"])
@@ -610,6 +619,10 @@
                 updateStatus = (changes["updateStatus"].newValue as typeof updateStatus) ?? null
             }
         })
+    })
+
+    onDestroy(() => {
+        document.removeEventListener("visibilitychange", onVisibilityChange)
     })
 
     async function loadCachedCovers() {
@@ -684,9 +697,28 @@
         }
     }
 
+    // Background cover-freshness sweep shouldn't re-run its full network cascade
+    // on every single dashboard open - the MV3 service worker is essentially always
+    // killed and restarted between reading sessions, so an in-memory dedup set alone
+    // doesn't prevent that. Gate the automatic onMount trigger behind this TTL; the
+    // manual "Refresh covers" button and post-import call still bypass it below.
+    const COVER_BACKFILL_TTL_MS = 8 * 60 * 60 * 1000
+
+    async function maybeBackfillCovers() {
+        try {
+            const stored = await browser.storage.local.get("lastCoverBackfillAt")
+            const last = stored["lastCoverBackfillAt"] as number | undefined
+            if (last && Date.now() - last < COVER_BACKFILL_TTL_MS) return
+        } catch {
+            // storage read failed - fall through and attempt the backfill anyway
+        }
+        void backfillCovers()
+    }
+
     async function backfillCovers() {
         if (refreshingCovers) return
         refreshingCovers = true
+        void browser.storage.local.set({ lastCoverBackfillAt: Date.now() }).catch(() => {})
         try {
             let anyUpdated = false
             for (;;) {

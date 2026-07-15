@@ -1,6 +1,6 @@
 import type { ReadingProgress } from "@amr/contracts"
 import { db, recordAnalyticsEvent, saveProgress, trackExternalChapter } from "../database"
-import { findSource, listChaptersBySource, resolveChapterFromHtml, resolveChapterUrl } from "../sources"
+import { findSource, getSourceById, listChaptersBySource, resolveChapterFromHtml, resolveChapterUrl } from "../sources"
 import { mineAndCacheEpisodesFromHtml, scheduleChapterListRefresh } from "../background/chapter-cache"
 import { fetchChapterHtmlViaTab } from "../background/tab-fetch"
 import { captureChapter, isBotBlocked } from "../background/capture"
@@ -53,7 +53,10 @@ export const readerHandlers: HandlerMap = {
                 resolved = await resolveChapterFromHtml(request.url, html)
                 // Mine all episode links from the rendered viewer DOM and cache
                 // them so the on-site panel's prev/next and mark-as-read work.
-                void mineAndCacheEpisodesFromHtml(
+                // Awaited (not fire-and-forget): it's a local regex parse + bulkPut,
+                // not a network call, and the reader calls loadSiblings right after
+                // this handler returns - a race here would leave siblings empty.
+                await mineAndCacheEpisodesFromHtml(
                     resolved.manga.manga.id,
                     resolved.manga.sourceId,
                     resolved.manga.sourceMangaId,
@@ -79,7 +82,7 @@ export const readerHandlers: HandlerMap = {
     },
 
     "chapter:siblings": async request => {
-        // Look up cached chapters from DB — no network call needed.
+        // Look up cached chapters from DB - no network call needed.
         // auto-capture already stored chapters when the user first visited.
         const chRecord = await db.chapters.filter(c => c.url === request.url).first()
         if (!chRecord) return { prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null }
@@ -98,14 +101,35 @@ export const readerHandlers: HandlerMap = {
     },
 
     "reader:chapters": async request => {
+        const fromCache = async () => {
+            const cached = await db.chapters.where("mangaId").equals(request.mangaId).sortBy("sortKey")
+            return cached.map(c => ({ url: c.url, sortKey: c.sortKey, title: c.title }))
+        }
+
+        const source = getSourceById(request.sourceId)
+        if (source?.getChapterListUrl) {
+            // JS-rendered list page (e.g. Webtoons) - a plain SW fetch is known to
+            // return a partial/empty list, so check the DB cache first instead of
+            // attempting a fetch we already know will fail, and refresh it in the
+            // background without blocking this response.
+            scheduleChapterListRefresh(source, request.sourceMangaId, request.mangaUrl, request.mangaId)
+            const cached = await fromCache()
+            if (cached.length > 0) return cached
+        }
+
         try {
             const chapters = await listChaptersBySource(request.sourceId, request.sourceMangaId, request.mangaUrl)
+            // A list that's just the 2-3 paginate prev/next links isn't useful - fall
+            // back to whatever's cached rather than showing a broken nav with 1-2 items.
+            if (chapters.length <= 2) return await fromCache()
+            await db.chapters.bulkPut(chapters)
             return chapters
                 .map(c => ({ url: c.url, sortKey: c.sortKey, title: c.title }))
                 .sort((a, b) => a.sortKey - b.sortKey)
         } catch {
-            // Source can't list chapters (e.g. mgeko) — no nav.
-            return []
+            // Source can't list chapters over the network (e.g. mgeko, or bot-blocked
+            // mid-session) - fall back to whatever's cached rather than no nav at all.
+            return await fromCache()
         }
     },
 

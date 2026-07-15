@@ -92,7 +92,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         type: z.literal("reader:chapters"),
         sourceId: z.string().min(1),
         sourceMangaId: z.string().min(1),
-        mangaUrl: z.url()
+        mangaUrl: z.url(),
+        mangaId: z.string().min(1)
     }),
     z.object({ type: z.literal("reader:progress:get"), chapterId: z.string().min(1) }),
     z.object({

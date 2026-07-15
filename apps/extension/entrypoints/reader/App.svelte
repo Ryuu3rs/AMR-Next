@@ -79,7 +79,7 @@
                 chapterTitle: chapter.chapter.title,
                 chapterUrl: chapter.chapter.url
             })
-            // Reassign instead of mutating in place — Svelte 5's $state proxy doesn't
+            // Reassign instead of mutating in place - Svelte 5's $state proxy doesn't
             // track plain Set.add/.delete, so isBookmarked wouldn't recompute otherwise.
             const next = new Set(bookmarkedPages)
             if (added) next.add(currentPage)
@@ -133,7 +133,7 @@
         void saveCategories(mangaCategories.filter(c => c !== tag))
     }
 
-    // Open the chapter on its own site and still record it as read — the no-scrape
+    // Open the chapter on its own site and still record it as read - the no-scrape
     // fallback for sources whose images the in-app reader can't load.
     async function openOnSiteAndTrack() {
         if (!chapterUrl) return
@@ -276,7 +276,7 @@
 
     // A11: export a downloaded chapter as a real CBZ file on disk. A CBZ is just a
     // ZIP of images, so we hand-roll a minimal STORED-mode (uncompressed) ZIP writer
-    // rather than pull in a dependency — images are already compressed, so STORED
+    // rather than pull in a dependency - images are already compressed, so STORED
     // mode costs nothing and keeps this self-contained for the MV3 page context.
     let exportingCbz = $state(false)
     let exportCbzError = $state("")
@@ -461,7 +461,7 @@
         void setDirection(next)
     }
 
-    // Per-series "Webtoon view" (no-gap continuous) override — mirrors setDirection's
+    // Per-series "Webtoon view" (no-gap continuous) override - mirrors setDirection's
     // shape, but persists to the library record via library:reading-prefs instead of
     // local storage, since this is a per-manga DB override rather than a device-local one.
     function flashNoGapSaved() {
@@ -474,7 +474,7 @@
 
     async function setSeriesNoGap(value: boolean) {
         if (!mangaId) return
-        // Optimistic — flip the visual state immediately, don't wait on the round trip.
+        // Optimistic - flip the visual state immediately, don't wait on the round trip.
         noGapOverride = value
         noGapContinuous = value
         try {
@@ -538,7 +538,34 @@
         }
     }
 
-    const currentIndex = $derived(chapter ? siblings.findIndex(s => s.url === chapter!.chapter.url) : -1)
+    // Strip hash fragments and re-sort query params so tracking-param/ordering
+    // differences between the opened chapter URL and a mined sibling URL don't
+    // break the match.
+    function normalizeUrl(u: string): string {
+        try {
+            const parsed = new URL(u)
+            parsed.hash = ""
+            const sortedParams = new URLSearchParams(
+                [...parsed.searchParams.entries()].sort(([a], [b]) => a.localeCompare(b))
+            )
+            parsed.search = sortedParams.toString()
+            return parsed.toString()
+        } catch {
+            return u
+        }
+    }
+
+    const currentIndex = $derived.by(() => {
+        if (!chapter) return -1
+        const url = chapter.chapter.url
+        const exact = siblings.findIndex(s => s.url === url)
+        if (exact >= 0) return exact
+        const sortKey = chapter.chapter.sortKey
+        const bySortKey = siblings.findIndex(s => s.sortKey === sortKey)
+        if (bySortKey >= 0) return bySortKey
+        const normalized = normalizeUrl(url)
+        return siblings.findIndex(s => normalizeUrl(s.url) === normalized)
+    })
     const prevUrl = $derived(currentIndex > 0 ? siblings[currentIndex - 1]?.url : undefined)
     const nextUrl = $derived(
         currentIndex >= 0 && currentIndex < siblings.length - 1 ? siblings[currentIndex + 1]?.url : undefined
@@ -550,7 +577,8 @@
                 type: "reader:chapters",
                 sourceId: resolved.manga.sourceId,
                 sourceMangaId: resolved.manga.sourceMangaId,
-                mangaUrl: resolved.manga.url
+                mangaUrl: resolved.manga.url,
+                mangaId: resolved.manga.manga.id
             })
         } catch {
             siblings = []
@@ -578,7 +606,7 @@
             })
             currentPage = progress?.pageIndex ?? 0
             // A10: load global settings + per-title overrides in parallel so mode is
-            // set exactly once — no flicker from a global-default interim state.
+            // set exactly once - no flicker from a global-default interim state.
             mangaId = chapter.manga.manga.id
             try {
                 const modeKey = `readerMode:${mangaId}`
@@ -690,10 +718,29 @@
 
     async function goToApp() {
         const appUrl = browser.runtime.getURL("/app.html")
+        const currentTab = await browser.tabs.getCurrent().catch(() => undefined)
+        // The reader always opens in a new tab, so the dashboard tab that launched it
+        // is normally still alive in the background. Refocus it instead of cold-booting
+        // a brand-new dashboard (which redoes onMount's full library load + cover backfill).
         try {
-            const tab = await browser.tabs.getCurrent()
-            if (tab?.id !== undefined) {
-                await browser.tabs.update(tab.id, { url: appUrl })
+            const existing = await browser.tabs.query({ url: `${appUrl}*` })
+            const existingTab = existing.find(t => t.id !== undefined)
+            if (existingTab?.id !== undefined) {
+                await browser.tabs.update(existingTab.id, { active: true })
+                if (existingTab.windowId !== undefined) {
+                    await browser.windows.update(existingTab.windowId, { focused: true })
+                }
+                if (currentTab?.id !== undefined) {
+                    await browser.tabs.remove(currentTab.id)
+                }
+                return
+            }
+        } catch {
+            // fallthrough to navigating the current tab
+        }
+        try {
+            if (currentTab?.id !== undefined) {
+                await browser.tabs.update(currentTab.id, { url: appUrl })
                 return
             }
         } catch {
@@ -810,10 +857,10 @@
                     class:active={noGapOverride === true}
                     class:off-override={noGapOverride === false}
                     title={noGapOverride === null
-                        ? "Webtoon view (no gaps) — using the global default, click to set for this series"
+                        ? "Webtoon view (no gaps) - using the global default, click to set for this series"
                         : noGapOverride
-                          ? "Webtoon view is ON for this series — click to turn off"
-                          : "Webtoon view is OFF for this series — click to turn on"}
+                          ? "Webtoon view is ON for this series - click to turn off"
+                          : "Webtoon view is OFF for this series - click to turn on"}
                     onclick={toggleSeriesNoGap}>
                     Webtoon view
                 </button>
@@ -843,7 +890,7 @@
                     type="button"
                     class="btn-sm active"
                     disabled={removingDownload}
-                    title="Available offline — click to remove"
+                    title="Available offline - click to remove"
                     onclick={() => void removeChapterDownload()}>
                     {removingDownload ? "…" : "✓ Offline"}
                 </button>
@@ -942,7 +989,7 @@
     class="fit-{effectivePageFit} dir-{direction}">
     {#if chapter && !error && !resolving && zeroPages}
         <div class="mirror-banner">
-            <span>No reader pages available — open on site and use the AMR sidebar to navigate.</span>
+            <span>No reader pages available - open on site and use the AMR sidebar to navigate.</span>
             <button type="button" class="btn-mirror" onclick={() => void openOnSiteAndTrack()}>
                 Open on site &amp; mark read
             </button>
@@ -971,7 +1018,7 @@
                 <p>{error}</p>
                 <p class="muted">
                     AMR doesn't have a reader adapter for this site yet, but the
-                    <strong>AMR sidebar</strong> may still work — open the chapter normally and the sidebar lets you track
+                    <strong>AMR sidebar</strong> may still work - open the chapter normally and the sidebar lets you track
                     progress and navigate chapters while you read on the site.
                 </p>
                 {#if chapterUrl}
@@ -993,7 +1040,7 @@
                 <p>{error}</p>
                 <p class="muted">
                     The site may be temporarily down or blocking requests. Try again in a moment, or read directly on
-                    the site — the <strong>AMR sidebar</strong> will still let you track your progress and navigate chapters.
+                    the site - the <strong>AMR sidebar</strong> will still let you track your progress and navigate chapters.
                 </p>
                 {#if chapterUrl}
                     <button type="button" onclick={() => void loadChapter(chapterUrl)}>Try again</button>
