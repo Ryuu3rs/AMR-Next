@@ -88,6 +88,57 @@
         return shared / shorter.size
     }
 
+    // sendRuntimeMessage() rejects with whatever message the background dispatcher
+    // forwarded verbatim (see src/background/handler-types.ts's failure()) - for
+    // network-layer failures (a source timing out, 403ing, etc.) that's raw debug
+    // text like "Request failed with status 403 [https://kagane.to/series/…]",
+    // never meant for a user to read as-is. Curated SourceError messages (e.g.
+    // "No chapters on that mirror") have no such bracketed/status-coded suffix and
+    // pass through unchanged; only the raw, technical-looking ones get swapped for
+    // a friendly fallback. The raw message is still logged for our own debugging.
+    const RAW_ERROR_PATTERN = /\[https?:\/\/|\brequest (failed|timed out)\b|\bstatus \d{3}\b/i
+    function describeError(cause: unknown, fallback: string): string {
+        console.warn("[AMR] reconcile action failed:", cause)
+        const raw = cause instanceof Error ? cause.message : ""
+        if (!raw || RAW_ERROR_PATTERN.test(raw)) return fallback
+        return raw
+    }
+
+    // Same-source search endpoints can return duplicate/near-duplicate entries for
+    // one underlying series - different sourceMangaIds under slightly different
+    // title variants or translations (a catalog-data issue on the source's end,
+    // not something this UI can correct). Collapse those per-source so the
+    // candidate list doesn't show the same series twice; entries from DIFFERENT
+    // sources are never merged even when titles match closely, since that's a
+    // legitimate multi-mirror scenario. When a pair differs on chapter count,
+    // keep whichever result has a real (non-"?"/non-missing) number.
+    function dedupeCandidates(results: SearchResult[]): SearchResult[] {
+        const kept: SearchResult[] = []
+        for (const result of results) {
+            const norm = normTitle(result.title)
+            const dupIdx = kept.findIndex(k => {
+                if (k.sourceId !== result.sourceId) return false
+                const kNorm = normTitle(k.title)
+                return kNorm === norm || kNorm.includes(norm) || norm.includes(kNorm) || wordOverlap(kNorm, norm) >= 0.6
+            })
+            if (dupIdx === -1) {
+                kept.push(result)
+                continue
+            }
+            const existing = kept[dupIdx]!
+            const existingHasChapter = !!existing.latestChapter
+            const candidateHasChapter = !!result.latestChapter
+            if (!existingHasChapter && candidateHasChapter) {
+                kept[dupIdx] = result
+            } else if (existingHasChapter && candidateHasChapter) {
+                const existingNum = parseFloat(existing.latestChapter ?? "0") || 0
+                const candidateNum = parseFloat(result.latestChapter ?? "0") || 0
+                if (candidateNum > existingNum) kept[dupIdx] = result
+            }
+        }
+        return kept
+    }
+
     async function dismissManual(manga: LibraryManga) {
         const card = cardOf(manga.id)
         card.searching = true
@@ -160,14 +211,15 @@
                 return t === want || t.includes(want) || want.includes(t) || wordOverlap(t, want) >= 0.6
             })
             if (close.length > 0) {
-                card.results = close.sort(sortByChapter)
+                card.results = dedupeCandidates(close).sort(sortByChapter)
             } else if (all.length > 0) {
-                const scored = all
-                    .map(r => ({ r, score: wordOverlap(normTitle(r.title), want) }))
-                    .filter(({ score }) => score > 0)
-                    .sort((a, b) => b.score - a.score || sortByChapter(a.r, b.r))
-                    .slice(0, 10)
-                    .map(({ r }) => r)
+                const scored = dedupeCandidates(
+                    all
+                        .map(r => ({ r, score: wordOverlap(normTitle(r.title), want) }))
+                        .filter(({ score }) => score > 0)
+                        .sort((a, b) => b.score - a.score || sortByChapter(a.r, b.r))
+                        .map(({ r }) => r)
+                ).slice(0, 10)
                 card.results = scored
                 if (scored.length === 0) {
                     card.message = "No live source found for this title."
@@ -181,7 +233,7 @@
             if (card.results.length === 0) card.message = "No live source found for this title."
         } catch (cause) {
             card.error = true
-            card.message = cause instanceof Error ? cause.message : "Search failed."
+            card.message = describeError(cause, "Search failed - try again in a moment.")
         } finally {
             card.searching = false
         }
@@ -255,7 +307,7 @@
             onLinked(manga.id)
         } catch (cause) {
             card.error = true
-            card.message = cause instanceof Error ? cause.message : "Link failed - the source may be unreachable."
+            card.message = describeError(cause, "Link failed - the source may be unreachable.")
             card.linking = null
         }
     }
@@ -274,7 +326,7 @@
             onLinked(manga.id)
         } catch (cause) {
             card.error = true
-            card.message = cause instanceof Error ? cause.message : "Could not link that URL."
+            card.message = describeError(cause, "Could not link that URL - the source may be unavailable.")
             card.urlLinking = false
         }
     }

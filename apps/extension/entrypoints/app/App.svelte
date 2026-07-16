@@ -318,6 +318,10 @@
         sourceId?: string
         startedAt: number
     } | null>(null)
+    // Must match STALE_PROGRESS_TIMEOUT_MS in src/handlers/updates-sources.ts - a
+    // running=true progress record older than this is treated as a crashed check
+    // rather than a real one still in flight.
+    const UPDATE_PROGRESS_STALE_MS = 15 * 60 * 1000
     let sourcesList = $state<
         Array<{
             id: string
@@ -355,6 +359,56 @@
             .trim()
     }
 
+    // sendRuntimeMessage() rejects with whatever message the background dispatcher
+    // forwarded verbatim (see src/background/handler-types.ts's failure()) - for
+    // network-layer failures (a source timing out, 403ing, etc.) that's raw debug
+    // text like "Request failed with status 403 [https://kagane.to/series/…]",
+    // never meant for a user to read as-is. Curated SourceError messages have no
+    // such bracketed/status-coded suffix and pass through unchanged; only the raw,
+    // technical-looking ones get swapped for a friendly fallback. The raw message
+    // is still logged for our own debugging.
+    const RAW_ERROR_PATTERN = /\[https?:\/\/|\brequest (failed|timed out)\b|\bstatus \d{3}\b/i
+    function describeError(cause: unknown, fallback: string): string {
+        console.warn("[AMR] mirror action failed:", cause)
+        const raw = cause instanceof Error ? cause.message : ""
+        if (!raw || RAW_ERROR_PATTERN.test(raw)) return fallback
+        return raw
+    }
+
+    // Same-source search endpoints can return duplicate/near-duplicate entries for
+    // one underlying series - different sourceMangaIds under slightly different
+    // title variants or translations (a catalog-data issue on the source's end).
+    // Collapse those per-source so the mirror list doesn't show the same series
+    // twice; entries from DIFFERENT sources are never merged even when titles
+    // match closely, since that's a legitimate multi-mirror scenario. When a pair
+    // differs on chapter count, keep whichever result has a real number.
+    function dedupeMirrors(results: SearchResult[]): SearchResult[] {
+        const kept: SearchResult[] = []
+        for (const result of results) {
+            const norm = normTitle(result.title)
+            const dupIdx = kept.findIndex(k => {
+                if (k.sourceId !== result.sourceId) return false
+                const kNorm = normTitle(k.title)
+                return kNorm === norm || kNorm.includes(norm) || norm.includes(kNorm)
+            })
+            if (dupIdx === -1) {
+                kept.push(result)
+                continue
+            }
+            const existing = kept[dupIdx]!
+            const existingHasChapter = !!existing.latestChapter
+            const candidateHasChapter = !!result.latestChapter
+            if (!existingHasChapter && candidateHasChapter) {
+                kept[dupIdx] = result
+            } else if (existingHasChapter && candidateHasChapter) {
+                const existingNum = parseFloat(existing.latestChapter ?? "0") || 0
+                const candidateNum = parseFloat(result.latestChapter ?? "0") || 0
+                if (candidateNum > existingNum) kept[dupIdx] = result
+            }
+        }
+        return kept
+    }
+
     async function switchMirror(manga: LibraryManga, result: SearchResult) {
         mirrorCheckedFor = manga.id
         try {
@@ -369,7 +423,7 @@
             detailManga = library.find(m => m.id === manga.id) ?? null
             relinkMessage = `Switched to ${result.sourceId}. Progress preserved by chapter number.`
         } catch (cause) {
-            relinkMessage = cause instanceof Error ? cause.message : "Switch failed."
+            relinkMessage = describeError(cause, "Switch failed - this source may be temporarily unavailable.")
         }
     }
 
@@ -382,12 +436,12 @@
         try {
             const all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
             const want = normTitle(manga.title)
-            mirrorResults = all
-                .filter(r => {
+            mirrorResults = dedupeMirrors(
+                all.filter(r => {
                     const t = normTitle(r.title)
                     return t === want || t.includes(want) || want.includes(t)
                 })
-                .sort((a, b) => (parseFloat(b.latestChapter ?? "0") || 0) - (parseFloat(a.latestChapter ?? "0") || 0))
+            ).sort((a, b) => (parseFloat(b.latestChapter ?? "0") || 0) - (parseFloat(a.latestChapter ?? "0") || 0))
         } catch {
             mirrorResults = []
         } finally {
@@ -408,7 +462,7 @@
             detailManga = library.find(m => m.id === newMangaId) ?? null
             relinkMessage = "Re-linked. Progress preserved by chapter number."
         } catch (cause) {
-            relinkMessage = cause instanceof Error ? cause.message : "Re-link failed."
+            relinkMessage = describeError(cause, "Re-link failed - the source may be unavailable.")
         }
     }
     let hasPermission = $state(false)
@@ -594,7 +648,13 @@
                 | undefined
             if (stored) {
                 updateProgress = stored
-                checkingUpdates = stored.running
+                // A running=true left over from a check that never finished (e.g. the
+                // service worker died mid-loop) would otherwise disable "Check all"
+                // forever if automatic interval checks are off - mirrors the same
+                // STALE_PROGRESS_TIMEOUT_MS threshold the updates:check handler uses to
+                // self-heal server-side (src/handlers/updates-sources.ts).
+                const isStale = stored.running && Date.now() - stored.startedAt > UPDATE_PROGRESS_STALE_MS
+                checkingUpdates = stored.running && !isStale
             }
         } catch {
             // optional
