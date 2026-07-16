@@ -1011,6 +1011,76 @@ describe("trackExternalChapter", () => {
         expect(result.mangaId).toBe(existing.id)
         expect(await db.manga.count()).toBe(1)
     })
+
+    it("prefers a same-source slug match over a cross-source URL-prefix match now that same-source candidates are checked first (indexed reorder)", async () => {
+        // Neither row satisfies the other row's matcher: the same-source row's mangaUrl isn't
+        // a URL-prefix of the chapter URL, and the cross-source row's mangaUrl derives a
+        // different slug. Under the old full-scan-first ordering the cross-source prefix
+        // matcher ran first and would have won; the indexed same-source pass now runs first
+        // and wins instead.
+        const sameSourceMatch: LibraryManga = {
+            id: "sourceA:manga:foo",
+            title: "Foo Same Source",
+            normalizedTitle: "foo same source",
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "sourceA",
+            sourceUrl: "https://sitea.com/comic/foo/details",
+            mangaUrl: "https://sitea.com/comic/foo/details"
+        }
+        const crossSourceMatch: LibraryManga = {
+            id: "sourceB:manga:foo",
+            title: "Foo Cross Source",
+            normalizedTitle: "foo cross source",
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "sourceB",
+            sourceUrl: "https://sitea.com/manga/foo",
+            mangaUrl: "https://sitea.com/manga/foo"
+        }
+        await db.manga.put(sameSourceMatch)
+        await db.manga.put(crossSourceMatch)
+
+        const result = await trackExternalChapter({
+            url: "https://sitea.com/manga/foo/chapter-5",
+            sourceId: "sourceA"
+        })
+
+        expect(result.mangaId).toBe(sameSourceMatch.id)
+        expect(await db.manga.count()).toBe(2)
+    })
+
+    it("still finds a hostname-as-sourceId legacy row via the full-scan cross-source fallback when no same-source candidate exists", async () => {
+        // Some legacy/broken-import rows have sourceId set to a bare hostname instead of a real
+        // source id (see library:dismiss's hostname-shaped sourceId handling). The indexed
+        // same-source query can never find these since their sourceId never equals the real
+        // source id being tracked, so they must still be reachable via the full-scan pass.
+        const legacyHostnameRow: LibraryManga = {
+            id: "example.com:manga:legacy-foo",
+            title: "Legacy Foo",
+            normalizedTitle: "legacy foo",
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "example.com",
+            sourceUrl: "https://example.com/manga/foo/",
+            mangaUrl: "https://example.com/manga/foo/"
+        }
+        await db.manga.put(legacyHostnameRow)
+
+        const result = await trackExternalChapter({
+            url: "https://example.com/manga/foo/chapter-5",
+            sourceId: "genericsource"
+        })
+
+        expect(result.mangaId).toBe(legacyHostnameRow.id)
+        expect(await db.manga.count()).toBe(1)
+    })
 })
 
 describe("rekeyManga", () => {
