@@ -26,6 +26,7 @@ vi.mock("../background/chapter-cache", () => ({
 const { libraryHandlers } = await import("./library")
 const { resolveChapterUrl, listChaptersForSource, findSource, resolveCoverFor } = await import("../sources")
 const { fetchCoverBlob } = await import("../background/covers")
+const { scheduleChapterListRefresh } = await import("../background/chapter-cache")
 
 const ctx = { sender: {} } as never
 
@@ -276,6 +277,95 @@ describe("library:relink", () => {
         expect(stored?.addedAt).toBe(12345)
         // Existing cover is preferred over the newly resolved one.
         expect(stored?.coverUrl).toBe("https://existing-cdn.example/cover.jpg")
+    })
+})
+
+describe("chapter:adjacent", () => {
+    const libraryManga: LibraryManga = {
+        ...manga,
+        sourceId: "mangadex",
+        sourceUrl: "https://mangadex.org/chapter/2",
+        sourceMangaId: "abc",
+        mangaUrl: "https://mangadex.org/title/abc",
+        lastReadChapterNumber: 2
+    }
+
+    const chapter = (n: number): ChapterRecord => ({
+        id: `mangadex:chapter:${n}`,
+        mangaId: manga.id,
+        sourceId: "mangadex",
+        title: `Chapter ${n}`,
+        url: `https://mangadex.org/chapter/${n}`,
+        sortKey: n
+    })
+
+    it("serves next/prev from the cached chapter list without calling the network", async () => {
+        await db.manga.put(libraryManga)
+        await db.chapters.bulkPut([chapter(1), chapter(2), chapter(3)])
+
+        const handler = libraryHandlers["chapter:adjacent"]!
+        const result = (await handler({ type: "chapter:adjacent", mangaId: manga.id } as never, ctx)) as {
+            current: number | null
+            next: { number: number } | null
+            prev: { number: number } | null
+        }
+
+        expect(result.current).toBe(2)
+        expect(result.next?.number).toBe(3)
+        expect(result.prev?.number).toBe(1)
+        expect(listChaptersForSource).not.toHaveBeenCalled()
+    })
+
+    it("schedules a background chapter-list refresh after serving successfully from cache", async () => {
+        await db.manga.put(libraryManga)
+        await db.chapters.bulkPut([chapter(1), chapter(2), chapter(3)])
+
+        const handler = libraryHandlers["chapter:adjacent"]!
+        await handler({ type: "chapter:adjacent", mangaId: manga.id } as never, ctx)
+
+        expect(scheduleChapterListRefresh).toHaveBeenCalledTimes(1)
+    })
+
+    it("falls through to the network when the cache is empty, and caches the result for next time", async () => {
+        await db.manga.put(libraryManga)
+        const networkChapters = [chapter(1), chapter(3)]
+        vi.mocked(listChaptersForSource).mockResolvedValue(networkChapters as never)
+
+        const handler = libraryHandlers["chapter:adjacent"]!
+        const result = (await handler({ type: "chapter:adjacent", mangaId: manga.id } as never, ctx)) as {
+            next: { number: number } | null
+            prev: { number: number } | null
+        }
+
+        expect(listChaptersForSource).toHaveBeenCalledTimes(1)
+        expect(result.next?.number).toBe(3)
+        expect(result.prev?.number).toBe(1)
+
+        const stored = await db.chapters.where("mangaId").equals(manga.id).toArray()
+        expect(stored.map(c => c.id).sort()).toEqual(["mangadex:chapter:1", "mangadex:chapter:3"])
+    })
+
+    it("re-checks the network when the cache's highest chapter isn't past the current one, but still serves the stale cache if that network call fails", async () => {
+        // lastReadChapterNumber is 2 and the cache's highest chapter is also 2 - the
+        // cache might just be stale (a new chapter may have shipped since it was last
+        // populated), not genuinely caught up, so this should attempt the network.
+        await db.manga.put(libraryManga)
+        await db.chapters.bulkPut([chapter(1), chapter(2)])
+        vi.mocked(listChaptersForSource).mockRejectedValue(new Error("network down"))
+
+        const handler = libraryHandlers["chapter:adjacent"]!
+        const result = (await handler({ type: "chapter:adjacent", mangaId: manga.id } as never, ctx)) as {
+            current: number | null
+            next: { number: number } | null
+            prev: { number: number } | null
+        }
+
+        expect(listChaptersForSource).toHaveBeenCalledTimes(1)
+        // Network failed (e.g. a Cloudflare-gated source) - falls back to the stale
+        // cache's own answer instead of going blank.
+        expect(result.current).toBe(2)
+        expect(result.next).toBeNull()
+        expect(result.prev?.number).toBe(1)
     })
 })
 

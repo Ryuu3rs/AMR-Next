@@ -1,4 +1,4 @@
-import type { SourceLinkRecord } from "@amr/contracts"
+import type { ChapterRecord, SourceLinkRecord } from "@amr/contracts"
 import { SourceError } from "@amr/source-sdk"
 import { sourceRegistry } from "@amr/sources"
 import {
@@ -399,6 +399,70 @@ export const libraryHandlers: HandlerMap = {
         const manga = await db.manga.get(request.mangaId)
         if (!manga) return { current: null, next: null, prev: null }
         const current = manga.lastReadChapterNumber ?? null
+
+        const pickAdjacent = (chapters: ChapterRecord[]) => {
+            let next: ChapterRecord | null = null
+            let prev: ChapterRecord | null = null
+            let maxSortKey = -Infinity
+            for (const chapter of chapters) {
+                if (chapter.sortKey > maxSortKey) maxSortKey = chapter.sortKey
+                if (current === null) {
+                    if (!next || chapter.sortKey < next.sortKey) next = chapter
+                } else {
+                    if (chapter.sortKey > current && (!next || chapter.sortKey < next.sortKey)) next = chapter
+                    if (chapter.sortKey < current && (!prev || chapter.sortKey > prev.sortKey)) prev = chapter
+                }
+            }
+            return { next, prev, maxSortKey }
+        }
+
+        const toResponse = (next: ChapterRecord | null, prev: ChapterRecord | null) => ({
+            current,
+            next: next ? { url: next.url, title: next.title, number: next.sortKey } : null,
+            prev: prev ? { url: prev.url, title: prev.title, number: prev.sortKey } : null
+        })
+
+        // Cache-first: db.chapters is already populated by capture, update checks and
+        // scheduleChapterListRefresh for almost every title, so most Prev/Next clicks can be
+        // served without a network round trip (a full listChaptersForSource fetch, which is
+        // slow on throttled sources and a total failure on Cloudflare-gated ones).
+        const cached = await db.chapters.where("mangaId").equals(request.mangaId).sortBy("sortKey")
+        if (cached.length > 0) {
+            const { next, prev, maxSortKey } = pickAdjacent(cached)
+            // The cache might just be stale rather than genuinely exhaustive when it has
+            // nothing past the currently-read chapter - a new chapter may have been published
+            // since the list was last cached. Double-check the network in that case; otherwise
+            // trust the cache and skip the fetch entirely.
+            const cacheMightBeStaleForNext = current !== null && maxSortKey <= current
+            if (!cacheMightBeStaleForNext) {
+                const source = sourceRegistry.get(manga.sourceId)
+                if (source) {
+                    scheduleChapterListRefresh(
+                        source,
+                        manga.sourceMangaId ?? "",
+                        manga.mangaUrl ?? manga.sourceUrl,
+                        manga.id
+                    )
+                }
+                return toResponse(next, prev)
+            }
+            try {
+                const chapters = await listChaptersForSource(
+                    manga,
+                    manga.sourceId,
+                    manga.sourceMangaId ?? "",
+                    manga.mangaUrl ?? manga.sourceUrl
+                )
+                if (chapters.length > 0) await db.chapters.bulkPut(chapters)
+                const fresh = pickAdjacent(chapters.length > 0 ? chapters : cached)
+                return toResponse(fresh.next, fresh.prev)
+            } catch {
+                // Network unavailable (e.g. Cloudflare-gated source) - the stale cache's
+                // answer is still better than nothing.
+                return toResponse(next, prev)
+            }
+        }
+
         try {
             const chapters = await listChaptersForSource(
                 manga,
@@ -406,23 +470,9 @@ export const libraryHandlers: HandlerMap = {
                 manga.sourceMangaId ?? "",
                 manga.mangaUrl ?? manga.sourceUrl
             )
-            let next: (typeof chapters)[number] | null = null
-            let prev: (typeof chapters)[number] | null = null
-            if (current === null) {
-                for (const chapter of chapters) {
-                    if (!next || chapter.sortKey < next.sortKey) next = chapter
-                }
-            } else {
-                for (const chapter of chapters) {
-                    if (chapter.sortKey > current && (!next || chapter.sortKey < next.sortKey)) next = chapter
-                    if (chapter.sortKey < current && (!prev || chapter.sortKey > prev.sortKey)) prev = chapter
-                }
-            }
-            return {
-                current,
-                next: next ? { url: next.url, title: next.title, number: next.sortKey } : null,
-                prev: prev ? { url: prev.url, title: prev.title, number: prev.sortKey } : null
-            }
+            if (chapters.length > 0) await db.chapters.bulkPut(chapters)
+            const { next, prev } = pickAdjacent(chapters)
+            return toResponse(next, prev)
         } catch {
             return { current: null, next: null, prev: null }
         }
