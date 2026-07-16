@@ -24,7 +24,12 @@ export const libraryMangaSchema = mangaRecordSchema.extend({
     noGapContinuous: z.boolean().optional(),
     onHold: z.boolean().optional(),
     readingDirection: z.enum(["ltr", "rtl", "vertical"]).optional(),
-    pageFit: z.enum(["width", "height", "contain", "original"]).optional()
+    pageFit: z.enum(["width", "height", "contain", "original"]).optional(),
+    // Set by library:switch when moving to a source whose chapter numbering can't be
+    // assumed comparable to the previous source's (e.g. MangaHub's internal sequential
+    // slug numbering vs. another site's true chapter numbers). See LibraryManga in
+    // database.ts.
+    chapterNumberingUnreliable: z.boolean().optional()
 })
 
 // Every real chapter-write path stores `SourceChapter` (packages/source-sdk), which is

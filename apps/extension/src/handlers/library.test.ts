@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto"
 import type { ChapterRecord, MangaRecord, SourceLinkRecord } from "@amr/contracts"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { db } from "../database"
+import { db, listBackups } from "../database"
 import type { LibraryManga } from "../database"
 
 vi.mock("../sources", async () => {
@@ -56,7 +56,8 @@ beforeEach(async () => {
         db.progress.clear(),
         db.historyEvents.clear(),
         db.downloads.clear(),
-        db.covers.clear()
+        db.covers.clear(),
+        db.backups.clear()
     ])
 })
 
@@ -487,5 +488,35 @@ describe("library:reading-prefs", () => {
         const stored = await db.manga.get(manga.id)
         expect(stored?.noGapContinuous).toBeUndefined()
         expect(stored?.readingDirection).toBe("rtl")
+    })
+})
+
+// Regression for the import/export audit's Bug 4: library:clear used to call
+// clearLibrary() with no snapshot first, unlike data:import/sync:pull which both
+// already snapshot via createBackup(...) - a fully destructive, unrecoverable wipe
+// even though the backup machinery now exists for other destructive paths.
+describe("library:clear", () => {
+    it("takes a pre-clear backup before wiping the library, and the backups table itself survives the clear", async () => {
+        const libraryManga: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: sourceLink.url
+        }
+        await db.manga.put(libraryManga)
+        await db.sourceLinks.put(sourceLink)
+
+        const handler = libraryHandlers["library:clear"]!
+        await handler({ type: "library:clear" } as never, ctx)
+
+        expect(await db.manga.count()).toBe(0)
+        expect(await db.sourceLinks.count()).toBe(0)
+
+        const backups = await listBackups()
+        expect(backups).toHaveLength(1)
+        expect(backups[0]).toMatchObject({ reason: "pre-clear" })
+
+        const stored = await db.backups.toArray()
+        expect(stored[0]?.envelope.data.manga).toHaveLength(1)
+        expect(stored[0]?.envelope.data.manga[0]?.id).toBe(manga.id)
     })
 })

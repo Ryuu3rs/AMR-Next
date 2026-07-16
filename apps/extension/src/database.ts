@@ -52,6 +52,12 @@ export type LibraryManga = MangaRecord & {
     // Per-series override for the global "no gap continuous" reader setting -
     // undefined means "no override, use the global default".
     noGapContinuous?: boolean
+    // Set by library:switch when moving to a source whose chapter numbering can't be
+    // assumed comparable to the previous source's (e.g. MangaHub numbers chapters by
+    // its own internal sequential URL slug, which can diverge from the numbering other
+    // sources use for the same manga) - a future UI can use this to warn instead of
+    // silently comparing chapter counts that don't mean what they look like they mean.
+    chapterNumberingUnreliable?: boolean
 }
 
 export type HistoryEvent = {
@@ -103,7 +109,7 @@ export type AnalyticsEvent = {
 export type LibraryBackup = {
     id?: number
     createdAt: number
-    reason: "pre-import" | "pre-sync-pull"
+    reason: "pre-import" | "pre-sync-pull" | "pre-clear"
     envelope: Awaited<ReturnType<typeof exportDatabase>>
 }
 
@@ -417,6 +423,18 @@ function sameHostSlug(a: string, b: string): boolean {
     }
 }
 
+// Prefix match with a word-boundary check: the character immediately after the
+// matched prefix must be "/" or end-of-string. A raw `url.startsWith(prefix)` treats
+// ".../manga/solo-leveling" as a prefix of ".../manga/solo-leveling-ragnarok/chapter-3"
+// since the substring matches with no boundary check - this rejects that false match
+// while still accepting ".../manga/solo-leveling/chapter-3".
+function startsWithUrlPrefix(url: string, prefix: string): boolean {
+    const trimmed = prefix.replace(/\/$/, "")
+    if (!url.startsWith(trimmed)) return false
+    const boundary = url[trimmed.length]
+    return boundary === undefined || boundary === "/"
+}
+
 function humanizeSlug(slug: string): string {
     return slug
         .replace(/[-_]+/g, " ")
@@ -455,7 +473,7 @@ export async function trackExternalChapter(input: {
     if (!manga) {
         const all = await db.manga.toArray()
         manga =
-            all.find(m => m.mangaUrl && input.url.startsWith(m.mangaUrl.replace(/\/$/, ""))) ??
+            all.find(m => m.mangaUrl && startsWithUrlPrefix(input.url, m.mangaUrl)) ??
             all.find(m => m.sourceId === input.sourceId && m.mangaUrl && sameHostSlug(m.mangaUrl, input.url)) ??
             all.find(m => m.sourceId === input.sourceId && m.sourceUrl && sameHostSlug(m.sourceUrl, input.url))
     }
@@ -910,13 +928,44 @@ export async function listBackups(): Promise<BackupSummary[]> {
     return all.map(b => ({ id: b.id!, createdAt: b.createdAt, reason: b.reason }))
 }
 
+// Clears exactly the tables covered by the export/import envelope - unlike
+// clearLibrary(), this deliberately leaves db.downloads and db.covers untouched
+// (neither is part of a backup/import envelope, so wiping them on restore would
+// destroy data the restore has no way to bring back) and leaves db.backups untouched
+// (restoring must not delete the very backups list it's operating on).
+async function clearImportableTables(): Promise<void> {
+    await db.transaction(
+        "rw",
+        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.pageBookmarks],
+        async () => {
+            await Promise.all([
+                db.manga.clear(),
+                db.sourceLinks.clear(),
+                db.chapters.clear(),
+                db.progress.clear(),
+                db.historyEvents.clear(),
+                db.pageBookmarks.clear()
+            ])
+        }
+    )
+}
+
 export async function restoreBackup(id: number): Promise<{ manga: number; chapters: number; skipped: ImportSkip[] }> {
     const backup = await db.backups.get(id)
     if (!backup) throw new Error(`No backup found with id ${id}`)
-    // Restoring is itself just another import (through the same lenient, partial-
-    // success path), so it gets the same safety net: snapshot current state first.
+    // Read the envelope out into a local variable before taking the pre-restore
+    // snapshot below. createBackup() prunes to MAX_BACKUPS, which could delete this
+    // very backup row (if the user has done 3+ restore cycles) - reading it first
+    // means that pruning can never invalidate the data we're about to restore.
+    const envelope = backup.envelope
+    // Restoring must actually undo, not merge - snapshot current state first (so the
+    // restore itself is undoable), then replace current state with the backup's
+    // snapshot wholesale instead of importDatabase's default merge-mode resolution
+    // (existing-wins on most fields, Math.max on chapter numbers), which would leave
+    // a bad import's junk data and clobbered values sitting alongside the restore.
     await createBackup("pre-import")
-    return await importDatabase(backup.envelope)
+    await clearImportableTables()
+    return await importDatabase(envelope)
 }
 
 export async function seedDatabase(): Promise<void> {

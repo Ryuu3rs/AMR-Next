@@ -19,7 +19,7 @@ const SOURCE_ID = "kagane"
 // challenge on every request (verified via curl: a bare GET to any kagane.to
 // path, including /api/integrity, comes back 403 with `Cf-Mitigated: challenge`).
 // Its data API host (yuzuki.kagane.to) and image CDN (kstatic.to) are NOT behind
-// that challenge — plain requests to them succeed with no cookies/session needed.
+// that challenge - plain requests to them succeed with no cookies/session needed.
 const ORIGIN = "https://kagane.to"
 const DOMAIN = "kagane.to"
 const API_ORIGIN = "https://yuzuki.kagane.to"
@@ -76,7 +76,7 @@ function toTimestamp(value: string | undefined, fallback: number): number {
     return Number.isNaN(parsed) ? fallback : parsed
 }
 
-// ---- Series metadata — GET /api/v2/series/{id} on the (non-gated) API host ----
+// ---- Series metadata - GET /api/v2/series/{id} on the (non-gated) API host ----
 
 const seriesAltTitleSchema = z.object({ title: z.string() })
 const seriesCoverSchema = z.object({ image_id: z.string() })
@@ -127,27 +127,33 @@ async function fetchSeries(seriesId: string, context: SourceContext): Promise<Se
     return context.request.getJson(url, seriesDetailSchema)
 }
 
-// ---- Search — POST /api/v2/search/series on the (non-gated) API host ----
+// ---- Search - POST /api/v2/search/series on the (non-gated) API host ----
 
 const searchItemSchema = z.object({
     series_id: z.string(),
     title: z.string(),
     alternate_titles: z.array(z.string()).optional(),
     cover_image_id: z.string().optional(),
+    // Total chapter count on this series - used as a fallback for latestChapter
+    // below when latest_chapters (per-chapter detail) comes back empty. Verified
+    // live: for an actively-synced series these two agree (e.g. current_books: 14
+    // with latest_chapters[0].chapter_no: "14"), and current_books is populated
+    // far more consistently than latest_chapters is.
+    current_books: z.number().optional(),
     latest_chapters: z.array(z.object({ chapter_no: z.string().optional() })).optional()
 })
 const searchResponseSchema = z.object({
     content: z.array(searchItemSchema)
 })
 
-// ---- Chapter list — parsed from the series page's embedded RSC data ----
+// ---- Chapter list - parsed from the series page's embedded RSC data ----
 //
 // The series page (kagane.to/series/{id}) server-renders the FULL chapter list
 // (every chapter, not just the visible pagination page) into a Next.js React
 // Flight payload: `self.__next_f.push([1, "...escaped JSON..."])`. That payload
 // is a JSON string embedded inside a JS string literal inside the HTML, so every
 // quote is backslash-escaped twice over (`\\\"key\\\":\\\"value\\\"`). This page
-// sits behind kagane.to's Cloudflare challenge — see the module doc comment.
+// sits behind kagane.to's Cloudflare challenge - see the module doc comment.
 
 const rscChapterSchema = z.object({
     book_id: z.string(),
@@ -246,15 +252,36 @@ function extractChapterList(html: string, seriesId: string): SourceChapter[] {
     return chapters.sort((a, b) => a.sortKey - b.sortKey)
 }
 
-// ---- Chapter page manifest — integrity token + DRM-gated book manifest ----
+// Fetch + parse the chapter list, degrading to an empty list rather than
+// throwing when kagane.to's Cloudflare challenge blocks the underlying fetch
+// (or anything else about it fails). This series page sits behind the gate
+// documented at the top of this file - a background-context fetch to it can
+// come back a 403 on essentially every call. Without this catch, that 403
+// propagated as an unhandled SourceRequestError from listChapters() through
+// library:switch (no try/catch there) all the way to the reconcile UI as raw
+// "Request failed with status 403 [https://kagane.to/series/{id}]" text -
+// instead of the existing, friendlier "No chapters on that mirror" message
+// library:switch already shows for an empty chapter list. Mirrors the
+// best-effort "return empty on failure" convention resolveCover/resolveGenres
+// use below for the same reason.
+async function fetchChapterListSafe(seriesId: string, context: SourceContext): Promise<SourceChapter[]> {
+    try {
+        const html = await context.request.getText(new URL(seriesUrl(seriesId)))
+        return extractChapterList(html, seriesId)
+    } catch {
+        return []
+    }
+}
+
+// ---- Chapter page manifest - integrity token + DRM-gated book manifest ----
 //
-// The reader page itself never embeds the page list — it's fetched client-side
+// The reader page itself never embeds the page list - it's fetched client-side
 // via a two-step handshake that mirrors the site's own reader:
 //   1. POST kagane.to/api/integrity (empty body) -> { token, exp }
 //   2. POST yuzuki.kagane.to/api/v2/books/{chapterId}?is_datasaver=false with
 //      header `x-integrity-token: <token>` -> { cache_url, manifest: { pages } }
 // Step 1 sits behind kagane.to's Cloudflare challenge, so it can fail with a 403
-// from a background fetch — that surfaces as SourceRequestError(status=403),
+// from a background fetch - that surfaces as SourceRequestError(status=403),
 // which the extension's isBotBlocked() treats as a bot-block signal.
 
 const integrityResponseSchema = z.object({ token: z.string(), exp: z.number() })
@@ -319,8 +346,7 @@ export const kaganeAdapter: SourceAdapter = {
     async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
         const seriesId = input.manga.sourceMangaId
         if (!seriesId) throw new SourceError("invalid-input", "A valid Kagane series id is required")
-        const html = await context.request.getText(new URL(seriesUrl(seriesId)))
-        const chapters = extractChapterList(html, seriesId)
+        const chapters = await fetchChapterListSafe(seriesId, context)
         return input.limit ? chapters.slice(-input.limit) : chapters
     },
 
@@ -357,7 +383,7 @@ export const kaganeAdapter: SourceAdapter = {
             url.searchParams.set("size", "20")
             const response = await context.request.postJson(url, { title: query }, searchResponseSchema)
             return response.content.map(item => {
-                const latestChapter = item.latest_chapters?.[0]?.chapter_no
+                const latestChapter = item.latest_chapters?.[0]?.chapter_no ?? item.current_books?.toString()
                 return {
                     sourceId: SOURCE_ID,
                     sourceMangaId: item.series_id,
@@ -389,10 +415,7 @@ export const kaganeAdapter: SourceAdapter = {
 
         const [seriesData, chapterList, manifest] = await Promise.all([
             fetchSeries(seriesId, context),
-            context.request
-                .getText(new URL(seriesUrl(seriesId)))
-                .then(html => extractChapterList(html, seriesId))
-                .catch(() => [] as SourceChapter[]),
+            fetchChapterListSafe(seriesId, context),
             fetchPageManifest(chapterId, context)
         ])
 

@@ -15,6 +15,7 @@ import {
     PAGE_URLS,
     SEARCH_API_PATH,
     searchResponseJson,
+    searchResponseNoLatestChaptersJson,
     SERIES_API_PATH,
     SERIES_ID,
     SERIES_URL,
@@ -109,6 +110,34 @@ describe("kaganeAdapter.listChapters", () => {
         const chapters = await adapter.listChapters({ manga: makeMangaStub(SERIES_ID) }, context)
         expect(chapters).toEqual([])
     })
+
+    // Regression test for the reconcile-search bug: a real background-context
+    // fetch to the (gated) series page doesn't come back 200-with-challenge-html
+    // like the fixture mock above defaults to - it comes back a bare 403 (verified
+    // live against kagane.to). Before this fix that 403 was an unhandled
+    // SourceRequestError thrown straight out of listChapters(), which propagated
+    // through library:switch (no try/catch there) to the reconcile UI as raw
+    // "Request failed with status 403 [...]" text instead of failing gracefully.
+    it("returns [] instead of throwing when the series page fetch itself is rejected with 403", async () => {
+        const fetch: FetchFunction = async () => ({
+            ok: false,
+            status: 403,
+            text: async () => "<html>cf challenge</html>"
+        })
+        const context: SourceContext = {
+            request: createBoundedRequestClient({
+                fetch,
+                allowedOrigins: [ORIGIN, API_ORIGIN],
+                maxRequests: 20,
+                maxResponseBytes: 5_000_000,
+                timeoutMs: 1000,
+                maxRetries: 0
+            }),
+            now: () => 1_700_000_000_000,
+            logger: { debug: () => undefined, warn: () => undefined }
+        }
+        await expect(adapter.listChapters({ manga: makeMangaStub(SERIES_ID) }, context)).resolves.toEqual([])
+    })
 })
 
 describe("kaganeAdapter.resolveCover", () => {
@@ -142,6 +171,13 @@ describe("kaganeAdapter.search", () => {
         expect(results[0]!.coverUrl).toBe(COVER_URL)
         expect(results[0]!.latestChapter).toBe("21")
         expect(results[0]!.altTitles).toEqual(["Baoshi Zhe", "The Glutton"])
+    })
+
+    it("falls back to current_books for latestChapter when latest_chapters is empty", async () => {
+        const context = createContext({ [SEARCH_API_PATH]: searchResponseNoLatestChaptersJson })
+        const results = await adapter.search!("glutton", context)
+        expect(results).toHaveLength(1)
+        expect(results[0]!.latestChapter).toBe("36")
     })
 
     it("returns [] for a blank query without making a request", async () => {
