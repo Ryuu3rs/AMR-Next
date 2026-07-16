@@ -4,6 +4,7 @@
     import { onDestroy, onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { subscribeLive } from "../../src/live"
+    import { createProgressReporter } from "../../src/throttle"
 
     type ReadingDirection = "ltr" | "rtl" | "vertical"
     type PageFit = "width" | "height" | "contain" | "original"
@@ -587,6 +588,9 @@
     }
 
     async function loadChapter(url: string) {
+        // Flush any pending progress report for the chapter we're leaving before
+        // its reporter (bound to the old mangaId/chapterId) is replaced below.
+        progressReporter?.flush()
         resolving = true
         error = ""
         chapter = undefined
@@ -599,6 +603,7 @@
         mirrorResults = []
         try {
             chapter = await sendRuntimeMessage<ResolvedChapter>({ type: "reader:resolve", url })
+            progressReporter = createReporterForChapter(chapter)
             void loadSiblings(chapter)
             void refreshDownloadState(chapter.chapter.id)
             const progress = await sendRuntimeMessage<ReadingProgress | null>({
@@ -655,6 +660,26 @@
 
     let unsubscribeLive: (() => void) | undefined
 
+    // Coalesces reader:progress runtime messages into a trailing 1s window so
+    // rapid page onload events (e.g. scrolling a 100-page webtoon chapter)
+    // don't spam a DB write + live-bus event per page. Recreated per chapter
+    // load so a reporter never straddles two chapters' mangaId/chapterId.
+    let progressReporter: ReturnType<typeof createProgressReporter> | undefined
+
+    function createReporterForChapter(resolved: ResolvedChapter) {
+        return createProgressReporter(
+            payload =>
+                void sendRuntimeMessage({
+                    type: "reader:progress",
+                    mangaId: resolved.manga.manga.id,
+                    chapterId: resolved.chapter.id,
+                    pageIndex: payload.pageIndex,
+                    pageCount: resolved.pages.length,
+                    completed: payload.completed
+                })
+        )
+    }
+
     onMount(async () => {
         // A background chapter-list refresh (e.g. checkUpdates, or another tab
         // capturing a new chapter of this same manga) can complete while this
@@ -705,19 +730,21 @@
 
     function recordProgress(pageIndex: number) {
         if (!chapter) return
+        // Unthrottled - drives the visible page-number UI and must stay instant.
         currentPage = pageIndex
-        void sendRuntimeMessage({
-            type: "reader:progress",
-            mangaId: chapter.manga.manga.id,
-            chapterId: chapter.chapter.id,
-            pageIndex,
-            pageCount: chapter.pages.length,
-            completed: pageIndex === chapter.pages.length - 1
-        })
+        const completed = pageIndex === chapter.pages.length - 1
+        progressReporter?.report(pageIndex, completed)
+        // "Chapter finished" must reach the DB/live-bus immediately, not wait
+        // out the trailing coalescing window.
+        if (completed) progressReporter?.flush()
     }
 
     function goToChapter(url: string | undefined) {
         if (!url) return
+        // Flush while the old mangaId/chapterId are still the reporter's bound
+        // identity - loadChapter() also flushes, but do it here too since this
+        // is the scope that's "about to navigate away" from the old chapter.
+        progressReporter?.flush()
         chapterUrl = url
         window.scrollTo(0, 0)
         void loadChapter(url)
@@ -811,9 +838,14 @@
         else if (event.key === "ArrowRight") (direction === "rtl" ? prev : next)()
         else if (event.key === "ArrowLeft") (direction === "rtl" ? next : prev)()
     }}
-    onscroll={onScroll} />
+    onscroll={onScroll}
+    onpagehide={() => progressReporter?.flush()} />
 
-<svelte:document onfullscreenchange={() => (isFullscreen = Boolean(document.fullscreenElement))} />
+<svelte:document
+    onfullscreenchange={() => (isFullscreen = Boolean(document.fullscreenElement))}
+    onvisibilitychange={() => {
+        if (document.visibilityState === "hidden") progressReporter?.flush()
+    }} />
 
 <header class:chrome-hidden={chromeHidden}>
     <div class="header-left">
