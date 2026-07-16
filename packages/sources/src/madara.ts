@@ -1,6 +1,7 @@
 import {
     SourceError,
     SourceRequestError,
+    decodeHtmlEntities as decodeEntities,
     matchesSourceDomain,
     type ListChaptersInput,
     type ResolveChapterInput,
@@ -80,18 +81,6 @@ const JUNK_TITLES = new Set([
     "login",
     "register"
 ])
-
-function decodeEntities(value: string): string {
-    return value
-        .replace(/&#0*39;|&apos;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, "&")
-        .replace(/&#0*38;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&#0*(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-        .replace(/&nbsp;/g, " ")
-}
 
 function isJunkTitle(title: string): boolean {
     const t = title.trim().toLowerCase()
@@ -508,7 +497,28 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
 
             let chapters = extractChapterList(html, config, mangaPath, slug, language)
             if (chapters.length === 0) {
-                // Madara loads the list lazily via admin-ajax for some sites.
+                // Modern Madara themes lazy-load the chapter list from a REST-style route
+                // nested under the manga's own permalink rather than admin-ajax.php. Live-
+                // verified on mangasushi.org and tritinia.org: POSTing here (no params needed)
+                // returns 200 with the same <li class="wp-manga-chapter"> markup extractChapterList
+                // already parses, so no separate response-shape handling is needed. Try this
+                // first since it needs no post-id scraping, and the OLD admin-ajax endpoint
+                // 400s (body "0") on both of those sites for a real manga post id.
+                try {
+                    const modern = await context.request.postForm(
+                        new URL(`${config.origin}/${mangaPath}/${slug}/ajax/chapters/`),
+                        {},
+                        { headers: ajaxHeaders }
+                    )
+                    chapters = extractChapterList(modern, config, mangaPath, slug, language)
+                } catch {
+                    // fall through to the legacy admin-ajax endpoint below
+                }
+            }
+            if (chapters.length === 0) {
+                // Legacy admin-ajax fallback - some Madara sites are still on an older theme
+                // version where only this endpoint exists (live-verified: hentai20.io 404s on
+                // the modern route above).
                 const idMatch =
                     html.match(/manga-chapters-holder[^>]*\bdata-id=["'](\d+)["']/i) ??
                     html.match(/\bdata-id=["'](\d+)["'][^>]*manga-chapters-holder/i)

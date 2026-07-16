@@ -17,58 +17,51 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 const MANGA_PATH_MARKERS = ["manga", "comic", "comics", "series", "manhwa", "manhua", "title", "read"]
 
 // Old AMR stored URLs on domains that have since changed or that the new registry lists under a different canonical hostname.
+//
+// Every value here MUST be a currently-registered adapter id (packages/sources/src/index.ts).
+// An alias whose target has since been retired is worse than no alias at all: it produces
+// a real-looking sourceId (no dot) that App.svelte's reconcile-needed check
+// (`m.sourceId.includes(".")`) never flags, so the import silently fails every future
+// update check with no reconcile UI ever offered. Domains with no alias fall through to
+// `resolvedSourceId = primary.hostname` below (a dot-containing id), which IS caught by
+// that check - so when an adapter is retired, remove its aliases here rather than leaving
+// them pointing at a dead id.
 const LEGACY_DOMAIN_ALIASES: Readonly<Record<string, string>> = {
-    // MangaNato / Manganelo — the old AMR "Manganelo" mirror accepted many subdomains
-    // that the new manganato adapter doesn't list (it only covers the canonical ones).
-    "chap.manganato.com": "manganato",
-    "m.manganato.com": "manganato",
-    "readmanganato.com": "manganato",
-    "m.manganelo.com": "manganato",
-    "chap.manganelo.com": "manganato",
-    "manganelo.com": "manganato",
-    // MangaPark — old AMR used .com, new adapter only registers .net
-    "mangapark.com": "mangapark",
-    // AsuraScans — old AMR used asura.gg and www.asurascans.com before the domain settled
+    // AsuraScans - old AMR used asura.gg and www.asurascans.com before the domain settled
     "asura.gg": "asurascans",
     "www.asurascans.com": "asurascans",
-    // ManhuaPlus — migrated domain (.com → .org); old AMR links still use .com
-    "manhuaplus.com": "manhuaplus",
-    "www.manhuaplus.com": "manhuaplus",
-    // MangaRead — old AMR accepted mangaread.org without www prefix
+    // MangaRead - old AMR accepted mangaread.org without www prefix
     "mangaread.org": "mangaread",
-    // Dynasty Scans — ensure the apex domain without www is covered
+    // Dynasty Scans - ensure the apex domain without www is covered
     "dynasty-scans.com": "dynasty-scans",
-    // MangaBuddy family
-    "mangabuddy.com": "mangabuddy",
-    // MangaSushi — old AMR used .net, new adapter only registers .org
+    // MangaSushi - old AMR used .net, new adapter only registers .org
     "mangasushi.net": "mangasushi",
-    // Weeb Central — cover any legacy capitalization / www variant
+    // Weeb Central - cover any legacy capitalization / www variant
     "www.weebcentral.com": "weebcentral",
-    // AsuraToon — early domain before asurascans.com settled
+    // AsuraToon - early domain before asurascans.com settled
     "asuratoon.com": "asurascans",
     "www.asuratoon.com": "asurascans",
-    // FlameComics — migrated from .com/.me to .xyz
-    "flamecomics.com": "flamecomics",
-    "www.flamecomics.com": "flamecomics",
-    "flamecomics.me": "flamecomics",
-    "www.flamecomics.me": "flamecomics",
     // Tritinia Scans
     "www.tritinia.org": "tritinia",
-    // MangaNato / Chapmanganato — standalone domains separate from chap.manganato.com
-    "chapmanganato.com": "manganato",
-    "chapmanganato.to": "manganato",
-    "mangakakalot.com": "manganato",
-    // MangaDex — old AMR stored numeric chapter IDs (pre-UUID era) which the adapter's
+    // MangaDex - old AMR stored numeric chapter IDs (pre-UUID era) which the adapter's
     // match() rejects; fall back via alias so the source is still recognised as mangadex.
     "mangadex.org": "mangadex",
     "www.mangadex.org": "mangadex",
-    // Aqua Scans / Aqua Manga — import aliases for new adapters
-    "aquascans.com": "aquascans",
+    // Aqua Manga - import alias for the still-registered adapter
     "aquamanga.com": "aquamanga",
-    // Other newly-registered Madara sites
-    "manhwatop.com": "manhwatop",
-    "s2manga.com": "s2manga",
-    "manhwahentai.me": "manhwahentai"
+    // ManhwaTop - still-registered Madara site
+    "manhwatop.com": "manhwatop"
+    // Removed 2026-07-16: manganato, mangapark, manhuaplus, mangabuddy, flamecomics,
+    // aquascans, s2manga, and manhwahentai aliases used to live here but every one of
+    // those adapter ids is retired/commented-out in the current registry (manganato +
+    // mangapark in packages/sources/src/index.ts; manhuaplus, aquascans, s2manga,
+    // manhwahentai in madara-sites.ts; mangabuddy in mangabuddy-sites.ts; flamecomics
+    // removed entirely from mangastream-sites.ts, no replacement adapter exists under
+    // any id) - verified against the live registry state, not just the audit's list.
+    // Keeping those aliases pointed imports at a dead sourceId with no dot, which
+    // App.svelte's `m.sourceId.includes(".")` reconcile check can never catch. Deleting
+    // them lets those domains fall through to the hostname-based unknown-source path
+    // instead, which IS reconcile-flagged.
 }
 
 export function isLegacyExport(raw: unknown): raw is LegacyExport {

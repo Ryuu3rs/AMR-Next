@@ -1,5 +1,6 @@
 import {
     SourceError,
+    decodeHtmlEntities as decodeEntities,
     matchesSourceDomain,
     type ListChaptersInput,
     type ResolveChapterInput,
@@ -70,18 +71,6 @@ const JUNK_TITLES = new Set([
     "login",
     "register"
 ])
-
-function decodeEntities(value: string): string {
-    return value
-        .replace(/&#0*39;|&apos;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, "&")
-        .replace(/&#0*38;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&#0*(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-        .replace(/&nbsp;/g, " ")
-}
 
 function isJunkTitle(title: string): boolean {
     const t = title.trim().toLowerCase()

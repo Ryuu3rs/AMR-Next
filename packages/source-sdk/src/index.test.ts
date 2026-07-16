@@ -4,9 +4,44 @@ import {
     SourceError,
     SourceRegistry,
     createBoundedRequestClient,
+    decodeHtmlEntities,
     matchesSourceDomain,
     type SourceAdapter
 } from "./index"
+
+describe("decodeHtmlEntities", () => {
+    it("decodes the common named entities every adapter used to hand-roll", () => {
+        expect(decodeHtmlEntities("Rock &amp; Roll")).toBe("Rock & Roll")
+        expect(decodeHtmlEntities("&quot;quoted&quot;")).toBe('"quoted"')
+        expect(decodeHtmlEntities("Tom&#39;s")).toBe("Tom's")
+        expect(decodeHtmlEntities("Tom&apos;s")).toBe("Tom's")
+        expect(decodeHtmlEntities("a &lt; b &gt; c")).toBe("a < b > c")
+        expect(decodeHtmlEntities("one&nbsp;two")).toBe("one two")
+    })
+
+    it("decodes accented Latin-1 named entities (the bug: titles like Fianc&eacute;e)", () => {
+        expect(decodeHtmlEntities("Daisy: How to Become the Duke&#39;s Fianc&eacute;e")).toBe(
+            "Daisy: How to Become the Duke's Fiancée"
+        )
+        expect(decodeHtmlEntities("Na&iuml;ve Caf&eacute; owner Fr&auml;ulein M&uuml;ller")).toBe(
+            "Naïve Café owner Fräulein Müller"
+        )
+    })
+
+    it("decodes numeric decimal and hex entities", () => {
+        expect(decodeHtmlEntities("&#233;&#233;")).toBe("éé")
+        expect(decodeHtmlEntities("&#x27;&#x27;")).toBe("''")
+        expect(decodeHtmlEntities("&#x00e9;")).toBe("é")
+    })
+
+    it("leaves unknown entity-like text alone instead of throwing", () => {
+        expect(decodeHtmlEntities("A &notarealentity; B")).toBe("A &notarealentity; B")
+    })
+
+    it("trims the result", () => {
+        expect(decodeHtmlEntities("  padded  ")).toBe("padded")
+    })
+})
 
 describe("matchesSourceDomain", () => {
     it("matches exact domains without matching lookalikes", () => {

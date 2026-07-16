@@ -1,5 +1,6 @@
 import {
     SourceError,
+    decodeHtmlEntities as decodeEntities,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -45,24 +46,6 @@ type DynastyPage = {
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
     const v = match[index]
     return typeof v === "string" ? v : undefined
-}
-
-function decodeEntities(value: string): string {
-    return value
-        .replace(/&#0*39;|&apos;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&raquo;/g, "»")
-        .replace(/&laquo;/g, "«")
-        .replace(/&mdash;/g, "—")
-        .replace(/&ndash;/g, "–")
-        .replace(/&hellip;/g, "…")
-        .replace(/&#0*(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
-        .trim()
 }
 
 function extractSeriesSlug(url: URL): string | undefined {
@@ -347,7 +330,7 @@ export const dynastyScansAdapter: SourceAdapter = {
             // TODO: If this fires, check whether dynasty-scans.com changed the
             //       var pages = [...] pattern in its chapter page script tags.
             //       The regex is: /var\s+pages\s*=\s*(\[[\s\S]*?\]);/
-            throw new SourceError("invalid-response", "No images found in chapter — pages JSON may have changed")
+            throw new SourceError("invalid-response", "No images found in chapter - pages JSON may have changed")
         }
 
         const { seriesSlug, title: chapterTitle, sortKey } = extractChapterPageMeta(html)
@@ -364,7 +347,7 @@ export const dynastyScansAdapter: SourceAdapter = {
                 seriesTitle = extractTitle(seriesHtml, seriesSlug)
                 coverUrl = extractCoverUrl(seriesHtml)
             } catch {
-                // Non-fatal — fall back to slug
+                // Non-fatal - fall back to slug
             }
         }
 

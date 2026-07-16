@@ -22,15 +22,7 @@ const SITES: MadaraConfig[] = [
     // { id: "agrcomics", name: "AGR Comics", origin: "https://agrcomics.com", domains: ["agrcomics.com"] }, // retired: site down 2026-06 - re-enable when back
     // { id: "manhuaplus", name: "ManhuaPlus", origin: "https://manhuaplus.org", domains: ["manhuaplus.org"] }, // retired 2026-07-14: fully migrated off WordPress/Madara to a custom "liliana" theme - verified live: no wp-content/wp-json/wp-admin markers anywhere on the site, chapter pages have zero wp-manga-chapter/reading-content/wp-manga-chapter-img markup, and POSTing to /wp-admin/admin-ajax.php (both manga_get_chapters and manga_get_chapter_img_list) 302-redirects to /home since the endpoint no longer exists - matches the user's reported redirect exactly. Not a same-engine rebrand like aryascans; the whole template changed, so re-adding needs a bespoke adapter, not a config row.
     { id: "rawkuma", name: "Rawkuma", origin: "https://rawkuma.com", domains: ["rawkuma.com"] },
-    {
-        id: "hivetoon",
-        name: "HiveToon",
-        origin: "https://hivetoon.com",
-        domains: ["hivetoon.com"],
-        // Page/chapter images are served from storage.hivetoon.com - a subdomain the bare
-        // "https://hivetoon.com/*" pattern does not cover. Confirmed live 2026-07-14.
-        imageOrigins: ["*://*.hivetoon.com/*"]
-    },
+    // { id: "hivetoon", name: "HiveToon", origin: "https://hivetoon.com", domains: ["hivetoon.com"], imageOrigins: ["*://*.hivetoon.com/*"] }, // retired 2026-07-16: hivetoon.com 301-redirects to a different domain, hivetoons.org - verified live it is NOT a same-engine rebrand like aryascans->brainrotcomics: hivetoons.org runs Astro (astro-view-transitions markers, astro-island hydration islands, /_vcomics/*.js module scripts), zero wp-manga-chapter/reading-content/c-tabs-item/manga-chapters-holder markup anywhere, and chapter URLs are /series/<slug>/chapter-N with no trailing slash - a full engine change like the manhuaplus/templescan precedent above, so re-adding needs a bespoke adapter, not a config row.
     { id: "lhtranslation", name: "LHTranslation", origin: "https://lhtranslation.net", domains: ["lhtranslation.net"] },
     // { id: "harimanga", name: "HariManga", origin: "https://harimanga.me", domains: ["harimanga.me"] }, // retired: site down 2026-06 - re-enable when back
     { id: "utoon", name: "UToon", origin: "https://utoon.net", domains: ["utoon.net"] },
@@ -50,10 +42,15 @@ const SITES: MadaraConfig[] = [
         id: "mangadistrict",
         name: "Manga District",
         origin: "https://mangadistrict.com",
-        domains: ["mangadistrict.com"]
+        domains: ["mangadistrict.com"],
+        // Live-verified 2026-07-16: /manga/<slug>/ 301-redirects to /series/<slug>/
+        // (X-Redirect-By: WordPress), and /manga/<slug>/chapter-N/ 404s outright since
+        // the redirect rule doesn't cover nested chapter paths - the real permalink base
+        // is "series", not the default "manga".
+        mangaPath: "series"
     },
     // { id: "manytoon", name: "ManyToon", origin: "https://manytoon.com", domains: ["manytoon.com"] }, // retired: domain hijacked 2026-07 - resolves and returns 200 but redirects to an unrelated adult popunder ad network (purplesacam.com), verified 2026-07-11
-    { id: "omegascans", name: "Omega Scans", origin: "https://omegascans.org", domains: ["omegascans.org"] },
+    // { id: "omegascans", name: "Omega Scans", origin: "https://omegascans.org", domains: ["omegascans.org"] }, // retired 2026-07-16: omegascans.org has been fully rewritten as a Next.js/HeanCMS site - verified live zero wp-manga/wp-content/wp-admin/wp-json markers anywhere on the homepage, real content lives under /series/<slug> URLs served by Next.js (_next/static assets, image optimizer at /_next/image). A full engine change like the manhuaplus/templescan precedent above, not a same-engine rebrand like aryascans->brainrotcomics, so re-adding needs a bespoke adapter, not a config row. NOTE: apps/extension/src/database.ts's seedDatabase has a sample entry "seed-oms-001" pointing at an omegascans.org /manga/ URL that will now 404 and reference an unregistered sourceId - flagged for the owning agent, not edited here.
     // { id: "kunmanga", name: "KunManga", origin: "https://kunmanga.com", domains: ["kunmanga.com"] }, // retired: site down 2026-06 - re-enable when back
     {
         id: "vortexscans",
