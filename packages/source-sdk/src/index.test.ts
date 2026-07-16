@@ -319,6 +319,84 @@ describe("createBoundedRequestClient TTL cache", () => {
     })
 })
 
+describe("createBoundedRequestClient shared cache option", () => {
+    it("serves a second client's GET from a cache Map shared via options.cache, without a second fetch", async () => {
+        let calls = 0
+        const fakeNow = 1000
+        const sharedCache = new Map<string, { body: string; expiresAt: number }>()
+        const fetch = async () => {
+            calls += 1
+            return { ok: true, status: 200, text: async () => "shared-cache-body" }
+        }
+
+        const clientA = createBoundedRequestClient({
+            fetch,
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 20,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            cacheTtlMs: 60_000,
+            now: () => fakeNow,
+            cache: sharedCache
+        })
+        const clientB = createBoundedRequestClient({
+            fetch,
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 20,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            cacheTtlMs: 60_000,
+            now: () => fakeNow,
+            cache: sharedCache
+        })
+
+        const url = new URL("https://api.example.test/item")
+        const a = await clientA.getText(url)
+        const b = await clientB.getText(url)
+
+        expect(a).toBe("shared-cache-body")
+        expect(b).toBe("shared-cache-body")
+        // The underlying fetch was only invoked once - client B's call was served
+        // from the cache Map shared with client A, even though B never made its
+        // own network request for this URL.
+        expect(calls).toBe(1)
+    })
+
+    it("keeps requestCount/maxRequests fully independent per client even when the cache Map is shared", async () => {
+        const sharedCache = new Map<string, { body: string; expiresAt: number }>()
+        const fetch = async () => ({ ok: true, status: 200, text: async () => "body" })
+
+        const clientA = createBoundedRequestClient({
+            fetch,
+            allowedOrigins: ["https://api.example.test"],
+            // Client A's budget is exhausted by one request.
+            maxRequests: 1,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            cache: sharedCache
+        })
+        const clientB = createBoundedRequestClient({
+            fetch,
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 1,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            cache: sharedCache
+        })
+
+        // Exhaust client A's request-count budget on one URL, then hit its limit on
+        // a second, different (uncached) URL - proving the limit is real and per-instance.
+        await clientA.getText(new URL("https://api.example.test/a"))
+        await expect(clientA.getText(new URL("https://api.example.test/a-2"))).rejects.toMatchObject({
+            code: "request-limit"
+        })
+
+        // Client B, sharing the same cache Map, still has its own full budget: a
+        // fresh (uncached) request on B succeeds even though A's counter is spent.
+        await expect(clientB.getText(new URL("https://api.example.test/b"))).resolves.toBe("body")
+    })
+})
+
 describe("SourceRegistry", () => {
     const adapter = {
         manifest: {

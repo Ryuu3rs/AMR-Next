@@ -20,7 +20,32 @@ export function getSourceById(sourceId: string) {
 const wrapFetch = (requestUrl: string, init: Parameters<typeof fetch>[1]) =>
     fetch(requestUrl, init).then(r => ({ ok: r.ok, status: r.status, url: r.url, text: () => r.text() }))
 
-function createSourceContext(rateLimit?: { requests: number; intervalMs: number }): SourceContext {
+// createSourceContext builds a fresh client PER OPERATION (per manga resolve, per
+// chapter list, per cover fetch, etc.) so each operation gets its own independent
+// requestCount/maxRequests budget - see request.ts's per-instance rate-limit throw.
+// Without that, one source hit across many operations in a single service-worker
+// lifetime (e.g. a checkUpdates pass over 10+ titles) would trip "request-limit"
+// permanently for that source until the SW restarts.
+//
+// The response CACHE, however, is looked up per sourceId from this module-scope
+// registry and threaded into each fresh client via options.cache, so operations
+// against the same source that land seconds apart (e.g. resolveCover then
+// resolveGenres fetching the identical manga-page HTML) share cached bodies
+// instead of each paying a full network fetch. Only the cache is shared - the
+// request-count budget is deliberately NOT shared (see request.ts's `cache` option
+// comment).
+const sourceResponseCaches = new Map<string, Map<string, { body: string; expiresAt: number }>>()
+
+function getSourceResponseCache(sourceId: string): Map<string, { body: string; expiresAt: number }> {
+    let cache = sourceResponseCaches.get(sourceId)
+    if (!cache) {
+        cache = new Map()
+        sourceResponseCaches.set(sourceId, cache)
+    }
+    return cache
+}
+
+function createSourceContext(sourceId: string, rateLimit?: { requests: number; intervalMs: number }): SourceContext {
     const request = createBoundedRequestClient({
         fetch: wrapFetch,
         // Wildcard patterns (e.g. *://*.mangadex.network/*) are manifest permission
@@ -31,6 +56,7 @@ function createSourceContext(rateLimit?: { requests: number; intervalMs: number 
         maxResponseBytes: 10 * 1024 * 1024,
         timeoutMs: 15_000,
         cacheTtlMs: 60_000,
+        cache: getSourceResponseCache(sourceId),
         ...(rateLimit ? { rateLimit } : {})
     })
     return {
@@ -50,7 +76,10 @@ function createSourceContext(rateLimit?: { requests: number; intervalMs: number 
 export async function resolveMangaUrl(url: URL): Promise<string> {
     const source = sourceRegistry.match(url)
     if (!source) throw new Error("No adapter for this URL")
-    const result = await source.resolveManga({ url }, createSourceContext(source.manifest.requestRateLimit))
+    const result = await source.resolveManga(
+        { url },
+        createSourceContext(source.manifest.id, source.manifest.requestRateLimit)
+    )
     if (!result.sourceMangaId) throw new Error("Adapter returned empty sourceMangaId")
     return result.sourceMangaId
 }
@@ -72,7 +101,7 @@ export async function resolveCoverFor(manga: {
         }
     }
     if (input.sourceMangaId === undefined && input.url === undefined) return undefined
-    return source.resolveCover(input, createSourceContext(source.manifest.requestRateLimit))
+    return source.resolveCover(input, createSourceContext(source.manifest.id, source.manifest.requestRateLimit))
 }
 
 export async function resolveGenresFor(manga: {
@@ -93,7 +122,10 @@ export async function resolveGenresFor(manga: {
     }
     if (input.sourceMangaId === undefined && input.url === undefined) return []
     try {
-        return await source.resolveGenres(input, createSourceContext(source.manifest.requestRateLimit))
+        return await source.resolveGenres(
+            input,
+            createSourceContext(source.manifest.id, source.manifest.requestRateLimit)
+        )
     } catch {
         return []
     }
@@ -107,7 +139,10 @@ export async function resolveChapterUrl(url: string) {
         throw new Error(`This chapter is not supported (${parsedUrl.hostname}${parsedUrl.pathname})`)
     }
 
-    return source.resolveChapter({ url: parsedUrl }, createSourceContext(source.manifest.requestRateLimit))
+    return source.resolveChapter(
+        { url: parsedUrl },
+        createSourceContext(source.manifest.id, source.manifest.requestRateLimit)
+    )
 }
 
 // Resolve a chapter using pre-fetched HTML (tab injection fallback for bot-blocked sites).
@@ -189,7 +224,10 @@ export async function searchManga(query: string): Promise<SourceSearchResult[]> 
         Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))])
     const settled = await Promise.allSettled(
         searchable.map(adapter =>
-            withTimeout(adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)), 10000)
+            withTimeout(
+                adapter.search!(query, createSourceContext(adapter.manifest.id, adapter.manifest.requestRateLimit)),
+                10000
+            )
         )
     )
     return settled
@@ -213,7 +251,10 @@ export function searchMangaStreaming(
         Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))])
     let remaining = searchable.length
     for (const adapter of searchable) {
-        withTimeout(adapter.search!(query, createSourceContext(adapter.manifest.requestRateLimit)), 10000)
+        withTimeout(
+            adapter.search!(query, createSourceContext(adapter.manifest.id, adapter.manifest.requestRateLimit)),
+            10000
+        )
             .then(results => {
                 const matched = results.filter(result => matchesQueryWithAltTitles(result, query))
                 if (matched.length > 0) onPartial(matched, adapter.manifest.id)
@@ -265,7 +306,7 @@ export async function listChaptersForSource(
     const sourceManga: SourceManga = { manga, sourceId, sourceMangaId, url: mangaUrl }
     return source.listChapters(
         { manga: sourceManga, limit: 500 },
-        createSourceContext(source.manifest.requestRateLimit)
+        createSourceContext(source.manifest.id, source.manifest.requestRateLimit)
     )
 }
 
@@ -286,7 +327,7 @@ export async function listChaptersBySource(sourceId: string, sourceMangaId: stri
     const sourceManga: SourceManga = { manga: stub, sourceId, sourceMangaId, url: mangaUrl }
     return source.listChapters(
         { manga: sourceManga, limit: 500 },
-        createSourceContext(source.manifest.requestRateLimit)
+        createSourceContext(source.manifest.id, source.manifest.requestRateLimit)
     )
 }
 
@@ -305,6 +346,6 @@ export async function listMangaChapters(manga: LibraryManga, link: SourceLinkRec
             languages: link.language ? [link.language] : [language],
             limit: 500
         },
-        createSourceContext(source.manifest.requestRateLimit)
+        createSourceContext(source.manifest.id, source.manifest.requestRateLimit)
     )
 }

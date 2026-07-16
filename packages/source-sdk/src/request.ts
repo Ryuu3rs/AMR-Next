@@ -43,6 +43,13 @@ export type BoundedRequestClientOptions = {
     cacheTtlMs?: number
     // Injectable clock for tests.
     now?: () => number
+    // Optional response cache to use instead of a fresh internal Map. Lets callers
+    // share the cache ACROSS separate client instances (e.g. one per operation) so
+    // back-to-back operations against the same source benefit from cacheTtlMs even
+    // though each gets its own client. Deliberately does NOT extend to requestCount/
+    // maxRequests - that budget must stay per-instance (see attemptOnce) or a shared
+    // client would let one operation's request count block a later, unrelated one.
+    cache?: Map<string, { body: string; expiresAt: number }>
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
@@ -75,7 +82,11 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
     // while the underlying fetch is in flight (no time-based caching).
     const inFlight = new Map<string, Promise<string>>()
     // Short-TTL success cache for coalescable GETs. Entries expire after cacheTtlMs.
-    const responseCache = new Map<string, { body: string; expiresAt: number }>()
+    // Uses the caller-supplied shared cache when provided (options.cache), otherwise
+    // a fresh instance-local Map - identical to the pre-existing behavior. Note this
+    // is the ONLY thing that can be shared across client instances; requestCount and
+    // maxRequests below remain local to `options` per call to this factory.
+    const responseCache = options.cache ?? new Map<string, { body: string; expiresAt: number }>()
 
     async function waitForRateSlot(): Promise<void> {
         if (minIntervalMs <= 0) return

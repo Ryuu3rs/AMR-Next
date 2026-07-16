@@ -125,6 +125,60 @@ describe("searchManga result filtering", () => {
     })
 })
 
+describe("createSourceContext response cache reuse", () => {
+    it("shares the response cache across two separately-created contexts for the same sourceId", async () => {
+        // Mirrors the real-world scenario this fix targets: resolveCover and
+        // resolveGenres each call createSourceContext independently (one context
+        // per operation, so their requestCount budgets stay separate - see
+        // request.ts), but both fetch the identical manga-page URL for the same
+        // sourceId seconds apart. The response cache should be shared so the
+        // second operation is served from cache instead of hitting the network again.
+        const mangaPageUrl = "https://mangadex.org/title/shared-cache-test"
+        const fetchMock = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            url: mangaPageUrl,
+            text: async () => "<html>manga page</html>"
+        }))
+        vi.stubGlobal("fetch", fetchMock)
+
+        const adapter = {
+            manifest: manifest("mangadex"),
+            match: () => "none" as const,
+            resolveManga: vi.fn(),
+            resolveChapter: vi.fn(),
+            listChapters: vi.fn(),
+            resolveCover: vi.fn(async (_input: unknown, ctx: { request: { getText: (u: URL) => Promise<string> } }) => {
+                const body = await ctx.request.getText(new URL(mangaPageUrl))
+                return `cover-from:${body}`
+            }),
+            resolveGenres: vi.fn(
+                async (_input: unknown, ctx: { request: { getText: (u: URL) => Promise<string> } }) => {
+                    const body = await ctx.request.getText(new URL(mangaPageUrl))
+                    return [body]
+                }
+            )
+        }
+        const getMock = vi.fn(() => adapter)
+        const { sourceRegistry } = await import("@amr/sources")
+        vi.mocked(sourceRegistry.get).mockImplementation(getMock as never)
+
+        const { resolveCoverFor, resolveGenresFor } = await import("./sources")
+
+        const cover = await resolveCoverFor({ sourceId: "mangadex", sourceMangaId: "shared-cache-test" })
+        const genres = await resolveGenresFor({ sourceId: "mangadex", sourceMangaId: "shared-cache-test" })
+
+        expect(cover).toBe("cover-from:<html>manga page</html>")
+        expect(genres).toEqual(["<html>manga page</html>"])
+        // Two operations, two independently-constructed contexts/clients - but only
+        // one underlying network fetch because the response cache Map is shared per
+        // sourceId across createSourceContext calls.
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+
+        vi.unstubAllGlobals()
+    })
+})
+
 describe("searchMangaStreaming result filtering", () => {
     it("only emits onPartial for adapters with matches after filtering", async () => {
         listMock = () => [
