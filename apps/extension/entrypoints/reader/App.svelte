@@ -3,6 +3,7 @@
     import type { ResolvedChapter } from "@amr/source-sdk"
     import { onDestroy, onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
+    import { subscribeLive } from "../../src/live"
 
     type ReadingDirection = "ltr" | "rtl" | "vertical"
     type PageFit = "width" | "height" | "contain" | "original"
@@ -652,7 +653,35 @@
         }
     }
 
+    let unsubscribeLive: (() => void) | undefined
+
     onMount(async () => {
+        // A background chapter-list refresh (e.g. checkUpdates, or another tab
+        // capturing a new chapter of this same manga) can complete while this
+        // reader tab is already open - re-fetch siblings so next/prev picks it up
+        // without needing a manual reload.
+        unsubscribeLive = subscribeLive(["chapters"], ev => {
+            if (chapter && (!ev.mangaIds || ev.mangaIds.includes(mangaId))) void loadSiblings(chapter)
+        })
+        // Settings live under a single storage.local "settings" key - watch it
+        // directly instead of going through the live bus (see live.ts's module
+        // comment on settings:update). Only the fields with no per-series override
+        // path are safe to apply blindly; mode/direction/pageFit can be overridden
+        // per-title and are left alone here to avoid clobbering an active override.
+        browser.storage.onChanged.addListener((changes, area) => {
+            if (area !== "local" || !changes["settings"]) return
+            const next = changes["settings"].newValue as
+                | Partial<{ showPageNumber: boolean; noGapContinuous: boolean; preloadPages: number }>
+                | undefined
+            if (!next) return
+            if (next.showPageNumber !== undefined) showPageNumber = next.showPageNumber
+            if (next.preloadPages !== undefined) preloadPages = next.preloadPages
+            if (next.noGapContinuous !== undefined) {
+                noGapDefault = next.noGapContinuous
+                if (noGapOverride === null) noGapContinuous = noGapDefault
+            }
+        })
+
         const params = new URL(location.href).searchParams
         const url = params.get("url")
         if (!url) {
@@ -671,6 +700,7 @@
     onDestroy(() => {
         revokeOfflinePages()
         if (noGapSavedTimer) clearTimeout(noGapSavedTimer)
+        unsubscribeLive?.()
     })
 
     function recordProgress(pageIndex: number) {

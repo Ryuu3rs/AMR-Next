@@ -2,6 +2,7 @@ import type { ChapterRecord } from "@amr/contracts"
 import { db } from "../database"
 import { findSource, listChaptersBySource } from "../sources"
 import { fetchChapterHtmlViaTab } from "./tab-fetch"
+import { publishLive } from "../live"
 
 // Manga IDs currently having their chapter list refreshed, mapped to the in-flight
 // refresh promise - dedupes concurrent calls for the same manga (e.g. capturing
@@ -102,6 +103,7 @@ export async function mineAndCacheEpisodesFromHtml(
     }))
 
     await db.chapters.bulkPut(dbChapters)
+    publishLive(["chapters"], [mangaId])
 
     // Self-heal: delete any chapter rows under this mangaId left over from before the
     // title_no filter above existed - those were mined from "Recommended for you"
@@ -171,6 +173,7 @@ export async function listChaptersWithTabFallback(
     const chapters = await listChaptersBySource(source!.manifest.id, sourceMangaId, mangaUrl)
     if (chapters.length === 0) return
     await db.chapters.bulkPut(chapters)
+    publishLive(["chapters"], [mangaId])
     const maxSortKey = Math.max(...chapters.map(c => c.sortKey))
     const latestChapter = chapters.find(c => c.sortKey === maxSortKey)
     const existing = await db.manga.get(mangaId)

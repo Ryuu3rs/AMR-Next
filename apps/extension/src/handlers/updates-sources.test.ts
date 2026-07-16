@@ -4,16 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { db } from "../database"
 import type { LibraryManga } from "../database"
 
-const { listMangaChaptersMock } = vi.hoisted(() => ({
-    listMangaChaptersMock: vi.fn()
+const { listMangaChaptersMock, resolveGenresForMock, publishLiveMock } = vi.hoisted(() => ({
+    listMangaChaptersMock: vi.fn(),
+    resolveGenresForMock: vi.fn(),
+    publishLiveMock: vi.fn()
 }))
 
 vi.mock("../sources", () => ({
     listMangaChapters: listMangaChaptersMock,
     checkSourcePermission: vi.fn(),
     getMangaChapters: vi.fn(),
-    resolveGenresFor: vi.fn(),
+    resolveGenresFor: resolveGenresForMock,
     searchManga: vi.fn()
+}))
+
+vi.mock("../live", () => ({
+    publishLive: publishLiveMock
 }))
 
 // Minimal in-memory stand-in for browser.storage.local - a plain Map-backed
@@ -54,6 +60,8 @@ beforeEach(async () => {
         runtime: { getManifest: () => ({ version: "1.0.0" }) }
     }
     listMangaChaptersMock.mockReset()
+    resolveGenresForMock.mockReset()
+    publishLiveMock.mockReset()
 })
 
 afterEach(() => {
@@ -126,6 +134,86 @@ describe("checkUpdates storage writes", () => {
 
         await checkUpdates()
         expect(storageLocal.store.has("updateStatus")).toBe(true)
+    })
+})
+
+describe("checkUpdates live-bus publishing", () => {
+    it("publishes chapters+library for a title whose latest chapter changed", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-1", latestChapterId: "old-chapter" })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id))
+        const chapters: ChapterRecord[] = [
+            {
+                id: "old-chapter",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Ch 1",
+                url: "https://x/1",
+                sortKey: 1
+            },
+            {
+                id: "new-chapter",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Ch 2",
+                url: "https://x/2",
+                sortKey: 2
+            }
+        ]
+        listMangaChaptersMock.mockResolvedValue(chapters)
+
+        await checkUpdates()
+
+        expect(publishLiveMock).toHaveBeenCalledWith(["chapters", "library"], [manga.id])
+    })
+
+    it("does not publish for a title whose latest chapter did not change", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-1", latestChapterId: "only-chapter" })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id))
+        const chapters: ChapterRecord[] = [
+            {
+                id: "only-chapter",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Ch 1",
+                url: "https://x/1",
+                sortKey: 1
+            }
+        ]
+        listMangaChaptersMock.mockResolvedValue(chapters)
+
+        await checkUpdates()
+
+        expect(publishLiveMock).not.toHaveBeenCalled()
+    })
+})
+
+describe("backfillMangaGenres live-bus publishing", () => {
+    it("publishes library once after the whole backfill loop, not per title", async () => {
+        const { backfillMangaGenres } = await import("./updates-sources")
+
+        const mangaA = makeManga({ id: "m-a", mangaUrl: "https://mangadex.org/title/a" })
+        const mangaB = makeManga({ id: "m-b", mangaUrl: "https://mangadex.org/title/b" })
+        await db.manga.bulkPut([mangaA, mangaB])
+        resolveGenresForMock.mockResolvedValue(["Action"])
+
+        await backfillMangaGenres()
+
+        expect(publishLiveMock).toHaveBeenCalledTimes(1)
+        expect(publishLiveMock).toHaveBeenCalledWith(["library"])
+    })
+
+    it("does not publish when nothing needed backfilling", async () => {
+        const { backfillMangaGenres } = await import("./updates-sources")
+
+        await backfillMangaGenres()
+
+        expect(publishLiveMock).not.toHaveBeenCalled()
     })
 })
 

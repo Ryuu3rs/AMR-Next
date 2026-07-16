@@ -1,9 +1,9 @@
 // Side-effect-only import, deliberately first: @amr/contracts/src/domain.ts's
 // disableZodEvalProbe() disables zod's eval capability probe (which otherwise
 // trips a CSP console warning under MV3's `script-src 'self'`) and runs once
-// at that module's own top level, as a side effect of importing it — no call
+// at that module's own top level, as a side effect of importing it - no call
 // needed here. Declaring the import first guarantees @amr/contracts evaluates
-// before @amr/sources (imported next) constructs its own schemas — see
+// before @amr/sources (imported next) constructs its own schemas - see
 // packages/sources/src/mangadex.ts, which builds zod schemas without
 // importing @amr/contracts. Per ES module evaluation order, a module's
 // *imports* (unlike its own plain statements) always evaluate before any
@@ -31,6 +31,8 @@ import { checkUpdates, checkExtensionUpdate, backfillMangaGenres } from "../src/
 import { runCommunitySync } from "../src/handlers/community"
 import { autoPush } from "../src/handlers/data-sync-settings"
 import { handlers } from "../src/background/dispatch"
+import { MUTATION_SCOPES } from "../src/background/mutation-scopes"
+import { publishLive } from "../src/live"
 
 export default defineBackground(() => {
     browser.runtime.onInstalled.addListener(() => {
@@ -92,7 +94,7 @@ export default defineBackground(() => {
             }
         }
     }
-    // Chrome does not support URL filters on tabs.onUpdated — Firefox does.
+    // Chrome does not support URL filters on tabs.onUpdated - Firefox does.
     // Unfiltered onUpdated is noisier but safe; captureChapter ignores non-source URLs internally.
     if (import.meta.env.BROWSER === "firefox") {
         // @ts-expect-error Firefox-only URL filter not in webextension-polyfill types
@@ -136,6 +138,13 @@ export default defineBackground(() => {
                 const handler = handlers[request.type]
                 const ctx: HandlerContext = { sender }
                 const data = await (handler as (r: RuntimeRequest, c: HandlerContext) => Promise<unknown>)(request, ctx)
+                const scopes = MUTATION_SCOPES[request.type]
+                if (scopes) {
+                    publishLive(
+                        scopes,
+                        "mangaId" in request && typeof request.mangaId === "string" ? [request.mangaId] : undefined
+                    )
+                }
                 return success(data)
             } catch (error) {
                 return failure(error)

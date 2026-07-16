@@ -6,6 +6,7 @@ import { getSettings } from "../settings"
 import { isNewerVersion } from "../update-check"
 import { EXTENSION_UPDATE_INTERVAL_HOURS, GITHUB_RELEASES_URL } from "../background/alarms"
 import { delay, type HandlerMap } from "../background/handler-types"
+import { publishLive } from "../live"
 
 let updateCheckRunning = false
 let genreBackfillRunning = false
@@ -99,10 +100,12 @@ export async function checkUpdates(sourceId?: string) {
                         (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
                         chapters[0]
                     )
+                    let latestChanged = false
                     await db.transaction("rw", db.chapters, db.manga, async () => {
                         await db.chapters.bulkPut(chapters)
                         if (latest && latest.id !== item.latestChapterId) {
                             updated += 1
+                            latestChanged = true
                             await db.manga.update(item.id, {
                                 latestChapterId: latest.id,
                                 sourceUrl: latest.url,
@@ -111,6 +114,7 @@ export async function checkUpdates(sourceId?: string) {
                             })
                         }
                     })
+                    if (latestChanged) publishLive(["chapters", "library"], [item.id])
                     checked += 1
                 } catch (error) {
                     failed += 1
@@ -199,6 +203,7 @@ export async function backfillMangaGenres(): Promise<void> {
             // Respect the source rate limit (3 req/s) between requests.
             await new Promise<void>(r => setTimeout(r, 350))
         }
+        publishLive(["library"])
     } finally {
         genreBackfillRunning = false
     }

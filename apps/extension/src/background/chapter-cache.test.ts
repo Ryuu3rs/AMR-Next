@@ -8,6 +8,20 @@ vi.mock("./tab-fetch", () => ({
     fetchChapterHtmlViaTab: (...args: unknown[]) => fetchChapterHtmlViaTabMock(...args)
 }))
 
+const publishLiveMock = vi.fn()
+vi.mock("../live", () => ({
+    publishLive: (...args: unknown[]) => publishLiveMock(...args)
+}))
+
+const listChaptersBySourceMock = vi.fn()
+vi.mock("../sources", () => ({
+    // findSource is only referenced in chapter-cache.ts's type positions
+    // (ReturnType<typeof findSource>), never called - fakeSource() below builds
+    // the values these tests pass in directly.
+    findSource: vi.fn(),
+    listChaptersBySource: (...args: unknown[]) => listChaptersBySourceMock(...args)
+}))
+
 const { mineAndCacheEpisodesFromHtml, listChaptersWithTabFallback, ensureChapterListRefreshed } =
     await import("./chapter-cache")
 
@@ -38,6 +52,8 @@ function link(titleNo: string, epNo: number): string {
 
 beforeEach(async () => {
     await Promise.all([db.manga.clear(), db.chapters.clear()])
+    publishLiveMock.mockReset()
+    listChaptersBySourceMock.mockReset()
 })
 
 describe("mineAndCacheEpisodesFromHtml", () => {
@@ -62,6 +78,7 @@ describe("mineAndCacheEpisodesFromHtml", () => {
         expect(chapters).toHaveLength(3)
         expect(chapters.every(c => c.id.startsWith(`${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:`))).toBe(true)
         expect(chapters.map(c => c.sortKey).sort((a, b) => a - b)).toEqual([1, 2, 3])
+        expect(publishLiveMock).toHaveBeenCalledWith(["chapters"], [MANGA_ID])
     })
 
     it("self-heals by deleting stale chapter rows embedding a different sourceMangaId", async () => {
@@ -107,6 +124,7 @@ describe("mineAndCacheEpisodesFromHtml", () => {
         expect(stored).toBe(0)
         const chapters = await db.chapters.where("mangaId").equals(MANGA_ID).toArray()
         expect(chapters).toHaveLength(0)
+        expect(publishLiveMock).not.toHaveBeenCalled()
     })
 })
 
@@ -183,6 +201,36 @@ describe("listChaptersWithTabFallback pagination (Webtoons-style JS-rendered lis
 
         expect(fetchChapterHtmlViaTabMock).toHaveBeenNthCalledWith(1, LIST_URL)
         expect(fetchChapterHtmlViaTabMock).toHaveBeenNthCalledWith(2, `${LIST_URL}&page=2`)
+    })
+})
+
+describe("listChaptersWithTabFallback standard (SW-fetch) path", () => {
+    it("publishes chapters for the manga after a successful bulkPut", async () => {
+        await db.manga.put(manga)
+        const chapters: ChapterRecord[] = [1, 2, 3].map(n => ({
+            id: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:${n}`,
+            mangaId: MANGA_ID,
+            sourceId: SOURCE_ID,
+            title: `Episode ${n}`,
+            url: `https://${HOSTNAME}/ep-${n}`,
+            sortKey: n
+        }))
+        listChaptersBySourceMock.mockResolvedValue(chapters)
+
+        const source = fakeSource(() => null)
+        await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+
+        expect(publishLiveMock).toHaveBeenCalledWith(["chapters"], [MANGA_ID])
+    })
+
+    it("does not publish when the source returns no chapters", async () => {
+        await db.manga.put(manga)
+        listChaptersBySourceMock.mockResolvedValue([])
+
+        const source = fakeSource(() => null)
+        await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+
+        expect(publishLiveMock).not.toHaveBeenCalled()
     })
 })
 

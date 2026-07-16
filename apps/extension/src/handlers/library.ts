@@ -17,6 +17,7 @@ import { findSource, listChaptersForSource, resolveChapterUrl, resolveCoverFor, 
 import { scheduleChapterListRefresh } from "../background/chapter-cache"
 import { fetchCoverBlob } from "../background/covers"
 import type { HandlerMap } from "../background/handler-types"
+import { publishLive } from "../live"
 
 const COVER_BACKFILL_BATCH = 20
 
@@ -229,6 +230,7 @@ export const libraryHandlers: HandlerMap = {
                         })
                     }
                 })
+                publishLive(["chapters", "library"], [request.mangaId])
             } catch {
                 // best-effort; update alarm will retry
             }
