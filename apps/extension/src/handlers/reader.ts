@@ -1,7 +1,11 @@
 import type { ReadingProgress } from "@amr/contracts"
 import { db, recordAnalyticsEvent, saveProgress, trackExternalChapter } from "../database"
 import { findSource, getSourceById, listChaptersBySource, resolveChapterFromHtml, resolveChapterUrl } from "../sources"
-import { mineAndCacheEpisodesFromHtml, scheduleChapterListRefresh } from "../background/chapter-cache"
+import {
+    ensureChapterListRefreshed,
+    mineAndCacheEpisodesFromHtml,
+    scheduleChapterListRefresh
+} from "../background/chapter-cache"
 import { fetchChapterHtmlViaTab } from "../background/tab-fetch"
 import { captureChapter, isBotBlocked } from "../background/capture"
 import type { HandlerMap } from "../background/handler-types"
@@ -110,11 +114,28 @@ export const readerHandlers: HandlerMap = {
         if (source?.getChapterListUrl) {
             // JS-rendered list page (e.g. Webtoons) - a plain SW fetch is known to
             // return a partial/empty list, so check the DB cache first instead of
-            // attempting a fetch we already know will fail, and refresh it in the
-            // background without blocking this response.
-            scheduleChapterListRefresh(source, request.sourceMangaId, request.mangaUrl, request.mangaId)
+            // attempting a fetch we already know will fail.
             const cached = await fromCache()
-            if (cached.length > 0) return cached
+            if (cached.length > 0) {
+                // Already have something to show - refresh in the background without
+                // blocking this response (picks up newly published episodes, and keeps
+                // paginating for the true total on a long-running series).
+                scheduleChapterListRefresh(source, request.sourceMangaId, request.mangaUrl, request.mangaId)
+                return cached
+            }
+            // Nothing cached yet - this is the very first time this title's chapter
+            // list has ever been requested. Firing scheduleChapterListRefresh here and
+            // returning the (empty) cache immediately would race it: reader:resolve's
+            // own viewer-page mining only sees whatever handful of nearby episodes
+            // Webtoons' viewer dropdown happens to have rendered, which is often too
+            // few to populate the cache, so the response would come back empty and the
+            // reader would show no prev/next controls on a title's first-ever open.
+            // Await the tab-rendered list-page refresh (joins the same in-flight
+            // refresh if one is already running, e.g. from auto-capture) so the first
+            // response reflects real data instead of racing it.
+            await ensureChapterListRefreshed(source, request.sourceMangaId, request.mangaUrl, request.mangaId)
+            const refreshed = await fromCache()
+            if (refreshed.length > 0) return refreshed
         }
 
         try {

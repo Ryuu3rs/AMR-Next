@@ -1,5 +1,6 @@
 import {
     SourceError,
+    decodeHtmlEntities as decodeEntities,
     matchesSourceDomain,
     type ListChaptersInput,
     type ResolveChapterInput,
@@ -36,18 +37,6 @@ const BROWSER_HEADERS = {
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
     const v = match[index]
     return typeof v === "string" ? v : undefined
-}
-
-function decodeEntities(value: string): string {
-    return value
-        .replace(/&#0*39;|&apos;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&#0*(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-        .replace(/&nbsp;/g, " ")
-        .trim()
 }
 
 // /manga-XXXX  (no trailing path segment) → manga id
@@ -270,7 +259,7 @@ export const manganatoAdapter: SourceAdapter = {
         const html = await context.request.getText(requestUrl, { headers: BROWSER_HEADERS })
         const imageUrls = extractImages(html)
         if (imageUrls.length === 0) {
-            context.logger.warn("No images found in chapter page — returning pages:[] so siblings can be cached", {
+            context.logger.warn("No images found in chapter page - returning pages:[] so siblings can be cached", {
                 url: input.url.toString()
             })
         }

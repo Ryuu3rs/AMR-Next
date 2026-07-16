@@ -9,9 +9,11 @@ const resolveChapterUrlMock = vi.fn()
 const resolveChapterFromHtmlMock = vi.fn()
 const listChaptersBySourceMock = vi.fn()
 const findSourceMock = vi.fn()
+const getSourceByIdMock = vi.fn()
 
 vi.mock("../sources", () => ({
     findSource: (...args: unknown[]) => findSourceMock(...args),
+    getSourceById: (...args: unknown[]) => getSourceByIdMock(...args),
     resolveChapterUrl: (...args: unknown[]) => resolveChapterUrlMock(...args),
     resolveChapterFromHtml: (...args: unknown[]) => resolveChapterFromHtmlMock(...args),
     listChaptersBySource: (...args: unknown[]) => listChaptersBySourceMock(...args)
@@ -34,7 +36,7 @@ const { captureChapter } = await import("../background/capture")
 vi.spyOn(await import("../background/chapter-cache"), "scheduleChapterListRefresh").mockImplementation(() => {})
 
 // captureChapter's success/external paths call flashAddedBadge(), which touches the
-// WebExtension `browser` global — not present under vitest's node environment (WXT
+// WebExtension `browser` global - not present under vitest's node environment (WXT
 // normally injects it). Stub just enough of the surface for these tests.
 vi.stubGlobal("browser", {
     action: {
@@ -228,5 +230,84 @@ describe("reader:resolve bot-block path", () => {
         ).rejects.toThrow("totally unrelated failure")
 
         expect(fetchChapterHtmlViaTabMock).not.toHaveBeenCalled()
+    })
+})
+
+describe("reader:chapters (Webtoons-style getChapterListUrl sources)", () => {
+    const SOURCE_ID = "webtoons"
+    const SOURCE_MANGA_ID = "42"
+    const WT_MANGA_ID = `${SOURCE_ID}:manga:${SOURCE_MANGA_ID}`
+    const MANGA_URL = "https://www.webtoons.com/en/fantasy/slug/"
+    const LIST_URL = `https://www.webtoons.com/en/fantasy/slug/list?title_no=${SOURCE_MANGA_ID}`
+
+    function episodeLink(epNo: number): string {
+        return `href="/en/fantasy/slug/ep-${epNo}/viewer?title_no=${SOURCE_MANGA_ID}&episode_no=${epNo}"`
+    }
+
+    beforeEach(() => {
+        getSourceByIdMock.mockReturnValue({
+            manifest: { id: SOURCE_ID },
+            getChapterListUrl: () => LIST_URL
+        })
+    })
+
+    it("on a cache-miss (title's first-ever open), awaits the tab-rendered list refresh instead of racing it", async () => {
+        // Nothing cached yet - this is the race from the live-tested bug: the earlier
+        // fire-and-forget scheduleChapterListRefresh() call would return an empty list
+        // here, before the background tab-fetch had a chance to populate the cache.
+        fetchChapterHtmlViaTabMock.mockResolvedValue(`<div>${episodeLink(3)}${episodeLink(2)}${episodeLink(1)}</div>`)
+
+        const result = (await readerHandlers["reader:chapters"]!(
+            {
+                type: "reader:chapters",
+                sourceId: SOURCE_ID,
+                sourceMangaId: SOURCE_MANGA_ID,
+                mangaUrl: MANGA_URL,
+                mangaId: WT_MANGA_ID
+            },
+            mkCtx()
+        )) as Array<{ url: string; sortKey: number; title: string }>
+
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalled()
+        expect(result.length).toBe(3)
+        expect(result.map(c => c.sortKey).sort((a, b) => a - b)).toEqual([1, 2, 3])
+    })
+
+    it("returns already-cached chapters immediately without waiting on a refresh", async () => {
+        await db.manga.put({ ...manga, id: WT_MANGA_ID, sourceId: SOURCE_ID })
+        await db.chapters.bulkPut([
+            {
+                id: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:1`,
+                mangaId: WT_MANGA_ID,
+                sourceId: SOURCE_ID,
+                title: "Episode 1",
+                url: "https://www.webtoons.com/ep-1",
+                sortKey: 1
+            },
+            {
+                id: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:2`,
+                mangaId: WT_MANGA_ID,
+                sourceId: SOURCE_ID,
+                title: "Episode 2",
+                url: "https://www.webtoons.com/ep-2",
+                sortKey: 2
+            }
+        ])
+        // If the handler awaited a refresh here instead of returning cached data
+        // immediately, this never-resolving mock would hang the test.
+        fetchChapterHtmlViaTabMock.mockImplementation(() => new Promise(() => {}))
+
+        const result = (await readerHandlers["reader:chapters"]!(
+            {
+                type: "reader:chapters",
+                sourceId: SOURCE_ID,
+                sourceMangaId: SOURCE_MANGA_ID,
+                mangaUrl: MANGA_URL,
+                mangaId: WT_MANGA_ID
+            },
+            mkCtx()
+        )) as Array<{ url: string; sortKey: number; title: string }>
+
+        expect(result.map(c => c.sortKey).sort((a, b) => a - b)).toEqual([1, 2])
     })
 })

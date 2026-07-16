@@ -1,6 +1,7 @@
 import {
     SourceError,
     SourceRequestError,
+    decodeHtmlEntities as decodeEntities,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -28,18 +29,6 @@ const BROWSER_HEADERS = {
 function captureGroup(m: RegExpMatchArray, i: number): string | undefined {
     const v = m[i]
     return typeof v === "string" ? v : undefined
-}
-
-function decodeEntities(s: string): string {
-    return s
-        .replace(/&#0*39;|&apos;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&#0*(\d+);/g, (_, c: string) => String.fromCodePoint(Number(c)))
-        .replace(/&nbsp;/g, " ")
-        .trim()
 }
 
 function extractTitle(html: string, fallback: string): string {
@@ -75,7 +64,7 @@ function pathPrefix(url: URL): string {
     return "/" + segs.slice(0, 3).join("/")
 }
 
-// Canonical series prefix URL — used as mangaUrl so that chapter URLs (which share the
+// Canonical series prefix URL - used as mangaUrl so that chapter URLs (which share the
 // same /lang/genre/slug/ prefix) match via startsWith in trackExternalChapter.
 function seriesPrefixUrl(url: URL): string {
     return `${ORIGIN}${pathPrefix(url)}/`
@@ -92,13 +81,13 @@ function extractEpisodes(html: string, titleNo: string): SourceChapter[] {
         if (!epNo || seen.has(epNo)) continue
 
         // Use the actual href from HTML (decoded) so the stored URL matches what the
-        // browser shows — chapter:siblings lookup uses exact URL string comparison.
+        // browser shows - chapter:siblings lookup uses exact URL string comparison.
         const rawHref = captureGroup(m, 1) ?? ""
         const decodedHref = rawHref.replace(/&amp;/g, "&")
         const epUrl = decodedHref.startsWith("http") ? decodedHref : `${ORIGIN}${decodedHref}`
 
         // List/viewer pages show "Recommended for you" widgets linking to OTHER
-        // series' episodes, which also match this href pattern — only accept links
+        // series' episodes, which also match this href pattern - only accept links
         // whose title_no matches this series, or the chapter list gets polluted with
         // wrong-series episodes (breaks Prev/Next entirely).
         let linkTitleNo: string | null
@@ -263,7 +252,7 @@ export const webtoonsAdapter: SourceAdapter = {
         // series path prefix from a stored mangaUrl (handles both the legacy
         // .../list?title_no=X shape and the newer series-prefix shape), or fall back
         // to the /en/fantasy/unknown/ trick from resolveManga when only the bare
-        // title_no is known — Webtoons redirects that to the canonical genre/slug URL.
+        // title_no is known - Webtoons redirects that to the canonical genre/slug URL.
         const fetchUrl = input.url
             ? new URL(`${ORIGIN}${pathPrefix(input.url)}/list?title_no=${encodeURIComponent(titleNo)}`)
             : new URL(`${ORIGIN}/en/fantasy/unknown/list?title_no=${encodeURIComponent(titleNo)}`)
@@ -286,7 +275,7 @@ export const webtoonsAdapter: SourceAdapter = {
     getChapterListUrl(sourceMangaId: string, mangaUrl: string): string | null {
         // mangaUrl may be the new series prefix (https://www.webtoons.com/en/fantasy/slug/)
         // or, for library entries added before that format existed, the old list URL
-        // itself (.../slug/list?title_no=X) — pathPrefix() normalizes either shape to
+        // itself (.../slug/list?title_no=X) - pathPrefix() normalizes either shape to
         // the bare /lang/genre/slug prefix, same as listChapters does below.
         try {
             const base = new URL(mangaUrl)

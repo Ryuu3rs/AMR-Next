@@ -1,5 +1,6 @@
 import {
     SourceError,
+    decodeHtmlEntities as decodeEntities,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -16,7 +17,7 @@ const SOURCE_ID = "weebcentral"
 const ORIGIN = "https://weebcentral.com"
 const DOMAIN = "weebcentral.com"
 
-// Weeb Central uses Postgres ULIDs — 26 chars from Crockford base32.
+// Weeb Central uses Postgres ULIDs - 26 chars from Crockford base32.
 const ULID_CHARS = "[0-9A-HJKMNP-TV-Z]{26}"
 const SERIES_RE = new RegExp(`^/series/(${ULID_CHARS})(?:/[^/]*)?/?$`, "i")
 const CHAPTER_RE = new RegExp(`^/chapters/(${ULID_CHARS})(?:/.*)?$`, "i")
@@ -31,18 +32,6 @@ const BROWSER_HEADERS = {
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
     const v = match[index]
     return typeof v === "string" ? v : undefined
-}
-
-function decodeEntities(value: string): string {
-    return value
-        .replace(/&#0*39;|&apos;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&#0*(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-        .replace(/&nbsp;/g, " ")
-        .trim()
 }
 
 function extractSeriesId(url: URL): string | undefined {
@@ -294,7 +283,7 @@ export const weebCentralAdapter: SourceAdapter = {
         imagesUrl.searchParams.set("current_page", "1")
 
         // Fetch chapter page (manga metadata + chapter title) and images concurrently.
-        // The HTMX images endpoint may be bot-blocked — treat failure as empty images so
+        // The HTMX images endpoint may be bot-blocked - treat failure as empty images so
         // the series metadata is still preserved and siblings can be cached for panel nav.
         const [chapterHtml, imagesHtml] = await Promise.all([
             context.request.getText(new URL(chapterPageUrl), { headers: BROWSER_HEADERS }),
@@ -307,7 +296,7 @@ export const weebCentralAdapter: SourceAdapter = {
 
         const imageUrls = extractImages(imagesHtml)
         if (imageUrls.length === 0) {
-            context.logger.warn("WeebCentral images unavailable — preserving series metadata for panel nav", {
+            context.logger.warn("WeebCentral images unavailable - preserving series metadata for panel nav", {
                 chapterId
             })
         }

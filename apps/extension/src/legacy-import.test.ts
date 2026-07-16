@@ -26,9 +26,9 @@ describe("isLegacyExport", () => {
 })
 
 // ---------------------------------------------------------------------------
-// migrateLegacyImport — general behaviour
+// migrateLegacyImport - general behaviour
 // ---------------------------------------------------------------------------
-describe("migrateLegacyImport – passthrough for non-legacy input", () => {
+describe("migrateLegacyImport - passthrough for non-legacy input", () => {
     it("returns migrated: false when given new-format envelope", () => {
         const newFmt = { format: "all-mangas-reader", version: 1, exportedAt: 0, data: {} }
         const result = migrateLegacyImport(newFmt)
@@ -37,7 +37,7 @@ describe("migrateLegacyImport – passthrough for non-legacy input", () => {
     })
 })
 
-describe("migrateLegacyImport – skips invalid entries", () => {
+describe("migrateLegacyImport - skips invalid entries", () => {
     it("skips entries with no title", () => {
         const raw = { mangas: [{ u: "https://mangadex.org/title/abc" }] }
         const result = migrateLegacyImport(raw)
@@ -54,9 +54,9 @@ describe("migrateLegacyImport – skips invalid entries", () => {
 })
 
 // ---------------------------------------------------------------------------
-// migrateLegacyImport — known sources resolve correctly
+// migrateLegacyImport - known sources resolve correctly
 // ---------------------------------------------------------------------------
-describe("migrateLegacyImport – known source URLs resolve to adapter ID", () => {
+describe("migrateLegacyImport - known source URLs resolve to adapter ID", () => {
     it("resolves MangaDex URLs to mangadex adapter", () => {
         const raw = {
             mangas: [
@@ -84,83 +84,21 @@ describe("migrateLegacyImport – known source URLs resolve to adapter ID", () =
         expect(manga.sourceMangaId).toBe(uuid)
     })
 
-    it("resolves chapmanganato.to URLs to manganato adapter", () => {
+    it("resolves asuratoon.com URLs to asurascans adapter via a legacy alias", () => {
         const raw = {
-            mangas: [{ n: "My Hero Academia", u: "https://chapmanganato.to/manga-az963656" }]
+            mangas: [{ n: "My Hero Academia", u: "https://asuratoon.com/manga/my-hero-academia" }]
         }
         const result = migrateLegacyImport(raw)
         const manga = (result.envelope as any).data.manga[0]
-        expect(manga.sourceId).toBe("manganato")
+        expect(manga.sourceId).toBe("asurascans")
         expect(manga.manualTracking).toBeUndefined()
     })
 })
 
 // ---------------------------------------------------------------------------
-// migrateLegacyImport — LEGACY DOMAIN ALIAS MAP (the U1 bug fix)
+// migrateLegacyImport - LEGACY DOMAIN ALIAS MAP (the U1 bug fix)
 // ---------------------------------------------------------------------------
-describe("migrateLegacyImport – legacy domain aliases (U1 bug)", () => {
-    it("maps chap.manganato.com (old AMR Manganelo domain) → manganato", () => {
-        const raw = {
-            mangas: [
-                {
-                    n: "One Piece",
-                    u: "https://chap.manganato.com/manga-aa951409",
-                    l: "https://chap.manganato.com/manga-aa951409/chapter-1100"
-                }
-            ]
-        }
-        const result = migrateLegacyImport(raw)
-        expect(result.needsAttention).toHaveLength(0)
-        const manga = (result.envelope as any).data.manga[0]
-        expect(manga.sourceId).toBe("manganato")
-        expect(manga.manualTracking).toBeUndefined()
-    })
-
-    it("maps m.manganato.com → manganato", () => {
-        const raw = {
-            mangas: [{ n: "Naruto", u: "https://m.manganato.com/manga-ng952689" }]
-        }
-        const result = migrateLegacyImport(raw)
-        expect(result.needsAttention).toHaveLength(0)
-        expect((result.envelope as any).data.manga[0].sourceId).toBe("manganato")
-    })
-
-    it("maps readmanganato.com → manganato", () => {
-        const raw = {
-            mangas: [{ n: "Bleach", u: "https://readmanganato.com/manga-bm961108" }]
-        }
-        const result = migrateLegacyImport(raw)
-        expect((result.envelope as any).data.manga[0].sourceId).toBe("manganato")
-        expect(result.needsAttention).toHaveLength(0)
-    })
-
-    it("maps m.manganelo.com → manganato", () => {
-        const raw = {
-            mangas: [{ n: "Fairy Tail", u: "https://m.manganelo.com/manga-ng952689" }]
-        }
-        const result = migrateLegacyImport(raw)
-        expect((result.envelope as any).data.manga[0].sourceId).toBe("manganato")
-        expect(result.needsAttention).toHaveLength(0)
-    })
-
-    it("maps chap.manganelo.com → manganato", () => {
-        const raw = {
-            mangas: [{ n: "Dragon Ball", u: "https://chap.manganelo.com/manga-cd953939" }]
-        }
-        const result = migrateLegacyImport(raw)
-        expect((result.envelope as any).data.manga[0].sourceId).toBe("manganato")
-        expect(result.needsAttention).toHaveLength(0)
-    })
-
-    it("maps mangapark.com → mangapark", () => {
-        const raw = {
-            mangas: [{ n: "Berserk", u: "https://mangapark.com/title/17-en-berserk" }]
-        }
-        const result = migrateLegacyImport(raw)
-        expect(result.needsAttention).toHaveLength(0)
-        expect((result.envelope as any).data.manga[0].sourceId).toBe("mangapark")
-    })
-
+describe("migrateLegacyImport - legacy domain aliases (U1 bug)", () => {
     it("maps asura.gg → asurascans", () => {
         const raw = {
             mangas: [
@@ -189,15 +127,6 @@ describe("migrateLegacyImport – legacy domain aliases (U1 bug)", () => {
         expect((result.envelope as any).data.manga[0].sourceId).toBe("asurascans")
     })
 
-    it("maps manhuaplus.com → manhuaplus", () => {
-        const raw = {
-            mangas: [{ n: "Spirit Sword Sovereign", u: "https://manhuaplus.com/manga/spirit-sword-sovereign/" }]
-        }
-        const result = migrateLegacyImport(raw)
-        expect(result.needsAttention).toHaveLength(0)
-        expect((result.envelope as any).data.manga[0].sourceId).toBe("manhuaplus")
-    })
-
     it("maps mangasushi.net → mangasushi", () => {
         const raw = {
             mangas: [{ n: "Sousou no Frieren", u: "https://mangasushi.net/manga/sousou-no-frieren/" }]
@@ -209,9 +138,40 @@ describe("migrateLegacyImport – legacy domain aliases (U1 bug)", () => {
 })
 
 // ---------------------------------------------------------------------------
-// migrateLegacyImport — truly unknown sources still get manualTracking: true
+// migrateLegacyImport - aliases removed for retired adapters (Bug 3 fix)
 // ---------------------------------------------------------------------------
-describe("migrateLegacyImport – truly unknown source falls back to manualTracking", () => {
+// These domains used to alias to manganato/mangapark/manhuaplus/mangabuddy/flamecomics/
+// aquascans/s2manga/manhwahentai, but every one of those adapter ids is retired from the
+// current registry. Keeping the alias produced a real-looking sourceId with no dot, which
+// App.svelte's reconcile-needed check (`m.sourceId.includes(".")`) never caught - a silently
+// stuck import with no reconcile UI ever offered. Removing the alias lets these domains fall
+// through to the hostname-based unknown-source path instead, which IS reconcile-flagged.
+describe("migrateLegacyImport - retired adapter aliases fall through to manualTracking (Bug 3 fix)", () => {
+    it.each([
+        ["chapmanganato.to (manganato)", "https://chapmanganato.to/manga-az963656"],
+        ["chap.manganato.com (manganato)", "https://chap.manganato.com/manga-aa951409"],
+        ["mangapark.com (mangapark)", "https://mangapark.com/title/17-en-berserk"],
+        ["manhuaplus.com (manhuaplus)", "https://manhuaplus.com/manga/spirit-sword-sovereign/"],
+        ["mangabuddy.com (mangabuddy)", "https://mangabuddy.com/manga/some-title"],
+        ["flamecomics.com (flamecomics)", "https://flamecomics.com/series/some-title"],
+        ["aquascans.com (aquascans)", "https://aquascans.com/manga/some-title/"],
+        ["s2manga.com (s2manga)", "https://s2manga.com/manga/some-title/"],
+        ["manhwahentai.me (manhwahentai)", "https://manhwahentai.me/webtoon/some-title/"]
+    ])("%s is no longer aliased and gets manualTracking + a reconcile-flagged hostname sourceId", (_label, url) => {
+        const raw = { mangas: [{ n: "Some Manga", u: url }] }
+        const result = migrateLegacyImport(raw)
+        const manga = (result.envelope as any).data.manga[0]
+        expect(manga.manualTracking).toBe(true)
+        expect(manga.sourceId).toBe(new URL(url).hostname)
+        expect(manga.sourceId.includes(".")).toBe(true)
+        expect(result.needsAttention).toContain(manga.id)
+    })
+})
+
+// ---------------------------------------------------------------------------
+// migrateLegacyImport - truly unknown sources still get manualTracking: true
+// ---------------------------------------------------------------------------
+describe("migrateLegacyImport - truly unknown source falls back to manualTracking", () => {
     it("flags a completely unrecognised domain as needing attention", () => {
         const raw = {
             mangas: [{ n: "Some Manga", u: "https://totally-unknown-old-site.xyz/manga/some-manga/" }]
@@ -226,9 +186,9 @@ describe("migrateLegacyImport – truly unknown source falls back to manualTrack
 })
 
 // ---------------------------------------------------------------------------
-// migrateLegacyImport — output shape
+// migrateLegacyImport - output shape
 // ---------------------------------------------------------------------------
-describe("migrateLegacyImport – output shape", () => {
+describe("migrateLegacyImport - output shape", () => {
     it("produces a valid v1 envelope with all required tables", () => {
         const raw = {
             mangas: [{ n: "Test", u: "https://mangadex.org/title/afa40bc8-34fa-4b03-a1e1-50f4eb79f9da" }]
@@ -256,7 +216,7 @@ describe("migrateLegacyImport – output shape", () => {
 
     it("creates a sourceLink for known sources with a manga URL", () => {
         const raw = {
-            mangas: [{ n: "Berserk", u: "https://chapmanganato.to/manga-az963656" }]
+            mangas: [{ n: "Sousou no Frieren", u: "https://mangasushi.net/manga/sousou-no-frieren/" }]
         }
         const result = migrateLegacyImport(raw)
         expect((result.envelope as any).data.sourceLinks).toHaveLength(1)
@@ -266,9 +226,9 @@ describe("migrateLegacyImport – output shape", () => {
         const raw = {
             mangas: [
                 {
-                    n: "My Hero Academia",
-                    u: "https://chapmanganato.to/manga-az963656",
-                    l: "https://chapmanganato.to/manga-az963656/chapter-428"
+                    n: "Sousou no Frieren",
+                    u: "https://mangasushi.net/manga/sousou-no-frieren/",
+                    l: "https://mangasushi.net/manga/sousou-no-frieren/chapter-428"
                 }
             ]
         }

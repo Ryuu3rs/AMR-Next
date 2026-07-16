@@ -1,6 +1,7 @@
 import {
     SourceError,
     SourceRequestError,
+    decodeHtmlEntities as decodeEntities,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -35,19 +36,6 @@ const BROWSER_HEADERS = {
 function captureGroup(m: RegExpMatchArray, i: number): string | undefined {
     const v = m[i]
     return typeof v === "string" ? v : undefined
-}
-
-function decodeEntities(s: string): string {
-    return s
-        .replace(/&#0*39;|&apos;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&#0*(\d+);/g, (_, c: string) => String.fromCodePoint(Number(c)))
-        .replace(/&#x([0-9a-f]+);/gi, (_, c: string) => String.fromCodePoint(parseInt(c, 16)))
-        .replace(/&nbsp;/g, " ")
-        .trim()
 }
 
 function cleanTitle(raw: string): string {

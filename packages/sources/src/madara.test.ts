@@ -48,7 +48,7 @@ const srcFirstChapterHtml = `<!DOCTYPE html><html class="postid-888"><head>
 <div class="entry-header"></div></body></html>`
 
 // mangaread.org layout: id="image-N" + wp-manga-chapter-img, real URL in src but with leading
-// whitespace/newlines before the URL — the exact live markup mangaread.org emits.
+// whitespace/newlines before the URL - the exact live markup mangaread.org emits.
 const whitespaceSourceHtml = `<!DOCTYPE html><html class="postid-119390"><head>
 <title>The Chaebeol's Youngest Son Chapter 195 - Test Madara</title>
 <meta property="og:image" content="https://test-madara.example/cover.jpg" /></head><body>
@@ -159,7 +159,7 @@ describe("createMadaraAdapter", () => {
     })
 
     it("resolves a chapter via Strategy 1 with standard lazy-load (data-src first)", async () => {
-        // Base64 placeholder in src, real URL in data-src — the common modern Madara pattern.
+        // Base64 placeholder in src, real URL in data-src - the common modern Madara pattern.
         const context = createContext({ "/series/cool-manga/ch-12/": lazyLoadChapterHtml })
         const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)
         expect(result.pages.map(p => p.url)).toEqual(["https://cdn.example/l1.jpg", "https://cdn.example/l2.jpg"])
@@ -204,6 +204,84 @@ describe("createMadaraAdapter", () => {
             title: "Chapter 2",
             language: "en"
         })
+    })
+
+    it("falls back to the modern {mangaPath}/{slug}/ajax/chapters/ endpoint when the manga page has no embedded list", async () => {
+        // Realistic modern-theme manga page: the chapters-holder div exists (with a post
+        // id, still useful for the legacy fallback) but renders empty - the real list is
+        // lazy-loaded client-side. Live-verified shape captured from mangasushi.org and
+        // tritinia.org: a raw HTML fragment (not JSON-wrapped) reusing the same
+        // <li class="wp-manga-chapter"> markup as the embedded-list case.
+        const mangaHtml = `<html><body>
+<div id="manga-chapters-holder" data-id="1909"></div></body></html>`
+        const modernAjaxHtml = `<div class="c-blog__heading style-2 font-heading">
+<h2 class="h4"><i class="icon ion-ios-star"></i>LATEST MANGA RELEASES</h2></div>
+<div class="page-content-listing single-page"><div class="listing-chapters_wrap cols-1 show-more">
+<ul class="main version-chap no-volumn">
+<li class="wp-manga-chapter    "><a href="https://test-madara.example/series/cool-manga/ch-2/">Chapter 2</a>
+<span class="chapter-release-date"><i>5 hours ago</i></span></li>
+<li class="wp-manga-chapter    "><a href="https://test-madara.example/series/cool-manga/ch-1/">Chapter 1</a>
+<span class="chapter-release-date"><i>July 10, 2026</i></span></li>
+</ul></div></div>`
+        const { context, fetchedUrls } = createCapturingContext({
+            "/series/cool-manga/": mangaHtml,
+            "/series/cool-manga/ajax/chapters/": modernAjaxHtml
+        })
+        const manga = {
+            manga: {
+                id: "testmadara:manga:cool-manga",
+                title: "Cool Manga",
+                normalizedTitle: "cool manga",
+                authors: [],
+                status: "unknown" as const,
+                addedAt: 0,
+                updatedAt: 0
+            },
+            sourceId: "testmadara",
+            sourceMangaId: "cool-manga",
+            url: "https://test-madara.example/series/cool-manga/"
+        }
+        const chapters = await adapter.listChapters({ manga }, context)
+        expect(chapters.map(c => c.sortKey)).toEqual([1, 2])
+        expect(chapters[1]).toMatchObject({ sourceChapterId: "cool-manga:ch-2", title: "Chapter 2" })
+        // Legacy admin-ajax.php must never be hit once the modern endpoint succeeds.
+        expect(fetchedUrls.some(u => u.includes("admin-ajax.php"))).toBe(false)
+        expect(fetchedUrls.some(u => u.includes("/series/cool-manga/ajax/chapters/"))).toBe(true)
+    })
+
+    it("falls back further to the legacy admin-ajax.php endpoint when the modern route 404s", async () => {
+        // Some Madara sites are still on an older theme version without the modern route
+        // at all (live-verified: hentai20.io 404s on {mangaPath}/{slug}/ajax/chapters/).
+        // No fixture is registered for that path, so the mock fetch returns 404 and
+        // postForm throws - the adapter must fall through to admin-ajax.php.
+        const mangaHtml = `<html><body>
+<div id="manga-chapters-holder" data-id="555"></div></body></html>`
+        const legacyAjaxHtml = `<ul class="main version-chap">
+  <li class="wp-manga-chapter"><a href="https://test-madara.example/series/cool-manga/ch-2/">Chapter 2</a></li>
+  <li class="wp-manga-chapter"><a href="https://test-madara.example/series/cool-manga/ch-1/">Chapter 1</a></li>
+</ul>`
+        const { context, fetchedUrls } = createCapturingContext({
+            "/series/cool-manga/": mangaHtml,
+            "/wp-admin/admin-ajax.php": legacyAjaxHtml
+        })
+        const manga = {
+            manga: {
+                id: "testmadara:manga:cool-manga",
+                title: "Cool Manga",
+                normalizedTitle: "cool manga",
+                authors: [],
+                status: "unknown" as const,
+                addedAt: 0,
+                updatedAt: 0
+            },
+            sourceId: "testmadara",
+            sourceMangaId: "cool-manga",
+            url: "https://test-madara.example/series/cool-manga/"
+        }
+        const chapters = await adapter.listChapters({ manga }, context)
+        expect(chapters.map(c => c.sortKey)).toEqual([1, 2])
+        expect(fetchedUrls.some(u => u.includes("/series/cool-manga/ajax/chapters/"))).toBe(true)
+        expect(fetchedUrls.some(u => u.includes("admin-ajax.php"))).toBe(true)
     })
 
     it("parses search results with cover and latest chapter", async () => {
