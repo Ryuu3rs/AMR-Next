@@ -9,6 +9,7 @@ import {
     createBackup,
     getActivityCalendar,
     getLocalStats,
+    mergeMangaRecords,
     rekeyManga,
     removeManga,
     type LibraryManga
@@ -86,6 +87,10 @@ export const libraryHandlers: HandlerMap = {
             } as Partial<{ sourceId: string; manualTracking: boolean }>)
         }
         return null
+    },
+
+    "library:merge": async request => {
+        return mergeMangaRecords(request.primaryId, request.loserIds)
     },
 
     "library:numbers": async request => {

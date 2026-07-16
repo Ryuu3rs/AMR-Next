@@ -46,6 +46,7 @@ export const MUTATION_SCOPES: Partial<Record<RuntimeRequest["type"], LiveScope[]
     "library:categories": ["library"],
     "library:numbers": ["library"],
     "library:dismiss": ["library"],
+    "library:merge": ["library", "chapters", "progress"],
     "library:relink": ["library", "chapters"],
     "library:link-url": ["library"],
     "library:switch": ["library", "chapters"],
