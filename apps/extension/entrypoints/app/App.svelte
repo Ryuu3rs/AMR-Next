@@ -7,6 +7,7 @@
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
     import { migrateLegacyImport } from "../../src/legacy-import"
     import { getCachedCovers } from "../../src/database"
+    import { subscribeLive } from "../../src/live"
     import ActivityHeatmap from "./ActivityHeatmap.svelte"
     import ImportReconcile from "./ImportReconcile.svelte"
 
@@ -232,11 +233,6 @@
     let coverSrcs = $state<Record<string, string>>({})
     let refreshingCovers = $state(false)
 
-    // Revoke object URLs when they change to avoid memory leaks.
-    $effect(() => {
-        const urls = Object.values(coverSrcs)
-        return () => urls.forEach(u => URL.revokeObjectURL(u))
-    })
     let syncStatus = $state<SyncStatus | undefined>()
     let syncToken = $state("")
     let syncGistId = $state("")
@@ -616,11 +612,14 @@
     // progress changes from the reading session with a cheap indexed re-query -
     // without re-triggering the cover backfill cascade.
     function onVisibilityChange() {
-        if (document.visibilityState === "visible") void load()
+        if (document.visibilityState === "visible") void refresh()
     }
+
+    let unsubscribeLive: (() => void) | undefined
 
     onMount(async () => {
         document.addEventListener("visibilitychange", onVisibilityChange)
+        unsubscribeLive = subscribeLive(["library", "chapters", "progress", "all"], () => void refresh())
         await load()
         hasPermission = await sendRuntimeMessage<boolean>({ type: "source:permission:check" })
         if (hasPermission) void maybeBackfillCovers()
@@ -672,7 +671,7 @@
                     checkingUpdates = false
                     // The check just finished - the library data it touched (latest
                     // chapter ids/numbers) needs a refresh to show up in the UI.
-                    void load()
+                    void refresh()
                 }
             }
             if (changes["updateStatus"]) {
@@ -683,13 +682,28 @@
 
     onDestroy(() => {
         document.removeEventListener("visibilitychange", onVisibilityChange)
+        unsubscribeLive?.()
+        // Full revoke-everything sweep so nothing leaks when the tab closes -
+        // loadCachedCovers only revokes URLs for ids that drop out of the library
+        // between refreshes, not the ones still current when the component unmounts.
+        for (const url of Object.values(coverSrcs)) URL.revokeObjectURL(url)
     })
 
+    // Diffs by mangaId instead of rebuilding coverSrcs from scratch: an id that
+    // already has an object URL keeps it (no revoke+recreate), a genuinely new id
+    // gets a fresh object URL, and an id no longer present (manga removed) gets
+    // its URL revoked and dropped. Rebuilding from scratch on every call (the
+    // prior behavior) meant a live-triggered refresh() revoked every cover's
+    // object URL right as it reassigned coverSrcs, blanking the whole grid for a
+    // frame even though nothing about the covers actually changed.
     async function loadCachedCovers() {
         const blobs = await getCachedCovers(library.map(m => m.id))
         const next: Record<string, string> = {}
         for (const [mangaId, blob] of blobs) {
-            next[mangaId] = URL.createObjectURL(blob)
+            next[mangaId] = coverSrcs[mangaId] ?? URL.createObjectURL(blob)
+        }
+        for (const [mangaId, url] of Object.entries(coverSrcs)) {
+            if (!(mangaId in next)) URL.revokeObjectURL(url)
         }
         coverSrcs = next
         // A cached blob now exists for these ids - clear any stale "failed to load"
@@ -858,6 +872,57 @@
         void loadCachedCovers()
     }
 
+    // Same data-fetching as load(), but for a tab that's already showing the
+    // library - never flips `loading` (which would blank the whole page behind a
+    // spinner), and is generation-guarded against out-of-order responses: a fast
+    // refocus-triggered refresh() racing a live-event-triggered one could
+    // otherwise let the slower response's stale library data land last and
+    // clobber the newer one.
+    let refreshGeneration = 0
+
+    async function refresh() {
+        refreshGeneration += 1
+        const generation = refreshGeneration
+        const [nextLibrary, nextSettings] = await Promise.all([
+            sendRuntimeMessage<LibraryManga[]>({ type: "library:list" }),
+            sendRuntimeMessage<AppSettings>({ type: "settings:get" })
+        ])
+        // A newer refresh() call started while this one was in flight - let it win.
+        if (generation !== refreshGeneration) return
+
+        library = nextLibrary
+        settings = nextSettings
+        updateIntervalSelection = settings.updateIntervalHours
+        noGapSelection = settings.noGapContinuous
+        void sendRuntimeMessage<typeof stats>({ type: "stats:get" }).then(result => {
+            stats = result
+        })
+        void sendRuntimeMessage<typeof updateStatus>({ type: "updates:get" }).then(result => {
+            updateStatus = result
+        })
+        const stored = (await browser.storage.local.get("extensionUpdate"))["extensionUpdate"] as
+            | typeof extensionUpdate
+            | undefined
+        if (stored?.available) extensionUpdate = stored
+        void sendRuntimeMessage<typeof extensionUpdate>({ type: "extension-update:check" }).then(result => {
+            if (result) extensionUpdate = result
+        })
+        const libraryNeedsAttention = library.filter(m => m.manualTracking && m.sourceId.includes(".")).map(m => m.id)
+        if (libraryNeedsAttention.length > 0) {
+            reconcileIds = [...new Set([...reconcileIds, ...libraryNeedsAttention])]
+        }
+        // Re-point detailManga at the freshly-fetched record so the open detail
+        // overlay reflects the refresh (e.g. another tab's edit) - if the manga was
+        // deleted mid-refresh, leave the existing (now-dangling) reference alone
+        // rather than clearing it out from under the user.
+        const openDetailId = detailManga?.id
+        if (openDetailId) {
+            const updated = library.find(m => m.id === openDetailId)
+            if (updated) detailManga = updated
+        }
+        void loadCachedCovers()
+    }
+
     function isValidUrl(value: string | undefined | null): value is string {
         if (!value) return false
         try {
@@ -1003,11 +1068,19 @@
         }
     })
 
+    // Same previous-id-guard pattern as the genres effect above: without it, a
+    // live-triggered refresh() reassigning detailManga to a new object reference
+    // for the SAME id would re-run this effect (Svelte 5 effects re-run on
+    // reference changes even when the id is unchanged), clearing and re-fetching
+    // community stats on every refresh and causing a visible flicker.
+    let communityStatsForId = $state<string | null>(null)
     $effect(() => {
         const id = detailManga?.id
         const title = detailManga?.title
+        if (!id || communityStatsForId === id) return
+        communityStatsForId = id
         detailCommunityStats = null
-        if (id && title) {
+        if (title) {
             void sendRuntimeMessage<{ avgRating: number | null; ratingCount: number; readerCount: number }>({
                 type: "community:manga-stats",
                 mangaTitle: title
@@ -1670,9 +1743,19 @@
         node.focus()
     }
 
-    // Per-manga freeform notes (saved from the detail overlay). Writable derived:
-    // resets when the open title changes, but accepts edits in between.
-    let noteDraft = $derived(detailManga?.notes ?? "")
+    // Per-manga freeform notes (saved from the detail overlay). $state, not a
+    // writable $derived: a writable derived resets on ANY detailManga
+    // reassignment, including a same-id reassignment from a live-triggered
+    // refresh(), which would clobber in-progress typing. Reset only via the
+    // previous-id-guard effect below, mirroring the genresForId pattern.
+    let noteDraft = $state("")
+    let noteDraftForId = $state<string | null>(null)
+    $effect(() => {
+        const id = detailManga?.id ?? null
+        if (id === noteDraftForId) return
+        noteDraftForId = id
+        noteDraft = detailManga?.notes ?? ""
+    })
     function applyNote<T extends { id: string; notes?: string }>(item: T, id: string, note: string): T {
         if (item.id !== id) return item
         const copy = { ...item }

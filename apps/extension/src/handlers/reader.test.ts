@@ -29,6 +29,14 @@ vi.mock("../settings", () => ({
     getSettings: (...args: unknown[]) => getSettingsMock(...args)
 }))
 
+// captureChapter now publishes to the live bus on a successful capture (see
+// background/capture.ts) - stub it out here since these tests only stub
+// `browser.action`, not `browser.storage`.
+const publishLiveMock = vi.fn()
+vi.mock("../live", () => ({
+    publishLive: (...args: unknown[]) => publishLiveMock(...args)
+}))
+
 const { db } = await import("../database")
 const { readerHandlers } = await import("./reader")
 const { captureChapter } = await import("../background/capture")

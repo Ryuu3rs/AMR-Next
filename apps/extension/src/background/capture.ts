@@ -4,6 +4,7 @@ import { findSource, resolveChapterUrl } from "../sources"
 import { getSettings } from "../settings"
 import { scheduleChapterListRefresh } from "./chapter-cache"
 import { fetchCoverBlob } from "./covers"
+import { publishLive } from "../live"
 
 // URLs currently being captured - deduplicate concurrent calls for the same URL
 // (e.g. rapid navigation events or the same URL from multiple listener paths).
@@ -86,6 +87,7 @@ async function doCaptureChapter(url: string) {
             updatedAt: Date.now()
         }
     })
+    publishLive(["library", "chapters"], [resolved.manga.manga.id])
 
     // Best-effort: cache the cover as a Blob so the UI can render it from IndexedDB
     // instead of hotlinking the source CDN on every render. The manga record keeps
