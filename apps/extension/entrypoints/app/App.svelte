@@ -692,6 +692,17 @@
             next[mangaId] = URL.createObjectURL(blob)
         }
         coverSrcs = next
+        // A cached blob now exists for these ids - clear any stale "failed to load"
+        // flag so a previously-broken remote cover doesn't stay permanently blanked
+        // once a cached blob has been backfilled.
+        if (failedCovers.size > 0) {
+            const cleared = new Set(failedCovers)
+            let changed = false
+            for (const mangaId of Object.keys(next)) {
+                if (cleared.delete(mangaId)) changed = true
+            }
+            if (changed) failedCovers = cleared
+        }
     }
 
     async function loadSyncStatus() {
@@ -1530,7 +1541,7 @@
     })
     const recentlyAdded = $derived([...library].sort((a, b) => b.addedAt - a.addedAt).slice(0, 12))
     const missingCoverCount = $derived(
-        library.filter(m => !isSeedData(m) && (!m.coverUrl || failedCovers.has(m.id))).length
+        library.filter(m => !isSeedData(m) && ((!coverSrcs[m.id] && !m.coverUrl) || failedCovers.has(m.id))).length
     )
 
     // Library view: grid (covers) or list (rows), with a user-set page size so

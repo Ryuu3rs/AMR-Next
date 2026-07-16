@@ -1,6 +1,7 @@
 import "fake-indexeddb/auto"
 import type { ChapterRecord, MangaRecord, ReadingProgress, SourceLinkRecord } from "@amr/contracts"
 import type { SourceChapter } from "@amr/source-sdk"
+import Dexie from "dexie"
 import { beforeEach, describe, expect, it } from "vitest"
 import {
     createBackup,
@@ -1087,5 +1088,155 @@ describe("rekeyManga", () => {
         expect(await db.progress.where("mangaId").equals(newId).count()).toBe(1)
         expect(await db.historyEvents.where("mangaId").equals(oldId).count()).toBe(0)
         expect(await db.historyEvents.where("mangaId").equals(newId).count()).toBeGreaterThan(0)
+    })
+})
+
+// Step 1 of the red-teamed performance plan: covers used to be inlined as base64
+// data: URIs directly into LibraryManga.coverUrl, bloating library:list, every
+// export, and every retained backup. The v8 migration below moves any already-
+// inlined cover into the covers table and clears the data: URI off the manga
+// record. This exercises the real upgrade path (not a re-implementation of it) by
+// seeding a physical v7 database, then reopening the real `db` singleton - whose
+// version chain already includes v8 - so Dexie itself detects the stale physical
+// version and runs the declared .version(8).upgrade() callback.
+describe("database version 8 migration (cover blob extraction)", () => {
+    it("moves a data: cover into the covers table and clears coverUrl, leaves http/undefined covers untouched, and skips a malformed record without aborting the migration", async () => {
+        db.close()
+        await Dexie.delete("all-mangas-reader")
+
+        const validBase64 = btoa("fake-image-bytes")
+        const v7Manga = [
+            {
+                id: "data-uri-manga",
+                title: "Data URI Manga",
+                normalizedTitle: "data uri manga",
+                coverUrl: `data:image/jpeg;base64,${validBase64}`,
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/1",
+                mangaUrl: "https://mangadex.org/title/1",
+                addedAt: 1,
+                updatedAt: 1
+            },
+            {
+                id: "http-manga",
+                title: "HTTP Manga",
+                normalizedTitle: "http manga",
+                coverUrl: "https://cdn.example/cover.jpg",
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/2",
+                mangaUrl: "https://mangadex.org/title/2",
+                addedAt: 2,
+                updatedAt: 2
+            },
+            {
+                id: "no-cover-manga",
+                title: "No Cover Manga",
+                normalizedTitle: "no cover manga",
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/3",
+                mangaUrl: "https://mangadex.org/title/3",
+                addedAt: 3,
+                updatedAt: 3
+            },
+            {
+                id: "malformed-data-uri-manga",
+                title: "Malformed Manga",
+                normalizedTitle: "malformed manga",
+                coverUrl: "data:image/jpeg;base64,not-valid-base64!!!",
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/4",
+                mangaUrl: "https://mangadex.org/title/4",
+                addedAt: 4,
+                updatedAt: 4
+            }
+        ]
+
+        const legacy = new Dexie("all-mangas-reader")
+        legacy.version(7).stores({
+            manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+            sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+            chapters: "id, mangaId, sourceId, sortKey",
+            progress: "chapterId, mangaId, updatedAt, completed",
+            historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+            downloads: "chapterId, mangaId, downloadedAt",
+            covers: "mangaId",
+            pageBookmarks: "id, mangaId, chapterId, addedAt",
+            analyticsEvents: "++id, event, ts, sourceId",
+            backups: "++id, createdAt, reason"
+        })
+        await legacy.open()
+        await legacy.table("manga").bulkAdd(v7Manga)
+        legacy.close()
+
+        // Reopening the real singleton re-runs Dexie's declared version chain against
+        // the physical v7 database just seeded above, executing the real v8 .upgrade().
+        await db.open()
+
+        // (a) data: cover -> moved to the covers table, coverUrl cleared.
+        const dataUriAfter = await db.manga.get("data-uri-manga")
+        expect(dataUriAfter?.coverUrl).toBeUndefined()
+        const cachedCover = await db.covers.get("data-uri-manga")
+        expect(cachedCover?.blob).toBeInstanceOf(Blob)
+        expect(cachedCover?.blob.type).toBe("image/jpeg")
+        const bytes = new Uint8Array(await cachedCover!.blob.arrayBuffer())
+        expect(new TextDecoder().decode(bytes)).toBe("fake-image-bytes")
+
+        // (b) http:// cover -> completely untouched.
+        const httpAfter = await db.manga.get("http-manga")
+        expect(httpAfter?.coverUrl).toBe("https://cdn.example/cover.jpg")
+        expect(await db.covers.get("http-manga")).toBeUndefined()
+
+        // (c) no cover -> completely untouched.
+        const noCoverAfter = await db.manga.get("no-cover-manga")
+        expect(noCoverAfter?.coverUrl).toBeUndefined()
+        expect(await db.covers.get("no-cover-manga")).toBeUndefined()
+
+        // (d) malformed data: URI -> skipped, doesn't abort the migration for other
+        // records (all of the above still ran correctly).
+        const malformedAfter = await db.manga.get("malformed-data-uri-manga")
+        expect(malformedAfter?.coverUrl).toBe("data:image/jpeg;base64,not-valid-base64!!!")
+        expect(await db.covers.get("malformed-data-uri-manga")).toBeUndefined()
+    })
+})
+
+// Verifies the write paths that used to call inlineCover (capture + covers backfill)
+// no longer produce a data: URI, and that this holds across an export/import cycle.
+describe("export never contains an inlined data: URI cover (Step 1 performance plan)", () => {
+    it("round-trips a manga's remote coverUrl through export/import without ever inlining it", async () => {
+        const withCover: MangaRecord = {
+            ...manga,
+            id: "mangadex:manga:with-cover",
+            coverUrl: "https://mangadex.org/covers/remote.jpg"
+        }
+        const chapterForCover: ChapterRecord = {
+            ...chapter,
+            id: "mangadex:chapter:with-cover",
+            mangaId: withCover.id
+        }
+        const linkForCover: SourceLinkRecord = { ...sourceLink, mangaId: withCover.id }
+
+        await saveResolvedChapter({ manga: withCover, chapter: chapterForCover, sourceLink: linkForCover })
+
+        const exported = await exportDatabase()
+        expect(JSON.stringify(exported)).not.toContain("data:image")
+        expect(exported.data.manga.find(m => m.id === withCover.id)?.coverUrl).toBe(
+            "https://mangadex.org/covers/remote.jpg"
+        )
+
+        await db.manga.clear()
+        await db.chapters.clear()
+        await db.sourceLinks.clear()
+
+        await importDatabase(exported)
+        const reimported = await exportDatabase()
+        expect(JSON.stringify(reimported)).not.toContain("data:image")
     })
 })

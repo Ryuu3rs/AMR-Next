@@ -1,26 +1,21 @@
 const MAX_COVER_BYTES = 2 * 1024 * 1024
 
-// Fetch a remote cover and inline it as a data: URL so it renders from the
-// extension origin without tripping the source CDN's hotlink/referer checks.
-// Returns undefined on any failure so callers can keep the original URL.
-export async function inlineCover(url: string): Promise<string | undefined> {
-    if (url.startsWith("data:")) return url
+// Fetch a remote cover and return it as a Blob for caching in the covers table
+// (see cacheCover in ../database). Reuses the size/content-type guard that used
+// to gate inlineCover's base64 encoding, minus the encoding step itself - covers
+// are cached as Blobs now, never inlined as data: URIs into coverUrl.
+// Returns undefined on any failure so callers can treat this as best-effort.
+export async function fetchCoverBlob(url: string): Promise<Blob | undefined> {
     try {
         // Note: `Referer` is a forbidden header name per the fetch spec, so a
-        // service-worker fetch can never set it — Naver's pstatic.net CDN (which
+        // service-worker fetch can never set it - Naver's pstatic.net CDN (which
         // serves Webtoons covers) has been verified to serve images fine without
         // one, so no header is needed here.
         const res = await fetch(url)
         if (!res.ok) return undefined
         const blob = await res.blob()
         if (blob.size === 0 || blob.size > MAX_COVER_BYTES || !blob.type.startsWith("image/")) return undefined
-        const bytes = new Uint8Array(await blob.arrayBuffer())
-        const CHUNK = 65536
-        let binary = ""
-        for (let i = 0; i < bytes.length; i += CHUNK) {
-            binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-        }
-        return `data:${blob.type};base64,${btoa(binary)}`
+        return blob
     } catch {
         return undefined
     }
