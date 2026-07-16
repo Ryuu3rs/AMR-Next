@@ -550,6 +550,94 @@ describe("pre-import backups (Bug 4)", () => {
     })
 })
 
+// Regression for the import/export audit's Bug 2: restoreBackup used to call
+// importDatabase(backup.envelope) with no resolutions argument, which defaults to
+// merge-style import (existing-wins on most fields, Math.max on chapter numbers).
+// A "restore" that merges on top of a bad import instead of replacing it defeats the
+// entire point of the safety-net backup feature.
+describe("restoreBackup replaces state instead of merging (Bug 2)", () => {
+    it("exactly reverts a bad import - junk manga is gone and notes/rating/chapter numbers are back to the pre-import originals, not a merge of the two", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await db.manga.update(manga.id, { notes: "original notes", rating: 3, lastReadChapterNumber: 2 })
+
+        await createBackup("pre-import")
+        const [backup] = await listBackups()
+
+        // Apply a "bad" import: existing manga's notes/rating/chapter number clobbered
+        // with junk values, plus an unrelated junk manga record added.
+        const badEnvelope = {
+            format: "all-mangas-reader" as const,
+            version: 1 as const,
+            data: {
+                manga: [
+                    {
+                        ...manga,
+                        sourceId: "mangadex",
+                        sourceUrl: sourceLink.url,
+                        notes: "BAD notes",
+                        rating: 1,
+                        lastReadChapterNumber: 999,
+                        updatedAt: manga.updatedAt + 10_000
+                    },
+                    {
+                        id: "junk:manga:1",
+                        title: "Junk Manga",
+                        normalizedTitle: "junk manga",
+                        authors: [],
+                        status: "ongoing",
+                        addedAt: 1,
+                        updatedAt: 1,
+                        sourceId: "mangadex",
+                        sourceUrl: "https://mangadex.org/chapter/junk"
+                    }
+                ],
+                sourceLinks: [],
+                chapters: [],
+                progress: [],
+                historyEvents: [],
+                pageBookmarks: []
+            }
+        }
+        await importDatabase(badEnvelope)
+
+        // Sanity check: the bad import actually took effect (merge-mode, existing rating
+        // wins... but lastReadChapterNumber uses Math.max, so 999 clobbers in either mode).
+        const afterBadImport = await db.manga.get(manga.id)
+        expect(afterBadImport?.lastReadChapterNumber).toBe(999)
+        expect(await db.manga.get("junk:manga:1")).toBeDefined()
+
+        const result = await restoreBackup(backup!.id)
+
+        expect(result.manga).toBe(1)
+        const restored = await db.manga.get(manga.id)
+        expect(restored?.notes).toBe("original notes")
+        expect(restored?.rating).toBe(3)
+        expect(restored?.lastReadChapterNumber).toBe(2)
+        expect(await db.manga.get("junk:manga:1")).toBeUndefined()
+        expect(await db.manga.count()).toBe(1)
+    })
+
+    it("does not wipe db.downloads or db.covers, which are intentionally outside the backup envelope", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await createBackup("pre-import")
+        const [backup] = await listBackups()
+
+        await db.downloads.put({
+            chapterId: chapter.id,
+            mangaId: manga.id,
+            pageBlobs: [],
+            pageCount: 0,
+            downloadedAt: 1
+        })
+        await db.covers.put({ mangaId: manga.id, blob: new Blob(["x"]), cachedAt: 1 })
+
+        await restoreBackup(backup!.id)
+
+        expect(await db.downloads.get(chapter.id)).toBeDefined()
+        expect(await db.covers.get(manga.id)).toBeDefined()
+    })
+})
+
 describe("import merge - progress and history", () => {
     it("does not regress a completed chapter when the imported progress record is older", async () => {
         await saveResolvedChapter({ manga, chapter, sourceLink })
@@ -860,6 +948,62 @@ describe("trackExternalChapter", () => {
         // fails and this only succeeds via the marker-based slug fallback.
         const result = await trackExternalChapter({
             url: "https://example.com/read/one-piece/chapter-5",
+            sourceId: "genericsource"
+        })
+
+        expect(result.mangaId).toBe(existing.id)
+        expect(await db.manga.count()).toBe(1)
+    })
+
+    // Regression for the import/export audit's Bug 3: the mangaUrl prefix match used
+    // `input.url.startsWith(m.mangaUrl.replace(/\/$/, ""))` with no word-boundary check,
+    // so ".../manga/solo-leveling" was treated as a prefix match for
+    // ".../manga/solo-leveling-ragnarok/chapter-3" - a real, different manga with a
+    // similarly-prefixed slug - incorrectly attributing its reading progress to the
+    // wrong title instead of failing to match (or creating a new entry).
+    it("does not attribute a chapter to an unrelated manga whose mangaUrl is a prefix of the chapter URL's slug, without a '/' boundary (Bug 3)", async () => {
+        const soloLeveling: LibraryManga = {
+            id: "genericsource:manga:solo-leveling",
+            title: "Solo Leveling",
+            normalizedTitle: "solo leveling",
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "genericsource",
+            sourceUrl: "https://example.com/manga/solo-leveling/",
+            mangaUrl: "https://example.com/manga/solo-leveling"
+        }
+        await db.manga.put(soloLeveling)
+
+        const result = await trackExternalChapter({
+            url: "https://example.com/manga/solo-leveling-ragnarok/chapter-3",
+            sourceId: "genericsource"
+        })
+
+        expect(result.mangaId).not.toBe(soloLeveling.id)
+        expect(await db.manga.count()).toBe(2)
+        const untouched = await db.manga.get(soloLeveling.id)
+        expect(untouched?.lastReadChapterNumber).toBeUndefined()
+    })
+
+    it("still matches via mangaUrl prefix when the boundary is a '/' (regression guard for the Bug 3 fix)", async () => {
+        const existing: LibraryManga = {
+            id: "genericsource:manga:solo-leveling",
+            title: "Solo Leveling",
+            normalizedTitle: "solo leveling",
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "genericsource",
+            sourceUrl: "https://example.com/manga/solo-leveling/",
+            mangaUrl: "https://example.com/manga/solo-leveling/"
+        }
+        await db.manga.put(existing)
+
+        const result = await trackExternalChapter({
+            url: "https://example.com/manga/solo-leveling/chapter-3",
             sourceId: "genericsource"
         })
 

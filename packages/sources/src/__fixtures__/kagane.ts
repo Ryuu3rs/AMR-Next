@@ -20,7 +20,7 @@ export const MANIFEST_API_PATH = `/api/v2/books/${CHAPTER_ID}`
 
 export const COVER_URL = `${API_ORIGIN}/api/v2/image/${COVER_IMAGE_ID}/compressed`
 
-// GET /api/v2/series/{id} — not Cloudflare-gated.
+// GET /api/v2/series/{id} - not Cloudflare-gated.
 export const seriesDetailJson = JSON.stringify({
     series_id: SERIES_ID,
     source_id: "019c00d0-5024-7205-a84f-fca567470b7e",
@@ -52,7 +52,7 @@ export const seriesDetailJson = JSON.stringify({
     ]
 })
 
-// POST /api/v2/search/series?page=0&size=20 — not Cloudflare-gated.
+// POST /api/v2/search/series?page=0&size=20 - not Cloudflare-gated.
 export const searchResponseJson = JSON.stringify({
     content: [
         {
@@ -70,13 +70,36 @@ export const searchResponseJson = JSON.stringify({
     pagination: { page: 0, size: 20, total: 1, totalPages: 1, hasNext: false, hasPrevious: false }
 })
 
-// POST /api/integrity — behind kagane.to's Cloudflare challenge.
+// POST /api/v2/search/series?page=0&size=20 - a result whose latest_chapters
+// came back empty (which is what produces the "ch ?" gap in the reconcile UI)
+// but whose current_books count is populated, verified live against yuzuki's
+// real search response shape (e.g. "current_books":14 alongside a populated
+// latest_chapters[0].chapter_no of "14" for an actively-synced title).
+export const searchResponseNoLatestChaptersJson = JSON.stringify({
+    content: [
+        {
+            series_id: SERIES_ID,
+            source_id: "019c00d0-5024-7205-a84f-fca567470b7e",
+            title: "The Glutton: Devourer of Kings",
+            alternate_titles: ["Baoshi Zhe", "The Glutton"],
+            cover_image_id: COVER_IMAGE_ID,
+            content_rating: "Safe",
+            publication_status: "Ongoing",
+            format: "Manhua",
+            current_books: 36,
+            latest_chapters: []
+        }
+    ],
+    pagination: { page: 0, size: 20, total: 1, totalPages: 1, hasNext: false, hasPrevious: false }
+})
+
+// POST /api/integrity - behind kagane.to's Cloudflare challenge.
 export const integrityResponseJson = JSON.stringify({
     token: "fixture-integrity-token",
     exp: 1783910212
 })
 
-// POST /api/v2/books/{chapterId}?is_datasaver=false — needs the integrity token
+// POST /api/v2/books/{chapterId}?is_datasaver=false - needs the integrity token
 // from the (gated) endpoint above; the manifest endpoint itself isn't gated.
 export const manifestResponseJson = JSON.stringify({
     access_token: "fixture-access-token",
@@ -99,7 +122,7 @@ export const PAGE_URLS = [
 // Wrap a JSON-encodable value the way kagane.to's own series page does: the
 // chapter list ships inside a Next.js React Flight payload
 // (`self.__next_f.push([1, "...escaped JSON..."])`), which is a JSON string
-// embedded inside a JS string literal inside the HTML — so every quote in the
+// embedded inside a JS string literal inside the HTML - so every quote in the
 // real chapter data is backslash-escaped *twice* over. JSON.stringify-ing the
 // already-stringified JSON twice (and stripping the outer quotes each time)
 // reproduces exactly that depth, verified against the live site's HTML.
@@ -137,7 +160,7 @@ const chapter1 = {
     views: 4226
 }
 
-// GET /series/{id} — behind kagane.to's Cloudflare challenge. Real page is ~400KB;
+// GET /series/{id} - behind kagane.to's Cloudflare challenge. Real page is ~400KB;
 // this keeps only the `self.__next_f.push` chunk that carries `series_books`,
 // which is all extractChapterList reads.
 export const seriesPageHtml = `<!DOCTYPE html>
@@ -148,7 +171,7 @@ export const seriesPageHtml = `<!DOCTYPE html>
 
 // GET /series/{id} that returns Cloudflare's challenge page instead of real
 // content (what a plain background-context fetch gets when kagane.to's managed
-// challenge hasn't been solved) — listChapters should come back empty, not throw.
+// challenge hasn't been solved) - listChapters should come back empty, not throw.
 export const cloudflareChallengeHtml = `<!DOCTYPE html><html><head><title>Just a moment...</title></head><body>
 <div id="challenge-running"></div>
 <script>window._cf_chl_opt = {};</script>

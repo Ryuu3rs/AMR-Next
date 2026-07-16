@@ -6,6 +6,7 @@ import {
     cacheCover,
     clearHistory,
     clearLibrary,
+    createBackup,
     getActivityCalendar,
     getLocalStats,
     rekeyManga,
@@ -38,6 +39,11 @@ export const libraryHandlers: HandlerMap = {
     },
 
     "library:clear": async () => {
+        // Safety-net snapshot before the fully destructive wipe - matches the
+        // data:import / sync:pull pattern (see handlers/data-sync-settings.ts) so a
+        // library clear is undoable via data:backup:restore like any other
+        // destructive path.
+        await createBackup("pre-clear")
         await clearLibrary()
         return null
     },
@@ -278,16 +284,14 @@ export const libraryHandlers: HandlerMap = {
             // source it sits next to mangahub's latestChapterNumber with nothing
             // indicating the two may not be directly comparable. Flag it so a future
             // UI can warn instead of silently comparing chapter counts that don't mean
-            // what they look like they mean. Not part of LibraryManga's typed
-            // interface - written via the same ad-hoc cast as manualTracking above,
-            // since database.ts is out of scope for this change.
+            // what they look like they mean.
             const numberingMayMismatch =
                 request.sourceId === "mangahub" &&
                 existing.sourceId !== "mangahub" &&
                 existing.lastReadChapterNumber !== undefined
             await db.manga.update(request.mangaId, {
                 chapterNumberingUnreliable: numberingMayMismatch ? true : undefined
-            } as unknown as Partial<{ chapterNumberingUnreliable: boolean }>)
+            } as Partial<{ chapterNumberingUnreliable: boolean }>)
             await db.sourceLinks.put({
                 mangaId: request.mangaId,
                 sourceId: request.sourceId,

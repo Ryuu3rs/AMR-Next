@@ -104,6 +104,26 @@ describe("exportEnvelopeSchema", () => {
         }
     })
 
+    // Regression for Bug 1: library:switch (handlers/library.ts) writes
+    // chapterNumberingUnreliable onto the manga record when switching to MangaHub from
+    // a source with existing read progress. Before this field was added to
+    // libraryMangaSchema (which is .strict()), safeParse rejected the whole manga
+    // record with "Unrecognized key", and the referential-integrity dropOrphans logic
+    // in database.ts then also dropped all of that manga's chapters/sourceLinks/
+    // progress/historyEvents/pageBookmarks on the next import/sync-pull/restore.
+    it("round-trips chapterNumberingUnreliable (previously missing from the strict schema, causing RECORD_INVALID data loss)", () => {
+        const env = validEnvelope()
+        env.data.manga[0] = {
+            ...env.data.manga[0],
+            chapterNumberingUnreliable: true
+        } as (typeof env.data.manga)[0]
+        const parsed = exportEnvelopeSchema.safeParse(env)
+        expect(parsed.success).toBe(true)
+        if (parsed.success) {
+            expect(parsed.data.data.manga[0]?.chapterNumberingUnreliable).toBe(true)
+        }
+    })
+
     it("drops unknown extra tables but keeps known ones", () => {
         const env = validEnvelope() as Record<string, unknown> & { data: Record<string, unknown> }
         env.data["futureTable"] = [{ anything: true }]
