@@ -1339,9 +1339,14 @@
 
     const librarySources = $derived([...new Set(library.filter(m => !isSeedData(m)).map(m => m.sourceId))].sort())
 
-    const sourceTitleCounts = $derived(
-        new Map(sourcesList.map(src => [src.id, library.filter(m => !isSeedData(m) && m.sourceId === src.id).length]))
-    )
+    const sourceTitleCounts = $derived.by(() => {
+        const counts = new Map<string, number>()
+        for (const m of library) {
+            if (isSeedData(m)) continue
+            counts.set(m.sourceId, (counts.get(m.sourceId) ?? 0) + 1)
+        }
+        return counts
+    })
 
     async function checkForExtensionUpdate() {
         checkingExtUpdate = true
@@ -1584,7 +1589,7 @@
         const q = query.trim().toLowerCase()
         const filtered = library.filter(
             m =>
-                m.title.toLowerCase().includes(q) &&
+                m.normalizedTitle.includes(q) &&
                 (!categoryFilter || (m.categories ?? []).includes(categoryFilter)) &&
                 (!genreFilter || (m.genres ?? []).includes(genreFilter)) &&
                 matchesFilter(m)
