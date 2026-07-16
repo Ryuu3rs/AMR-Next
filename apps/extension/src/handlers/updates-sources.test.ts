@@ -203,6 +203,71 @@ describe("updates:check handler", () => {
     })
 })
 
+describe("updates:check handler stale-progress self-healing", () => {
+    it("clears a stuck updateProgress from a crashed check and proceeds with a new check", async () => {
+        const { updatesSourcesHandlers } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-1" })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id))
+        listMangaChaptersMock.mockResolvedValue([])
+
+        // Simulate a service worker that was killed mid-loop on a previous check:
+        // running: true with a startedAt well past the staleness threshold, and
+        // nothing left to ever flip it back to false.
+        const staleStartedAt = Date.now() - 20 * 60 * 1000
+        await storageLocal.set({
+            updateProgress: { running: true, done: 0, total: 0, startedAt: staleStartedAt }
+        })
+
+        const handler = updatesSourcesHandlers["updates:check"]
+        if (!handler) throw new Error("handler missing")
+
+        const ack = (await handler({ type: "updates:check" }, { sender: {} })) as {
+            started: boolean
+            alreadyRunning?: boolean
+        }
+
+        expect(ack.started).toBe(true)
+        expect(ack.alreadyRunning).toBeUndefined()
+
+        await vi.waitFor(() => expect(listMangaChaptersMock).toHaveBeenCalledTimes(1))
+        await vi.waitFor(
+            () => {
+                const progress = storageLocal.store.get("updateProgress") as { running: boolean; startedAt: number }
+                expect(progress.running).toBe(false)
+            },
+            { timeout: 2000 }
+        )
+    })
+
+    it("treats a recent running updateProgress as still active and reports alreadyRunning", async () => {
+        const { updatesSourcesHandlers } = await import("./updates-sources")
+
+        // Well within the staleness threshold - a check plausibly still in progress.
+        const recentStartedAt = Date.now() - 30 * 1000
+        await storageLocal.set({
+            updateProgress: { running: true, done: 0, total: 5, startedAt: recentStartedAt }
+        })
+
+        const handler = updatesSourcesHandlers["updates:check"]
+        if (!handler) throw new Error("handler missing")
+
+        const ack = (await handler({ type: "updates:check" }, { sender: {} })) as {
+            started: boolean
+            alreadyRunning?: boolean
+        }
+
+        expect(ack.started).toBe(false)
+        expect(ack.alreadyRunning).toBe(true)
+        // The recent progress record must be left untouched, not overwritten.
+        expect(listMangaChaptersMock).not.toHaveBeenCalled()
+        const progress = storageLocal.store.get("updateProgress") as { running: boolean; startedAt: number }
+        expect(progress.running).toBe(true)
+        expect(progress.startedAt).toBe(recentStartedAt)
+    })
+})
+
 describe("checkUpdates concurrency guard", () => {
     it("a second concurrent call returns immediately instead of running the loop twice", async () => {
         const { checkUpdates } = await import("./updates-sources")
