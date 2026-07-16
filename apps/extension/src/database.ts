@@ -517,11 +517,24 @@ export async function trackExternalChapter(input: {
     }
 
     if (!manga) {
-        const all = await db.manga.toArray()
+        // Run an indexed same-source query first and check it against the two source-scoped
+        // slug matchers before falling back to a full table scan for the cross-source prefix
+        // matcher, since this fallback runs on every navigation on tracked/anti-scrape sites
+        // and scales with library size. This means precedence flips only in the rare case
+        // where a same-source slug match and a cross-source prefix match would both apply to
+        // the same navigation - the indexed same-source match now wins instead of the
+        // cross-source prefix match. Hostname-as-sourceId legacy rows are unaffected, since a
+        // source-scoped query on a fake hostname sourceId never matches and they always fall
+        // through to the full-scan cross-source pass below.
+        const sameSource = await db.manga.where("sourceId").equals(input.sourceId).toArray()
         manga =
-            all.find(m => m.mangaUrl && startsWithUrlPrefix(input.url, m.mangaUrl)) ??
-            all.find(m => m.sourceId === input.sourceId && m.mangaUrl && sameHostSlug(m.mangaUrl, input.url)) ??
-            all.find(m => m.sourceId === input.sourceId && m.sourceUrl && sameHostSlug(m.sourceUrl, input.url))
+            sameSource.find(m => m.mangaUrl && sameHostSlug(m.mangaUrl, input.url)) ??
+            sameSource.find(m => m.sourceUrl && sameHostSlug(m.sourceUrl, input.url))
+
+        if (!manga) {
+            const all = await db.manga.toArray()
+            manga = all.find(m => m.mangaUrl && startsWithUrlPrefix(input.url, m.mangaUrl))
+        }
     }
 
     if (!manga) {
