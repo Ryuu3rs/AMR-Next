@@ -88,7 +88,7 @@ export const readerHandlers: HandlerMap = {
     "chapter:siblings": async request => {
         // Look up cached chapters from DB - no network call needed.
         // auto-capture already stored chapters when the user first visited.
-        const chRecord = await db.chapters.filter(c => c.url === request.url).first()
+        const chRecord = await db.chapters.where("url").equals(request.url).first()
         if (!chRecord) return { prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null }
         const manga = await db.manga.get(chRecord.mangaId)
         if (!manga) return { prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null }

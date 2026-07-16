@@ -16,7 +16,7 @@ vi.mock("../sources", async () => {
 })
 
 vi.mock("../background/covers", () => ({
-    inlineCover: vi.fn()
+    fetchCoverBlob: vi.fn()
 }))
 
 vi.mock("../background/chapter-cache", () => ({
@@ -25,7 +25,7 @@ vi.mock("../background/chapter-cache", () => ({
 
 const { libraryHandlers } = await import("./library")
 const { resolveChapterUrl, listChaptersForSource, findSource, resolveCoverFor } = await import("../sources")
-const { inlineCover } = await import("../background/covers")
+const { fetchCoverBlob } = await import("../background/covers")
 
 const ctx = { sender: {} } as never
 
@@ -280,7 +280,7 @@ describe("library:relink", () => {
 })
 
 describe("library:covers:backfill", () => {
-    it("skips seed- ids and already-inlined data: covers, and doesn't retry a failed id twice", async () => {
+    it("skips seed- ids and manga that already have a cached cover blob, never writes a data: coverUrl, and doesn't retry a failed id twice", async () => {
         const { libraryHandlers } = await import("./library")
 
         const seedManga: LibraryManga = {
@@ -290,12 +290,12 @@ describe("library:covers:backfill", () => {
             sourceUrl: "https://mangadex.org/chapter/1",
             coverUrl: undefined
         }
-        const alreadyInlined: LibraryManga = {
+        const alreadyCached: LibraryManga = {
             ...manga,
-            id: "mangadex:manga:inlined",
+            id: "mangadex:manga:cached",
             sourceId: "mangadex",
             sourceUrl: "https://mangadex.org/chapter/2",
-            coverUrl: "data:image/png;base64,AAAA"
+            coverUrl: "https://cdn.example/already-cached.jpg"
         }
         const needsBackfill: LibraryManga = {
             ...manga,
@@ -314,11 +314,10 @@ describe("library:covers:backfill", () => {
             sourceUrl: `https://mangadex.org/chapter/pad-${i}`,
             coverUrl: `https://cdn.example/pad-${i}.jpg`
         }))
-        await db.manga.bulkPut([seedManga, alreadyInlined, needsBackfill, ...padding])
+        await db.manga.bulkPut([seedManga, alreadyCached, needsBackfill, ...padding])
+        await db.covers.put({ mangaId: alreadyCached.id, blob: new Blob(["x"]), cachedAt: 1 })
 
-        vi.mocked(inlineCover).mockResolvedValue(undefined)
-        // Prevent the raw fetch() call inside the handler from throwing in the test env.
-        vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }))
+        vi.mocked(fetchCoverBlob).mockResolvedValue(undefined)
 
         const handler = libraryHandlers["library:covers:backfill"]!
         const first = (await handler({ type: "library:covers:backfill" } as never, ctx)) as {
@@ -326,27 +325,29 @@ describe("library:covers:backfill", () => {
             remaining: number
         }
 
-        // needsBackfill was within the first batch and got attempted; seed- and data: ids
-        // were filtered out regardless of batch position.
-        expect(inlineCover).toHaveBeenCalledWith("https://cdn.example/cover.jpg")
-        expect(inlineCover).not.toHaveBeenCalledWith("data:image/png;base64,AAAA")
+        // needsBackfill was within the first batch and got attempted; seed- ids and titles
+        // with an already-cached blob were filtered out regardless of batch position.
+        expect(fetchCoverBlob).toHaveBeenCalledWith("https://cdn.example/cover.jpg")
+        expect(fetchCoverBlob).not.toHaveBeenCalledWith("https://cdn.example/already-cached.jpg")
         expect(first.updated).toBe(0)
         expect(first.remaining).toBeGreaterThan(0)
 
-        vi.mocked(inlineCover).mockClear()
+        // Covers are never inlined as data: URIs anymore.
+        const allAfter = await db.manga.toArray()
+        expect(allAfter.every(m => !m.coverUrl?.startsWith("data:"))).toBe(true)
+
+        vi.mocked(fetchCoverBlob).mockClear()
 
         // Second call in the same run must not retry needsBackfill again - it's already
         // tracked in coverBackfillAttempted from the first pass.
         await handler({ type: "library:covers:backfill" } as never, ctx)
-        expect(inlineCover).not.toHaveBeenCalledWith("https://cdn.example/cover.jpg")
-
-        vi.unstubAllGlobals()
+        expect(fetchCoverBlob).not.toHaveBeenCalledWith("https://cdn.example/cover.jpg")
     })
 
-    it("re-resolves a fresh cover when the stored remote URL is stale and the adapter supports resolveCover", async () => {
+    it("resolves a fresh remote cover URL for a title with no cover, stores it as-is (never inlined), and caches the blob", async () => {
         const { libraryHandlers } = await import("./library")
 
-        const staleCover: LibraryManga = {
+        const noCover: LibraryManga = {
             ...manga,
             id: "webtoons:manga:8579",
             sourceId: "webtoons",
@@ -354,16 +355,13 @@ describe("library:covers:backfill", () => {
             mangaUrl: "https://www.webtoons.com/en/romance/daisy-how-to-become-the-dukes-fiancee/list?title_no=8579",
             sourceUrl:
                 "https://www.webtoons.com/en/romance/daisy-how-to-become-the-dukes-fiancee/episode-1/viewer?title_no=8579&episode_no=1",
-            coverUrl: "https://stale-cdn.example/old-cover.jpg"
+            coverUrl: undefined
         }
-        await db.manga.put(staleCover)
+        await db.manga.put(noCover)
 
-        // The stale stored URL fails to inline; a freshly resolved URL succeeds.
-        vi.mocked(inlineCover).mockImplementation(async url =>
-            url === "https://fresh-cdn.example/new-cover.jpg" ? "data:image/png;base64,ZZZZ" : undefined
-        )
         vi.mocked(resolveCoverFor).mockResolvedValue("https://fresh-cdn.example/new-cover.jpg")
-        vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }))
+        const fakeBlob = new Blob(["cover-bytes"], { type: "image/jpeg" })
+        vi.mocked(fetchCoverBlob).mockResolvedValue(fakeBlob)
 
         const handler = libraryHandlers["library:covers:backfill"]!
         const result = (await handler({ type: "library:covers:backfill" } as never, ctx)) as {
@@ -371,15 +369,19 @@ describe("library:covers:backfill", () => {
             remaining: number
         }
 
-        expect(inlineCover).toHaveBeenCalledWith("https://stale-cdn.example/old-cover.jpg")
-        expect(inlineCover).toHaveBeenCalledWith("https://fresh-cdn.example/new-cover.jpg")
         expect(resolveCoverFor).toHaveBeenCalledWith(expect.objectContaining({ id: "webtoons:manga:8579" }))
+        expect(fetchCoverBlob).toHaveBeenCalledWith("https://fresh-cdn.example/new-cover.jpg")
         expect(result.updated).toBe(1)
 
         const stored = await db.manga.get("webtoons:manga:8579")
-        expect(stored?.coverUrl).toBe("data:image/png;base64,ZZZZ")
+        // The source's real remote URL is stored as-is - never inlined as a data: URI.
+        expect(stored?.coverUrl).toBe("https://fresh-cdn.example/new-cover.jpg")
 
-        vi.unstubAllGlobals()
+        // fake-indexeddb structured-clones the stored Blob, so compare by content/type
+        // rather than by reference.
+        const cachedRow = await db.covers.get("webtoons:manga:8579")
+        expect(cachedRow?.blob.type).toBe(fakeBlob.type)
+        expect(cachedRow?.blob.size).toBe(fakeBlob.size)
     })
 })
 

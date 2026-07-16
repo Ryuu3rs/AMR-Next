@@ -196,6 +196,52 @@ export class AmrDatabase extends Dexie {
             // Pre-import/pre-sync-pull safety-net snapshots - see LibraryBackup.
             backups: "++id, createdAt, reason"
         })
+        // Covers used to be inlined as base64 data: URIs directly into
+        // LibraryManga.coverUrl, which bloats every library:list response, every
+        // export, and every retained backup (see MAX_BACKUPS). This migration moves
+        // any already-inlined cover into the covers table (keyed by mangaId, same
+        // shape cacheCover() writes) and clears the data: URI off the manga record -
+        // the UI already prefers the covers-table blob (via coverSrcs) over raw
+        // coverUrl at every render site. Also adds an index on chapters.url so
+        // chapter:siblings can do an indexed lookup instead of a full table scan.
+        this.version(8)
+            .stores({
+                manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+                sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+                chapters: "id, mangaId, sourceId, sortKey, url",
+                progress: "chapterId, mangaId, updatedAt, completed",
+                historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+                downloads: "chapterId, mangaId, downloadedAt",
+                covers: "mangaId",
+                pageBookmarks: "id, mangaId, chapterId, addedAt",
+                analyticsEvents: "++id, event, ts, sourceId",
+                backups: "++id, createdAt, reason"
+            })
+            .upgrade(async tx => {
+                // Manual loop instead of toCollection().modify() - the latter can't
+                // reliably run async work (Blob construction, base64 decode) per record
+                // in older Dexie upgrade patterns.
+                const allManga = await tx.table("manga").toArray()
+                for (const m of allManga) {
+                    if (typeof m.coverUrl === "string" && m.coverUrl.startsWith("data:")) {
+                        try {
+                            const match = /^data:([^;]+);base64,(.+)$/.exec(m.coverUrl)
+                            const mime = match?.[1]
+                            const b64 = match?.[2]
+                            if (!mime || !b64) continue
+                            const binary = atob(b64)
+                            const bytes = new Uint8Array(binary.length)
+                            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+                            const blob = new Blob([bytes], { type: mime })
+                            await tx.table("covers").put({ mangaId: m.id, blob, cachedAt: Date.now() })
+                            await tx.table("manga").update(m.id, { coverUrl: undefined })
+                        } catch {
+                            // Malformed data: URI - skip this record, don't abort the
+                            // whole migration.
+                        }
+                    }
+                }
+            })
     }
 }
 

@@ -15,13 +15,14 @@ import {
 } from "../database"
 import { findSource, listChaptersForSource, resolveChapterUrl, resolveCoverFor, resolveMangaUrl } from "../sources"
 import { scheduleChapterListRefresh } from "../background/chapter-cache"
-import { inlineCover } from "../background/covers"
+import { fetchCoverBlob } from "../background/covers"
 import type { HandlerMap } from "../background/handler-types"
 
 const COVER_BACKFILL_BATCH = 20
 
-// IDs attempted this session so covers that can't be inlined don't loop forever.
-// Cleared when a full backfill pass completes (remaining hits 0).
+// IDs attempted this session so a cover that keeps failing to resolve/fetch
+// doesn't loop forever. Cleared when a full backfill pass completes (remaining
+// hits 0).
 const coverBackfillAttempted = new Set<string>()
 
 export const libraryHandlers: HandlerMap = {
@@ -314,55 +315,45 @@ export const libraryHandlers: HandlerMap = {
 
     "library:covers:backfill": async () => {
         const all = await db.manga.toArray()
-        // Targets: titles with no cover, plus titles whose cover is still a
-        // remote URL (which can fail to render from the extension origin).
-        // data: and bundled /sample-covers/ URLs already render and are skipped.
-        // Already-attempted IDs are excluded so a failed inline doesn't loop forever.
-        const targets = all.filter(
+        // Candidates: titles with no cover, plus titles whose cover is still a
+        // remote URL (which can fail to render from the extension origin, and may
+        // not have a cached blob yet). seed- ids and already-attempted (this
+        // session) ids are excluded so a failed fetch doesn't loop forever.
+        const candidates = all.filter(
             m =>
                 !m.id.startsWith("seed-") &&
                 !coverBackfillAttempted.has(m.id) &&
                 (!m.coverUrl || /^https?:\/\//.test(m.coverUrl))
         )
+        // One bulk lookup instead of a per-record covers.get - a remote coverUrl
+        // that already has a cached blob doesn't need to be re-fetched.
+        const cachedRows = await db.covers.bulkGet(candidates.map(m => m.id))
+        const alreadyCachedIds = new Set(candidates.filter((_, i) => cachedRows[i] !== undefined).map(m => m.id))
+        const targets = candidates.filter(m => !(m.coverUrl && alreadyCachedIds.has(m.id)))
+
         let updated = 0
         for (const m of targets.slice(0, COVER_BACKFILL_BATCH)) {
             coverBackfillAttempted.add(m.id)
             try {
                 const storedRemoteCover = m.coverUrl && /^https?:\/\//.test(m.coverUrl) ? m.coverUrl : undefined
-                let remote = storedRemoteCover ?? (await resolveCoverFor(m))
+                const remote = storedRemoteCover ?? (await resolveCoverFor(m))
                 if (!remote) continue
-                let inlined = await inlineCover(remote)
-                // A stored remote cover URL can go stale over time (e.g. Webtoons
-                // rotates its thumbnail CDN URLs) - if inlining the existing URL
-                // failed and the adapter can re-resolve, fetch a fresh one before
-                // giving up. Without this, titles that already had a (now-dead)
-                // coverUrl never retry, since the `!m.coverUrl` branch below only
-                // covers titles with no cover at all.
-                if (!inlined && storedRemoteCover && sourceRegistry.get(m.sourceId)?.resolveCover) {
-                    const fresh = await resolveCoverFor(m)
-                    if (fresh && fresh !== storedRemoteCover) {
-                        remote = fresh
-                        inlined = await inlineCover(remote)
-                    }
-                }
-                if (inlined) {
-                    await db.manga.update(m.id, { coverUrl: inlined })
-                    updated += 1
-                } else if (!m.coverUrl) {
+                let touched = false
+                // Store the source's own remote URL as-is - covers are never inlined
+                // as data: URIs anymore (see database.ts's v8 migration).
+                if (!m.coverUrl) {
                     await db.manga.update(m.id, { coverUrl: remote })
-                    updated += 1
+                    touched = true
                 }
-                // Cache the raw blob so the UI can serve it from IndexedDB
-                // without re-fetching. Non-fatal: the URL is already stored.
-                try {
-                    const imgResp = await fetch(remote)
-                    if (imgResp.ok) {
-                        const blob = await imgResp.blob()
-                        if (blob.size > 0) await cacheCover(m.id, blob)
-                    }
-                } catch {
-                    /* non-fatal */
+                // Cache the raw blob so the UI can serve it from IndexedDB without
+                // hotlinking the source CDN on every render. Non-fatal: the URL is
+                // already stored (either just now, or previously).
+                const blob = await fetchCoverBlob(remote)
+                if (blob) {
+                    await cacheCover(m.id, blob)
+                    touched = true
                 }
+                if (touched) updated += 1
             } catch (error) {
                 console.warn("[AMR] Cover backfill failed", { mangaId: m.id, error })
             }

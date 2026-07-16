@@ -1,11 +1,11 @@
 import { SourceRequestError } from "@amr/source-sdk"
-import { recordAnalyticsEvent, saveResolvedChapter, trackExternalChapter } from "../database"
+import { cacheCover, recordAnalyticsEvent, saveResolvedChapter, trackExternalChapter } from "../database"
 import { findSource, resolveChapterUrl } from "../sources"
 import { getSettings } from "../settings"
 import { scheduleChapterListRefresh } from "./chapter-cache"
-import { inlineCover } from "./covers"
+import { fetchCoverBlob } from "./covers"
 
-// URLs currently being captured — deduplicate concurrent calls for the same URL
+// URLs currently being captured - deduplicate concurrent calls for the same URL
 // (e.g. rapid navigation events or the same URL from multiple listener paths).
 const capturingUrls = new Set<string>()
 
@@ -62,7 +62,7 @@ async function doCaptureChapter(url: string) {
         // Best-effort: prime the chapter list so the on-page panel can show prev/next.
         // Uses tab injection for JS-rendered list pages (e.g. Webtoons) to get the
         // full episode count, not just what SW-fetch returns.
-        // Use tracked.mangaId (the actual DB entry) not a computed ID — the existing
+        // Use tracked.mangaId (the actual DB entry) not a computed ID - the existing
         // manga record may have a different ID if it was created before the fix.
         if (mangaInfo) {
             scheduleChapterListRefresh(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
@@ -73,10 +73,8 @@ async function doCaptureChapter(url: string) {
 
     void recordAnalyticsEvent({ event: "capture_ok", sourceId: source.manifest.id, ts: Date.now() })
 
-    const rawCover = resolved.manga.manga.coverUrl
-    const inlinedCover = rawCover ? ((await inlineCover(rawCover)) ?? rawCover) : undefined
     await saveResolvedChapter({
-        manga: { ...resolved.manga.manga, ...(inlinedCover ? { coverUrl: inlinedCover } : {}) },
+        manga: resolved.manga.manga,
         chapter: resolved.chapter,
         sourceLink: {
             mangaId: resolved.manga.manga.id,
@@ -88,6 +86,19 @@ async function doCaptureChapter(url: string) {
             updatedAt: Date.now()
         }
     })
+
+    // Best-effort: cache the cover as a Blob so the UI can render it from IndexedDB
+    // instead of hotlinking the source CDN on every render. The manga record keeps
+    // its real remote coverUrl untouched - a cover-fetch failure here must never
+    // fail the capture itself.
+    if (resolved.manga.manga.coverUrl) {
+        try {
+            const blob = await fetchCoverBlob(resolved.manga.manga.coverUrl)
+            if (blob) await cacheCover(resolved.manga.manga.id, blob)
+        } catch (error) {
+            console.warn("[AMR] Failed to cache cover", { url: resolved.manga.manga.coverUrl, error })
+        }
+    }
 
     // Fire-and-forget: cache the full chapter list so the on-page panel can
     // show prev/next siblings without a network round-trip on each visit.
@@ -118,7 +129,7 @@ export function classifyError(error: unknown): string {
 export function isBotBlocked(error: unknown): boolean {
     if (!(error instanceof SourceRequestError)) return false
     const { status } = error
-    // Adapter deliberately signalled bot-block — use tab fallback.
+    // Adapter deliberately signalled bot-block - use tab fallback.
     if (error.message === "blocked") return true
     // CDN / reverse-proxy blocks that real browser session can bypass.
     return status === 403 || status === 502 || status === 503
