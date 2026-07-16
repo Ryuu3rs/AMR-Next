@@ -1,7 +1,6 @@
 <script lang="ts">
     import type { ImportConflict, ImportResolution, LibraryManga, PageBookmark } from "../../src/database"
     import type { AppSettings } from "../../src/settings"
-    import type { ReadingProgress } from "@amr/contracts"
     import { onDestroy, onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
@@ -122,112 +121,19 @@
         )[0]
     }
 
-    // Migrate a losing duplicate's progress and page bookmarks onto the surviving entry
-    // before it gets deleted, so merging duplicates doesn't silently erase reading
-    // history just because that history happened to live on the "losing" copy.
-    //
-    // historyEvents are deliberately NOT migrated here: there's no existing message
-    // type that can write a historyEvents row for an arbitrary mangaId/occurredAt
-    // (reader:progress only creates one under narrow conditions and stamps it with the
-    // current time, and there's no direct "history:add" handler) - so a duplicate merge
-    // still loses the loser's started/completed event log. Fixing that needs a
-    // dedicated backend migration (a rekeyManga-style function scoped to progress/
-    // historyEvents/pageBookmarks), not something buildable from existing message types.
-    async function migrateLoserData(loserId: string, primary: LibraryManga) {
-        // Progress rows are keyed by chapterId in the DB, so writing one back under the
-        // same chapterId with mangaId set to the primary's id just re-points that row.
-        try {
-            const envelope = await sendRuntimeMessage<{ data: { progress: ReadingProgress[] } }>({
-                type: "data:export"
-            })
-            const loserProgress = envelope.data.progress.filter(p => p.mangaId === loserId)
-            for (const p of loserProgress) {
-                await sendRuntimeMessage({
-                    type: "reader:progress",
-                    mangaId: primary.id,
-                    chapterId: p.chapterId,
-                    pageIndex: p.pageIndex,
-                    pageCount: p.pageCount,
-                    completed: p.completed
-                })
-            }
-        } catch (cause) {
-            console.error("[AMR] Failed to migrate reading progress during merge", cause)
-        }
-
-        // Page bookmarks: a bookmark's id is `${chapterId}:${pageIndex}` - mangaId isn't
-        // part of the key - so removing the old row and re-adding under the primary's id
-        // re-points it at the surviving entry instead of creating a duplicate.
-        try {
-            const bookmarks = await sendRuntimeMessage<PageBookmark[]>({ type: "bookmark:list" })
-            const loserBookmarks = bookmarks.filter(b => b.mangaId === loserId)
-            for (const b of loserBookmarks) {
-                await sendRuntimeMessage({ type: "bookmark:remove", id: b.id })
-                await sendRuntimeMessage({
-                    type: "bookmark:toggle",
-                    mangaId: primary.id,
-                    chapterId: b.chapterId,
-                    pageIndex: b.pageIndex,
-                    mangaTitle: primary.title,
-                    chapterTitle: b.chapterTitle,
-                    chapterUrl: b.chapterUrl
-                })
-            }
-        } catch (cause) {
-            console.error("[AMR] Failed to migrate page bookmarks during merge", cause)
-        }
-    }
-
+    // Merging duplicates is a single backend transaction (library:merge - see
+    // mergeMangaRecords in src/database.ts) that re-points progress/historyEvents/
+    // downloads/pageBookmarks onto the chosen primary and folds every field-merge
+    // rule (numbers, categories, rating, notes, nsfw, etc.) into one atomic write,
+    // instead of the multi-message replay this used to do.
     async function mergeDuplicates(group: LibraryManga[]) {
-        // Keep the entry with the most progress (then most recent) as primary.
-        const byProgress = [...group].sort((a, b) => (b.lastReadChapterNumber ?? 0) - (a.lastReadChapterNumber ?? 0))
         const primary = primaryOfGroup(group)
         if (!primary) return
-        const mostRead = byProgress[0]
-        const maxRead = mostRead?.lastReadChapterNumber ?? 0
-        const maxLatest = Math.max(...group.map(m => m.latestChapterNumber ?? 0))
-        const categories = [...new Set(group.flatMap(m => m.categories ?? []))]
-        // Carry over fields that don't have an obvious "biggest wins" number, rather than
-        // silently dropping them just because they only lived on a non-primary duplicate.
-        const rating = group.find(m => m.rating !== undefined)?.rating
-        const notes = [...new Set(group.map(m => m.notes?.trim()).filter((n): n is string => Boolean(n)))].join("\n\n")
-        const nsfw = group.some(m => m.nsfw)
-
-        // Migrate the losing duplicates' data onto the primary before the authoritative
-        // numbers are set below - reader:progress (used by the migration) has the side
-        // effect of overwriting the target manga's lastRead*/updatedAt fields from
-        // whichever chapter is currently being migrated, so library:numbers must run
-        // after migration to be the one that actually sticks.
-        for (const m of group) {
-            if (m.id !== primary.id) await migrateLoserData(m.id, primary)
-        }
-
-        if (maxRead > 0 || maxLatest > 0) {
-            await sendRuntimeMessage({
-                type: "library:numbers",
-                mangaId: primary.id,
-                lastReadChapterNumber: maxRead > 0 ? maxRead : null,
-                latestChapterNumber: maxLatest > 0 ? maxLatest : null,
-                ...(maxRead > 0 && mostRead?.lastReadChapterId ? { lastReadChapterId: mostRead.lastReadChapterId } : {})
-            })
-        }
-        if (categories.length > 0) {
-            await sendRuntimeMessage({ type: "library:categories", mangaId: primary.id, categories })
-        }
-        if (rating !== undefined) {
-            await sendRuntimeMessage({ type: "library:rate", mangaId: primary.id, rating })
-        }
-        if (notes) {
-            await sendRuntimeMessage({ type: "library:note", mangaId: primary.id, note: notes })
-        }
-        if (nsfw) {
-            await sendRuntimeMessage({ type: "library:nsfw", mangaId: primary.id, nsfw: true })
-        }
-        for (const m of group) {
-            if (m.id !== primary.id) await sendRuntimeMessage({ type: "library:remove", mangaId: m.id })
-        }
+        const loserIds = group.filter(m => m.id !== primary.id).map(m => m.id)
+        if (loserIds.length === 0) return
+        await sendRuntimeMessage({ type: "library:merge", primaryId: primary.id, loserIds })
         clearSelection()
-        await load()
+        await refresh()
     }
     let failedCovers = $state<Set<string>>(new Set())
     let coverSrcs = $state<Record<string, string>>({})

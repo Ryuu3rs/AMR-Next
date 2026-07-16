@@ -58,7 +58,8 @@ beforeEach(async () => {
         db.historyEvents.clear(),
         db.downloads.clear(),
         db.covers.clear(),
-        db.backups.clear()
+        db.backups.clear(),
+        db.pageBookmarks.clear()
     ])
 })
 
@@ -610,5 +611,181 @@ describe("library:clear", () => {
         const stored = await db.backups.toArray()
         expect(stored[0]?.envelope.data.manga).toHaveLength(1)
         expect(stored[0]?.envelope.data.manga[0]?.id).toBe(manga.id)
+    })
+})
+
+// library:merge subsumes the old App.svelte migrateLoserData + 5-message field-merge
+// sequence into a single mergeMangaRecords transaction (see src/database.ts) - these
+// tests exercise the row re-pointing, cleanup, and field-merge rules directly against
+// the handler.
+describe("library:merge", () => {
+    const primaryId = manga.id
+    const loserId = "othermirror:manga:def"
+    const loserId2 = "thirdmirror:manga:ghi"
+
+    function libMangaFor(id: string, overrides: Partial<LibraryManga> = {}): LibraryManga {
+        return {
+            ...manga,
+            id,
+            sourceId: "mangadex",
+            sourceUrl: `https://mangadex.org/title/${id}`,
+            ...overrides
+        }
+    }
+
+    it("re-points progress, historyEvents, downloads, and pageBookmarks from loser to primary mangaId", async () => {
+        await db.manga.put(libMangaFor(primaryId))
+        await db.manga.put(libMangaFor(loserId))
+
+        await db.progress.put({
+            mangaId: loserId,
+            chapterId: "loser-ch-1",
+            pageIndex: 0,
+            pageCount: 5,
+            completed: true,
+            updatedAt: 1
+        })
+        await db.historyEvents.add({ mangaId: loserId, chapterId: "loser-ch-1", type: "completed", occurredAt: 1 })
+        await db.downloads.put({
+            chapterId: "loser-ch-1",
+            mangaId: loserId,
+            pageBlobs: [],
+            pageCount: 5,
+            downloadedAt: 1
+        })
+        await db.pageBookmarks.put({
+            id: "loser-ch-1:0",
+            mangaId: loserId,
+            chapterId: "loser-ch-1",
+            pageIndex: 0,
+            mangaTitle: "Test",
+            chapterTitle: "Ch1",
+            chapterUrl: "https://mangadex.org/chapter/loser-1",
+            addedAt: 1
+        })
+
+        const handler = libraryHandlers["library:merge"]!
+        await handler({ type: "library:merge", primaryId, loserIds: [loserId] } as never, ctx)
+
+        expect((await db.progress.get("loser-ch-1"))?.mangaId).toBe(primaryId)
+        const events = await db.historyEvents.where("mangaId").equals(primaryId).toArray()
+        expect(events).toHaveLength(1)
+        expect((await db.downloads.get("loser-ch-1"))?.mangaId).toBe(primaryId)
+        expect((await db.pageBookmarks.get("loser-ch-1:0"))?.mangaId).toBe(primaryId)
+    })
+
+    it("deletes the loser's chapters, sourceLinks, and manga rows after merge, leaving the primary intact", async () => {
+        await db.manga.put(libMangaFor(primaryId))
+        await db.manga.put(libMangaFor(loserId))
+        await db.sourceLinks.put({ ...sourceLink, mangaId: primaryId })
+        await db.sourceLinks.put({ ...sourceLink, mangaId: loserId, sourceId: "othermirror" })
+        await db.chapters.put({
+            id: "loser-ch-1",
+            mangaId: loserId,
+            sourceId: "othermirror",
+            title: "Ch1",
+            url: "https://othermirror.example/chapter/1",
+            sortKey: 1
+        })
+
+        const handler = libraryHandlers["library:merge"]!
+        await handler({ type: "library:merge", primaryId, loserIds: [loserId] } as never, ctx)
+
+        expect(await db.manga.get(loserId)).toBeUndefined()
+        expect(await db.sourceLinks.get(loserId)).toBeUndefined()
+        expect(await db.chapters.where("mangaId").equals(loserId).count()).toBe(0)
+        expect(await db.manga.get(primaryId)).toBeDefined()
+        expect(await db.sourceLinks.get(primaryId)).toBeDefined()
+    })
+
+    it("concatenates notes with a blank line when both primary and loser have notes", async () => {
+        await db.manga.put(libMangaFor(primaryId, { notes: "Primary note" }))
+        await db.manga.put(libMangaFor(loserId, { notes: "Loser note" }))
+
+        const handler = libraryHandlers["library:merge"]!
+        const result = (await handler(
+            { type: "library:merge", primaryId, loserIds: [loserId] } as never,
+            ctx
+        )) as LibraryManga
+
+        expect(result.notes).toBe("Primary note\n\nLoser note")
+    })
+
+    it("carries over the loser's notes when the primary has none", async () => {
+        await db.manga.put(libMangaFor(primaryId))
+        await db.manga.put(libMangaFor(loserId, { notes: "Loser note" }))
+
+        const handler = libraryHandlers["library:merge"]!
+        const result = (await handler(
+            { type: "library:merge", primaryId, loserIds: [loserId] } as never,
+            ctx
+        )) as LibraryManga
+
+        expect(result.notes).toBe("Loser note")
+    })
+
+    it("keeps the primary's rating when the loser has none, and unions categories from both", async () => {
+        await db.manga.put(libMangaFor(primaryId, { rating: 5, categories: ["fav"] }))
+        await db.manga.put(libMangaFor(loserId, { categories: ["action", "fav"] }))
+
+        const handler = libraryHandlers["library:merge"]!
+        const result = (await handler(
+            { type: "library:merge", primaryId, loserIds: [loserId] } as never,
+            ctx
+        )) as LibraryManga
+
+        expect(result.rating).toBe(5)
+        expect([...(result.categories ?? [])].sort()).toEqual(["action", "fav"])
+    })
+
+    it("takes the loser's rating when the primary has none", async () => {
+        await db.manga.put(libMangaFor(primaryId))
+        await db.manga.put(libMangaFor(loserId, { rating: 4 }))
+
+        const handler = libraryHandlers["library:merge"]!
+        const result = (await handler(
+            { type: "library:merge", primaryId, loserIds: [loserId] } as never,
+            ctx
+        )) as LibraryManga
+
+        expect(result.rating).toBe(4)
+    })
+
+    // Regression: the old App.svelte migrateLoserData had a documented gap where
+    // historyEvents were silently dropped on merge (no message type could write one
+    // for an arbitrary mangaId/occurredAt). This would have failed under that behavior.
+    it("historyEvents survive the merge under the primary's mangaId", async () => {
+        await db.manga.put(libMangaFor(primaryId))
+        await db.manga.put(libMangaFor(loserId))
+        await db.historyEvents.add({ mangaId: loserId, chapterId: "loser-ch-1", type: "started", occurredAt: 10 })
+        await db.historyEvents.add({ mangaId: loserId, chapterId: "loser-ch-1", type: "completed", occurredAt: 20 })
+
+        const handler = libraryHandlers["library:merge"]!
+        await handler({ type: "library:merge", primaryId, loserIds: [loserId] } as never, ctx)
+
+        const events = await db.historyEvents.where("mangaId").equals(primaryId).toArray()
+        expect(events).toHaveLength(2)
+        expect(events.map(e => e.type).sort()).toEqual(["completed", "started"])
+    })
+
+    it("skips a stale/nonexistent loserId without throwing, and still merges the other valid losers in the same call", async () => {
+        await db.manga.put(libMangaFor(primaryId))
+        await db.manga.put(libMangaFor(loserId2, { rating: 3 }))
+
+        const handler = libraryHandlers["library:merge"]!
+        const result = (await handler(
+            { type: "library:merge", primaryId, loserIds: ["nonexistent:manga:zzz", loserId2] } as never,
+            ctx
+        )) as LibraryManga
+
+        expect(result.rating).toBe(3)
+        expect(await db.manga.get(loserId2)).toBeUndefined()
+    })
+
+    it("throws a clear error when the primary manga does not exist", async () => {
+        const handler = libraryHandlers["library:merge"]!
+        await expect(
+            handler({ type: "library:merge", primaryId: "nonexistent:manga:xxx", loserIds: [loserId] } as never, ctx)
+        ).rejects.toThrow()
     })
 })

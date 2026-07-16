@@ -382,6 +382,88 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
     )
 }
 
+// Merges one or more "loser" duplicate manga records into a single surviving
+// "primary" record. Modeled on rekeyManga's transaction shape and row
+// re-pointing pattern (progress/historyEvents/downloads/pageBookmarks are
+// re-pointed via modify(), not copied - safe because a loser's chapters have
+// different chapter ids than the primary's, so there's no key collision on
+// tables keyed by chapterId), but unlike rekeyManga this never deletes the
+// primary's own chapters - only each loser's chapters/sourceLinks/manga rows,
+// since a merge (unlike a relink) doesn't invalidate the surviving side.
+export async function mergeMangaRecords(primaryId: string, loserIds: string[]): Promise<LibraryManga> {
+    return db.transaction(
+        "rw",
+        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.downloads, db.pageBookmarks],
+        async () => {
+            const primary = await db.manga.get(primaryId)
+            if (!primary) throw new Error(`Cannot merge duplicates: primary manga "${primaryId}" does not exist`)
+
+            let merged: LibraryManga = primary
+
+            for (const loserId of loserIds) {
+                // A stale/already-removed id (e.g. two merge calls racing on the same
+                // group) shouldn't abort the whole merge - just skip it.
+                if (loserId === primaryId) continue
+                const loser = await db.manga.get(loserId)
+                if (!loser) continue
+
+                const mergedLastReadNumber =
+                    Math.max(merged.lastReadChapterNumber ?? 0, loser.lastReadChapterNumber ?? 0) || undefined
+                const mergedLatestNumber =
+                    Math.max(merged.latestChapterNumber ?? 0, loser.latestChapterNumber ?? 0) || undefined
+                const mergedLastReadAt = Math.max(merged.lastReadAt ?? 0, loser.lastReadAt ?? 0) || undefined
+                const mergedCategories = [...new Set([...(merged.categories ?? []), ...(loser.categories ?? [])])]
+                const categories = mergedCategories.length > 0 ? mergedCategories : undefined
+                // Notes: if both sides have non-empty notes, concatenate them (never
+                // silently drop one side's notes just because the other also had some);
+                // otherwise whichever side has notes wins.
+                const notes =
+                    merged.notes && loser.notes ? `${merged.notes}\n\n${loser.notes}` : (merged.notes ?? loser.notes)
+                const rating = merged.rating ?? loser.rating
+                const nsfw = merged.nsfw ?? loser.nsfw
+                const manualTracking = merged.manualTracking ?? loser.manualTracking
+                const onHold = merged.onHold ?? loser.onHold
+                const readingDirection = merged.readingDirection ?? loser.readingDirection
+                const pageFit = merged.pageFit ?? loser.pageFit
+                const noGapContinuous = merged.noGapContinuous ?? loser.noGapContinuous
+
+                merged = {
+                    ...merged,
+                    addedAt: Math.min(merged.addedAt, loser.addedAt),
+                    ...(mergedLastReadNumber !== undefined ? { lastReadChapterNumber: mergedLastReadNumber } : {}),
+                    ...(mergedLatestNumber !== undefined ? { latestChapterNumber: mergedLatestNumber } : {}),
+                    ...(mergedLastReadAt !== undefined ? { lastReadAt: mergedLastReadAt } : {}),
+                    ...(categories !== undefined ? { categories } : {}),
+                    ...(notes !== undefined ? { notes } : {}),
+                    ...(rating !== undefined ? { rating } : {}),
+                    ...(nsfw !== undefined ? { nsfw } : {}),
+                    ...(manualTracking !== undefined ? { manualTracking } : {}),
+                    ...(onHold !== undefined ? { onHold } : {}),
+                    ...(readingDirection !== undefined ? { readingDirection } : {}),
+                    ...(pageFit !== undefined ? { pageFit } : {}),
+                    ...(noGapContinuous !== undefined ? { noGapContinuous } : {})
+                }
+
+                // Re-point (not copy) dependent rows onto the primary's id.
+                await db.progress.where("mangaId").equals(loserId).modify({ mangaId: primaryId })
+                await db.historyEvents.where("mangaId").equals(loserId).modify({ mangaId: primaryId })
+                await db.downloads.where("mangaId").equals(loserId).modify({ mangaId: primaryId })
+                await db.pageBookmarks.where("mangaId").equals(loserId).modify({ mangaId: primaryId })
+
+                // Loser chapters are stale by definition once its progress/history
+                // point at the primary - same reasoning rekeyManga uses for the old
+                // source's chapters after a relink.
+                await db.chapters.where("mangaId").equals(loserId).delete()
+                await db.sourceLinks.delete(loserId)
+                await db.manga.delete(loserId)
+            }
+
+            await db.manga.put(merged)
+            return merged
+        }
+    )
+}
+
 export async function saveResolvedChapter(input: {
     manga: MangaRecord
     chapter: ChapterRecord
