@@ -10,6 +10,19 @@ import { delay, type HandlerMap } from "../background/handler-types"
 let updateCheckRunning = false
 let genreBackfillRunning = false
 
+// A crashed check (service worker killed mid-loop - browser closed, SW
+// terminated/evicted) leaves updateProgress.running: true in storage forever:
+// nothing but a fresh check's writeProgress() call ever flips it back, and the
+// in-memory updateCheckRunning guard resets to false on every SW restart, so it
+// can't tell a genuinely running check apart from a dead one. Treat a stored
+// running: true older than this as dead rather than trusting it forever. Sized
+// generously above what even a very large library could plausibly take: each
+// title pauses 400ms for rate-limiting plus its own network round trip, so a
+// library of many hundreds of titles can legitimately run several minutes -
+// 15 minutes is comfortably past that while still recovering a stuck state quickly
+// rather than leaving it wedged indefinitely.
+const STALE_PROGRESS_TIMEOUT_MS = 15 * 60 * 1000
+
 type UpdateProgress = {
     running: boolean
     done: number
@@ -217,6 +230,25 @@ export const updatesSourcesHandlers: HandlerMap = {
         // now track progress via the updateProgress/updateStatus storage keys instead.
         if (updateCheckRunning) {
             return { started: false, alreadyRunning: true }
+        }
+        // updateCheckRunning only tracks this service-worker instance's lifetime, so a
+        // check that crashed a previous instance mid-loop leaves no in-memory trace of
+        // itself - only the persisted updateProgress record. Consult it before starting
+        // a new check: a recent running: true means a check is plausibly still active
+        // (report alreadyRunning as before), while a stale one means the previous run's
+        // service worker died without ever getting to clear it - self-heal so the next
+        // triggered check (this one) isn't blocked by a state nothing will ever clear.
+        const storedProgress = (await browser.storage.local.get("updateProgress"))["updateProgress"] as
+            | UpdateProgress
+            | undefined
+        if (storedProgress?.running) {
+            if (Date.now() - storedProgress.startedAt < STALE_PROGRESS_TIMEOUT_MS) {
+                return { started: false, alreadyRunning: true }
+            }
+            console.warn("[AMR] Clearing stale updateProgress from a crashed check", storedProgress)
+            await browser.storage.local.set({
+                updateProgress: { ...storedProgress, running: false } satisfies UpdateProgress
+            })
         }
         void checkUpdates(request.sourceId).catch(error => {
             console.error("[AMR] Update check crashed unexpectedly", error)
