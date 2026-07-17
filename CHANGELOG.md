@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.12.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.11.0...v0.12.0) (2026-07-17)
+
+
+### Features
+
+* cross-surface live-update bus, silent dashboard refresh ([2531ff1](https://github.com/Ryuu3rs/AMR-Next/commit/2531ff1de2dbf444e4bbf60ef0994cf49b61aa05))
+* reconcile debug-log export (copy + JSON download) ([89c4a97](https://github.com/Ryuu3rs/AMR-Next/commit/89c4a97adbec870b56c8faa3cdfc4ec4c68ed9a6))
+
+
+### Bug Fixes
+
+* atomic library:merge handler, closes historyEvents data loss on duplicate merge ([df2213e](https://github.com/Ryuu3rs/AMR-Next/commit/df2213e28c61983527bacbac353d3b833bee7456))
+* audit-driven correctness fixes across UI, background, and adapters ([d359f7d](https://github.com/Ryuu3rs/AMR-Next/commit/d359f7dce7337a9fe9fe7326d48e42f9d91ec70b))
+* auto-link retries next candidate instead of giving up, cleans (Official) markers ([58550d4](https://github.com/Ryuu3rs/AMR-Next/commit/58550d435af639b17b5b5fe3cc8a19d83508913f))
+* cooldown-gate background chapter-list refreshes ([f1ebdfe](https://github.com/Ryuu3rs/AMR-Next/commit/f1ebdfe0c7a372cfadc858a1c7f10c4fe795117f))
+* CORS/source-registry hardening — durable image-CDN grant pattern, templescan/manhuaplus retired, mangahub search-result chapter number ([d75c86a](https://github.com/Ryuu3rs/AMR-Next/commit/d75c86ab098a6bad71b75c7283333a67e1872176))
+* cover object URL doesn't refresh when the cached blob changes ([2d66ed6](https://github.com/Ryuu3rs/AMR-Next/commit/2d66ed6eb051ed58316236767451b5d64c26336c))
+* cross-source chapter numbers no longer max in merge, update-check no longer false-reports on repoint ([416ca1e](https://github.com/Ryuu3rs/AMR-Next/commit/416ca1e4b515fbb0eaf8617b3249d0ccfb3e1f8c))
+* import/export data-safety hardening — chapters schema gap, missing bookmarks, partial-success import, pre-import backups ([168c538](https://github.com/Ryuu3rs/AMR-Next/commit/168c538362178bfa635073b90b4737d2ee6fcb54))
+* mangaread and mangafreak sources completely dead behind origin filter ([82a5eb8](https://github.com/Ryuu3rs/AMR-Next/commit/82a5eb8d0a0ce123b42da6e7edf3ba05133cd126))
+* progress-completion ratchet, merge chapter-id carry, orphaned covers ([55b2722](https://github.com/Ryuu3rs/AMR-Next/commit/55b2722a5e94b67891cdbff074d2d90ae1abb3c4))
+* reader missing next-chapter controls, slow back-to-dashboard navigation ([47c7932](https://github.com/Ryuu3rs/AMR-Next/commit/47c79326da60b588e18eda6a54336a39a9e82128))
+* reconcile UI leaking raw network errors, near-duplicate candidate rows ([ad38bc4](https://github.com/Ryuu3rs/AMR-Next/commit/ad38bc4111ddc67124d8c006d6c277e48580367d))
+* rename release-please concurrency group to clear a stuck lock ([b0fbe83](https://github.com/Ryuu3rs/AMR-Next/commit/b0fbe83afa1e6279fd7171816dadcaffcd9df61b))
+* source-registry retirements, madara AJAX modernization, reader nav race, chapter-count pagination, shared entity decoder ([3445c50](https://github.com/Ryuu3rs/AMR-Next/commit/3445c504aeac165d1029f2ab1845b9b19de4e3bb))
+* update-check can get stuck at 'running' forever if the browser closes mid-check ([be58235](https://github.com/Ryuu3rs/AMR-Next/commit/be582356609e07d929582c6d738a170b220363eb))
+* update-check messaging bug + progress bar, reconcile UX, lossless duplicate merge ([3612d29](https://github.com/Ryuu3rs/AMR-Next/commit/3612d29a9b9be7f7bf59fdf31610591963a5521f))
+* use PAT for release-please so its pushes trigger CI ([0fa91cb](https://github.com/Ryuu3rs/AMR-Next/commit/0fa91cb567eb52739fd851167f3f179f52075b08))
+
+
+### Performance Improvements
+
+* chapter:adjacent cache-first, network only when stale ([2e41a27](https://github.com/Ryuu3rs/AMR-Next/commit/2e41a270ac64843969db821a800931a44bd39018))
+* cover backfill runs cross-source concurrently, adds targeted single-title path ([3a7b33f](https://github.com/Ryuu3rs/AMR-Next/commit/3a7b33fb63a82c7cce94a8b1cdb24b33251f7117))
+* index-scoped lookup in trackExternalChapter capture-error fallback ([a5aef12](https://github.com/Ryuu3rs/AMR-Next/commit/a5aef1210b3d547c78f983e3f26f73c26335e861))
+* reconcile Search-all sweep ~4-5x faster ([cf088c6](https://github.com/Ryuu3rs/AMR-Next/commit/cf088c6902770ae7b79bfd6fe5c4d338d292ed55))
+* share source-sdk response cache across per-operation clients ([8a66fe0](https://github.com/Ryuu3rs/AMR-Next/commit/8a66fe0c1df4a42f9c0c6fac4e0ad6731114b937))
+* single-pass sourceTitleCounts, indexed library search ([01a6eab](https://github.com/Ryuu3rs/AMR-Next/commit/01a6eabc6908076e3289fdae786c7ab063dd8722))
+* stop inlining covers as base64 data URIs, index chapters.url ([9ef414b](https://github.com/Ryuu3rs/AMR-Next/commit/9ef414bdb3707e9c7e00bd21ece1799ffe8a6515))
+* throttle reader progress reports to 1s trailing ([908c5ac](https://github.com/Ryuu3rs/AMR-Next/commit/908c5acd5da8be7e2e1265197d52b081f427d29b))
+
 ## [0.11.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.10.1...v0.11.0) (2026-07-14)
 
 
