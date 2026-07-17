@@ -202,6 +202,153 @@
     let importWorking = $state(false)
     let importError = $state("")
 
+    // --- Repair auto-tracked entries (library:cleanup:scan / library:cleanup:apply) ---
+    type CleanupMatchedBy = "adapter" | "pathname" | "scrape"
+    type CleanupCandidateRecord = {
+        mangaId: string
+        title: string
+        sourceUrl: string
+        matchedChapterNumbers: number[]
+        matchedBy: CleanupMatchedBy
+    }
+    type CleanupGroup = {
+        canonicalId: string
+        canonicalTitle: string
+        canonicalCoverUrl?: string
+        sourceId: string
+        sourceMangaId: string
+        mangaUrl: string
+        representativeChapterUrl: string
+        inLibrary: boolean
+        selfHeal: boolean
+        records: CleanupCandidateRecord[]
+        overflowCount?: number
+    }
+    type CleanupUnresolved = { mangaId: string; title: string; sourceId: string; sourceUrl: string; reason: string }
+    type CleanupScanResult = { groups: CleanupGroup[]; unresolved: CleanupUnresolved[]; candidateCount: number }
+    type CleanupApplyResponse = {
+        merged: number
+        groups: number
+        enriched: number
+        skippedStale: number
+        skippedUnverified: number
+        failed: Array<{ canonicalId: string; reason: string }>
+        backupId: number
+    }
+
+    let cleanupScanning = $state(false)
+    let cleanupResult = $state<CleanupScanResult | null>(null)
+    let cleanupSelected = $state<Record<string, boolean>>({})
+    let cleanupExpanded = $state<Record<string, boolean>>({})
+    let cleanupApplying = $state(false)
+    let cleanupMessage = $state("")
+    let cleanupBackupId = $state<number | null>(null)
+
+    const cleanupSelectedGroups = $derived(
+        cleanupResult ? cleanupResult.groups.filter(g => cleanupSelected[g.canonicalId] !== false) : []
+    )
+    const cleanupSelectedEntryCount = $derived(cleanupSelectedGroups.reduce((sum, g) => sum + g.records.length, 0))
+
+    async function runCleanupScan() {
+        cleanupScanning = true
+        cleanupMessage = ""
+        cleanupBackupId = null
+        try {
+            cleanupResult = await sendRuntimeMessage<CleanupScanResult>({ type: "library:cleanup:scan" })
+            cleanupSelected = Object.fromEntries(cleanupResult.groups.map(g => [g.canonicalId, true]))
+            cleanupExpanded = {}
+        } catch (cause) {
+            cleanupMessage = cause instanceof Error ? cause.message : "Scan failed."
+        } finally {
+            cleanupScanning = false
+        }
+    }
+
+    function cancelCleanup() {
+        cleanupResult = null
+        cleanupSelected = {}
+        cleanupExpanded = {}
+    }
+
+    async function applyCleanup() {
+        if (!cleanupResult || cleanupSelectedGroups.length === 0) return
+        cleanupApplying = true
+        try {
+            const payload = cleanupSelectedGroups.map(g => ({
+                canonicalId: g.canonicalId,
+                sourceId: g.sourceId,
+                sourceMangaId: g.sourceMangaId,
+                mangaUrl: g.mangaUrl,
+                representativeChapterUrl: g.representativeChapterUrl,
+                losers: g.records
+                    .filter(r => r.mangaId !== g.canonicalId)
+                    .map(r => ({ mangaId: r.mangaId, matchedBy: r.matchedBy }))
+            }))
+            const result = await sendRuntimeMessage<CleanupApplyResponse>({
+                type: "library:cleanup:apply",
+                groups: payload
+            })
+            cleanupBackupId = result.backupId
+            cleanupMessage =
+                `Merged ${result.merged} entries into ${result.groups} titles. ${result.enriched} enriched in place.` +
+                ` ${result.skippedStale} skipped (stale). ${result.skippedUnverified} skipped (unverified).`
+            cleanupResult = null
+            cleanupSelected = {}
+            cleanupExpanded = {}
+            await load()
+        } catch (cause) {
+            cleanupMessage = cause instanceof Error ? cause.message : "Cleanup apply failed."
+        } finally {
+            cleanupApplying = false
+        }
+    }
+
+    // --- Backups list + restore (Data section) ---
+    type BackupSummary = { id: number; createdAt: number; reason: string }
+    let backupsList = $state<BackupSummary[]>([])
+    let backupsLoaded = $state(false)
+    let backupRestoreConfirm = $state<number | null>(null)
+    let backupRestoring = $state(false)
+    let backupMessage = $state("")
+
+    async function loadBackups() {
+        try {
+            backupsList = await sendRuntimeMessage<BackupSummary[]>({ type: "data:backup:list" })
+        } catch {
+            // best-effort
+        }
+    }
+
+    $effect(() => {
+        if (activeSection === "Data" && !backupsLoaded) {
+            backupsLoaded = true
+            void loadBackups()
+        }
+    })
+
+    async function restoreBackupById(id: number) {
+        backupRestoring = true
+        try {
+            await sendRuntimeMessage({ type: "data:backup:restore", id })
+            backupMessage = "Backup restored."
+            backupRestoreConfirm = null
+            await load()
+            await loadBackups()
+        } catch (cause) {
+            backupMessage = cause instanceof Error ? cause.message : "Restore failed."
+        } finally {
+            backupRestoring = false
+        }
+    }
+
+    async function undoCleanup() {
+        if (cleanupBackupId === null) return
+        const id = cleanupBackupId
+        cleanupBackupId = null
+        await restoreBackupById(id)
+        cleanupMessage = "Cleanup undone - backup restored."
+    }
+
     const showRestoreBanner = $derived(
         !loading && !restoreBannerDismissed && library.length === 0 && Boolean(syncStatus?.hasToken) && !importWorking
     )
@@ -3324,6 +3471,23 @@
                 </div>
                 <div class="data-row">
                     <div>
+                        <p class="row-label">Repair auto-tracked entries</p>
+                        <p class="muted">
+                            Finds library titles that were created as a fallback when a chapter couldn't be matched to a
+                            real source page (e.g. during a period a source was broken), and merges the duplicates into
+                            one properly-linked title.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        class="btn-outline"
+                        disabled={cleanupScanning}
+                        onclick={() => void runCleanupScan()}>
+                        {cleanupScanning ? "Scanning…" : "Scan"}
+                    </button>
+                </div>
+                <div class="data-row">
+                    <div>
                         <p class="row-label">Offline downloads</p>
                         <p class="muted">
                             Chapters saved for offline reading, stored inside the extension (not a folder on disk).
@@ -3334,7 +3498,149 @@
                     </div>
                     <span class="data-count">{downloadsCount} {downloadsCount === 1 ? "chapter" : "chapters"}</span>
                 </div>
+                <div class="data-row" style="flex-direction:column;align-items:flex-start;gap:10px">
+                    <div>
+                        <p class="row-label">Backups</p>
+                        <p class="muted">
+                            Automatic safety-net snapshots taken before imports, syncs, clears, and repairs. Restoring
+                            replaces the current library with the snapshot (and itself takes a snapshot first, so a
+                            restore is always undoable).
+                        </p>
+                    </div>
+                    {#if backupsList.length === 0}
+                        <p class="muted">No backups yet.</p>
+                    {:else}
+                        <div class="conflict-list" style="width:100%;max-height:none">
+                            {#each backupsList as backup (backup.id)}
+                                <div
+                                    class="conflict-row"
+                                    style="grid-template-columns:1fr auto;grid-template-rows:auto">
+                                    <span class="conflict-name" style="grid-row:1">{backup.reason}</span>
+                                    <span class="conflict-hint muted" style="grid-row:2">
+                                        {new Date(backup.createdAt).toLocaleString()}
+                                    </span>
+                                    <div style="grid-column:2;grid-row:1 / 3;display:flex;gap:6px">
+                                        {#if backupRestoreConfirm === backup.id}
+                                            <button
+                                                type="button"
+                                                class="btn-outline"
+                                                onclick={() => (backupRestoreConfirm = null)}>Cancel</button>
+                                            <button
+                                                type="button"
+                                                class="btn-danger"
+                                                disabled={backupRestoring}
+                                                onclick={() => void restoreBackupById(backup.id)}>
+                                                {backupRestoring ? "Restoring…" : "Yes, restore"}
+                                            </button>
+                                        {:else}
+                                            <button
+                                                type="button"
+                                                class="btn-sm"
+                                                onclick={() => (backupRestoreConfirm = backup.id)}>Restore</button>
+                                        {/if}
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
+                    {#if backupMessage}
+                        <p class="notice" role="status" aria-live="polite">{backupMessage}</p>
+                    {/if}
+                </div>
             </div>
+            {#if cleanupResult}
+                <div class="conflict-panel">
+                    <p class="conflict-title">
+                        {cleanupResult.groups.length} title{cleanupResult.groups.length !== 1 ? "s" : ""} found from
+                        {cleanupResult.candidateCount} auto-tracked entr{cleanupResult.candidateCount !== 1
+                            ? "ies"
+                            : "y"}
+                        {#if cleanupResult.unresolved.length > 0}
+                            · {cleanupResult.unresolved.length} could not be resolved
+                        {/if}
+                    </p>
+                    <div class="conflict-list" style="max-height:360px">
+                        {#each cleanupResult.groups as group (group.canonicalId)}
+                            <div
+                                style="display:flex;flex-direction:column;gap:6px;padding:8px;border-radius:6px;background:var(--surface-raised, rgba(255,255,255,0.03))">
+                                <div style="display:flex;align-items:center;gap:8px">
+                                    <input
+                                        type="checkbox"
+                                        checked={cleanupSelected[group.canonicalId] !== false}
+                                        onchange={e =>
+                                            (cleanupSelected = {
+                                                ...cleanupSelected,
+                                                [group.canonicalId]: e.currentTarget.checked
+                                            })} />
+                                    <span class="conflict-name" style="max-width:none">{group.canonicalTitle}</span>
+                                    <span class="conflict-hint muted" style="max-width:none">
+                                        {group.sourceId} · {group.records.length} entr{group.records.length !== 1
+                                            ? "ies"
+                                            : "y"}{group.selfHeal ? " · self-heal" : ""}{group.inLibrary
+                                            ? " · already in library"
+                                            : ""}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        class="btn-sm"
+                                        style="margin-left:auto"
+                                        onclick={() =>
+                                            (cleanupExpanded = {
+                                                ...cleanupExpanded,
+                                                [group.canonicalId]: !cleanupExpanded[group.canonicalId]
+                                            })}>
+                                        {cleanupExpanded[group.canonicalId] ? "Hide" : "Show"} entries
+                                    </button>
+                                </div>
+                                {#if cleanupExpanded[group.canonicalId]}
+                                    <div style="padding-left:26px;display:flex;flex-direction:column;gap:4px">
+                                        {#each group.records as record (record.mangaId)}
+                                            <p class="muted" style="font-size:12px;margin:0">
+                                                {record.title} - {record.sourceUrl} - ch.
+                                                {record.matchedChapterNumbers.join(", ") || "?"} ({record.matchedBy})
+                                            </p>
+                                        {/each}
+                                        {#if group.overflowCount}
+                                            <p class="muted" style="font-size:12px;margin:0">
+                                                …and {group.overflowCount} more (picked up on a later scan)
+                                            </p>
+                                        {/if}
+                                    </div>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                    {#if cleanupResult.unresolved.length > 0}
+                        <p class="conflict-hint muted" style="margin:0">Unresolved:</p>
+                        <div class="conflict-list">
+                            {#each cleanupResult.unresolved as u (u.mangaId)}
+                                <div class="conflict-row">
+                                    <span class="conflict-name">{u.title}</span>
+                                    <span class="conflict-hint muted">{u.sourceId} · {u.reason}</span>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
+                    <div class="conflict-actions">
+                        <button type="button" class="btn-outline" onclick={cancelCleanup}>Cancel</button>
+                        <button
+                            type="button"
+                            disabled={cleanupApplying || cleanupSelectedGroups.length === 0}
+                            onclick={() => void applyCleanup()}>
+                            {cleanupApplying
+                                ? "Merging…"
+                                : `Merge ${cleanupSelectedEntryCount} entries into ${cleanupSelectedGroups.length} titles`}
+                        </button>
+                    </div>
+                </div>
+            {:else if cleanupMessage}
+                <p class="notice" role="status" aria-live="polite">
+                    {cleanupMessage}
+                    {#if cleanupBackupId !== null}
+                        <button type="button" class="btn-sm" onclick={() => void undoCleanup()}>Undo</button>
+                    {/if}
+                </p>
+            {/if}
             {#if importWorking && importConflicts.length === 0}
                 <p class="notice muted" role="status" aria-live="polite">Working…</p>
             {:else if importConflicts.length > 0}

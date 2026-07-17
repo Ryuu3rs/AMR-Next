@@ -1,20 +1,30 @@
-import type { ChapterRecord, SourceLinkRecord } from "@amr/contracts"
+import type { ChapterRecord, MangaRecord, SourceLinkRecord } from "@amr/contracts"
 import { SourceError } from "@amr/source-sdk"
 import { sourceRegistry } from "@amr/sources"
 import {
     db,
+    applyCleanupGroup,
     cacheCover,
     clearHistory,
     clearLibrary,
     createBackup,
     getActivityCalendar,
     getLocalStats,
+    humanizeSlug,
     mergeMangaRecords,
     rekeyManga,
     removeManga,
+    saveResolvedChapter,
     type LibraryManga
 } from "../database"
-import { findSource, listChaptersForSource, resolveChapterUrl, resolveCoverFor, resolveMangaUrl } from "../sources"
+import {
+    findSource,
+    listChaptersBySource,
+    listChaptersForSource,
+    resolveChapterUrl,
+    resolveCoverFor,
+    resolveMangaUrl
+} from "../sources"
 import { scheduleChapterListRefresh } from "../background/chapter-cache"
 import { fetchCoverBlob } from "../background/covers"
 import type { HandlerMap } from "../background/handler-types"
@@ -26,6 +36,209 @@ const COVER_BACKFILL_BATCH = 20
 // doesn't loop forever. Cleared when a full backfill pass completes (remaining
 // hits 0).
 const coverBackfillAttempted = new Set<string>()
+
+// --- library:cleanup:scan / library:cleanup:apply -------------------------------
+//
+// Repairs library entries created by trackExternalChapter's fallback path (used
+// when a chapter capture can't resolve via the proper source adapter): those
+// records never set sourceMangaId, and get a throwaway deriveSlug(chapterUrl)
+// title. This tool finds them, re-resolves the real manga via a MANGA-LEVEL
+// lookup (adapter.parseMangaUrl - zero network - or, failing that, a chapter-page
+// scrape), groups duplicates of the same underlying title together, and merges
+// them into one properly-linked record.
+
+type CleanupMatchedBy = "adapter" | "pathname" | "scrape"
+
+type CleanupCandidateRecord = {
+    mangaId: string
+    title: string
+    sourceUrl: string
+    matchedChapterNumbers: number[]
+    matchedBy: CleanupMatchedBy
+}
+
+type CleanupGroup = {
+    canonicalId: string
+    canonicalTitle: string
+    canonicalCoverUrl?: string
+    sourceId: string
+    sourceMangaId: string
+    mangaUrl: string
+    representativeChapterUrl: string
+    inLibrary: boolean
+    // true when canonicalId === the sole candidate's own id: an already-correctly-
+    // keyed record that's only missing sourceMangaId, not a real duplicate group.
+    selfHeal: boolean
+    records: CleanupCandidateRecord[]
+    // Set when this group had more than GROUP_RECORDS_CAP members - the remainder
+    // isn't dropped, it simply still fails the fallback predicate and gets picked
+    // up on a later re-scan.
+    overflowCount?: number
+}
+
+type CleanupUnresolved = { mangaId: string; title: string; sourceId: string; sourceUrl: string; reason: string }
+
+type CleanupScanResult = { groups: CleanupGroup[]; unresolved: CleanupUnresolved[]; candidateCount: number }
+
+type CleanupApplyResponse = {
+    merged: number
+    groups: number
+    enriched: number
+    skippedStale: number
+    skippedUnverified: number
+    failed: Array<{ canonicalId: string; reason: string }>
+    backupId: number
+}
+
+// Identifies a fallback-created record: missing sourceMangaId (every real
+// adapter-resolved record sets it via saveResolvedChapter), not a bundled seed
+// entry, not something the user deliberately set to manual tracking, and whose
+// source is currently registered (an unregistered source can't be re-resolved at
+// all, so it doesn't qualify as a candidate FOR MERGING even though the scan's
+// broader unresolved-listing predicate still surfaces it to the user).
+export function isFallbackCreated(m: LibraryManga): boolean {
+    if (m.sourceMangaId !== undefined) return false
+    if (m.id.startsWith("seed-")) return false
+    if (m.manualTracking) return false
+    return sourceRegistry.get(m.sourceId) !== undefined
+}
+
+function pathnameOf(url: string): string | null {
+    try {
+        return new URL(url).pathname
+    } catch {
+        return null
+    }
+}
+
+async function matchedChapterNumbersFor(mangaId: string): Promise<number[]> {
+    const chapters = await db.chapters.where("mangaId").equals(mangaId).sortBy("sortKey")
+    return chapters.map(c => c.sortKey).filter(n => Number.isFinite(n))
+}
+
+const CLEANUP_GROUP_RECORDS_CAP = 200
+
+// Resolves ONE candidate as a new group's representative, then greedily folds in
+// every other same-source, not-yet-grouped sibling whose own stored chapter URL's
+// pathname appears in the representative's freshly-resolved canonical chapter list
+// (the "50-to-1" grouping optimization - avoids a network round trip per duplicate).
+// Mutates `grouped` to mark every sibling absorbed this way. Returns undefined when
+// this candidate itself can't be resolved at all (network/parse failure) - the
+// caller reports it as unresolved rather than silently dropping it.
+async function resolveGroupFor(
+    m: LibraryManga,
+    siblings: readonly LibraryManga[],
+    grouped: Set<string>,
+    sourceId: string
+): Promise<CleanupGroup | undefined> {
+    const adapter = sourceRegistry.get(sourceId)
+    if (!adapter) return undefined
+    let repUrl: URL
+    try {
+        repUrl = new URL(m.sourceUrl)
+    } catch {
+        return undefined
+    }
+
+    let sourceMangaId: string | undefined
+    let mangaUrl: string | undefined
+    let matchedBy: "adapter" | "scrape" = "adapter"
+    let scrapeResolved: Awaited<ReturnType<typeof resolveChapterUrl>> | undefined
+
+    const parsed = adapter.parseMangaUrl?.(repUrl) ?? null
+    if (parsed) {
+        sourceMangaId = parsed.sourceMangaId
+        mangaUrl = parsed.mangaUrl
+    } else {
+        // No zero-network path available for this adapter - fall back to the full
+        // page-scrape resolveChapterUrl uses. This is exactly the call that already
+        // failed once at capture time for many of these records, so it may fail
+        // again; that's fine, it just lands this candidate in `unresolved`.
+        try {
+            scrapeResolved = await resolveChapterUrl(m.sourceUrl)
+            sourceMangaId = scrapeResolved.manga.sourceMangaId
+            mangaUrl = scrapeResolved.manga.url
+            matchedBy = "scrape"
+        } catch {
+            return undefined
+        }
+    }
+
+    const canonicalId = `${sourceId}:manga:${sourceMangaId}`
+    let canonicalChapters: ChapterRecord[] = []
+    try {
+        canonicalChapters = await listChaptersBySource(sourceId, sourceMangaId, mangaUrl)
+    } catch {
+        canonicalChapters = []
+    }
+    if (canonicalChapters.length === 0 && scrapeResolved) canonicalChapters = [scrapeResolved.chapter]
+
+    let canonicalTitle: string
+    let canonicalCoverUrl: string | undefined
+    if (scrapeResolved) {
+        // A successful scrape already carries the real title/cover - use them.
+        canonicalTitle = scrapeResolved.manga.manga.title
+        canonicalCoverUrl = scrapeResolved.manga.manga.coverUrl
+    } else {
+        // parseMangaUrl gives no title/cover (by design - it's network-free), so
+        // derive a readable placeholder the same way trackExternalChapter's own
+        // from-scratch manga creation does, and best-effort fetch a real cover.
+        canonicalTitle = humanizeSlug(sourceMangaId) || sourceMangaId
+        canonicalCoverUrl = await resolveCoverFor({ sourceId, sourceMangaId, mangaUrl }).catch(() => undefined)
+    }
+
+    const records: CleanupCandidateRecord[] = [
+        {
+            mangaId: m.id,
+            title: m.title,
+            sourceUrl: m.sourceUrl,
+            matchedChapterNumbers: await matchedChapterNumbersFor(m.id),
+            matchedBy
+        }
+    ]
+
+    for (const o of siblings) {
+        if (grouped.has(o.id)) continue
+        const oPathname = pathnameOf(o.sourceUrl)
+        // Reject trivial/empty pathnames so e.g. two candidates that both stored "/"
+        // never spuriously match each other.
+        if (!oPathname || oPathname.length <= 2) continue
+        const hit = canonicalChapters.some(c => pathnameOf(c.url) === oPathname)
+        if (!hit) continue
+        grouped.add(o.id)
+        records.push({
+            mangaId: o.id,
+            title: o.title,
+            sourceUrl: o.sourceUrl,
+            matchedChapterNumbers: await matchedChapterNumbersFor(o.id),
+            matchedBy: "pathname"
+        })
+    }
+
+    const overflowCount = Math.max(0, records.length - CLEANUP_GROUP_RECORDS_CAP)
+    const cappedRecords = records.slice(0, CLEANUP_GROUP_RECORDS_CAP)
+    const inLibrary = (await db.manga.get(canonicalId)) !== undefined
+
+    return {
+        canonicalId,
+        canonicalTitle,
+        ...(canonicalCoverUrl ? { canonicalCoverUrl } : {}),
+        sourceId,
+        sourceMangaId,
+        mangaUrl,
+        representativeChapterUrl: m.sourceUrl,
+        inLibrary,
+        selfHeal: records.length === 1 && records[0]!.mangaId === canonicalId,
+        records: cappedRecords,
+        ...(overflowCount > 0 ? { overflowCount } : {})
+    }
+}
+
+// Only one apply run at a time - mirrors updates-sources.ts's updateCheckRunning /
+// genreBackfillRunning module-scope guard pattern. This mutates and deletes real
+// library rows, so two overlapping applies racing on the same groups is worth
+// blocking outright rather than trying to make them safely interleave.
+let cleanupApplyRunning = false
 
 export const libraryHandlers: HandlerMap = {
     "library:list": async () => {
@@ -91,6 +304,319 @@ export const libraryHandlers: HandlerMap = {
 
     "library:merge": async request => {
         return mergeMangaRecords(request.primaryId, request.loserIds)
+    },
+
+    // Read-only: no db.manga/db.chapters/etc writes, only reads plus network GETs for
+    // resolution (adapter.parseMangaUrl is network-free; the scrape fallback and
+    // listChaptersBySource are network reads that never persist anything here).
+    "library:cleanup:scan": async () => {
+        const allManga = await db.manga.toArray()
+        // Broadest possible candidate set first (per the spec's grouping-optimization
+        // note): missing sourceMangaId, not a seed, not manually tracked. This is
+        // wider than isFallbackCreated (which also requires a currently-registered
+        // source) so a candidate whose source is retired/unregistered still gets
+        // listed under `unresolved` instead of silently vanishing from the scan.
+        const broadCandidates = allManga.filter(
+            m => m.sourceMangaId === undefined && !m.id.startsWith("seed-") && !m.manualTracking
+        )
+
+        const unresolved: CleanupUnresolved[] = []
+        const resolvable: LibraryManga[] = []
+        for (const m of broadCandidates) {
+            const adapter = sourceRegistry.get(m.sourceId)
+            if (!adapter) {
+                unresolved.push({
+                    mangaId: m.id,
+                    title: m.title,
+                    sourceId: m.sourceId,
+                    sourceUrl: m.sourceUrl,
+                    reason: "Source is not currently registered"
+                })
+                continue
+            }
+            let url: URL
+            try {
+                url = new URL(m.sourceUrl)
+            } catch {
+                unresolved.push({
+                    mangaId: m.id,
+                    title: m.title,
+                    sourceId: m.sourceId,
+                    sourceUrl: m.sourceUrl,
+                    reason: "Stored URL is invalid"
+                })
+                continue
+            }
+            if (adapter.match(url) !== "chapter") {
+                unresolved.push({
+                    mangaId: m.id,
+                    title: m.title,
+                    sourceId: m.sourceId,
+                    sourceUrl: m.sourceUrl,
+                    reason: "URL is no longer recognized as a chapter by this source"
+                })
+                continue
+            }
+            resolvable.push(m)
+        }
+
+        // Per-sourceId strictly serial, up to 4 different sources resolving
+        // concurrently - same worker-pool shape as library:covers:backfill above.
+        const groups: CleanupGroup[] = []
+        const bySource = Map.groupBy(resolvable, m => m.sourceId)
+        const queue = [...bySource.entries()]
+        await Promise.all(
+            Array.from({ length: Math.min(4, queue.length) }, async () => {
+                for (let entry = queue.shift(); entry; entry = queue.shift()) {
+                    const [sourceId, mangas] = entry
+                    const grouped = new Set<string>()
+                    for (const m of mangas) {
+                        if (grouped.has(m.id)) continue
+                        grouped.add(m.id)
+                        const group = await resolveGroupFor(m, mangas, grouped, sourceId)
+                        if (group) {
+                            groups.push(group)
+                        } else {
+                            unresolved.push({
+                                mangaId: m.id,
+                                title: m.title,
+                                sourceId,
+                                sourceUrl: m.sourceUrl,
+                                reason: "Could not resolve this manga (network or parsing failure)"
+                            })
+                        }
+                    }
+                }
+            })
+        )
+
+        return { groups, unresolved, candidateCount: resolvable.length } satisfies CleanupScanResult
+    },
+
+    "library:cleanup:apply": async request => {
+        if (cleanupApplyRunning) {
+            throw new SourceError("invalid-input", "A cleanup apply is already running")
+        }
+        cleanupApplyRunning = true
+        try {
+            // Backup first, once per apply call (not per group) - required, not
+            // best-effort: if this throws, nothing below runs.
+            const backupId = await createBackup("pre-cleanup")
+
+            let merged = 0
+            let groupsApplied = 0
+            let enriched = 0
+            let skippedStale = 0
+            let skippedUnverified = 0
+            const failed: Array<{ canonicalId: string; reason: string }> = []
+
+            for (const group of request.groups) {
+                try {
+                    // 1. Re-validate every loser still exists and still qualifies -
+                    // someone may have fixed it manually, or a concurrent operation
+                    // touched it, since the scan ran.
+                    const validated: Array<{ mangaId: string; matchedBy: CleanupMatchedBy }> = []
+                    for (const loser of group.losers) {
+                        if (loser.mangaId === group.canonicalId) continue
+                        const rec = await db.manga.get(loser.mangaId)
+                        if (!rec || !isFallbackCreated(rec)) {
+                            skippedStale += 1
+                            continue
+                        }
+                        validated.push(loser)
+                    }
+
+                    // 2. Re-resolve the representative via the SAME adapter the record
+                    // claims (sourceRegistry.get(group.sourceId), never a registry-wide
+                    // match() lookup, which could silently pick a different adapter).
+                    const adapter = sourceRegistry.get(group.sourceId)
+                    if (!adapter) {
+                        failed.push({ canonicalId: group.canonicalId, reason: "Source is not currently registered" })
+                        continue
+                    }
+                    let repUrl: URL
+                    try {
+                        repUrl = new URL(group.representativeChapterUrl)
+                    } catch {
+                        failed.push({ canonicalId: group.canonicalId, reason: "stale-resolution" })
+                        continue
+                    }
+
+                    let sourceMangaId: string
+                    let mangaUrl: string
+                    let scrapeResolved: Awaited<ReturnType<typeof resolveChapterUrl>> | undefined
+                    const parsed = adapter.parseMangaUrl?.(repUrl) ?? null
+                    if (parsed) {
+                        sourceMangaId = parsed.sourceMangaId
+                        mangaUrl = parsed.mangaUrl
+                    } else {
+                        try {
+                            scrapeResolved = await resolveChapterUrl(group.representativeChapterUrl)
+                            sourceMangaId = scrapeResolved.manga.sourceMangaId
+                            mangaUrl = scrapeResolved.manga.url
+                        } catch (error) {
+                            failed.push({
+                                canonicalId: group.canonicalId,
+                                reason: error instanceof Error ? error.message : "Could not re-resolve this manga"
+                            })
+                            continue
+                        }
+                    }
+
+                    // Cross-check: a slug drift between scan and apply (or an adapter
+                    // whose match()/id scheme changed) means the whole group is stale -
+                    // skip it entirely rather than partially applying it.
+                    const freshCanonicalId = `${group.sourceId}:manga:${sourceMangaId}`
+                    if (freshCanonicalId !== group.canonicalId) {
+                        failed.push({ canonicalId: group.canonicalId, reason: "stale-resolution" })
+                        continue
+                    }
+
+                    // 4. Fetch the canonical chapter list fresh (manga-page-only, never
+                    // bulkPut here - saveResolvedChapter's own transaction does that).
+                    let canonicalChapters: ChapterRecord[] = []
+                    try {
+                        canonicalChapters = await listChaptersBySource(group.sourceId, sourceMangaId, mangaUrl)
+                    } catch {
+                        canonicalChapters = []
+                    }
+                    if (canonicalChapters.length === 0 && scrapeResolved) canonicalChapters = [scrapeResolved.chapter]
+                    const representativeChapter = canonicalChapters.reduce<ChapterRecord | undefined>(
+                        (max, c) => (!max || c.sortKey > max.sortKey ? c : max),
+                        undefined
+                    )
+                    if (!representativeChapter) {
+                        failed.push({
+                            canonicalId: group.canonicalId,
+                            reason: "No chapters could be resolved for this manga"
+                        })
+                        continue
+                    }
+
+                    // 5. Verify pathname/scrape-tagged losers against the fresh list -
+                    // "adapter"-tagged losers are a deterministic, network-free parse of
+                    // their own stored URL and are trusted without re-verification.
+                    const verifiedLoserIds: string[] = []
+                    for (const loser of validated) {
+                        if (loser.matchedBy === "pathname") {
+                            const rec = await db.manga.get(loser.mangaId)
+                            const p = rec ? pathnameOf(rec.sourceUrl) : null
+                            const ok = p !== null && canonicalChapters.some(c => pathnameOf(c.url) === p)
+                            if (!ok) {
+                                skippedUnverified += 1
+                                continue
+                            }
+                            verifiedLoserIds.push(loser.mangaId)
+                        } else if (loser.matchedBy === "scrape") {
+                            // Scrape-resolved losers were each individually resolved, not
+                            // group-inferred - re-run their OWN resolution rather than
+                            // trusting stale scan data, since scrape resolution can be
+                            // flaky/inconsistent between runs.
+                            const rec = await db.manga.get(loser.mangaId)
+                            if (!rec) {
+                                skippedUnverified += 1
+                                continue
+                            }
+                            try {
+                                const reconfirmed = await resolveChapterUrl(rec.sourceUrl)
+                                if (reconfirmed.manga.manga.id !== group.canonicalId) {
+                                    skippedUnverified += 1
+                                    continue
+                                }
+                            } catch {
+                                skippedUnverified += 1
+                                continue
+                            }
+                            verifiedLoserIds.push(loser.mangaId)
+                        } else {
+                            verifiedLoserIds.push(loser.mangaId)
+                        }
+                    }
+
+                    // 3. Ensure the canonical manga row exists - create or enrich-in-place.
+                    // saveResolvedChapter's existing merge-safe field behavior makes the
+                    // same call correct for both cases.
+                    const existedBefore = (await db.manga.get(group.canonicalId)) !== undefined
+                    let title: string
+                    let coverUrl: string | undefined
+                    if (scrapeResolved) {
+                        title = scrapeResolved.manga.manga.title
+                        coverUrl = scrapeResolved.manga.manga.coverUrl
+                    } else {
+                        title = humanizeSlug(sourceMangaId) || sourceMangaId
+                        coverUrl = await resolveCoverFor({
+                            sourceId: group.sourceId,
+                            sourceMangaId,
+                            mangaUrl
+                        }).catch(() => undefined)
+                    }
+                    const now = Date.now()
+                    const mangaRecord: MangaRecord = {
+                        id: group.canonicalId,
+                        title,
+                        normalizedTitle: title.toLocaleLowerCase("en"),
+                        ...(coverUrl ? { coverUrl } : {}),
+                        authors: [],
+                        status: "unknown",
+                        addedAt: now,
+                        updatedAt: now
+                    }
+                    await saveResolvedChapter({
+                        manga: mangaRecord,
+                        chapter: representativeChapter,
+                        sourceLink: {
+                            mangaId: group.canonicalId,
+                            sourceId: group.sourceId,
+                            sourceMangaId,
+                            url: mangaUrl,
+                            title,
+                            addedAt: now,
+                            updatedAt: now
+                        },
+                        chapters: canonicalChapters
+                    })
+                    // Best-effort cover cache, mirroring capture.ts's successful-capture
+                    // path - a cover failure must never fail the whole group.
+                    if (coverUrl) {
+                        try {
+                            const blob = await fetchCoverBlob(coverUrl)
+                            if (blob) await cacheCover(group.canonicalId, blob)
+                        } catch (error) {
+                            console.warn("[AMR] Cleanup cover cache failed", {
+                                canonicalId: group.canonicalId,
+                                error
+                            })
+                        }
+                    }
+
+                    // 6+7+8: remap + merge + the dangling-id fixup, all inside one
+                    // parent transaction (see applyCleanupGroup in database.ts).
+                    if (verifiedLoserIds.length > 0) {
+                        await applyCleanupGroup(group.canonicalId, verifiedLoserIds, canonicalChapters)
+                        merged += verifiedLoserIds.length
+                    }
+                    groupsApplied += 1
+                    if (existedBefore) enriched += 1
+                } catch (error) {
+                    failed.push({
+                        canonicalId: group.canonicalId,
+                        reason: error instanceof Error ? error.message : "Unknown error"
+                    })
+                }
+            }
+
+            return {
+                merged,
+                groups: groupsApplied,
+                enriched,
+                skippedStale,
+                skippedUnverified,
+                failed,
+                backupId
+            } satisfies CleanupApplyResponse
+        } finally {
+            cleanupApplyRunning = false
+        }
     },
 
     "library:numbers": async request => {

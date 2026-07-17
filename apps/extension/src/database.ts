@@ -109,7 +109,7 @@ export type AnalyticsEvent = {
 export type LibraryBackup = {
     id?: number
     createdAt: number
-    reason: "pre-import" | "pre-sync-pull" | "pre-clear"
+    reason: "pre-import" | "pre-sync-pull" | "pre-clear" | "pre-cleanup"
     envelope: Awaited<ReturnType<typeof exportDatabase>>
 }
 
@@ -559,6 +559,154 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
     )
 }
 
+// Re-points one fallback-created "loser" manga's read progress/history onto the
+// canonical chapter list, per CHAPTER rather than blindly re-pointing everything to a
+// single chapter id - trackExternalChapter can attach a SECOND (or later) external
+// chapter read to an already-fallback-created manga record (see its direct-id-lookup
+// and slug-match branches), so a loser can carry more than one tracked chapter. Used
+// by the library cleanup tool (handlers/library.ts) as part of applyCleanupGroup,
+// always inside that function's own transaction - never call this outside a
+// transaction that also covers db.progress/db.historyEvents.
+// Returns the canonical chapters this loser's ext chapters were actually translated
+// onto (may repeat across losers/chapters) - fixupDanglingChapterIds uses this as a
+// conservative fallback pool instead of the whole source's back catalogue.
+export async function remapExternalChapterProgress(
+    loserId: string,
+    canonicalChapters: ChapterRecord[]
+): Promise<ChapterRecord[]> {
+    const pathnameOf = (url: string): string | null => {
+        try {
+            return new URL(url).pathname
+        } catch {
+            return null
+        }
+    }
+    const translated: ChapterRecord[] = []
+    const loserChapters = await db.chapters.where("mangaId").equals(loserId).toArray()
+    for (const extChapter of loserChapters) {
+        const extPathname = pathnameOf(extChapter.url)
+        const canonical =
+            (extChapter.sortKey > 0 ? canonicalChapters.find(c => c.sortKey === extChapter.sortKey) : undefined) ??
+            (extPathname ? canonicalChapters.find(c => pathnameOf(c.url) === extPathname) : undefined)
+        // No canonical match for this specific ext chapter - leave its progress/history
+        // alone. mergeMangaRecords's own by-mangaId re-point still runs afterwards, so
+        // the row survives (re-pointed to the primary's mangaId) but keeps pointing at
+        // a chapter id that mergeMangaRecords is about to delete - an accepted, already-
+        // documented gap (dangling chapterId), not something this remap solves.
+        if (!canonical) continue
+        translated.push(canonical)
+
+        const extProgress = await db.progress.get(extChapter.id)
+        if (extProgress) {
+            // progress is keyed by chapterId alone, so re-pointing to the canonical
+            // chapter's id is a delete-then-put, not a modify() - and two different
+            // losers in the same group can both map onto the SAME canonical chapter
+            // (e.g. two garbage records that both tracked "chapter 5"), so a row may
+            // already exist there from an earlier loser processed this same call.
+            const existingCanonical = await db.progress.get(canonical.id)
+            if (existingCanonical) {
+                const newer = extProgress.updatedAt >= existingCanonical.updatedAt ? extProgress : existingCanonical
+                await db.progress.put({
+                    ...newer,
+                    chapterId: canonical.id,
+                    mangaId: existingCanonical.mangaId,
+                    completed: existingCanonical.completed || extProgress.completed
+                })
+            } else {
+                await db.progress.put({ ...extProgress, chapterId: canonical.id })
+            }
+            await db.progress.delete(extChapter.id)
+        }
+
+        // historyEvents aren't uniquely keyed by chapterId, so every matching row is
+        // simply re-pointed - scoped to THIS specific ext chapter id, not the whole loser.
+        await db.historyEvents.where("chapterId").equals(extChapter.id).modify({ chapterId: canonical.id })
+    }
+    return translated
+}
+
+// After a merge, a manga's lastReadChapterId/latestChapterId may point at a chapter row
+// that no longer exists - e.g. mergeMangaRecords's same-source-max logic adopted a
+// loser's dangling ext-chapter id (deleted along with the rest of that loser's chapters).
+// Checked unconditionally (by actual row existence), not gated on "did the chapter
+// number increase" - a review of an earlier draft rejected that heuristic because it
+// misses the exact case this exists to fix: an id-only carry with no number change.
+// `translatedChapters` is the (possibly empty, possibly repeat-containing) set of
+// canonical chapters remapExternalChapterProgress actually translated ext chapters
+// onto for this group - used as the fallback pool when no exact chapter-number match
+// exists, deliberately narrower than the full canonicalChapters catalogue so a title
+// with no matchable number doesn't get pointed at some arbitrary, possibly very
+// recent, chapter it was never actually confirmed to have reached.
+export async function fixupDanglingChapterIds(
+    mangaId: string,
+    canonicalChapters: ChapterRecord[],
+    translatedChapters: ChapterRecord[]
+): Promise<void> {
+    const merged = await db.manga.get(mangaId)
+    if (!merged) return
+    const maxTranslated = translatedChapters.reduce<ChapterRecord | undefined>(
+        (max, c) => (!max || c.sortKey > max.sortKey ? c : max),
+        undefined
+    )
+    const patch: { lastReadChapterId?: string | undefined; latestChapterId?: string | undefined } = {}
+    if (merged.lastReadChapterId !== undefined && (await db.chapters.get(merged.lastReadChapterId)) === undefined) {
+        const match = canonicalChapters.find(c => c.sortKey === merged.lastReadChapterNumber) ?? maxTranslated
+        // Explicit undefined clears a dangling id with no replacement available -
+        // lastReadChapterNumber (the domain-independent source of truth per the
+        // LibraryManga field comments) is deliberately left untouched either way.
+        patch.lastReadChapterId = match?.id
+    }
+    if (merged.latestChapterId !== undefined && (await db.chapters.get(merged.latestChapterId)) === undefined) {
+        const match = canonicalChapters.find(c => c.sortKey === merged.latestChapterNumber) ?? maxTranslated
+        patch.latestChapterId = match?.id
+    }
+    if (Object.keys(patch).length > 0) {
+        await db.manga.update(mangaId, patch as Partial<LibraryManga>)
+    }
+}
+
+// Applies one cleanup group: remaps each loser's external-chapter progress/history
+// onto the freshly-resolved canonical chapter list, merges the losers into the
+// canonical manga record, then fixes up any dangling chapter-id left by the merge -
+// all inside ONE parent transaction, so a concurrent capture/track for a
+// soon-to-be-deleted loser can't slip data in between steps and get silently dropped.
+//
+// mergeMangaRecords opens its own db.transaction("rw", [...]) internally using the
+// exact same 8 tables (in the same "rw" mode) as the outer transaction below. Dexie
+// tracks the "current transaction" via an ambient zone (PSD), so a nested
+// db.transaction() call whose tables/mode are a subset of the already-open outer
+// transaction joins it instead of opening a second, independent one - see Dexie's
+// transaction-scope docs. database.test.ts's cleanup-apply tests exercise this nesting
+// directly against fake-indexeddb to confirm it doesn't throw in practice.
+export async function applyCleanupGroup(
+    canonicalId: string,
+    loserIds: string[],
+    canonicalChapters: ChapterRecord[]
+): Promise<LibraryManga> {
+    return db.transaction(
+        "rw",
+        [
+            db.manga,
+            db.sourceLinks,
+            db.chapters,
+            db.progress,
+            db.historyEvents,
+            db.downloads,
+            db.pageBookmarks,
+            db.covers
+        ],
+        async () => {
+            const translatedChapters: ChapterRecord[] = []
+            for (const loserId of loserIds) {
+                translatedChapters.push(...(await remapExternalChapterProgress(loserId, canonicalChapters)))
+            }
+            const merged = await mergeMangaRecords(canonicalId, loserIds)
+            await fixupDanglingChapterIds(merged.id, canonicalChapters, translatedChapters)
+            return (await db.manga.get(merged.id)) ?? merged
+        }
+    )
+}
+
 export async function saveResolvedChapter(input: {
     manga: MangaRecord
     chapter: ChapterRecord
@@ -658,7 +806,11 @@ function startsWithUrlPrefix(url: string, prefix: string): boolean {
     return boundary === undefined || boundary === "/"
 }
 
-function humanizeSlug(slug: string): string {
+// Exported for handlers/library.ts's cleanup tool, which uses this to derive a
+// readable placeholder title for a canonical manga record when the resolution
+// ladder only has a bare sourceMangaId slug (no scraped title) - see
+// resolveGroupFor in handlers/library.ts.
+export function humanizeSlug(slug: string): string {
     return slug
         .replace(/[-_]+/g, " ")
         .replace(/\b\w/g, c => c.toUpperCase())
@@ -1158,14 +1310,15 @@ const MAX_BACKUPS = 3
 // Automatic, silent safety-net snapshot taken before any import/sync-pull mutation
 // (see the data:import and sync:pull handlers in handlers/data-sync-settings.ts) so
 // a bad import/merge can be undone. No user prompt - zero friction by design.
-export async function createBackup(reason: LibraryBackup["reason"]): Promise<void> {
+export async function createBackup(reason: LibraryBackup["reason"]): Promise<number> {
     const envelope = await exportDatabase()
-    await db.backups.add({ createdAt: Date.now(), reason, envelope })
+    const id = await db.backups.add({ createdAt: Date.now(), reason, envelope })
     const all = await db.backups.orderBy("createdAt").reverse().toArray()
     const stale = all.slice(MAX_BACKUPS)
     if (stale.length > 0) {
         await db.backups.bulkDelete(stale.map(b => b.id!))
     }
+    return id!
 }
 
 export async function listBackups(): Promise<BackupSummary[]> {

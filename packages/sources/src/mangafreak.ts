@@ -271,6 +271,17 @@ export const mangafreakAdapter: SourceAdapter = {
         }
     },
 
+    // Derive manga ID + list URL from a chapter URL without any network call - used to
+    // prime the chapter list for panel prev/next when resolveChapter fails (bot-block),
+    // and by the library cleanup tool to re-group/re-link fallback-created records
+    // without re-scraping chapter images (see handlers/library.ts).
+    parseMangaUrl(url: URL): { sourceMangaId: string; mangaUrl: string } | null {
+        const parts = matchChapterParts(url)
+        if (!parts) return null
+        const origin = hostOrigin(url)
+        return { sourceMangaId: parts.slug, mangaUrl: `${origin}/Manga/${parts.slug}` }
+    },
+
     async resolveChapter(input: ResolveChapterInput, context: SourceContext): Promise<ResolvedChapter> {
         if (!input.url) throw new SourceError("invalid-input", "A chapter URL is required")
         const parts = matchChapterParts(input.url)

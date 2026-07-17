@@ -28,6 +28,30 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         primaryId: z.string().min(1),
         loserIds: z.array(z.string().min(1)).min(1).max(50)
     }),
+    z.object({ type: z.literal("library:cleanup:scan") }),
+    z.object({
+        type: z.literal("library:cleanup:apply"),
+        groups: z
+            .array(
+                z.object({
+                    canonicalId: z.string().min(1),
+                    sourceId: z.string().min(1),
+                    sourceMangaId: z.string().min(1),
+                    mangaUrl: z.string(),
+                    representativeChapterUrl: z.string(),
+                    losers: z
+                        .array(
+                            z.object({
+                                mangaId: z.string().min(1),
+                                matchedBy: z.enum(["adapter", "pathname", "scrape"])
+                            })
+                        )
+                        .max(200)
+                })
+            )
+            .min(1)
+            .max(100)
+    }),
     z.object({ type: z.literal("library:relink"), mangaId: z.string().min(1), url: z.url() }),
     z.object({ type: z.literal("library:link-url"), mangaId: z.string().min(1), mangaUrl: z.url() }),
     z.object({

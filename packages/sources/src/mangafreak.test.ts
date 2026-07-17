@@ -141,6 +141,27 @@ describe("mangafreakAdapter.resolveChapter", () => {
     })
 })
 
+describe("mangafreakAdapter.parseMangaUrl", () => {
+    it("derives the manga slug and list URL from a chapter URL without any network call", () => {
+        const result = mangafreakAdapter.parseMangaUrl!(new URL(CHAPTER_URL))
+        expect(result).toEqual({ sourceMangaId: MANGA_SLUG, mangaUrl: MANGA_URL })
+    })
+
+    it("preserves the mirror host (ww1/ww2/...) the chapter URL was on", () => {
+        const mirrorChapterUrl = CHAPTER_URL.replace(ORIGIN, "https://ww5.mangafreak.me")
+        const result = mangafreakAdapter.parseMangaUrl!(new URL(mirrorChapterUrl))
+        expect(result).toEqual({ sourceMangaId: MANGA_SLUG, mangaUrl: `https://ww5.mangafreak.me/Manga/${MANGA_SLUG}` })
+    })
+
+    it("returns null for a manga (non-chapter) URL", () => {
+        expect(mangafreakAdapter.parseMangaUrl!(new URL(MANGA_URL))).toBeNull()
+    })
+
+    it("returns null for a foreign URL", () => {
+        expect(mangafreakAdapter.parseMangaUrl!(new URL("https://not-mangafreak.me/Read1_Foo_1"))).toBeNull()
+    })
+})
+
 describe("mangafreakAdapter.search", () => {
     it("prefers a real per-result thumbnail, falling back to the blind guess when absent", async () => {
         const requests: string[] = []
