@@ -257,12 +257,14 @@ export async function getCachedCover(mangaId: string): Promise<Blob | undefined>
 
 // Batched lookup for loading a whole library's covers at once - one IndexedDB
 // round-trip instead of one per manga, which matters once the library has
-// hundreds of entries.
-export async function getCachedCovers(mangaIds: readonly string[]): Promise<Map<string, Blob>> {
+// hundreds of entries. Returns the full cover rows (blob + cachedAt) so the
+// UI can tell a re-cached blob apart from an unchanged one (capture.ts
+// re-caches the cover on every successful capture) without comparing bytes.
+export async function getCachedCovers(mangaIds: readonly string[]): Promise<Map<string, CoverCacheRecord>> {
     const records = await db.covers.bulkGet([...mangaIds])
-    const out = new Map<string, Blob>()
+    const out = new Map<string, CoverCacheRecord>()
     records.forEach((record, i) => {
-        if (record) out.set(mangaIds[i]!, record.blob)
+        if (record) out.set(mangaIds[i]!, record)
     })
     return out
 }

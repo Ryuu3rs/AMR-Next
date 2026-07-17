@@ -137,6 +137,12 @@
     }
     let failedCovers = $state<Set<string>>(new Set())
     let coverSrcs = $state<Record<string, string>>({})
+    // cachedAt of the covers-table row each entry in coverSrcs was created from -
+    // lets loadCachedCovers detect that a blob was re-cached (capture.ts rewrites
+    // the cover on every successful capture) and revoke+recreate just that one
+    // object URL instead of keeping a stale image forever. Plain object, not
+    // $state: only read/written inside loadCachedCovers, never rendered.
+    let coverCachedAt: Record<string, number> = {}
     let refreshingCovers = $state(false)
 
     let syncStatus = $state<SyncStatus | undefined>()
@@ -602,19 +608,38 @@
     // prior behavior) meant a live-triggered refresh() revoked every cover's
     // object URL right as it reassigned coverSrcs, blanking the whole grid for a
     // frame even though nothing about the covers actually changed.
+    // Also compares cachedAt per id: capture.ts re-caches a manga's cover blob on
+    // every successful chapter capture (not just when uncached), so an unchanged
+    // mangaId can still point at stale image bytes. When cachedAt has moved, the
+    // existing object URL is revoked and recreated from the fresh blob; ids whose
+    // cachedAt is unchanged keep their existing URL untouched, same as before.
     async function loadCachedCovers() {
-        const blobs = await getCachedCovers(library.map(m => m.id))
+        const records = await getCachedCovers(library.map(m => m.id))
         const next: Record<string, string> = {}
-        for (const [mangaId, blob] of blobs) {
-            next[mangaId] = coverSrcs[mangaId] ?? URL.createObjectURL(blob)
+        const nextCachedAt: Record<string, number> = {}
+        // Revoke only after coverSrcs points at the replacement URLs, so no
+        // in-between render can hold a revoked URL as an img src.
+        const toRevoke: string[] = []
+        for (const [mangaId, record] of records) {
+            const existing = coverSrcs[mangaId]
+            if (existing !== undefined && coverCachedAt[mangaId] === record.cachedAt) {
+                next[mangaId] = existing
+            } else {
+                if (existing !== undefined) toRevoke.push(existing)
+                next[mangaId] = URL.createObjectURL(record.blob)
+            }
+            nextCachedAt[mangaId] = record.cachedAt
         }
         for (const [mangaId, url] of Object.entries(coverSrcs)) {
-            if (!(mangaId in next)) URL.revokeObjectURL(url)
+            if (!(mangaId in next)) toRevoke.push(url)
         }
         coverSrcs = next
+        coverCachedAt = nextCachedAt
+        for (const url of toRevoke) URL.revokeObjectURL(url)
         // A cached blob now exists for these ids - clear any stale "failed to load"
         // flag so a previously-broken remote cover doesn't stay permanently blanked
-        // once a cached blob has been backfilled.
+        // once a cached blob has been backfilled (or, now, re-cached with a working
+        // image after previously failing).
         if (failedCovers.size > 0) {
             const cleared = new Set(failedCovers)
             let changed = false
