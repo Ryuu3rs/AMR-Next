@@ -22,7 +22,7 @@ permissions:
     pull-requests: write
 
 concurrency:
-    group: release-please-main
+    group: release-please-main-v2
     cancel-in-progress: false
 
 jobs:
