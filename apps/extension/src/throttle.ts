@@ -3,8 +3,10 @@
 // live-bus event) on every single image `onload`. Continuous-mode images can
 // load out of order (lazy loading), so this tracks the MAX pageIndex seen
 // since the last flush - never "the last call's pageIndex" - and a
-// sticky-OR'd `completed` flag so a later, lower-index, not-completed call
-// can never regress an already-true completed signal.
+// sticky-OR'd completed flag so a lower-index call inside the same pending
+// window can never mask a completed signal within that window; regression
+// ACROSS flushes/chapter-sessions is prevented separately, at the DB layer
+// (saveProgress's completed ratchet).
 export function createProgressReporter(send: (payload: { pageIndex: number; completed: boolean }) => void): {
     report: (pageIndex: number, completed: boolean) => void
     flush: () => void
