@@ -474,6 +474,183 @@ describe("library:covers:backfill", () => {
         expect(cachedRow?.blob.type).toBe(fakeBlob.type)
         expect(cachedRow?.blob.size).toBe(fakeBlob.size)
     })
+
+    it("processes titles from two different sources in the same batch concurrently", async () => {
+        const { libraryHandlers } = await import("./library")
+
+        const mangadexManga: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:cross-a",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/cross-a",
+            coverUrl: undefined
+        }
+        const webtoonsManga: LibraryManga = {
+            ...manga,
+            id: "webtoons:manga:cross-b",
+            sourceId: "webtoons",
+            sourceUrl: "https://www.webtoons.com/en/x/y/ep-1/viewer?title_no=1&episode_no=1",
+            coverUrl: undefined
+        }
+        await db.manga.bulkPut([mangadexManga, webtoonsManga])
+
+        vi.mocked(resolveCoverFor).mockImplementation(async m => `https://cdn.example/${m.sourceId}.jpg`)
+        vi.mocked(fetchCoverBlob).mockResolvedValue(new Blob(["x"], { type: "image/jpeg" }))
+
+        const handler = libraryHandlers["library:covers:backfill"]!
+        const result = (await handler({ type: "library:covers:backfill" } as never, ctx)) as {
+            updated: number
+            remaining: number
+            total: number
+        }
+
+        // Both single-source-title groups get processed even though they're on
+        // different sources - cross-source concurrency doesn't skip either one.
+        expect(result.updated).toBe(2)
+        expect(await db.covers.get(mangadexManga.id)).toBeDefined()
+        expect(await db.covers.get(webtoonsManga.id)).toBeDefined()
+        const storedMangadex = await db.manga.get(mangadexManga.id)
+        const storedWebtoons = await db.manga.get(webtoonsManga.id)
+        expect(storedMangadex?.coverUrl).toBe("https://cdn.example/mangadex.jpg")
+        expect(storedWebtoons?.coverUrl).toBe("https://cdn.example/webtoons.jpg")
+    })
+})
+
+describe("library:covers:backfill targeted (mangaId)", () => {
+    it("processes only the requested manga even when other backfill-eligible titles exist", async () => {
+        const { libraryHandlers } = await import("./library")
+
+        const target: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:target",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/target",
+            coverUrl: undefined
+        }
+        const other: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:other",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/other",
+            coverUrl: undefined
+        }
+        await db.manga.bulkPut([target, other])
+
+        vi.mocked(resolveCoverFor).mockResolvedValue("https://cdn.example/cover.jpg")
+        vi.mocked(fetchCoverBlob).mockResolvedValue(new Blob(["x"], { type: "image/jpeg" }))
+
+        const handler = libraryHandlers["library:covers:backfill"]!
+        const result = (await handler({ type: "library:covers:backfill", mangaId: target.id } as never, ctx)) as {
+            updated: number
+            remaining: number
+            total: number
+        }
+
+        expect(result.total).toBe(1)
+        expect(resolveCoverFor).toHaveBeenCalledTimes(1)
+        expect(resolveCoverFor).toHaveBeenCalledWith(expect.objectContaining({ id: target.id }))
+        expect(await db.covers.get(target.id)).toBeDefined()
+        expect(await db.covers.get(other.id)).toBeUndefined()
+    })
+
+    it("does not clear coverBackfillAttempted for other ids even though it reports remaining: 0", async () => {
+        const { libraryHandlers } = await import("./library")
+
+        const attemptedFirst: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:attempted",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/attempted",
+            coverUrl: "https://cdn.example/attempted.jpg"
+        }
+        // Pad past the 20-item batch size so `remaining` stays > 0 after the full
+        // pass below - otherwise the full pass itself would clear the dedup Set
+        // and the "targeted call must not clear it" behavior wouldn't be exercised.
+        const padding: LibraryManga[] = Array.from({ length: 25 }, (_, i) => ({
+            ...manga,
+            id: `mangadex:manga:pad-${i}`,
+            sourceId: "mangadex",
+            sourceUrl: `https://mangadex.org/chapter/pad-${i}`,
+            coverUrl: `https://cdn.example/pad-${i}.jpg`
+        }))
+        const targetManga: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:targeted-other",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/targeted-other",
+            coverUrl: undefined
+        }
+        await db.manga.bulkPut([attemptedFirst, ...padding, targetManga])
+
+        vi.mocked(fetchCoverBlob).mockResolvedValue(undefined)
+        vi.mocked(resolveCoverFor).mockResolvedValue("https://cdn.example/fresh.jpg")
+
+        const handler = libraryHandlers["library:covers:backfill"]!
+        // Full pass: 26 candidates (attemptedFirst + 25 padding), batch is 20, so
+        // remaining stays > 0 and coverBackfillAttempted is NOT cleared by this pass.
+        const firstPass = (await handler({ type: "library:covers:backfill" } as never, ctx)) as {
+            remaining: number
+        }
+        expect(firstPass.remaining).toBeGreaterThan(0)
+
+        vi.mocked(fetchCoverBlob).mockClear()
+
+        // Targeted call for an unrelated manga reports remaining: 0 for itself, but
+        // must not clear the session-wide attempted set from the full pass above.
+        const targetedResult = (await handler(
+            { type: "library:covers:backfill", mangaId: targetManga.id } as never,
+            ctx
+        )) as { remaining: number; total: number }
+        expect(targetedResult.remaining).toBe(0)
+        expect(targetedResult.total).toBe(1)
+
+        vi.mocked(fetchCoverBlob).mockClear()
+
+        // A second full pass must still exclude attemptedFirst - it was never
+        // cleared by the targeted call in between.
+        await handler({ type: "library:covers:backfill" } as never, ctx)
+        expect(fetchCoverBlob).not.toHaveBeenCalledWith("https://cdn.example/attempted.jpg")
+    })
+
+    it("falls back to resolveCoverFor and updates coverUrl when the stored cover is dead", async () => {
+        const { libraryHandlers } = await import("./library")
+
+        const relinkedManga: LibraryManga = {
+            ...manga,
+            id: "webtoons:manga:relinked",
+            sourceId: "webtoons",
+            sourceMangaId: "123",
+            sourceUrl: "https://www.webtoons.com/en/x/y/ep-1/viewer?title_no=123&episode_no=1",
+            // Still carries the OLD dead source's coverUrl, as a title fresh off a
+            // relink would - this is what the targeted backfill exists to fix.
+            coverUrl: "https://dead-source.example/old-cover.jpg"
+        }
+        await db.manga.put(relinkedManga)
+
+        vi.mocked(fetchCoverBlob).mockImplementation(async (url: string) =>
+            url === "https://dead-source.example/old-cover.jpg"
+                ? undefined
+                : new Blob(["fresh"], { type: "image/jpeg" })
+        )
+        vi.mocked(resolveCoverFor).mockResolvedValue("https://live-source.example/fresh-cover.jpg")
+
+        const handler = libraryHandlers["library:covers:backfill"]!
+        const result = (await handler(
+            { type: "library:covers:backfill", mangaId: relinkedManga.id } as never,
+            ctx
+        )) as { updated: number }
+
+        expect(fetchCoverBlob).toHaveBeenCalledWith("https://dead-source.example/old-cover.jpg")
+        expect(resolveCoverFor).toHaveBeenCalledWith(expect.objectContaining({ id: relinkedManga.id }))
+        expect(fetchCoverBlob).toHaveBeenCalledWith("https://live-source.example/fresh-cover.jpg")
+        expect(result.updated).toBe(1)
+
+        const stored = await db.manga.get(relinkedManga.id)
+        expect(stored?.coverUrl).toBe("https://live-source.example/fresh-cover.jpg")
+
+        const cachedRow = await db.covers.get(relinkedManga.id)
+        expect(cachedRow?.blob.type).toBe("image/jpeg")
+    })
 })
 
 describe("library:dismiss", () => {
