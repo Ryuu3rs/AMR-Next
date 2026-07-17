@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import type { SourceManifest, SourceSearchResult } from "@amr/source-sdk"
+import { createOriginAllowlist, type SourceManifest, type SourceSearchResult } from "@amr/source-sdk"
 
 const manifest = (id: string): SourceManifest => ({
     id,
@@ -220,5 +220,45 @@ describe("searchMangaStreaming result filtering", () => {
         })
 
         expect(partials).toEqual([{ sourceId: "mangadex", titles: ["Attack on Titan"] }])
+    })
+})
+
+// Regression test for the bug where createSourceContext stripped every wildcard-scheme
+// SOURCE_ORIGINS entry before handing allowedOrigins to createBoundedRequestClient
+// ("*://*.mangaread.org/*", "*://*.mangafreak.me/*"). Since mangaread and mangafreak's
+// ONLY origin entries were wildcards, that filter left them with an empty effective
+// allowlist and every fetch for those sources threw invalid-input before any network
+// I/O. This sweep exercises the REAL SOURCE_ORIGINS array through the real origin-check
+// logic (createOriginAllowlist, exported from @amr/source-sdk's request.ts) for every
+// adapter actually registered in the source registry - the same check createSourceContext
+// now performs unfiltered.
+describe("SOURCE_ORIGINS + createOriginAllowlist covers every registered source adapter", () => {
+    it("accepts a request origin for every adapter's manifest.domains entry, including mangaread and mangafreak", async () => {
+        const { sourceAdapters } = await import("@amr/sources")
+        const { SOURCE_ORIGINS } = await import("./permissions")
+        const isOriginAllowed = createOriginAllowlist(SOURCE_ORIGINS)
+
+        const missing: string[] = []
+        for (const adapter of sourceAdapters) {
+            for (const domain of adapter.manifest.domains) {
+                // A manifest domain may itself be a wildcard subdomain entry (e.g.
+                // mangafreak's "*.mangafreak.me") - substitute a concrete subdomain
+                // label so the constructed URL is valid and still exercises the
+                // wildcard-matching branch of isOriginAllowed.
+                const host = domain.startsWith("*.") ? `sub${domain.slice(1)}` : domain
+                const origin = `https://${host}`
+                if (!isOriginAllowed(origin)) {
+                    missing.push(`${adapter.manifest.id}: origin "${origin}" (from domain "${domain}") was rejected`)
+                }
+            }
+        }
+
+        expect(missing).toEqual([])
+
+        const ids = sourceAdapters.map(adapter => adapter.manifest.id)
+        expect(ids).toContain("mangaread")
+        expect(ids).toContain("mangafreak")
+        expect(isOriginAllowed("https://mangaread.org")).toBe(true)
+        expect(isOriginAllowed("https://ww3.mangafreak.me")).toBe(true)
     })
 })

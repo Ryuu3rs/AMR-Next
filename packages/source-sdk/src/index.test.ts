@@ -4,6 +4,7 @@ import {
     SourceError,
     SourceRegistry,
     createBoundedRequestClient,
+    createOriginAllowlist,
     decodeHtmlEntities,
     matchesSourceDomain,
     type SourceAdapter
@@ -96,6 +97,61 @@ describe("createBoundedRequestClient", () => {
         await expect(
             client.getJson(new URL("https://api.example.test/value"), z.object({ value: z.number() }))
         ).rejects.toMatchObject({ code: "invalid-response" })
+    })
+})
+
+describe("createBoundedRequestClient wildcard host origins (mangaread/mangafreak fix)", () => {
+    // Regression test for the bug where mangaread/mangafreak's ONLY SOURCE_ORIGINS
+    // entries are wildcard host patterns ("*://*.mangafreak.me/*") - the old exact-
+    // origin Set built via `new URL(origin).origin` couldn't parse those at all, so
+    // every fetch for those sources threw invalid-input before any network I/O.
+    it("allows a subdomain mirror and the bare domain, rejects a lookalike and a non-http(s) scheme", async () => {
+        const client = createBoundedRequestClient({
+            fetch: async () => ({ ok: true, status: 200, text: async () => "mirror-body" }),
+            allowedOrigins: ["*://*.mangafreak.me/*"],
+            maxRequests: 10,
+            maxResponseBytes: 100,
+            timeoutMs: 100
+        })
+
+        await expect(client.getText(new URL("https://ww2.mangafreak.me/Manga/One-Piece"))).resolves.toBe("mirror-body")
+        await expect(client.getText(new URL("https://mangafreak.me/Manga/One-Piece"))).resolves.toBe("mirror-body")
+        await expect(client.getText(new URL("https://evilmangafreak.me/Manga/One-Piece"))).rejects.toMatchObject({
+            code: "invalid-input"
+        })
+        await expect(client.getText(new URL("file://mangafreak.me/x"))).rejects.toMatchObject({
+            code: "invalid-input"
+        })
+    })
+})
+
+describe("createOriginAllowlist", () => {
+    it("accepts exact origins for entries that are plain URL prefixes", () => {
+        const isAllowed = createOriginAllowlist(["https://mangadex.org/*"])
+        expect(isAllowed("https://mangadex.org")).toBe(true)
+        expect(isAllowed("https://evil.test")).toBe(false)
+    })
+
+    it("matches a wildcard host pattern against the bare domain and any subdomain, http/https only", () => {
+        const isAllowed = createOriginAllowlist(["*://*.mangafreak.me/*"])
+        expect(isAllowed("https://mangafreak.me")).toBe(true)
+        expect(isAllowed("https://ww1.mangafreak.me")).toBe(true)
+        expect(isAllowed("http://ww9.mangafreak.me")).toBe(true)
+    })
+
+    it("does not let a lookalike domain or a non-http(s) scheme pass the wildcard check", () => {
+        const isAllowed = createOriginAllowlist(["*://*.mangafreak.me/*"])
+        // "evilmangafreak.me" ends with "mangafreak.me" as a raw string, but not with
+        // the required ".mangafreak.me" dot-boundary, so it must NOT match.
+        expect(isAllowed("https://evilmangafreak.me")).toBe(false)
+        expect(isAllowed("file://mangafreak.me")).toBe(false)
+        expect(isAllowed("chrome-extension://mangafreak.me")).toBe(false)
+    })
+
+    it("covers mangaread.org via its wildcard-only SOURCE_ORIGINS entry (the bug this fix targets)", () => {
+        const isAllowed = createOriginAllowlist(["*://*.mangaread.org/*"])
+        expect(isAllowed("https://mangaread.org")).toBe(true)
+        expect(isAllowed("https://cdn.mangaread.org")).toBe(true)
     })
 })
 
@@ -297,6 +353,39 @@ describe("createBoundedRequestClient TTL cache", () => {
         const second = await client.getText(url)
         expect(second).toBe("body-2")
         expect(calls).toBe(2)
+    })
+
+    // Regression test: expired entries used to be skipped on read but never deleted,
+    // so they (each up to maxResponseBytes) accumulated in the shared response-cache
+    // Map for as long as the service worker lived. The fix deletes an expired entry
+    // on read, and sweeps other expired entries on every successful write.
+    it("evicts an expired entry from the shared cache Map instead of leaving it to accumulate", async () => {
+        let fakeNow = 1000
+        const sharedCache = new Map<string, { body: string; expiresAt: number }>()
+        const client = createBoundedRequestClient({
+            fetch: async () => ({ ok: true, status: 200, text: async () => "body" }),
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 10,
+            maxResponseBytes: 100,
+            timeoutMs: 100,
+            cacheTtlMs: 5000,
+            now: () => fakeNow,
+            cache: sharedCache
+        })
+
+        const firstUrl = new URL("https://api.example.test/first")
+        await client.getText(firstUrl)
+        expect(sharedCache.has(firstUrl.toString())).toBe(true)
+
+        // Advance the clock past the first entry's TTL, then trigger a second
+        // request (a different URL, exercising the write-time sweep as well as the
+        // read-time delete-on-expiry path for the first key).
+        fakeNow += 6000
+        const secondUrl = new URL("https://api.example.test/second")
+        await client.getText(secondUrl)
+
+        expect(sharedCache.has(firstUrl.toString())).toBe(false)
+        expect(sharedCache.has(secondUrl.toString())).toBe(true)
     })
 
     it("does not cache POST responses", async () => {

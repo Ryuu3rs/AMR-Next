@@ -48,10 +48,12 @@ function getSourceResponseCache(sourceId: string): Map<string, { body: string; e
 function createSourceContext(sourceId: string, rateLimit?: { requests: number; intervalMs: number }): SourceContext {
     const request = createBoundedRequestClient({
         fetch: wrapFetch,
-        // Wildcard patterns (e.g. *://*.mangadex.network/*) are manifest permission
-        // entries for image CDNs - not valid URLs. Strip them; only exact origins
-        // are needed by the bounded request client for API/HTML fetches.
-        allowedOrigins: SOURCE_ORIGINS.filter(o => !o.startsWith("*://")).map(o => o.replace(/\/\*$/, "")),
+        // Pass every SOURCE_ORIGINS entry through as-is - exact origins like
+        // "https://mangadex.org/*" and wildcard host patterns like
+        // "*://*.mangafreak.me/*" are both understood natively by the bounded
+        // request client's origin allowlist (see createOriginAllowlist in
+        // request.ts), so nothing needs to be stripped or filtered out here.
+        allowedOrigins: SOURCE_ORIGINS,
         maxRequests: 20,
         maxResponseBytes: 10 * 1024 * 1024,
         timeoutMs: 15_000,
@@ -156,7 +158,7 @@ export async function resolveChapterFromHtml(urlStr: string, html: string) {
 
     const fallbackClient = createBoundedRequestClient({
         fetch: wrapFetch,
-        allowedOrigins: SOURCE_ORIGINS.filter(o => !o.startsWith("*://")).map(o => o.replace(/\/\*$/, "")),
+        allowedOrigins: SOURCE_ORIGINS,
         maxRequests: 5,
         maxResponseBytes: 5 * 1024 * 1024,
         timeoutMs: 15_000
