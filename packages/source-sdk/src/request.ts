@@ -62,8 +62,39 @@ function isRetryable(error: unknown): boolean {
     return false
 }
 
+// allowedOrigins entries are either exact origins/URL prefixes ("https://mangadex.org/*")
+// or Chrome-match-pattern-style wildcard hosts ("*://*.mangafreak.me/*"). Wildcards match
+// the bare domain AND any subdomain, http/https only - same semantics as the manifest
+// host_permissions grant they mirror. Exported (in addition to being used internally by
+// createBoundedRequestClient) so tests can exercise the real allow/deny logic directly
+// against the production SOURCE_ORIGINS list without constructing a full client.
+export function createOriginAllowlist(allowedOrigins: readonly string[]): (origin: string) => boolean {
+    const exactOrigins = new Set<string>()
+    const wildcardHostSuffixes: string[] = []
+    for (const entry of allowedOrigins) {
+        const wildcard = entry.match(/^\*:\/\/\*\.([^/*]+)(?:\/.*)?$/)
+        if (wildcard?.[1]) {
+            wildcardHostSuffixes.push(wildcard[1])
+            continue
+        }
+        exactOrigins.add(new URL(entry).origin)
+    }
+    return function isOriginAllowed(origin: string): boolean {
+        if (exactOrigins.has(origin)) return true
+        let parsed: URL
+        try {
+            parsed = new URL(origin)
+        } catch {
+            return false
+        }
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false
+        const host = parsed.hostname
+        return wildcardHostSuffixes.some(suffix => host === suffix || host.endsWith(`.${suffix}`))
+    }
+}
+
 export function createBoundedRequestClient(options: BoundedRequestClientOptions): SourceRequestClient {
-    const allowedOrigins = new Set(options.allowedOrigins.map(origin => new URL(origin).origin))
+    const isOriginAllowed = createOriginAllowlist(options.allowedOrigins)
     const maxRetries = options.maxRetries ?? 2
     const retryBaseDelayMs = options.retryBaseDelayMs ?? 300
     const sleep = options.sleep ?? defaultSleep
@@ -119,7 +150,7 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
             if (response.url !== undefined) {
                 try {
                     const finalOrigin = new URL(response.url).origin
-                    if (!allowedOrigins.has(finalOrigin)) {
+                    if (!isOriginAllowed(finalOrigin)) {
                         throw new SourceError(
                             "invalid-input",
                             `Request was redirected to a disallowed origin: ${finalOrigin}`
@@ -183,7 +214,7 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
         init: { method: "GET" | "POST"; headers?: Readonly<Record<string, string>>; body?: string },
         coalescable: boolean
     ): Promise<string> {
-        if (!allowedOrigins.has(url.origin)) {
+        if (!isOriginAllowed(url.origin)) {
             throw new SourceError("invalid-input", `Request origin is not allowed: ${url.origin}`)
         }
         if (!coalescable) {
@@ -192,8 +223,9 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
         const key = url.toString()
         if (cacheTtlMs > 0) {
             const cached = responseCache.get(key)
-            if (cached !== undefined && now() < cached.expiresAt) {
-                return cached.body
+            if (cached !== undefined) {
+                if (now() < cached.expiresAt) return cached.body
+                responseCache.delete(key)
             }
         }
         const existing = inFlight.get(key)
@@ -202,7 +234,13 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
         }
         const pending = attemptWithRetries(url, init)
             .then(body => {
-                if (cacheTtlMs > 0) responseCache.set(key, { body, expiresAt: now() + cacheTtlMs })
+                if (cacheTtlMs > 0) {
+                    const ts = now()
+                    for (const [k, v] of responseCache) {
+                        if (ts >= v.expiresAt) responseCache.delete(k)
+                    }
+                    responseCache.set(key, { body, expiresAt: ts + cacheTtlMs })
+                }
                 return body
             })
             .finally(() => {
