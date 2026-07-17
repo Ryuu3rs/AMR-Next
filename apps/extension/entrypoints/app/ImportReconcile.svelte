@@ -1,7 +1,8 @@
 <script lang="ts">
     import type { LibraryManga } from "../../src/database"
     import { sendRuntimeMessage } from "../../src/runtime"
-    import { untrack } from "svelte"
+    import { untrack, onMount } from "svelte"
+    import { cleanQuery, rankCandidates } from "../../src/reconcile-match"
 
     type SearchResult = {
         title: string
@@ -17,9 +18,16 @@
         onLinked: (mangaId: string) => void
         heading?: string
         hint?: string
+        // "Find better sources" scans the whole library, including titles with
+        // perfectly working sources - unlike the dead-source reconcile flow, a
+        // wrong-series exact-title collision there would silently repoint a WORKING
+        // title's source (library:switch deletes the old source's cached chapter
+        // records). Auto-link applies a stricter "strictly more chapters" rule
+        // whenever this is true.
+        isLibraryScan?: boolean
     }
 
-    let { mangas, onLinked, heading, hint }: Props = $props()
+    let { mangas, onLinked, heading, hint, isLibraryScan = false }: Props = $props()
 
     type CardState = {
         searching: boolean
@@ -49,6 +57,7 @@
     let searchProgress = $state({ done: 0, total: 0, current: "" })
     let autoLinkedCount = $state(0)
     let autoLinkEnabled = $state(true)
+    let autoLinkedSummary = $state<Array<{ title: string; sourceId: string }>>([])
 
     function cardOf(id: string): CardState {
         if (!cards[id]) {
@@ -75,6 +84,35 @@
             .replace(/[^a-z0-9]+/g, " ")
             .trim()
     }
+
+    // Sources whose adapter manifest declares the "pages" capability, fetched once
+    // from sources:list rather than plumbed through the search response schema.
+    // Used purely as a rankCandidates tie-breaker (see reconcile-match.ts) - the
+    // real fix for a single bad candidate (like kagane, which can silently return
+    // an empty chapter list from a background-context Cloudflare 403, and always
+    // fails library:switch as a result) is the retry loop below trying the next
+    // ranked candidate rather than giving up after one linkSource() call.
+    let pagesCapableSourceIds: Set<string> = new Set()
+    let sourcesListPromise: Promise<void> | null = null
+
+    function ensureSourcesList(): Promise<void> {
+        if (!sourcesListPromise) {
+            sourcesListPromise = sendRuntimeMessage<Array<{ id: string; capabilities: string[] }>>({
+                type: "sources:list"
+            })
+                .then(list => {
+                    pagesCapableSourceIds = new Set(list.filter(s => s.capabilities.includes("pages")).map(s => s.id))
+                })
+                .catch(() => {
+                    pagesCapableSourceIds = new Set()
+                })
+        }
+        return sourcesListPromise
+    }
+
+    onMount(() => {
+        void ensureSourcesList()
+    })
 
     const STOP_WORDS = new Set(["a", "an", "the", "of", "in", "to", "and", "or", "for", "on"])
     function wordOverlap(a: string, b: string): number {
@@ -186,6 +224,17 @@
         }
     }
 
+    // Titles like "Uncle from Another World (Official)" carry a bracketed
+    // "official" marker that most scanlation-aggregator listings won't have. When
+    // search comes back empty for one of these, say so plainly instead of implying
+    // the match algorithm failed.
+    const OFFICIAL_MARKER_PATTERN = /[(\[«][^)\]»]*\bofficial\b/i
+    function noLiveSourceMessage(title: string): string {
+        return OFFICIAL_MARKER_PATTERN.test(title)
+            ? "This looks like an official/licensed release - it may not exist on any scanlation source. Track it manually or remove it."
+            : "No live source found for this title."
+    }
+
     async function findSources(manga: LibraryManga) {
         const card = cardOf(manga.id)
         card.searching = true
@@ -196,18 +245,28 @@
         // alongside a message saying no match was found.
         card.results = []
         try {
+            const cleanedQuery = cleanQuery(manga.title)
             let all: SearchResult[]
             try {
-                all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
+                all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: cleanedQuery })
             } catch {
                 await new Promise(r => setTimeout(r, 500))
-                all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
+                all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: cleanedQuery })
             }
-            const want = normTitle(manga.title)
+            // Retry with the untouched title if the cleaned query found nothing - guards
+            // against a title where "Official" is genuinely load-bearing, not decoration.
+            if (all.length === 0 && cleanedQuery !== manga.title) {
+                try {
+                    all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
+                } catch {
+                    all = []
+                }
+            }
+            const want = normTitle(cleanQuery(manga.title))
             const sortByChapter = (a: SearchResult, b: SearchResult) =>
                 (parseFloat(b.latestChapter ?? "0") || 0) - (parseFloat(a.latestChapter ?? "0") || 0)
             const close = all.filter(r => {
-                const t = normTitle(r.title)
+                const t = normTitle(cleanQuery(r.title))
                 return t === want || t.includes(want) || want.includes(t) || wordOverlap(t, want) >= 0.6
             })
             if (close.length > 0) {
@@ -215,22 +274,22 @@
             } else if (all.length > 0) {
                 const scored = dedupeCandidates(
                     all
-                        .map(r => ({ r, score: wordOverlap(normTitle(r.title), want) }))
+                        .map(r => ({ r, score: wordOverlap(normTitle(cleanQuery(r.title)), want) }))
                         .filter(({ score }) => score > 0)
                         .sort((a, b) => b.score - a.score || sortByChapter(a.r, b.r))
                         .map(({ r }) => r)
                 ).slice(0, 10)
                 card.results = scored
                 if (scored.length === 0) {
-                    card.message = "No live source found for this title."
+                    card.message = noLiveSourceMessage(manga.title)
                 } else {
                     card.message = "No close title match found - pick manually if any look right."
                 }
             } else {
-                card.message = "No live source found for this title."
+                card.message = noLiveSourceMessage(manga.title)
             }
             card.searched = true
-            if (card.results.length === 0) card.message = "No live source found for this title."
+            if (card.results.length === 0) card.message = noLiveSourceMessage(manga.title)
         } catch (cause) {
             card.error = true
             card.message = describeError(cause, "Search failed - try again in a moment.")
@@ -245,22 +304,55 @@
         if (!autoLinkEnabled) return false
         const card = cardOf(manga.id)
         if (card.results.length === 0 || card.error) return false
-        const want = normTitle(manga.title)
-        // Confident match: exact norm title OR single result with ≥85% word overlap
-        const confident =
-            card.results.find(r => normTitle(r.title) === want) ??
-            (card.results.length === 1 && wordOverlap(normTitle(card.results[0]!.title), want) >= 0.85
-                ? card.results[0]
-                : undefined)
-        if (!confident) return false
-        await linkSource(manga, confident)
-        return true
+        await ensureSourcesList()
+
+        const want = normTitle(cleanQuery(manga.title))
+        const exactMatches = card.results.filter(r => normTitle(cleanQuery(r.title)) === want)
+        // Preserve the old single-result >=85% word-overlap fallback for near-title
+        // matches that don't normalize to an exact match, but keep it subject to the
+        // exact same downstream eligibility/safety filters as an exact match - no
+        // bypass around the libScan strictly-better check below.
+        const overlapFallback =
+            exactMatches.length === 0 &&
+            card.results.length === 1 &&
+            wordOverlap(normTitle(cleanQuery(card.results[0]!.title)), want) >= 0.85
+                ? card.results
+                : []
+        const eligible = [...exactMatches, ...overlapFallback]
+            .filter(r => Number.isFinite(parseFloat(r.latestChapter ?? "")))
+            .filter(
+                r =>
+                    manga.lastReadChapterNumber == null ||
+                    parseFloat(r.latestChapter!) >= Math.floor(manga.lastReadChapterNumber)
+            )
+
+        // "Find better sources" (isLibraryScan) can touch WORKING titles, unlike the
+        // normal dead-source reconcile flow - a wrong-series exact-title collision
+        // there would silently repoint a working source and library:switch deletes
+        // the old source's chapter cache. Require a strictly-better candidate (more
+        // chapters than what's already linked) in that context, on top of the shared
+        // eligibility filters above.
+        const filtered = isLibraryScan
+            ? eligible.filter(r => (manga.latestChapterNumber ?? 0) < parseFloat(r.latestChapter!))
+            : eligible
+
+        if (filtered.length === 0) return false
+
+        const ranked = rankCandidates(filtered, pagesCapableSourceIds).slice(0, 3)
+        for (const candidate of ranked) {
+            if (await linkSource(manga, candidate)) {
+                autoLinkedSummary = [...autoLinkedSummary, { title: manga.title, sourceId: candidate.sourceId }]
+                return true
+            }
+        }
+        return false
     }
 
     async function findAllSources() {
         searchingAll = true
         stopRequested = false
         autoLinkedCount = 0
+        autoLinkedSummary = []
         const queue = mangas.filter(m => {
             const c = cardOf(m.id)
             return !c.searched && !c.searching
@@ -290,7 +382,12 @@
         stopRequested = true
     }
 
-    async function linkSource(manga: LibraryManga, result: SearchResult) {
+    // Returns true on success, false on failure - lets the auto-link retry loop in
+    // findSourcesWithAutoLink know whether to fall through to the next candidate.
+    // card.linking is cleared on BOTH branches (not just the catch) since a
+    // sequential multi-attempt caller needs the loading flag to never get stuck
+    // true, whether the attempt that finally lands is the first one or the third.
+    async function linkSource(manga: LibraryManga, result: SearchResult): Promise<boolean> {
         const card = cardOf(manga.id)
         card.linking = result.sourceId
         card.message = ""
@@ -305,10 +402,13 @@
             })
             await sendRuntimeMessage({ type: "library:covers:backfill" })
             onLinked(manga.id)
+            card.linking = null
+            return true
         } catch (cause) {
             card.error = true
             card.message = describeError(cause, "Link failed - the source may be unreachable.")
             card.linking = null
+            return false
         }
     }
 
@@ -427,6 +527,20 @@
                         <span class="muted">Stopping…</span>
                     {/if}
                 </div>
+            </div>
+        {/if}
+
+        {#if autoLinkedSummary.length > 0}
+            <div class="auto-link-summary-wrap">
+                <p class="auto-link-summary-heading">Auto-linked this run</p>
+                <ul class="auto-link-summary-list">
+                    {#each autoLinkedSummary as item, i (i)}
+                        <li class="auto-link-summary-item">
+                            <span class="auto-link-summary-title">{item.title}</span>
+                            <span class="muted">→ {item.sourceId}</span>
+                        </li>
+                    {/each}
+                </ul>
             </div>
         {/if}
 
@@ -675,6 +789,48 @@
     .progress-done {
         color: var(--success, #22c55e);
         font-weight: 500;
+    }
+
+    /* Auto-link summary */
+    .auto-link-summary-wrap {
+        background: var(--surface-2, var(--surface));
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .auto-link-summary-heading {
+        margin: 0;
+        font-size: 0.82rem;
+        font-weight: 500;
+    }
+
+    .auto-link-summary-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        max-height: 140px;
+        overflow-y: auto;
+    }
+
+    .auto-link-summary-item {
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        font-size: 0.8rem;
+    }
+
+    .auto-link-summary-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     /* Card list */

@@ -144,6 +144,10 @@
     // $state: only read/written inside loadCachedCovers, never rendered.
     let coverCachedAt: Record<string, number> = {}
     let refreshingCovers = $state(false)
+    // Set at the start of each backfillCovers() run once the first batch response
+    // establishes a total, cleared at the start of the NEXT run (component-level
+    // $state, not module-scope, so it can't leak across separate invocations).
+    let coverProgress = $state<{ done: number; total: number } | undefined>()
 
     let syncStatus = $state<SyncStatus | undefined>()
     let syncToken = $state("")
@@ -734,14 +738,26 @@
     async function backfillCovers() {
         if (refreshingCovers) return
         refreshingCovers = true
+        // Reset at the start of THIS run - must not carry a stale done/total from a
+        // previous invocation into a fresh one.
+        coverProgress = undefined
         void browser.storage.local.set({ lastCoverBackfillAt: Date.now() }).catch(() => {})
         try {
             let anyUpdated = false
+            // `total` reflects the handler's remaining target-set size at the start of
+            // that batch, which can shrink between batches as attempted ids drop out of
+            // the target set (see library:covers:backfill) - track the largest total
+            // seen so the progress bar doesn't appear to shrink mid-run.
+            let maxTotal = 0
             for (;;) {
-                const res = await sendRuntimeMessage<{ updated: number; remaining: number }>({
+                const res = await sendRuntimeMessage<{ updated: number; remaining: number; total: number }>({
                     type: "library:covers:backfill"
                 })
                 if (res.updated > 0) anyUpdated = true
+                if (typeof res.total === "number") {
+                    maxTotal = Math.max(maxTotal, res.total)
+                    coverProgress = { done: Math.max(0, maxTotal - res.remaining), total: maxTotal }
+                }
                 if (res.remaining === 0) break
                 // Brief pause between batches so the service worker doesn't timeout
                 await new Promise<void>(r => setTimeout(r, 300))
@@ -2199,7 +2215,9 @@
                             onclick={() => void backfillCovers()}
                             disabled={refreshingCovers}>
                             {refreshingCovers
-                                ? "Fetching covers…"
+                                ? coverProgress
+                                    ? `Fetching… ${coverProgress.done}/${coverProgress.total}`
+                                    : "Fetching covers…"
                                 : `Load ${missingCoverCount} missing cover${missingCoverCount === 1 ? "" : "s"}`}
                         </button>
                     {/if}
@@ -2290,7 +2308,11 @@
                         onclick={() => void backfillCovers()}
                         disabled={refreshingCovers || !hasPermission}
                         title={hasPermission ? "Fetch missing covers" : "Grant source access first"}>
-                        {refreshingCovers ? "Fetching…" : "Refresh covers"}
+                        {refreshingCovers
+                            ? coverProgress
+                                ? `Fetching… ${coverProgress.done}/${coverProgress.total}`
+                                : "Fetching…"
+                            : "Refresh covers"}
                     </button>
                     <button
                         type="button"
@@ -3358,6 +3380,7 @@
                     mangas={library.filter(m => libScanIds.includes(m.id))}
                     heading="Find better sources - {libScanIds.length} {libScanIds.length === 1 ? 'title' : 'titles'}"
                     hint="Search all sources for each manga in your library. Use this to find a source with more chapters or better availability."
+                    isLibraryScan={true}
                     onLinked={id => {
                         libScanIds = libScanIds.filter(lid => lid !== id)
                         void load()
