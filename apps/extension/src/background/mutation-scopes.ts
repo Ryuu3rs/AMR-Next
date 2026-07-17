@@ -47,6 +47,7 @@ export const MUTATION_SCOPES: Partial<Record<RuntimeRequest["type"], LiveScope[]
     "library:numbers": ["library"],
     "library:dismiss": ["library"],
     "library:merge": ["library", "chapters", "progress"],
+    "library:cleanup:apply": ["library", "chapters", "progress"],
     "library:relink": ["library", "chapters"],
     "library:link-url": ["library"],
     "library:switch": ["library", "chapters"],
@@ -73,6 +74,7 @@ export const MUTATION_SCOPES: Partial<Record<RuntimeRequest["type"], LiveScope[]
 export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<RuntimeRequest["type"]>([
     "library:list",
     "library:get",
+    "library:cleanup:scan",
     "stats:get",
     "history:list",
     "chapter:adjacent",

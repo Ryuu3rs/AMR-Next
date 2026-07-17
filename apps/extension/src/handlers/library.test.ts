@@ -11,6 +11,7 @@ vi.mock("../sources", async () => {
         resolveChapterUrl: vi.fn(),
         resolveCoverFor: vi.fn(),
         listChaptersForSource: vi.fn(),
+        listChaptersBySource: vi.fn(),
         findSource: vi.fn()
     }
 })
@@ -23,8 +24,9 @@ vi.mock("../background/chapter-cache", () => ({
     scheduleChapterListRefresh: vi.fn()
 }))
 
-const { libraryHandlers } = await import("./library")
-const { resolveChapterUrl, listChaptersForSource, findSource, resolveCoverFor } = await import("../sources")
+const { libraryHandlers, isFallbackCreated } = await import("./library")
+const { resolveChapterUrl, listChaptersForSource, listChaptersBySource, findSource, resolveCoverFor } =
+    await import("../sources")
 const { fetchCoverBlob } = await import("../background/covers")
 const { scheduleChapterListRefresh } = await import("../background/chapter-cache")
 
@@ -1010,5 +1012,428 @@ describe("library:merge", () => {
         await expect(
             handler({ type: "library:merge", primaryId: "nonexistent:manga:xxx", loserIds: [loserId] } as never, ctx)
         ).rejects.toThrow()
+    })
+})
+
+// isFallbackCreated backs both library:cleanup:scan's candidate selection and
+// library:cleanup:apply's step-1 re-validation. This test file doesn't mock
+// @amr/sources, so "mangafreak" here is the REAL registered adapter (deterministic,
+// no network needed for a plain sourceRegistry.get() lookup).
+describe("isFallbackCreated", () => {
+    it("is true for a genuine fallback-created record", () => {
+        const m: LibraryManga = {
+            ...manga,
+            id: "mangafreak:manga:read1-foo-1",
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1"
+        }
+        expect(isFallbackCreated(m)).toBe(true)
+    })
+
+    it("is false for an adapter-resolved record (has sourceMangaId)", () => {
+        const m: LibraryManga = {
+            ...manga,
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1",
+            sourceMangaId: "Foo"
+        }
+        expect(isFallbackCreated(m)).toBe(false)
+    })
+
+    it("is false for a legacy-hostname record whose sourceId isn't a registered adapter", () => {
+        const m: LibraryManga = {
+            ...manga,
+            id: "example.com:manga:legacy",
+            sourceId: "example.com",
+            sourceUrl: "https://example.com/manga/foo/"
+        }
+        expect(isFallbackCreated(m)).toBe(false)
+    })
+
+    it("is false for a manually-tracked record", () => {
+        const m: LibraryManga = {
+            ...manga,
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1",
+            manualTracking: true
+        }
+        expect(isFallbackCreated(m)).toBe(false)
+    })
+
+    it("is false for a bundled seed- record", () => {
+        const m: LibraryManga = {
+            ...manga,
+            id: "seed-mf-001",
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1"
+        }
+        expect(isFallbackCreated(m)).toBe(false)
+    })
+})
+
+describe("library:cleanup:scan", () => {
+    it("groups two same-source fallback records when one's stored URL pathname appears in the representative's canonical chapter list", async () => {
+        await db.manga.bulkPut([
+            {
+                ...manga,
+                id: "mangafreak:manga:read1-foo-1",
+                title: "Read1 Foo 1",
+                sourceId: "mangafreak",
+                sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1"
+            },
+            {
+                ...manga,
+                id: "mangafreak:manga:read1-foo-2",
+                title: "Read1 Foo 2",
+                sourceId: "mangafreak",
+                sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_2"
+            }
+        ])
+        vi.mocked(listChaptersBySource).mockResolvedValue([
+            {
+                id: "mangafreak:chapter:Foo:1",
+                mangaId: "mangafreak:manga:Foo",
+                sourceId: "mangafreak",
+                title: "Ch.1",
+                url: "https://ww2.mangafreak.me/Read1_Foo_1",
+                sortKey: 1
+            },
+            {
+                id: "mangafreak:chapter:Foo:2",
+                mangaId: "mangafreak:manga:Foo",
+                sourceId: "mangafreak",
+                title: "Ch.2",
+                url: "https://ww2.mangafreak.me/Read1_Foo_2",
+                sortKey: 2
+            }
+        ] as never)
+        vi.mocked(resolveCoverFor).mockResolvedValue(undefined)
+
+        const handler = libraryHandlers["library:cleanup:scan"]!
+        const result = (await handler({ type: "library:cleanup:scan" } as never, ctx)) as {
+            groups: Array<{ canonicalId: string; records: Array<{ mangaId: string; matchedBy: string }> }>
+            unresolved: unknown[]
+        }
+
+        expect(result.groups).toHaveLength(1)
+        expect(result.groups[0]?.canonicalId).toBe("mangafreak:manga:Foo")
+        expect(result.groups[0]?.records).toHaveLength(2)
+        expect(result.groups[0]?.records.map(r => r.matchedBy).sort()).toEqual(["adapter", "pathname"])
+        expect(result.unresolved).toHaveLength(0)
+    })
+
+    it("never groups two fallback records that are on different sourceIds, even under the same scan", async () => {
+        await db.manga.bulkPut([
+            {
+                ...manga,
+                id: "mangafreak:manga:read1-foo-1",
+                title: "Read1 Foo 1",
+                sourceId: "mangafreak",
+                sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1"
+            },
+            {
+                ...manga,
+                id: "webtoons:manga:legacy",
+                title: "Legacy Webtoon",
+                sourceId: "webtoons",
+                sourceUrl: "https://www.webtoons.com/en/action/hero/ep-1/viewer?title_no=42&episode_no=1"
+            }
+        ])
+        vi.mocked(listChaptersBySource).mockResolvedValue([] as never)
+        vi.mocked(resolveCoverFor).mockResolvedValue(undefined)
+
+        const handler = libraryHandlers["library:cleanup:scan"]!
+        const result = (await handler({ type: "library:cleanup:scan" } as never, ctx)) as {
+            groups: Array<{ canonicalId: string; sourceId: string; records: unknown[] }>
+        }
+
+        expect(result.groups).toHaveLength(2)
+        expect(result.groups.every(g => g.records.length === 1)).toBe(true)
+        expect(new Set(result.groups.map(g => g.sourceId))).toEqual(new Set(["mangafreak", "webtoons"]))
+    })
+
+    it("lists a candidate with an unregistered source as unresolved instead of dropping it", async () => {
+        await db.manga.put({
+            ...manga,
+            id: "retired-source:manga:foo",
+            sourceId: "retired-source",
+            sourceUrl: "https://retired-source.example/chapter/1"
+        })
+
+        const handler = libraryHandlers["library:cleanup:scan"]!
+        const result = (await handler({ type: "library:cleanup:scan" } as never, ctx)) as {
+            groups: unknown[]
+            unresolved: Array<{ mangaId: string; reason: string }>
+        }
+
+        expect(result.groups).toHaveLength(0)
+        expect(result.unresolved).toHaveLength(1)
+        expect(result.unresolved[0]?.reason).toMatch(/not currently registered/i)
+    })
+})
+
+describe("library:cleanup:apply", () => {
+    const canonicalChapters = [
+        {
+            id: "mangafreak:chapter:Foo:1",
+            mangaId: "mangafreak:manga:Foo",
+            sourceId: "mangafreak",
+            title: "Ch.1",
+            url: "https://ww2.mangafreak.me/Read1_Foo_1",
+            sortKey: 1
+        },
+        {
+            id: "mangafreak:chapter:Foo:2",
+            mangaId: "mangafreak:manga:Foo",
+            sourceId: "mangafreak",
+            title: "Ch.2",
+            url: "https://ww2.mangafreak.me/Read1_Foo_2",
+            sortKey: 2
+        }
+    ]
+
+    beforeEach(() => {
+        vi.mocked(listChaptersBySource).mockResolvedValue(canonicalChapters as never)
+        vi.mocked(resolveCoverFor).mockResolvedValue(undefined)
+        vi.mocked(fetchCoverBlob).mockResolvedValue(undefined)
+    })
+
+    // Regression for the bug two separate reviews of the original plan caught: a
+    // naive per-loser (not per-chapter) remap corrupts history for any loser that
+    // tracked more than one external chapter - trackExternalChapter can attach a
+    // second read to an already-fallback-created record via its slug/prefix matchers.
+    it("remaps a loser with two tracked external chapters onto two different canonical chapters with no cross-contamination", async () => {
+        const loserId = "mangafreak:manga:read1-foo-x"
+        await db.manga.put({
+            ...manga,
+            id: loserId,
+            title: "Read1 Foo 2",
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_2"
+        })
+        await db.chapters.bulkPut([
+            {
+                id: `${loserId}:ext:ch-1`,
+                mangaId: loserId,
+                sourceId: "mangafreak",
+                title: "Chapter 1",
+                url: "https://ww2.mangafreak.me/Read1_Foo_1",
+                sortKey: 1
+            },
+            {
+                id: `${loserId}:ext:ch-2`,
+                mangaId: loserId,
+                sourceId: "mangafreak",
+                title: "Chapter 2",
+                url: "https://ww2.mangafreak.me/Read1_Foo_2",
+                sortKey: 2
+            }
+        ])
+        await db.progress.bulkPut([
+            {
+                mangaId: loserId,
+                chapterId: `${loserId}:ext:ch-1`,
+                pageIndex: 0,
+                pageCount: 1,
+                completed: true,
+                updatedAt: 10
+            },
+            {
+                mangaId: loserId,
+                chapterId: `${loserId}:ext:ch-2`,
+                pageIndex: 0,
+                pageCount: 1,
+                completed: false,
+                updatedAt: 20
+            }
+        ])
+
+        const handler = libraryHandlers["library:cleanup:apply"]!
+        const result = (await handler(
+            {
+                type: "library:cleanup:apply",
+                groups: [
+                    {
+                        canonicalId: "mangafreak:manga:Foo",
+                        sourceId: "mangafreak",
+                        sourceMangaId: "Foo",
+                        mangaUrl: "https://ww2.mangafreak.me/Manga/Foo",
+                        representativeChapterUrl: "https://ww2.mangafreak.me/Read1_Foo_2",
+                        losers: [{ mangaId: loserId, matchedBy: "adapter" }]
+                    }
+                ]
+            } as never,
+            ctx
+        )) as { merged: number; groups: number; backupId: number }
+
+        expect(result.merged).toBe(1)
+        expect(result.groups).toBe(1)
+        expect(await db.manga.get(loserId)).toBeUndefined()
+
+        const p1 = await db.progress.get("mangafreak:chapter:Foo:1")
+        const p2 = await db.progress.get("mangafreak:chapter:Foo:2")
+        expect(p1).toMatchObject({ completed: true, updatedAt: 10 })
+        expect(p2).toMatchObject({ completed: false, updatedAt: 20 })
+    })
+
+    // Regression: a naive "only fix lastReadChapterId if the chapter number
+    // increased" post-merge check misses exactly this case - the number didn't
+    // change, only the id went dangling.
+    it("fixes a dangling lastReadChapterId produced by the merge itself, unconditionally", async () => {
+        const loserId = "mangafreak:manga:read1-foo-2"
+        await db.manga.put({
+            ...manga,
+            id: loserId,
+            title: "Read1 Foo 2",
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_2",
+            lastReadChapterNumber: 2,
+            lastReadChapterId: `${loserId}:ext:ch-2`
+        })
+        await db.chapters.put({
+            id: `${loserId}:ext:ch-2`,
+            mangaId: loserId,
+            sourceId: "mangafreak",
+            title: "Chapter 2",
+            url: "https://ww2.mangafreak.me/Read1_Foo_2",
+            sortKey: 2
+        })
+
+        const handler = libraryHandlers["library:cleanup:apply"]!
+        await handler(
+            {
+                type: "library:cleanup:apply",
+                groups: [
+                    {
+                        canonicalId: "mangafreak:manga:Foo",
+                        sourceId: "mangafreak",
+                        sourceMangaId: "Foo",
+                        mangaUrl: "https://ww2.mangafreak.me/Manga/Foo",
+                        representativeChapterUrl: "https://ww2.mangafreak.me/Read1_Foo_2",
+                        losers: [{ mangaId: loserId, matchedBy: "adapter" }]
+                    }
+                ]
+            } as never,
+            ctx
+        )
+
+        const stored = await db.manga.get("mangafreak:manga:Foo")
+        expect(stored?.lastReadChapterId).toBe("mangafreak:chapter:Foo:2")
+        expect(await db.chapters.get(stored!.lastReadChapterId!)).toBeDefined()
+    })
+
+    it("silently skips a stale loser (already fixed / no longer a fallback record) without failing the group", async () => {
+        const validLoser = "mangafreak:manga:read1-foo-1"
+        const staleLoser = "mangafreak:manga:read1-foo-2"
+        await db.manga.bulkPut([
+            {
+                ...manga,
+                id: validLoser,
+                sourceId: "mangafreak",
+                sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1"
+            },
+            {
+                ...manga,
+                id: staleLoser,
+                sourceId: "mangafreak",
+                sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_2",
+                // Someone already fixed this one - it no longer qualifies as fallback-created.
+                sourceMangaId: "Foo"
+            }
+        ])
+
+        const handler = libraryHandlers["library:cleanup:apply"]!
+        const result = (await handler(
+            {
+                type: "library:cleanup:apply",
+                groups: [
+                    {
+                        canonicalId: "mangafreak:manga:Foo",
+                        sourceId: "mangafreak",
+                        sourceMangaId: "Foo",
+                        mangaUrl: "https://ww2.mangafreak.me/Manga/Foo",
+                        representativeChapterUrl: "https://ww2.mangafreak.me/Read1_Foo_1",
+                        losers: [
+                            { mangaId: validLoser, matchedBy: "adapter" },
+                            { mangaId: staleLoser, matchedBy: "adapter" }
+                        ]
+                    }
+                ]
+            } as never,
+            ctx
+        )) as { merged: number; skippedStale: number }
+
+        expect(result.skippedStale).toBe(1)
+        expect(result.merged).toBe(1)
+        expect(await db.manga.get(validLoser)).toBeUndefined()
+        // The stale record was left completely untouched, not deleted.
+        expect(await db.manga.get(staleLoser)).toBeDefined()
+    })
+
+    it("skips a pathname-tagged loser whose URL no longer appears in the freshly-fetched chapter list", async () => {
+        const loserId = "mangafreak:manga:read1-foo-drifted"
+        await db.manga.put({
+            ...manga,
+            id: loserId,
+            sourceId: "mangafreak",
+            // Not present in this test's canonicalChapters (only Foo:1/Foo:2 exist).
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_99"
+        })
+
+        const handler = libraryHandlers["library:cleanup:apply"]!
+        const result = (await handler(
+            {
+                type: "library:cleanup:apply",
+                groups: [
+                    {
+                        canonicalId: "mangafreak:manga:Foo",
+                        sourceId: "mangafreak",
+                        sourceMangaId: "Foo",
+                        mangaUrl: "https://ww2.mangafreak.me/Manga/Foo",
+                        representativeChapterUrl: "https://ww2.mangafreak.me/Read1_Foo_1",
+                        losers: [{ mangaId: loserId, matchedBy: "pathname" }]
+                    }
+                ]
+            } as never,
+            ctx
+        )) as { merged: number; skippedUnverified: number }
+
+        expect(result.skippedUnverified).toBe(1)
+        expect(result.merged).toBe(0)
+        expect(await db.manga.get(loserId)).toBeDefined()
+    })
+
+    it("merges 50 losers into one canonical title", async () => {
+        const loserIds = Array.from({ length: 50 }, (_, i) => `mangafreak:manga:read1-foo-${i}`)
+        await db.manga.bulkPut(
+            loserIds.map(id => ({
+                ...manga,
+                id,
+                sourceId: "mangafreak",
+                sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1"
+            }))
+        )
+
+        const handler = libraryHandlers["library:cleanup:apply"]!
+        const result = (await handler(
+            {
+                type: "library:cleanup:apply",
+                groups: [
+                    {
+                        canonicalId: "mangafreak:manga:Foo",
+                        sourceId: "mangafreak",
+                        sourceMangaId: "Foo",
+                        mangaUrl: "https://ww2.mangafreak.me/Manga/Foo",
+                        representativeChapterUrl: "https://ww2.mangafreak.me/Read1_Foo_1",
+                        losers: loserIds.map(mangaId => ({ mangaId, matchedBy: "adapter" as const }))
+                    }
+                ]
+            } as never,
+            ctx
+        )) as { merged: number; groups: number }
+
+        expect(result.merged).toBe(50)
+        expect(result.groups).toBe(1)
+        expect(await db.manga.get("mangafreak:manga:Foo")).toBeDefined()
     })
 })

@@ -4,16 +4,19 @@ import type { SourceChapter } from "@amr/source-sdk"
 import Dexie from "dexie"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
+    applyCleanupGroup,
     cacheCover,
     createBackup,
     db,
     exportDatabase,
+    fixupDanglingChapterIds,
     getCachedCovers,
     getLocalStats,
     importDatabase,
     listBackups,
     mergeMangaRecords,
     rekeyManga,
+    remapExternalChapterProgress,
     removeManga,
     restoreBackup,
     saveProgress,
@@ -516,6 +519,376 @@ describe("mergeMangaRecords", () => {
     })
 })
 
+// The cleanup tool's core correctness requirements (see handlers/library.ts) - two
+// separate adversarial reviews of the original plan caught real bugs here: a naive
+// per-loser (not per-chapter) remap corrupts history for any loser that tracked more
+// than one external chapter, and a naive "only fix lastReadChapterId if the number
+// increased" post-merge check misses the dangling-id-with-no-number-change case.
+describe("remapExternalChapterProgress", () => {
+    const canonicalChapters: ChapterRecord[] = [
+        {
+            id: "mangafreak:chapter:Foo:1",
+            mangaId: "mangafreak:manga:Foo",
+            sourceId: "mangafreak",
+            title: "Ch.1",
+            url: "https://ww2.mangafreak.me/Read1_Foo_1",
+            sortKey: 1
+        },
+        {
+            id: "mangafreak:chapter:Foo:2",
+            mangaId: "mangafreak:manga:Foo",
+            sourceId: "mangafreak",
+            title: "Ch.2",
+            url: "https://ww2.mangafreak.me/Read1_Foo_2",
+            sortKey: 2
+        }
+    ]
+
+    it("remaps a loser with TWO tracked external chapters onto two different canonical chapters with no cross-contamination", async () => {
+        const loserId = "mangafreak:manga:read1-foo-1"
+        await db.manga.put({
+            ...manga,
+            id: loserId,
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1"
+        })
+        await db.chapters.bulkPut([
+            {
+                id: `${loserId}:ext:ch-1`,
+                mangaId: loserId,
+                sourceId: "mangafreak",
+                title: "Chapter 1",
+                url: "https://ww2.mangafreak.me/Read1_Foo_1",
+                sortKey: 1
+            },
+            {
+                id: `${loserId}:ext:ch-2`,
+                mangaId: loserId,
+                sourceId: "mangafreak",
+                title: "Chapter 2",
+                url: "https://ww2.mangafreak.me/Read1_Foo_2",
+                sortKey: 2
+            }
+        ])
+        await db.progress.bulkPut([
+            {
+                mangaId: loserId,
+                chapterId: `${loserId}:ext:ch-1`,
+                pageIndex: 0,
+                pageCount: 1,
+                completed: true,
+                updatedAt: 10
+            },
+            {
+                mangaId: loserId,
+                chapterId: `${loserId}:ext:ch-2`,
+                pageIndex: 0,
+                pageCount: 1,
+                completed: false,
+                updatedAt: 20
+            }
+        ])
+        await db.historyEvents.bulkAdd([
+            { mangaId: loserId, chapterId: `${loserId}:ext:ch-1`, type: "completed", occurredAt: 10 },
+            { mangaId: loserId, chapterId: `${loserId}:ext:ch-2`, type: "started", occurredAt: 20 }
+        ])
+
+        await remapExternalChapterProgress(loserId, canonicalChapters)
+
+        const p1 = await db.progress.get("mangafreak:chapter:Foo:1")
+        const p2 = await db.progress.get("mangafreak:chapter:Foo:2")
+        expect(p1).toMatchObject({ completed: true, updatedAt: 10 })
+        expect(p2).toMatchObject({ completed: false, updatedAt: 20 })
+        // The old ext-chapter-keyed rows are gone - re-keyed, not duplicated.
+        expect(await db.progress.get(`${loserId}:ext:ch-1`)).toBeUndefined()
+        expect(await db.progress.get(`${loserId}:ext:ch-2`)).toBeUndefined()
+
+        const eventsForCh1 = await db.historyEvents.where("chapterId").equals("mangafreak:chapter:Foo:1").toArray()
+        const eventsForCh2 = await db.historyEvents.where("chapterId").equals("mangafreak:chapter:Foo:2").toArray()
+        expect(eventsForCh1).toHaveLength(1)
+        expect(eventsForCh1[0]?.type).toBe("completed")
+        expect(eventsForCh2).toHaveLength(1)
+        expect(eventsForCh2[0]?.type).toBe("started")
+    })
+
+    it("merges (not overwrites) when two different losers' chapters map onto the same canonical chapter", async () => {
+        const loserA = "mangafreak:manga:read1-foo-1a"
+        const loserB = "mangafreak:manga:read1-foo-1b"
+        await db.manga.bulkPut([
+            { ...manga, id: loserA, sourceId: "mangafreak", sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1" },
+            { ...manga, id: loserB, sourceId: "mangafreak", sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1" }
+        ])
+        await db.chapters.bulkPut([
+            {
+                id: `${loserA}:ext:ch-1`,
+                mangaId: loserA,
+                sourceId: "mangafreak",
+                title: "Chapter 1",
+                url: "https://ww2.mangafreak.me/Read1_Foo_1",
+                sortKey: 1
+            },
+            {
+                id: `${loserB}:ext:ch-1`,
+                mangaId: loserB,
+                sourceId: "mangafreak",
+                title: "Chapter 1",
+                url: "https://ww2.mangafreak.me/Read1_Foo_1",
+                sortKey: 1
+            }
+        ])
+        await db.progress.bulkPut([
+            {
+                mangaId: loserA,
+                chapterId: `${loserA}:ext:ch-1`,
+                pageIndex: 0,
+                pageCount: 1,
+                completed: false,
+                updatedAt: 10
+            },
+            {
+                mangaId: loserB,
+                chapterId: `${loserB}:ext:ch-1`,
+                pageIndex: 0,
+                pageCount: 1,
+                completed: true,
+                updatedAt: 5
+            }
+        ])
+
+        await remapExternalChapterProgress(loserA, canonicalChapters)
+        await remapExternalChapterProgress(loserB, canonicalChapters)
+
+        const merged = await db.progress.get("mangafreak:chapter:Foo:1")
+        // completed is OR'd (loserB's true wins even though it's the older update)...
+        expect(merged?.completed).toBe(true)
+        // ...but pageIndex/pageCount/updatedAt come from whichever side is more recent.
+        expect(merged?.updatedAt).toBe(10)
+    })
+
+    it("leaves an ext chapter's progress/history alone when it can't be matched to any canonical chapter", async () => {
+        const loserId = "mangafreak:manga:read1-unmatched"
+        await db.manga.put({
+            ...manga,
+            id: loserId,
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_99"
+        })
+        await db.chapters.put({
+            id: `${loserId}:ext:ch-99`,
+            mangaId: loserId,
+            sourceId: "mangafreak",
+            title: "Chapter 99",
+            url: "https://ww2.mangafreak.me/Read1_Foo_99",
+            sortKey: 99
+        })
+        await db.progress.put({
+            mangaId: loserId,
+            chapterId: `${loserId}:ext:ch-99`,
+            pageIndex: 0,
+            pageCount: 1,
+            completed: true,
+            updatedAt: 1
+        })
+
+        await remapExternalChapterProgress(loserId, canonicalChapters)
+
+        expect(await db.progress.get(`${loserId}:ext:ch-99`)).toBeDefined()
+    })
+})
+
+describe("fixupDanglingChapterIds", () => {
+    const canonicalChapters: ChapterRecord[] = [
+        {
+            id: "mangafreak:chapter:Foo:1",
+            mangaId: "mangafreak:manga:Foo",
+            sourceId: "mangafreak",
+            title: "Ch.1",
+            url: "https://ww2.mangafreak.me/Read1_Foo_1",
+            sortKey: 1
+        },
+        {
+            id: "mangafreak:chapter:Foo:2",
+            mangaId: "mangafreak:manga:Foo",
+            sourceId: "mangafreak",
+            title: "Ch.2",
+            url: "https://ww2.mangafreak.me/Read1_Foo_2",
+            sortKey: 2
+        }
+    ]
+
+    it("replaces a dangling lastReadChapterId with a real canonical chapter matching the stored number, unconditionally - not gated on the number having increased", async () => {
+        const mangaId = "mangafreak:manga:Foo"
+        await db.manga.put({
+            ...manga,
+            id: mangaId,
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1",
+            lastReadChapterNumber: 1,
+            // Points at a chapter id that doesn't exist in db.chapters at all (e.g. a
+            // dangling id adopted from a deleted loser) - the number itself did NOT
+            // change, which is exactly the case a naive "only fix if number increased"
+            // check would miss.
+            lastReadChapterId: "some-deleted-loser:ext:ch-1"
+        })
+        await db.chapters.bulkPut(canonicalChapters)
+
+        await fixupDanglingChapterIds(mangaId, canonicalChapters, [])
+
+        const stored = await db.manga.get(mangaId)
+        expect(stored?.lastReadChapterId).toBe("mangafreak:chapter:Foo:1")
+        expect(stored?.lastReadChapterNumber).toBe(1)
+    })
+
+    it("clears lastReadChapterId to undefined (keeping the number) when no canonical chapter matches at all", async () => {
+        const mangaId = "mangafreak:manga:Foo"
+        await db.manga.put({
+            ...manga,
+            id: mangaId,
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1",
+            lastReadChapterNumber: 999,
+            lastReadChapterId: "some-deleted-loser:ext:ch-1"
+        })
+        await db.chapters.bulkPut(canonicalChapters)
+
+        await fixupDanglingChapterIds(mangaId, canonicalChapters, [])
+
+        const stored = await db.manga.get(mangaId)
+        expect(stored?.lastReadChapterId).toBeUndefined()
+        expect(stored?.lastReadChapterNumber).toBe(999)
+    })
+
+    it("leaves lastReadChapterId untouched when it still points at a real chapter", async () => {
+        const mangaId = "mangafreak:manga:Foo"
+        await db.manga.put({
+            ...manga,
+            id: mangaId,
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1",
+            lastReadChapterNumber: 2,
+            lastReadChapterId: "mangafreak:chapter:Foo:2"
+        })
+        await db.chapters.bulkPut(canonicalChapters)
+
+        await fixupDanglingChapterIds(mangaId, canonicalChapters, [])
+
+        const stored = await db.manga.get(mangaId)
+        expect(stored?.lastReadChapterId).toBe("mangafreak:chapter:Foo:2")
+    })
+
+    it("also fixes a dangling latestChapterId", async () => {
+        const mangaId = "mangafreak:manga:Foo"
+        await db.manga.put({
+            ...manga,
+            id: mangaId,
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1",
+            latestChapterNumber: 2,
+            latestChapterId: "some-deleted-loser:ext:ch-2"
+        })
+        await db.chapters.bulkPut(canonicalChapters)
+
+        await fixupDanglingChapterIds(mangaId, canonicalChapters, [])
+
+        const stored = await db.manga.get(mangaId)
+        expect(stored?.latestChapterId).toBe("mangafreak:chapter:Foo:2")
+    })
+})
+
+describe("applyCleanupGroup", () => {
+    const canonicalChapters: ChapterRecord[] = [
+        {
+            id: "mangafreak:chapter:Foo:1",
+            mangaId: "mangafreak:manga:Foo",
+            sourceId: "mangafreak",
+            title: "Ch.1",
+            url: "https://ww2.mangafreak.me/Read1_Foo_1",
+            sortKey: 1
+        },
+        {
+            id: "mangafreak:chapter:Foo:2",
+            mangaId: "mangafreak:manga:Foo",
+            sourceId: "mangafreak",
+            title: "Ch.2",
+            url: "https://ww2.mangafreak.me/Read1_Foo_2",
+            sortKey: 2
+        }
+    ]
+
+    // This is the empirical check that Dexie really does nest applyCleanupGroup's
+    // outer transaction with mergeMangaRecords' own internal db.transaction() call
+    // (same tables, same "rw" mode) instead of deadlocking or throwing - see
+    // applyCleanupGroup's doc comment in database.ts.
+    it("runs remap + merge + the dangling-id fixup in one call without deadlocking or throwing (Dexie nested-transaction check)", async () => {
+        const canonicalId = "mangafreak:manga:Foo"
+        const loserId = "mangafreak:manga:read1-foo-1"
+        await db.manga.bulkPut([
+            { ...manga, id: canonicalId, sourceId: "mangafreak", sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_2" },
+            { ...manga, id: loserId, sourceId: "mangafreak", sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1" }
+        ])
+        await db.chapters.put({
+            id: `${loserId}:ext:ch-1`,
+            mangaId: loserId,
+            sourceId: "mangafreak",
+            title: "Chapter 1",
+            url: "https://ww2.mangafreak.me/Read1_Foo_1",
+            sortKey: 1
+        })
+        await db.progress.put({
+            mangaId: loserId,
+            chapterId: `${loserId}:ext:ch-1`,
+            pageIndex: 0,
+            pageCount: 1,
+            completed: true,
+            updatedAt: 1
+        })
+        await db.chapters.bulkPut(canonicalChapters)
+
+        const merged = await applyCleanupGroup(canonicalId, [loserId], canonicalChapters)
+
+        expect(merged.id).toBe(canonicalId)
+        expect(await db.manga.get(loserId)).toBeUndefined()
+        expect((await db.progress.get("mangafreak:chapter:Foo:1"))?.completed).toBe(true)
+    })
+
+    it("fixes a dangling lastReadChapterId produced by the merge itself, inside the same call", async () => {
+        const canonicalId = "mangafreak:manga:Foo"
+        const loserId = "mangafreak:manga:read1-foo-2"
+        // Primary has no lastReadChapterNumber/Id set - the loser's same-source pair
+        // fills the empty slot (mergeMangaRecords' documented "fill" behavior), but the
+        // loser's chapter id is an ext-chapter that gets deleted by the merge itself.
+        await db.manga.bulkPut([
+            { ...manga, id: canonicalId, sourceId: "mangafreak", sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_2" },
+            {
+                ...manga,
+                id: loserId,
+                sourceId: "mangafreak",
+                sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_2",
+                lastReadChapterNumber: 2,
+                lastReadChapterId: `${loserId}:ext:ch-2`
+            }
+        ])
+        await db.chapters.put({
+            id: `${loserId}:ext:ch-2`,
+            mangaId: loserId,
+            sourceId: "mangafreak",
+            title: "Chapter 2",
+            url: "https://ww2.mangafreak.me/Read1_Foo_2",
+            sortKey: 2
+        })
+        // In the real apply flow, saveResolvedChapter already persisted the freshly-
+        // fetched canonical chapters into db.chapters before applyCleanupGroup runs.
+        await db.chapters.bulkPut(canonicalChapters)
+
+        const merged = await applyCleanupGroup(canonicalId, [loserId], canonicalChapters)
+
+        // The dangling ext-chapter id must have been replaced by the real canonical one -
+        // not left pointing at a row mergeMangaRecords just deleted.
+        expect(merged.lastReadChapterId).toBe("mangafreak:chapter:Foo:2")
+        expect(await db.chapters.get(merged.lastReadChapterId!)).toBeDefined()
+    })
+})
+
 describe("export / import integrity", () => {
     it("export→import→export produces identical data", async () => {
         await saveResolvedChapter({ manga, chapter, sourceLink })
@@ -845,6 +1218,15 @@ describe("pre-import backups (Bug 4)", () => {
 
     it("restoreBackup throws for an unknown id", async () => {
         await expect(restoreBackup(999)).rejects.toThrow(/no backup/i)
+    })
+
+    // The cleanup tool's apply handler needs the id back to hand the user an "Undo"
+    // affordance (see handlers/library.ts and App.svelte's cleanup apply flow).
+    it("createBackup returns the new backup's id, and accepts the pre-cleanup reason", async () => {
+        const id = await createBackup("pre-cleanup")
+        expect(typeof id).toBe("number")
+        const summaries = await listBackups()
+        expect(summaries.find(b => b.id === id)).toMatchObject({ reason: "pre-cleanup" })
     })
 })
 
