@@ -3393,17 +3393,15 @@
                     scheduleLoad()
                 }} />
 
-            {#if libScanIds.length > 0}
-                <ImportReconcile
-                    mangas={library.filter(m => libScanIds.includes(m.id))}
-                    heading="Find better sources - {libScanIds.length} {libScanIds.length === 1 ? 'title' : 'titles'}"
-                    hint="Search all sources for each manga in your library. Use this to find a source with more chapters or better availability."
-                    isLibraryScan={true}
-                    onLinked={id => {
-                        libScanIds = libScanIds.filter(lid => lid !== id)
-                        scheduleLoad()
-                    }} />
-            {/if}
+            <ImportReconcile
+                mangas={library.filter(m => libScanIds.includes(m.id))}
+                heading="Find better sources - {libScanIds.length} {libScanIds.length === 1 ? 'title' : 'titles'}"
+                hint="Search all sources for each manga in your library. Use this to find a source with more chapters or better availability."
+                isLibraryScan={true}
+                onLinked={id => {
+                    libScanIds = libScanIds.filter(lid => lid !== id)
+                    scheduleLoad()
+                }} />
 
             <h1 style="margin-top:32px">GitHub Gist sync</h1>
             <div class="data-list">
