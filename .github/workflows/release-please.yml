@@ -39,6 +39,7 @@ jobs:
               id: release
               uses: googleapis/release-please-action@v4
               with:
+                  token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
                   config-file: release-please-config.json
                   manifest-file: .release-please-manifest.json
 
@@ -61,7 +62,7 @@ jobs:
                     exit 1
                   fi
                   if [ "$ROOT_VERSION" != "$STRIPPED" ]; then
-                    echo "::error::Version mismatch: package.json=$ROOT_VERSION tag=$TAG — bump root package.json too"
+                    echo "::error::Version mismatch: package.json=$ROOT_VERSION tag=$TAG - bump root package.json too"
                     exit 1
                   fi
                   echo "Version check passed: $PKG_VERSION"
@@ -163,5 +164,5 @@ jobs:
                   if compgen -G "amo-artifacts/*.xpi" > /dev/null; then
                     gh release upload "$TAG" amo-artifacts/*.xpi --clobber
                   else
-                    echo "No signed xpi produced — AMO submission likely failed or is pending review."
+                    echo "No signed xpi produced - AMO submission likely failed or is pending review."
                   fi
