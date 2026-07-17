@@ -320,54 +320,99 @@ export const libraryHandlers: HandlerMap = {
         return null
     },
 
-    "library:covers:backfill": async () => {
-        const all = await db.manga.toArray()
-        // Candidates: titles with no cover, plus titles whose cover is still a
-        // remote URL (which can fail to render from the extension origin, and may
-        // not have a cached blob yet). seed- ids and already-attempted (this
-        // session) ids are excluded so a failed fetch doesn't loop forever.
-        const candidates = all.filter(
-            m =>
-                !m.id.startsWith("seed-") &&
-                !coverBackfillAttempted.has(m.id) &&
-                (!m.coverUrl || /^https?:\/\//.test(m.coverUrl))
-        )
-        // One bulk lookup instead of a per-record covers.get - a remote coverUrl
-        // that already has a cached blob doesn't need to be re-fetched.
-        const cachedRows = await db.covers.bulkGet(candidates.map(m => m.id))
-        const alreadyCachedIds = new Set(candidates.filter((_, i) => cachedRows[i] !== undefined).map(m => m.id))
-        const targets = candidates.filter(m => !(m.coverUrl && alreadyCachedIds.has(m.id)))
-
-        let updated = 0
-        for (const m of targets.slice(0, COVER_BACKFILL_BATCH)) {
-            coverBackfillAttempted.add(m.id)
-            try {
-                const storedRemoteCover = m.coverUrl && /^https?:\/\//.test(m.coverUrl) ? m.coverUrl : undefined
-                const remote = storedRemoteCover ?? (await resolveCoverFor(m))
-                if (!remote) continue
-                let touched = false
-                // Store the source's own remote URL as-is - covers are never inlined
-                // as data: URIs anymore (see database.ts's v8 migration).
-                if (!m.coverUrl) {
-                    await db.manga.update(m.id, { coverUrl: remote })
-                    touched = true
-                }
-                // Cache the raw blob so the UI can serve it from IndexedDB without
-                // hotlinking the source CDN on every render. Non-fatal: the URL is
-                // already stored (either just now, or previously).
-                const blob = await fetchCoverBlob(remote)
-                if (blob) {
-                    await cacheCover(m.id, blob)
-                    touched = true
-                }
-                if (touched) updated += 1
-            } catch (error) {
-                console.warn("[AMR] Cover backfill failed", { mangaId: m.id, error })
-            }
+    "library:covers:backfill": async request => {
+        // A targeted call (right after a relink) forces a retry of exactly one
+        // manga id, bypassing the session-wide attempted-tracking exclusion below -
+        // that's the whole point of the targeted path.
+        const targeted = request.mangaId !== undefined
+        let targets: LibraryManga[]
+        if (targeted) {
+            const target = await db.manga.get(request.mangaId as string)
+            targets = target ? [target] : []
+        } else {
+            const all = await db.manga.toArray()
+            // Candidates: titles with no cover, plus titles whose cover is still a
+            // remote URL (which can fail to render from the extension origin, and may
+            // not have a cached blob yet). seed- ids and already-attempted (this
+            // session) ids are excluded so a failed fetch doesn't loop forever.
+            const candidates = all.filter(
+                m =>
+                    !m.id.startsWith("seed-") &&
+                    !coverBackfillAttempted.has(m.id) &&
+                    (!m.coverUrl || /^https?:\/\//.test(m.coverUrl))
+            )
+            // One bulk lookup instead of a per-record covers.get - a remote coverUrl
+            // that already has a cached blob doesn't need to be re-fetched.
+            const cachedRows = await db.covers.bulkGet(candidates.map(m => m.id))
+            const alreadyCachedIds = new Set(candidates.filter((_, i) => cachedRows[i] !== undefined).map(m => m.id))
+            targets = candidates.filter(m => !(m.coverUrl && alreadyCachedIds.has(m.id)))
         }
+
+        // Titles on different sources have no reason to block each other - each
+        // source operation gets its own fresh rate-limited client, so cross-title
+        // throttling isn't the bottleneck. Group by source and run up to 4 groups
+        // concurrently, while keeping each group's own titles strictly serial (the
+        // only per-source politeness mechanism that currently exists).
+        const batch = targets.slice(0, COVER_BACKFILL_BATCH)
+        const groups = Map.groupBy(batch, m => m.sourceId)
+        const queue = [...groups.values()]
+        let updated = 0
+        await Promise.all(
+            Array.from({ length: Math.min(4, queue.length) }, async () => {
+                for (let group = queue.shift(); group; group = queue.shift()) {
+                    for (const m of group) {
+                        coverBackfillAttempted.add(m.id)
+                        try {
+                            const storedRemoteCover =
+                                m.coverUrl && /^https?:\/\//.test(m.coverUrl) ? m.coverUrl : undefined
+                            let remote = storedRemoteCover ?? (await resolveCoverFor(m))
+                            if (!remote) continue
+                            let touched = false
+                            // Store the source's own remote URL as-is - covers are never inlined
+                            // as data: URIs anymore (see database.ts's v8 migration).
+                            if (!m.coverUrl) {
+                                await db.manga.update(m.id, { coverUrl: remote })
+                                touched = true
+                            }
+                            // Cache the raw blob so the UI can serve it from IndexedDB without
+                            // hotlinking the source CDN on every render. Non-fatal: the URL is
+                            // already stored (either just now, or previously).
+                            let blob = await fetchCoverBlob(remote)
+                            if (!blob && targeted && storedRemoteCover) {
+                                // Targeted calls exist for titles just relinked away from a dead
+                                // source - the stored coverUrl is still the OLD source's dead URL
+                                // until something overwrites it. Re-resolve from the (now live)
+                                // source rather than silently no-oping.
+                                const fresh = await resolveCoverFor(m)
+                                if (fresh) {
+                                    const freshBlob = await fetchCoverBlob(fresh)
+                                    if (freshBlob) {
+                                        remote = fresh
+                                        blob = freshBlob
+                                        await db.manga.update(m.id, { coverUrl: fresh })
+                                        touched = true
+                                    }
+                                }
+                            }
+                            if (blob) {
+                                await cacheCover(m.id, blob)
+                                touched = true
+                            }
+                            if (touched) updated += 1
+                        } catch (error) {
+                            console.warn("[AMR] Cover backfill failed", { mangaId: m.id, error })
+                        }
+                    }
+                }
+            })
+        )
         const remaining = Math.max(0, targets.length - COVER_BACKFILL_BATCH)
-        if (remaining === 0) coverBackfillAttempted.clear()
-        return { updated, remaining }
+        // A targeted call naturally has remaining: 0 after processing its one
+        // target - don't let that trigger the full-pass "clear the attempted set"
+        // logic below, or the same title could be retried forever within a session
+        // via repeated targeted calls (exactly what that tracking exists to prevent).
+        if (!targeted && remaining === 0) coverBackfillAttempted.clear()
+        return { updated, remaining, total: targets.length }
     },
 
     "stats:get": async () => {
