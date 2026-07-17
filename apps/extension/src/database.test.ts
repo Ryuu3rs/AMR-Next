@@ -2,11 +2,13 @@ import "fake-indexeddb/auto"
 import type { ChapterRecord, MangaRecord, ReadingProgress, SourceLinkRecord } from "@amr/contracts"
 import type { SourceChapter } from "@amr/source-sdk"
 import Dexie from "dexie"
-import { beforeEach, describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
+    cacheCover,
     createBackup,
     db,
     exportDatabase,
+    getCachedCovers,
     getLocalStats,
     importDatabase,
     listBackups,
@@ -1617,5 +1619,43 @@ describe("export never contains an inlined data: URI cover (Step 1 performance p
         await importDatabase(exported)
         const reimported = await exportDatabase()
         expect(JSON.stringify(reimported)).not.toContain("data:image")
+    })
+})
+
+describe("getCachedCovers", () => {
+    it("returns the full cover row (blob + cachedAt) per requested id and omits ids without a cover", async () => {
+        await db.covers.put({ mangaId: "a", blob: new Blob(["x"]), cachedAt: 111 })
+
+        const result = await getCachedCovers(["a", "missing"])
+
+        expect(result.size).toBe(1)
+        const row = result.get("a")
+        expect(row).toBeDefined()
+        expect(row!.cachedAt).toBe(111)
+        const bytes = new Uint8Array(await row!.blob.arrayBuffer())
+        expect(new TextDecoder().decode(bytes)).toBe("x")
+        expect(result.has("missing")).toBe(false)
+    })
+
+    it("cacheCover overwrites the row with a fresh cachedAt", async () => {
+        // fake-indexeddb's internal scheduling relies on real timers, so the clock
+        // is controlled by mocking Date.now directly instead of vi.useFakeTimers(),
+        // which would also fake setTimeout and can deadlock an await db.covers.put(...).
+        const nowSpy = vi.spyOn(Date, "now")
+        try {
+            nowSpy.mockReturnValue(1000)
+            await cacheCover("a", new Blob(["v1"]))
+
+            nowSpy.mockReturnValue(2000)
+            await cacheCover("a", new Blob(["v2"]))
+
+            const row = await db.covers.get("a")
+            expect(row).toBeDefined()
+            expect(row!.cachedAt).toBe(2000)
+            const bytes = new Uint8Array(await row!.blob.arrayBuffer())
+            expect(new TextDecoder().decode(bytes)).toBe("v2")
+        } finally {
+            nowSpy.mockRestore()
+        }
     })
 })
