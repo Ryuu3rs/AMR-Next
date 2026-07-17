@@ -45,7 +45,15 @@ function getSourceResponseCache(sourceId: string): Map<string, { body: string; e
     return cache
 }
 
-function createSourceContext(sourceId: string, rateLimit?: { requests: number; intervalMs: number }): SourceContext {
+// overrides lets specific call paths (e.g. library:switch's chapter-list fetch,
+// see listChaptersForSource) bound the timeout/retry budget tighter than the
+// defaults below - every other caller of createSourceContext omits it and is
+// completely unaffected.
+function createSourceContext(
+    sourceId: string,
+    rateLimit?: { requests: number; intervalMs: number },
+    overrides?: { timeoutMs?: number; maxRetries?: number }
+): SourceContext {
     const request = createBoundedRequestClient({
         fetch: wrapFetch,
         // Pass every SOURCE_ORIGINS entry through as-is - exact origins like
@@ -56,10 +64,11 @@ function createSourceContext(sourceId: string, rateLimit?: { requests: number; i
         allowedOrigins: SOURCE_ORIGINS,
         maxRequests: 20,
         maxResponseBytes: 10 * 1024 * 1024,
-        timeoutMs: 15_000,
+        timeoutMs: overrides?.timeoutMs ?? 15_000,
         cacheTtlMs: 60_000,
         cache: getSourceResponseCache(sourceId),
-        ...(rateLimit ? { rateLimit } : {})
+        ...(rateLimit ? { rateLimit } : {}),
+        ...(overrides?.maxRetries !== undefined ? { maxRetries: overrides.maxRetries } : {})
     })
     return {
         request,
@@ -216,22 +225,72 @@ function matchesQueryWithAltTitles(result: SourceSearchResult, query: string): b
     return (result.altTitles ?? []).some(altTitle => matchesQuery(altTitle, query))
 }
 
+// Per-adapter memo of consecutive race-timeout rejections from searchManga (NOT
+// searchMangaStreaming, which is unaffected - see below). After SEARCH_SKIP_AFTER
+// consecutive timeouts a source is skipped entirely for SEARCH_RETRY_PROBE_MS,
+// then probed once. A concurrent worker pool (ImportReconcile.svelte's "Search
+// all" sweep) can run many searchManga calls overlapping in time, all potentially
+// observing the SAME source timing out in the SAME rough window - the
+// searchStartedAt > entry.lastIncrementAt guard in the settle handler below makes
+// streak-counting sequential across the whole sweep so that looks like one bad
+// instant, not three independently-counted failures.
+type SearchTimeoutEntry = { streak: number; lastIncrementAt: number; lastProbeAt: number }
+const searchTimeoutStreaks = new Map<string, SearchTimeoutEntry>()
+const SEARCH_SKIP_AFTER = 3
+const SEARCH_RETRY_PROBE_MS = 60_000
+
+function shouldIncludeInSearch(sourceId: string): boolean {
+    const entry = searchTimeoutStreaks.get(sourceId)
+    if (!entry || entry.streak < SEARCH_SKIP_AFTER) return true
+    if (Date.now() - entry.lastProbeAt > SEARCH_RETRY_PROBE_MS) {
+        entry.lastProbeAt = Date.now() // stamp at dispatch time, prevents concurrent double-probe
+        return true
+    }
+    return false
+}
+
+// mangahub paginates its search up to 3 pages under its own rate limit and can
+// legitimately take 4-6s+, longer than the 8s default every other adapter races
+// against.
+const SEARCH_RACE_TIMEOUT_MS: Record<string, number> = { mangahub: 12_000 }
+
 // Aggregate search across every adapter that supports it. Sources without
 // granted host permission fail their origin check and are skipped (allSettled).
 // sourceHealth is intentionally NOT used here - a source can be flagged dead for
 // chapter fetching but still have a working search endpoint.
 export async function searchManga(query: string): Promise<SourceSearchResult[]> {
-    const searchable = sourceRegistry.list().filter(adapter => !!adapter.search)
+    const searchStartedAt = Date.now()
+    const searchable = sourceRegistry
+        .list()
+        .filter(adapter => !!adapter.search && shouldIncludeInSearch(adapter.manifest.id))
     const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
         Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))])
     const settled = await Promise.allSettled(
         searchable.map(adapter =>
             withTimeout(
                 adapter.search!(query, createSourceContext(adapter.manifest.id, adapter.manifest.requestRateLimit)),
-                10000
+                SEARCH_RACE_TIMEOUT_MS[adapter.manifest.id] ?? 8_000
             )
         )
     )
+    settled.forEach((result, i) => {
+        const sourceId = searchable[i]!.manifest.id
+        if (result.status === "fulfilled") {
+            searchTimeoutStreaks.delete(sourceId)
+            return
+        }
+        // Only count genuine race-timeout rejections (the sentinel Error thrown by
+        // withTimeout above), not SourceError/fast-failure rejections like 403/DNS
+        // from the adapter's own search() call.
+        const isTimeout = result.reason instanceof Error && result.reason.message === "timeout"
+        if (!isTimeout) return
+        const entry = searchTimeoutStreaks.get(sourceId) ?? { streak: 0, lastIncrementAt: 0, lastProbeAt: 0 }
+        if (searchStartedAt > entry.lastIncrementAt) {
+            entry.streak += 1
+            entry.lastIncrementAt = Date.now()
+            searchTimeoutStreaks.set(sourceId, entry)
+        }
+    })
     return settled
         .flatMap(result => (result.status === "fulfilled" ? result.value : []))
         .filter(result => matchesQueryWithAltTitles(result, query))
@@ -296,19 +355,23 @@ export async function requestSourcePermission(): Promise<boolean> {
 }
 
 // List chapters from an arbitrary source/mirror for a manga already in the
-// library - used to switch a title to a different mirror (G8).
+// library - used to switch a title to a different mirror (G8). `overrides` lets
+// the library:switch handler bound this specific fetch's timeout/retry budget
+// tighter than the default (see createSourceContext) - every other caller omits
+// it and keeps the default ~15s/2-retry budget.
 export async function listChaptersForSource(
     manga: LibraryManga,
     sourceId: string,
     sourceMangaId: string,
-    mangaUrl: string
+    mangaUrl: string,
+    overrides?: { timeoutMs?: number; maxRetries?: number }
 ) {
     const source = sourceRegistry.get(sourceId)
     if (!source) throw new Error("That source is not supported")
     const sourceManga: SourceManga = { manga, sourceId, sourceMangaId, url: mangaUrl }
     return source.listChapters(
         { manga: sourceManga, limit: 500 },
-        createSourceContext(source.manifest.id, source.manifest.requestRateLimit)
+        createSourceContext(source.manifest.id, source.manifest.requestRateLimit, overrides)
     )
 }
 

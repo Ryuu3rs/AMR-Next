@@ -246,11 +246,20 @@ export const libraryHandlers: HandlerMap = {
     "library:switch": async request => {
         const existing = await db.manga.get(request.mangaId)
         if (!existing) throw new SourceError("not-found", "That title is not in your library")
+        // Bounded tighter than the default (~15s timeout x 2 retries, ~46s worst
+        // case) because the reconcile "Search all" sweep can try up to 3 candidates
+        // sequentially per title with no outer race - one hanging candidate at the
+        // default budget would blow the whole sweep's time estimate by itself.
+        // Worst case here: ~10s + one retry with ~300-600ms backoff.
         const chapters = await listChaptersForSource(
             existing,
             request.sourceId,
             request.sourceMangaId,
-            request.mangaUrl
+            request.mangaUrl,
+            {
+                timeoutMs: 10_000,
+                maxRetries: 1
+            }
         )
         const switchAdapter = sourceRegistry.get(request.sourceId)
         const hasPages = switchAdapter?.manifest.capabilities.includes("pages") ?? true
