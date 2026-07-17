@@ -433,32 +433,65 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
 
             let merged: LibraryManga = primary
 
-            for (const loserId of loserIds) {
-                // A stale/already-removed id (e.g. two merge calls racing on the same
-                // group) shouldn't abort the whole merge - just skip it.
-                if (loserId === primaryId) continue
-                const loser = await db.manga.get(loserId)
-                if (!loser) continue
+            // A stale/already-removed id (e.g. two merge calls racing on the same group)
+            // shouldn't abort the whole merge - just skip it via the filter below.
+            const loserRecords = (
+                await Promise.all(loserIds.filter(id => id !== primaryId).map(id => db.manga.get(id)))
+            ).filter((l): l is LibraryManga => l !== undefined)
+            // Same-source losers must be processed before cross-source losers: `merged`
+            // evolves per-iteration, so gating on `loser.sourceId === merged.sourceId` isn't
+            // enough - if a cross-source loser fills an empty slot first, a later same-source
+            // loser's legitimate max could carry that cross-source loser's inflated number
+            // alongside a live id, since the id-carry fill condition would already be cleared.
+            // Sorting relative to the PRIMARY's sourceId (which never changes) avoids that.
+            loserRecords.sort(
+                (a, b) => Number(b.sourceId === primary.sourceId) - Number(a.sourceId === primary.sourceId)
+            )
 
-                const mergedLastReadNumber =
-                    Math.max(merged.lastReadChapterNumber ?? 0, loser.lastReadChapterNumber ?? 0) || undefined
-                const mergedLatestNumber =
-                    Math.max(merged.latestChapterNumber ?? 0, loser.latestChapterNumber ?? 0) || undefined
-                // Carry the chapter-ID fields alongside whichever side's NUMBER won the max, or
-                // the Unread badge (an id comparison: latestChapterId !== lastReadChapterId)
-                // contradicts the merged numbers. The carried id may reference a chapter row this
-                // merge deletes below for the losing side - that's the same tolerated dangling
-                // state the existing rekeyManga function already produces (progress/history rows
-                // keep chapterIds after their chapters are deleted on relink), and the next
-                // background update check re-points latestChapterId at a live row regardless.
-                const loserLatestWins =
-                    loser.latestChapterId !== undefined &&
-                    ((loser.latestChapterNumber ?? 0) > (merged.latestChapterNumber ?? 0) ||
-                        merged.latestChapterId === undefined)
-                const loserLastReadWins =
-                    loser.lastReadChapterId !== undefined &&
-                    ((loser.lastReadChapterNumber ?? 0) > (merged.lastReadChapterNumber ?? 0) ||
-                        merged.lastReadChapterId === undefined)
+            for (const loser of loserRecords) {
+                const loserId = loser.id
+                // Chapter numbers are only comparable within a single source: different
+                // sources split/number the same manga's chapters differently (see the
+                // chapterNumberingUnreliable comment on LibraryManga). Maxing across sources
+                // let a loser's higher-but-differently-numbered count inflate the primary,
+                // which the next update check then silently reverted while mis-reporting the
+                // title as updated (its id-change branch always fires for a carried foreign
+                // chapter id) - see checkUpdates's "advanced" gate for the other half of this
+                // fix. So: max within the same source (a true re-added duplicate), but
+                // across sources the primary's own number+id pairs win, and a loser's pair
+                // is only adopted to fill a slot where the primary has neither a number nor
+                // an id. Losers are processed same-source-first (see the sort above this
+                // loop) so a later same-source loser's legitimate max can't reintroduce a
+                // cross-source dangling id into a slot an earlier cross-source loser filled.
+                // Note: lastReadChapterNumber inflated by a past cross-source merge before
+                // this fix landed self-heals the next time the user reads any chapter of
+                // the title (saveProgress overwrites both the number and id from real
+                // progress) - no migration is attempted here.
+                const sameSource = loser.sourceId === merged.sourceId
+                const fillLastRead =
+                    !sameSource && merged.lastReadChapterNumber === undefined && merged.lastReadChapterId === undefined
+                const fillLatest =
+                    !sameSource && merged.latestChapterNumber === undefined && merged.latestChapterId === undefined
+                const mergedLastReadNumber = sameSource
+                    ? Math.max(merged.lastReadChapterNumber ?? 0, loser.lastReadChapterNumber ?? 0) || undefined
+                    : fillLastRead
+                      ? loser.lastReadChapterNumber
+                      : merged.lastReadChapterNumber
+                const mergedLatestNumber = sameSource
+                    ? Math.max(merged.latestChapterNumber ?? 0, loser.latestChapterNumber ?? 0) || undefined
+                    : fillLatest
+                      ? loser.latestChapterNumber
+                      : merged.latestChapterNumber
+                const loserLatestWins = sameSource
+                    ? loser.latestChapterId !== undefined &&
+                      ((loser.latestChapterNumber ?? 0) > (merged.latestChapterNumber ?? 0) ||
+                          merged.latestChapterId === undefined)
+                    : fillLatest && loser.latestChapterId !== undefined
+                const loserLastReadWins = sameSource
+                    ? loser.lastReadChapterId !== undefined &&
+                      ((loser.lastReadChapterNumber ?? 0) > (merged.lastReadChapterNumber ?? 0) ||
+                          merged.lastReadChapterId === undefined)
+                    : fillLastRead && loser.lastReadChapterId !== undefined
                 const mergedLastReadAt = Math.max(merged.lastReadAt ?? 0, loser.lastReadAt ?? 0) || undefined
                 const mergedCategories = [...new Set([...(merged.categories ?? []), ...(loser.categories ?? [])])]
                 const categories = mergedCategories.length > 0 ? mergedCategories : undefined

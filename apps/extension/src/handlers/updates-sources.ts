@@ -104,8 +104,23 @@ export async function checkUpdates(sourceId?: string) {
                     await db.transaction("rw", db.chapters, db.manga, async () => {
                         await db.chapters.bulkPut(chapters)
                         if (latest && latest.id !== item.latestChapterId) {
-                            updated += 1
-                            latestChanged = true
+                            // Always re-point on an id change - this is the self-heal path merges
+                            // and relinks rely on (a carried/dangling latestChapterId gets
+                            // replaced by the source's real latest row, and a merge-inflated
+                            // latestChapterNumber drops back to the source's true count - see
+                            // mergeMangaRecords's cross-source policy). But only COUNT it as an
+                            // update and publish a live event when the chapter number actually
+                            // advanced: an id change with a same-or-lower number is a re-slug or
+                            // a post-merge correction, not a new chapter, and reporting it
+                            // inflated the "N updated" status and pushed phantom entries onto
+                            // the Updates page. Chapters without a finite sortKey can't be
+                            // compared, so they keep the old id-change-means-updated behavior.
+                            const advanced =
+                                !Number.isFinite(latest.sortKey) || latest.sortKey > (item.latestChapterNumber ?? -1)
+                            if (advanced) {
+                                updated += 1
+                                latestChanged = true
+                            }
                             await db.manga.update(item.id, {
                                 latestChapterId: latest.id,
                                 sourceUrl: latest.url,

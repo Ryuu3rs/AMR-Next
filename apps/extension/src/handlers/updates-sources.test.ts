@@ -193,6 +193,91 @@ describe("checkUpdates live-bus publishing", () => {
     })
 })
 
+describe("checkUpdates latestChapterNumber advance gate", () => {
+    it("re-points a foreign latestChapterId without counting it as updated when the number did not advance", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-1", latestChapterId: "webtoons:ch22", latestChapterNumber: 22 })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id))
+        const chapters: ChapterRecord[] = [
+            {
+                id: "mangadex:ch20",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Chapter 20",
+                url: "https://mangadex.org/chapter/20",
+                sortKey: 20
+            }
+        ]
+        listMangaChaptersMock.mockResolvedValue(chapters)
+
+        await checkUpdates()
+
+        const updatedManga = await db.manga.get(manga.id)
+        expect(updatedManga?.latestChapterId).toBe("mangadex:ch20")
+        expect(updatedManga?.latestChapterNumber).toBe(20)
+        expect(publishLiveMock).not.toHaveBeenCalled()
+        const status = storageLocal.store.get("updateStatus") as { updated: number }
+        expect(status.updated).toBe(0)
+    })
+
+    it("counts and publishes when the id changed and the number advanced", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-1", latestChapterId: "old", latestChapterNumber: 20 })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id))
+        const chapters: ChapterRecord[] = [
+            {
+                id: "new",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Chapter 21",
+                url: "https://mangadex.org/chapter/21",
+                sortKey: 21
+            }
+        ]
+        listMangaChaptersMock.mockResolvedValue(chapters)
+
+        await checkUpdates()
+
+        const status = storageLocal.store.get("updateStatus") as { updated: number }
+        expect(status.updated).toBe(1)
+        expect(publishLiveMock).toHaveBeenCalledWith(["chapters", "library"], [manga.id])
+    })
+
+    it("keeps counting an id change whose latest has a non-finite sortKey", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-1", latestChapterId: "old", latestChapterNumber: 20 })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id))
+        // IndexedDB keys (chapters is indexed on sortKey) can't be NaN, so use
+        // Infinity to get a realistic non-finite sortKey - Number.isFinite(Infinity)
+        // is false, which is what the guard actually checks.
+        const chapters: ChapterRecord[] = [
+            {
+                id: "new",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Chapter ?",
+                url: "https://mangadex.org/chapter/new",
+                sortKey: Infinity
+            }
+        ]
+        listMangaChaptersMock.mockResolvedValue(chapters)
+
+        await checkUpdates()
+
+        const status = storageLocal.store.get("updateStatus") as { updated: number }
+        expect(status.updated).toBe(1)
+        const updatedManga = await db.manga.get(manga.id)
+        expect(updatedManga?.latestChapterId).toBe("new")
+        expect(updatedManga?.latestChapterNumber).toBe(20)
+    })
+})
+
 describe("backfillMangaGenres live-bus publishing", () => {
     it("publishes library once after the whole backfill loop, not per title", async () => {
         const { backfillMangaGenres } = await import("./updates-sources")
