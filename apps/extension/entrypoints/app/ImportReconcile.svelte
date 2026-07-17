@@ -2,7 +2,14 @@
     import type { LibraryManga } from "../../src/database"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { untrack, onMount } from "svelte"
-    import { cleanQuery, rankCandidates } from "../../src/reconcile-match"
+    import {
+        cleanQuery,
+        rankCandidates,
+        formatReconcileLog,
+        type LinkAttempt,
+        type TitleLogEntry,
+        type SweepMeta
+    } from "../../src/reconcile-match"
 
     type SearchResult = {
         title: string
@@ -67,6 +74,18 @@
     // button calls linkSource() directly and never reads this memo.
     const switchFailures = new Map<string, number>()
 
+    // Structured "copy/download debug log" of what happened during search/link
+    // attempts, for handing to a developer. Keyed by mangaId (not an array) since
+    // findAllSources() runs a concurrent worker pool - a keyed record avoids
+    // order-scrambling from concurrent appends. `let` (not `const`) so a fresh
+    // sweep can reset it wholesale. Deliberately NOT reset when `mangas` empties
+    // out (e.g. every title in a sweep successfully links) - see the template's
+    // debug-log guard below, which renders this independently of `mangas.length`.
+    let debugLog = $state<Record<string, TitleLogEntry>>({})
+    let sweepMeta = $state<SweepMeta | null>(null)
+    let debugLogCopied = $state(false)
+    let debugLogCopyTimer: ReturnType<typeof setTimeout> | null = null
+
     function cardOf(id: string): CardState {
         if (!cards[id]) {
             untrack(() => {
@@ -84,6 +103,39 @@
             })
         }
         return cards[id]!
+    }
+
+    // Auto-vivifies a TitleLogEntry the same way cardOf() auto-vivifies a
+    // CardState. In practice this is always called after findSources() has
+    // already run for this manga (the manual Link button only appears once
+    // card.searched is true), so the "never had an entry" case described in the
+    // LinkAttempt trigger contract is theoretical - but auto-vivifying here is
+    // still correct even then, it just produces a log entry with empty search
+    // fields rather than a true no-op.
+    function entryOf(manga: LibraryManga): TitleLogEntry {
+        if (!debugLog[manga.id]) {
+            untrack(() => {
+                debugLog[manga.id] = {
+                    mangaId: manga.id,
+                    title: manga.title,
+                    deadSource: sourceDomain(manga),
+                    lastReadChapterNumber: manga.lastReadChapterNumber ?? null,
+                    latestChapterNumber: manga.latestChapterNumber ?? null,
+                    cleanedQuery: "",
+                    officialMarkerStripped: false,
+                    rawTitleFallbackUsed: false,
+                    searchErrors: [],
+                    autoLink: null,
+                    finalOutcome: "no-results",
+                    finalMessage: ""
+                }
+            })
+        }
+        return debugLog[manga.id]!
+    }
+
+    function rawErrorMessage(cause: unknown): string {
+        return cause instanceof Error ? cause.message : String(cause)
     }
 
     function normTitle(s: string): string {
@@ -245,6 +297,7 @@
 
     async function findSources(manga: LibraryManga) {
         const card = cardOf(manga.id)
+        const entry = entryOf(manga)
         card.searching = true
         card.message = ""
         card.error = false
@@ -252,24 +305,43 @@
         // nothing (or errors) leaves the old, no-longer-relevant results on screen
         // alongside a message saying no match was found.
         card.results = []
+        // Reset the per-search-attempt fields, but deliberately leave entry.autoLink
+        // untouched - a manual "Retry search" shouldn't erase the auto-link history
+        // (ranked/benched candidates, attempts) a prior sweep may have recorded for
+        // this same manga.
+        entry.title = manga.title
+        entry.deadSource = sourceDomain(manga)
+        entry.lastReadChapterNumber = manga.lastReadChapterNumber ?? null
+        entry.latestChapterNumber = manga.latestChapterNumber ?? null
+        entry.searchErrors = []
+        delete entry.rawResultCount
+        delete entry.closeMatchCount
+        delete entry.displayedResultCount
         try {
             const cleanedQuery = cleanQuery(manga.title)
+            entry.cleanedQuery = cleanedQuery
+            entry.officialMarkerStripped = cleanedQuery !== manga.title
+            entry.rawTitleFallbackUsed = false
             let all: SearchResult[]
             try {
                 all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: cleanedQuery })
-            } catch {
+            } catch (cause) {
+                entry.searchErrors.push(rawErrorMessage(cause))
                 await new Promise(r => setTimeout(r, 500))
                 all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: cleanedQuery })
             }
             // Retry with the untouched title if the cleaned query found nothing - guards
             // against a title where "Official" is genuinely load-bearing, not decoration.
             if (all.length === 0 && cleanedQuery !== manga.title) {
+                entry.rawTitleFallbackUsed = true
                 try {
                     all = await sendRuntimeMessage<SearchResult[]>({ type: "manga:search", query: manga.title })
-                } catch {
+                } catch (cause) {
+                    entry.searchErrors.push(rawErrorMessage(cause))
                     all = []
                 }
             }
+            entry.rawResultCount = all.length
             const want = normTitle(cleanQuery(manga.title))
             const sortByChapter = (a: SearchResult, b: SearchResult) =>
                 (parseFloat(b.latestChapter ?? "0") || 0) - (parseFloat(a.latestChapter ?? "0") || 0)
@@ -277,6 +349,7 @@
                 const t = normTitle(cleanQuery(r.title))
                 return t === want || t.includes(want) || want.includes(t) || wordOverlap(t, want) >= 0.6
             })
+            entry.closeMatchCount = close.length
             if (close.length > 0) {
                 card.results = dedupeCandidates(close).sort(sortByChapter)
             } else if (all.length > 0) {
@@ -298,9 +371,16 @@
             }
             card.searched = true
             if (card.results.length === 0) card.message = noLiveSourceMessage(manga.title)
+            entry.displayedResultCount = card.results.length
+            entry.finalOutcome = card.results.length === 0 ? "no-results" : "manual-candidates"
+            entry.finalMessage =
+                card.message || (card.results.length > 0 ? `${card.results.length} candidate(s) found.` : "")
         } catch (cause) {
+            entry.searchErrors.push(rawErrorMessage(cause))
             card.error = true
             card.message = describeError(cause, "Search failed - try again in a moment.")
+            entry.finalOutcome = "search-failed"
+            entry.finalMessage = card.message
         } finally {
             card.searching = false
         }
@@ -309,6 +389,7 @@
     // Returns true if the manga was auto-linked
     async function findSourcesWithAutoLink(manga: LibraryManga): Promise<boolean> {
         await findSources(manga)
+        const entry = entryOf(manga)
         if (!autoLinkEnabled) return false
         const card = cardOf(manga.id)
         if (card.results.length === 0 || card.error) return false
@@ -344,24 +425,49 @@
             ? eligible.filter(r => (manga.latestChapterNumber ?? 0) < parseFloat(r.latestChapter!))
             : eligible
 
-        if (filtered.length === 0) return false
-
         const ranked = rankCandidates(filtered, pagesCapableSourceIds)
         // Sources that have already failed library:switch repeatedly this sweep are
         // dropped entirely past 3 failures, and pushed to the back of the try-order
         // (rather than dropped) once they've failed once or twice - see
         // switchFailures above.
         const usable = ranked.filter(r => (switchFailures.get(r.sourceId) ?? 0) < 3)
+        const benchedSourceIds = ranked.filter(r => (switchFailures.get(r.sourceId) ?? 0) >= 3).map(r => r.sourceId)
         const ordered = [
             ...usable.filter(r => (switchFailures.get(r.sourceId) ?? 0) < 2),
             ...usable.filter(r => (switchFailures.get(r.sourceId) ?? 0) >= 2)
         ].slice(0, 3)
+
+        // Populate the debug-log funnel BEFORE the retry loop runs, and even on the
+        // empty-eligible-pool path below - so "why didn't this auto-link" is always
+        // answerable, not just recorded on a successful run. rankedSourceIds is
+        // `ordered` (not `ranked`) deliberately: it must reflect the FINAL order
+        // actually attempted, after both rankCandidates() and the switchFailures
+        // reorder/filter above, not the pre-filter rank.
+        entry.autoLink = {
+            exactMatchCount: exactMatches.length,
+            overlapFallbackUsed: overlapFallback.length > 0,
+            eligibleCount: eligible.length,
+            filteredCount: filtered.length,
+            rankedSourceIds: ordered.map(r => r.sourceId),
+            benchedSourceIds,
+            attempts: []
+        }
+
+        if (filtered.length === 0) {
+            entry.finalOutcome = "auto-link-exhausted"
+            entry.finalMessage =
+                "Search found results, but none passed the exact-match/eligibility filters for auto-link."
+            return false
+        }
+
         for (const candidate of ordered) {
-            if (await linkSource(manga, candidate)) {
+            if (await linkSource(manga, candidate, "auto")) {
                 autoLinkedSummary = [...autoLinkedSummary, { title: manga.title, sourceId: candidate.sourceId }]
                 return true
             }
         }
+        entry.finalOutcome = "auto-link-exhausted"
+        entry.finalMessage = `Tried ${ordered.length} candidate(s), all failed to link.`
         return false
     }
 
@@ -371,11 +477,22 @@
         autoLinkedCount = 0
         autoLinkedSummary = []
         switchFailures.clear()
+        // Reset the debug-log accumulator wholesale for this sweep - a fresh run's
+        // log shouldn't inherit stale entries from a previous run.
+        debugLog = {}
         const queue = mangas.filter(m => {
             const c = cardOf(m.id)
             return !c.searched && !c.searching
         })
         searchProgress = { done: 0, total: queue.length, current: "" }
+        sweepMeta = {
+            startedAt: Date.now(),
+            finishedAt: null,
+            stopped: false,
+            autoLinkEnabled,
+            isLibraryScan,
+            total: queue.length
+        }
 
         // Safe at 6 only combined with sources.ts's searchManga skip-memo (repeated
         // race-timeouts bench a source for the rest of the sweep) and the mangahub
@@ -398,6 +515,9 @@
         // preserves the incidental full-batch dead-cover drain that used to happen
         // on every single per-link backfill, without paying for it per-link.
         void sendRuntimeMessage({ type: "library:covers:backfill" }).catch(() => {})
+        // Read stopRequested (the stop flag) BEFORE resetting it below, so a
+        // user-stopped sweep is recorded as such rather than always reading false.
+        if (sweepMeta) sweepMeta = { ...sweepMeta, finishedAt: Date.now(), stopped: stopRequested }
         searchingAll = false
         stopRequested = false
         searchProgress.current = ""
@@ -412,8 +532,13 @@
     // card.linking is cleared on BOTH branches (not just the catch) since a
     // sequential multi-attempt caller needs the loading flag to never get stuck
     // true, whether the attempt that finally lands is the first one or the third.
-    async function linkSource(manga: LibraryManga, result: SearchResult): Promise<boolean> {
+    async function linkSource(
+        manga: LibraryManga,
+        result: SearchResult,
+        trigger: "auto" | "manual" = "manual"
+    ): Promise<boolean> {
         const card = cardOf(manga.id)
+        const entry = entryOf(manga)
         card.linking = result.sourceId
         card.message = ""
         card.error = false
@@ -426,12 +551,35 @@
                 mangaUrl: result.url
             })
             switchFailures.delete(result.sourceId)
+            const attempt: LinkAttempt = {
+                sourceId: result.sourceId,
+                resultTitle: result.title,
+                latestChapter: result.latestChapter ?? null,
+                outcome: "linked",
+                trigger
+            }
+            entry.autoLink?.attempts.push(attempt)
+            // A manual click that lands (whether or not this card ever went through
+            // the auto-link path) is what actually resolved the title - overwrite
+            // finalOutcome so the log doesn't stay stuck at a stale sweep result
+            // like "auto-link-exhausted" after the user fixed it by hand.
+            entry.finalOutcome = trigger === "manual" ? "manually-linked" : "auto-linked"
+            entry.finalMessage = `Linked to ${result.sourceId} (${trigger}).`
             void sendRuntimeMessage({ type: "library:covers:backfill", mangaId: manga.id }).catch(() => {})
             onLinked(manga.id)
             card.linking = null
             return true
         } catch (cause) {
             switchFailures.set(result.sourceId, (switchFailures.get(result.sourceId) ?? 0) + 1)
+            const attempt: LinkAttempt = {
+                sourceId: result.sourceId,
+                resultTitle: result.title,
+                latestChapter: result.latestChapter ?? null,
+                outcome: "failed",
+                failureReason: rawErrorMessage(cause),
+                trigger
+            }
+            entry.autoLink?.attempts.push(attempt)
             card.error = true
             card.message = describeError(cause, "Link failed - the source may be unreachable.")
             card.linking = null
@@ -492,219 +640,269 @@
         void browser.tabs.create({ url: result.url })
     }
 
+    // Mirrors copyTitle()'s copied-flash-then-reset UX exactly. Works during an
+    // in-progress sweep too - the log is append-only, and a partial log is still
+    // useful for a bug report (the header's counts make partiality self-evident).
+    async function copyDebugLog() {
+        const text = formatReconcileLog(Object.values(debugLog), sweepMeta, browser.runtime.getManifest().version)
+        try {
+            await navigator.clipboard.writeText(text)
+        } catch {
+            return // clipboard access denied/unavailable - nothing more we can do
+        }
+        debugLogCopied = true
+        if (debugLogCopyTimer) clearTimeout(debugLogCopyTimer)
+        debugLogCopyTimer = setTimeout(() => {
+            debugLogCopied = false
+        }, 1500)
+    }
+
+    // Mirrors App.svelte's exportData(): Blob -> object URL -> anchor with
+    // `download` -> click -> revoke. $state.snapshot() strips the reactive proxy
+    // before stringifying so JSON.stringify sees plain data, not Svelte internals.
+    function downloadDebugLog() {
+        const meta = sweepMeta ? $state.snapshot(sweepMeta) : null
+        const entries = Object.values($state.snapshot(debugLog))
+        const blob = new Blob([JSON.stringify({ meta, entries }, null, 2)], { type: "application/json" })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `amr-reconcile-log-${new Date().toISOString().slice(0, 10)}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+    }
+
     const progressPct = $derived(
         searchProgress.total > 0 ? Math.round((searchProgress.done / searchProgress.total) * 100) : 0
     )
 </script>
 
-{#if mangas.length > 0}
+{#if mangas.length > 0 || Object.keys(debugLog).length > 0}
     <section class="reconcile-section">
-        <h2 class="reconcile-heading">
-            {heading ??
-                `Source issues - ${mangas.length} ${mangas.length === 1 ? "title needs" : "titles need"} a live source`}
-        </h2>
-        <p class="reconcile-hint muted">
-            {hint ??
-                "These titles were imported but their original source couldn't be matched. Find them on a live source and link to preserve your progress."}
-        </p>
+        {#if mangas.length > 0}
+            <h2 class="reconcile-heading">
+                {heading ??
+                    `Source issues - ${mangas.length} ${mangas.length === 1 ? "title needs" : "titles need"} a live source`}
+            </h2>
+            <p class="reconcile-hint muted">
+                {hint ??
+                    "These titles were imported but their original source couldn't be matched. Find them on a live source and link to preserve your progress."}
+            </p>
 
-        <div class="reconcile-bulk-actions">
-            <button
-                type="button"
-                class="btn-outline btn-sm"
-                disabled={searchingAll}
-                onclick={() => void findAllSources()}>
-                {searchingAll ? "Searching…" : `Search all ${mangas.length}`}
-            </button>
-            {#if searchingAll}
-                <button type="button" class="btn-ghost btn-sm stop-btn" onclick={stopSearch}> Stop </button>
+            <div class="reconcile-bulk-actions">
+                <button
+                    type="button"
+                    class="btn-outline btn-sm"
+                    disabled={searchingAll}
+                    onclick={() => void findAllSources()}>
+                    {searchingAll ? "Searching…" : `Search all ${mangas.length}`}
+                </button>
+                {#if searchingAll}
+                    <button type="button" class="btn-ghost btn-sm stop-btn" onclick={stopSearch}> Stop </button>
+                {/if}
+                <label class="auto-link-toggle">
+                    <input type="checkbox" bind:checked={autoLinkEnabled} disabled={searchingAll} />
+                    <span>Auto-link confident matches</span>
+                </label>
+                <button
+                    type="button"
+                    class="btn-ghost btn-sm reconcile-remove-all"
+                    disabled={removingAll}
+                    onclick={() => void removeAll()}>
+                    {removingAll ? "Removing…" : `Remove all ${mangas.length}`}
+                </button>
+            </div>
+
+            {#if searchingAll || (searchProgress.total > 0 && searchProgress.done > 0)}
+                <div class="search-progress-wrap">
+                    <div class="progress-track">
+                        <div class="progress-fill" style="width: {progressPct}%"></div>
+                    </div>
+                    <div class="progress-meta">
+                        <span class="progress-count">
+                            {searchProgress.done} / {searchProgress.total} searched
+                            {#if autoLinkedCount > 0}
+                                · <strong>{autoLinkedCount} auto-linked</strong>
+                            {/if}
+                        </span>
+                        {#if searchProgress.current && searchingAll}
+                            <span class="progress-current muted">- {searchProgress.current}</span>
+                        {/if}
+                        {#if !searchingAll && searchProgress.done >= searchProgress.total && searchProgress.total > 0}
+                            <span class="progress-done">Done ✓</span>
+                        {/if}
+                        {#if stopRequested && searchingAll}
+                            <span class="muted">Stopping…</span>
+                        {/if}
+                    </div>
+                </div>
             {/if}
-            <label class="auto-link-toggle">
-                <input type="checkbox" bind:checked={autoLinkEnabled} disabled={searchingAll} />
-                <span>Auto-link confident matches</span>
-            </label>
-            <button
-                type="button"
-                class="btn-ghost btn-sm reconcile-remove-all"
-                disabled={removingAll}
-                onclick={() => void removeAll()}>
-                {removingAll ? "Removing…" : `Remove all ${mangas.length}`}
-            </button>
-        </div>
 
-        {#if searchingAll || (searchProgress.total > 0 && searchProgress.done > 0)}
-            <div class="search-progress-wrap">
-                <div class="progress-track">
-                    <div class="progress-fill" style="width: {progressPct}%"></div>
+            {#if autoLinkedSummary.length > 0}
+                <div class="auto-link-summary-wrap">
+                    <p class="auto-link-summary-heading">Auto-linked this run</p>
+                    <ul class="auto-link-summary-list">
+                        {#each autoLinkedSummary as item, i (i)}
+                            <li class="auto-link-summary-item">
+                                <span class="auto-link-summary-title">{item.title}</span>
+                                <span class="muted">→ {item.sourceId}</span>
+                            </li>
+                        {/each}
+                    </ul>
                 </div>
-                <div class="progress-meta">
-                    <span class="progress-count">
-                        {searchProgress.done} / {searchProgress.total} searched
-                        {#if autoLinkedCount > 0}
-                            · <strong>{autoLinkedCount} auto-linked</strong>
-                        {/if}
-                    </span>
-                    {#if searchProgress.current && searchingAll}
-                        <span class="progress-current muted">- {searchProgress.current}</span>
-                    {/if}
-                    {#if !searchingAll && searchProgress.done >= searchProgress.total && searchProgress.total > 0}
-                        <span class="progress-done">Done ✓</span>
-                    {/if}
-                    {#if stopRequested && searchingAll}
-                        <span class="muted">Stopping…</span>
-                    {/if}
-                </div>
-            </div>
-        {/if}
+            {/if}
 
-        {#if autoLinkedSummary.length > 0}
-            <div class="auto-link-summary-wrap">
-                <p class="auto-link-summary-heading">Auto-linked this run</p>
-                <ul class="auto-link-summary-list">
-                    {#each autoLinkedSummary as item, i (i)}
-                        <li class="auto-link-summary-item">
-                            <span class="auto-link-summary-title">{item.title}</span>
-                            <span class="muted">→ {item.sourceId}</span>
-                        </li>
-                    {/each}
-                </ul>
-            </div>
-        {/if}
-
-        <ul class="reconcile-list">
-            {#each visible as manga (manga.id)}
-                {@const card = cardOf(manga.id)}
-                <li class="reconcile-card">
-                    <div class="reconcile-meta">
-                        <span class="reconcile-title-row">
-                            <span class="reconcile-title">{manga.title}</span>
-                            <button
-                                type="button"
-                                class="btn-ghost btn-sm copy-title-btn"
-                                title="Copy title to clipboard"
-                                onclick={() => void copyTitle(manga)}>
-                                {card.copied ? "Copied" : "Copy title"}
-                            </button>
-                            {#if card.copied}<span class="saved-flash">✓</span>{/if}
-                        </span>
-                        <span class="reconcile-source muted">
-                            Could not find: {sourceDomain(manga)} · {progressLine(manga)}
-                        </span>
-                    </div>
-                    <div class="reconcile-actions">
-                        {#if !card.searched || card.searching}
-                            <div class="reconcile-btns">
+            <ul class="reconcile-list">
+                {#each visible as manga (manga.id)}
+                    {@const card = cardOf(manga.id)}
+                    <li class="reconcile-card">
+                        <div class="reconcile-meta">
+                            <span class="reconcile-title-row">
+                                <span class="reconcile-title">{manga.title}</span>
                                 <button
                                     type="button"
-                                    class="btn-outline btn-sm"
-                                    disabled={card.searching}
-                                    onclick={() => findSources(manga)}>
-                                    {card.searching ? "Searching…" : "Find on other sources"}
+                                    class="btn-ghost btn-sm copy-title-btn"
+                                    title="Copy title to clipboard"
+                                    onclick={() => void copyTitle(manga)}>
+                                    {card.copied ? "Copied" : "Copy title"}
                                 </button>
-                                <button
-                                    type="button"
-                                    class="btn-ghost btn-sm"
-                                    disabled={card.searching}
-                                    onclick={() => dismissManual(manga)}>
-                                    Mark as manual
-                                </button>
-                                <button
-                                    type="button"
-                                    class="btn-ghost btn-sm btn-danger-ghost"
-                                    disabled={card.searching}
-                                    onclick={() => removeTitle(manga)}>
-                                    Remove
-                                </button>
-                            </div>
-                        {/if}
-                        {#if card.message}
-                            <p class="reconcile-msg" class:reconcile-error={card.error}>{card.message}</p>
-                        {/if}
-                        {#if card.searched && card.results.length === 0 && !card.searching}
-                            <div class="reconcile-btns">
-                                <button
-                                    type="button"
-                                    class="btn-outline btn-sm"
-                                    onclick={() => {
-                                        cards[manga.id]!.searched = false
-                                        void findSources(manga)
+                                {#if card.copied}<span class="saved-flash">✓</span>{/if}
+                            </span>
+                            <span class="reconcile-source muted">
+                                Could not find: {sourceDomain(manga)} · {progressLine(manga)}
+                            </span>
+                        </div>
+                        <div class="reconcile-actions">
+                            {#if !card.searched || card.searching}
+                                <div class="reconcile-btns">
+                                    <button
+                                        type="button"
+                                        class="btn-outline btn-sm"
+                                        disabled={card.searching}
+                                        onclick={() => findSources(manga)}>
+                                        {card.searching ? "Searching…" : "Find on other sources"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn-ghost btn-sm"
+                                        disabled={card.searching}
+                                        onclick={() => dismissManual(manga)}>
+                                        Mark as manual
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn-ghost btn-sm btn-danger-ghost"
+                                        disabled={card.searching}
+                                        onclick={() => removeTitle(manga)}>
+                                        Remove
+                                    </button>
+                                </div>
+                            {/if}
+                            {#if card.message}
+                                <p class="reconcile-msg" class:reconcile-error={card.error}>{card.message}</p>
+                            {/if}
+                            {#if card.searched && card.results.length === 0 && !card.searching}
+                                <div class="reconcile-btns">
+                                    <button
+                                        type="button"
+                                        class="btn-outline btn-sm"
+                                        onclick={() => {
+                                            cards[manga.id]!.searched = false
+                                            void findSources(manga)
+                                        }}>
+                                        Retry search
+                                    </button>
+                                    <button type="button" class="btn-ghost btn-sm" onclick={() => dismissManual(manga)}>
+                                        Mark as manual
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn-ghost btn-sm btn-danger-ghost"
+                                        onclick={() => removeTitle(manga)}>
+                                        Remove
+                                    </button>
+                                </div>
+                            {/if}
+                            {#if card.searched && !card.searching}
+                                <form
+                                    class="link-url-form"
+                                    onsubmit={e => {
+                                        e.preventDefault()
+                                        void linkByUrl(manga)
                                     }}>
-                                    Retry search
-                                </button>
-                                <button type="button" class="btn-ghost btn-sm" onclick={() => dismissManual(manga)}>
-                                    Mark as manual
-                                </button>
-                                <button
-                                    type="button"
-                                    class="btn-ghost btn-sm btn-danger-ghost"
-                                    onclick={() => removeTitle(manga)}>
-                                    Remove
-                                </button>
-                            </div>
-                        {/if}
-                        {#if card.searched && !card.searching}
-                            <form
-                                class="link-url-form"
-                                onsubmit={e => {
-                                    e.preventDefault()
-                                    void linkByUrl(manga)
-                                }}>
-                                <input
-                                    class="link-url-input"
-                                    type="url"
-                                    placeholder="Or paste a manga page URL to link directly…"
-                                    bind:value={card.urlInput}
-                                    disabled={card.urlLinking} />
-                                <button
-                                    type="submit"
-                                    class="btn-outline btn-sm"
-                                    disabled={!card.urlInput.trim() || card.urlLinking}>
-                                    {card.urlLinking ? "Linking…" : "Link"}
-                                </button>
-                            </form>
-                        {/if}
-                        {#if card.results.length > 0}
-                            <ul class="mirror-results">
-                                {#each card.results as result}
-                                    <li class="mirror-result">
-                                        {#if result.coverUrl}
-                                            <img
-                                                class="mirror-cover"
-                                                src={result.coverUrl}
-                                                alt={result.title}
-                                                loading="lazy" />
-                                        {/if}
-                                        <div class="mirror-info">
-                                            <span class="mirror-source">{result.sourceId}</span>
-                                            <span class="mirror-title muted">{result.title}</span>
-                                            <span class="mirror-ch muted">ch {result.latestChapter ?? "?"}</span>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            class="btn-ghost btn-sm"
-                                            title="Open this result in a new tab"
-                                            onclick={() => openResult(result)}>
-                                            Open
-                                        </button>
-                                        <button
-                                            type="button"
-                                            class="btn-sm"
-                                            disabled={card.linking !== null}
-                                            onclick={() => linkSource(manga, result)}>
-                                            {card.linking === result.sourceId ? "Linking…" : "Link"}
-                                        </button>
-                                    </li>
-                                {/each}
-                            </ul>
-                        {/if}
-                    </div>
-                </li>
-            {/each}
-        </ul>
-        {#if hasMore}
-            <button type="button" class="btn-outline show-more" onclick={() => (visibleCount += PAGE_SIZE)}>
-                Show more ({mangas.length - visibleCount} remaining)
-            </button>
+                                    <input
+                                        class="link-url-input"
+                                        type="url"
+                                        placeholder="Or paste a manga page URL to link directly…"
+                                        bind:value={card.urlInput}
+                                        disabled={card.urlLinking} />
+                                    <button
+                                        type="submit"
+                                        class="btn-outline btn-sm"
+                                        disabled={!card.urlInput.trim() || card.urlLinking}>
+                                        {card.urlLinking ? "Linking…" : "Link"}
+                                    </button>
+                                </form>
+                            {/if}
+                            {#if card.results.length > 0}
+                                <ul class="mirror-results">
+                                    {#each card.results as result}
+                                        <li class="mirror-result">
+                                            {#if result.coverUrl}
+                                                <img
+                                                    class="mirror-cover"
+                                                    src={result.coverUrl}
+                                                    alt={result.title}
+                                                    loading="lazy" />
+                                            {/if}
+                                            <div class="mirror-info">
+                                                <span class="mirror-source">{result.sourceId}</span>
+                                                <span class="mirror-title muted">{result.title}</span>
+                                                <span class="mirror-ch muted">ch {result.latestChapter ?? "?"}</span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                class="btn-ghost btn-sm"
+                                                title="Open this result in a new tab"
+                                                onclick={() => openResult(result)}>
+                                                Open
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="btn-sm"
+                                                disabled={card.linking !== null}
+                                                onclick={() => void linkSource(manga, result, "manual")}>
+                                                {card.linking === result.sourceId ? "Linking…" : "Link"}
+                                            </button>
+                                        </li>
+                                    {/each}
+                                </ul>
+                            {/if}
+                        </div>
+                    </li>
+                {/each}
+            </ul>
+            {#if hasMore}
+                <button type="button" class="btn-outline show-more" onclick={() => (visibleCount += PAGE_SIZE)}>
+                    Show more ({mangas.length - visibleCount} remaining)
+                </button>
+            {/if}
+        {/if}
+
+        {#if Object.keys(debugLog).length > 0}
+            <div class="debug-log-wrap">
+                <p class="debug-log-heading">
+                    Debug log · {Object.keys(debugLog).length}
+                    {Object.keys(debugLog).length === 1 ? "title" : "titles"} recorded
+                </p>
+                <div class="debug-log-actions">
+                    <button type="button" class="btn-outline btn-sm" onclick={() => void copyDebugLog()}>
+                        {debugLogCopied ? "Copied" : "Copy debug log"}
+                    </button>
+                    {#if debugLogCopied}<span class="saved-flash">✓</span>{/if}
+                    <button type="button" class="btn-ghost btn-sm" onclick={downloadDebugLog}> Download .json </button>
+                </div>
+            </div>
         {/if}
     </section>
 {/if}
@@ -1009,6 +1207,30 @@
     .show-more {
         margin-top: 12px;
         width: 100%;
+    }
+
+    /* Debug log */
+    .debug-log-wrap {
+        background: var(--surface-2, var(--surface));
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-top: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .debug-log-heading {
+        margin: 0;
+        font-size: 0.82rem;
+        font-weight: 500;
+    }
+
+    .debug-log-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
     }
 
     .link-url-form {
