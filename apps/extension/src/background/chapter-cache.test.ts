@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto"
 import type { ChapterRecord } from "@amr/contracts"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { db, type LibraryManga } from "../database"
 
 const fetchChapterHtmlViaTabMock = vi.fn()
@@ -22,8 +22,13 @@ vi.mock("../sources", () => ({
     listChaptersBySource: (...args: unknown[]) => listChaptersBySourceMock(...args)
 }))
 
-const { mineAndCacheEpisodesFromHtml, listChaptersWithTabFallback, ensureChapterListRefreshed } =
-    await import("./chapter-cache")
+const {
+    mineAndCacheEpisodesFromHtml,
+    listChaptersWithTabFallback,
+    ensureChapterListRefreshed,
+    scheduleChapterListRefresh,
+    _resetRefreshCooldownForTests
+} = await import("./chapter-cache")
 
 const SOURCE_ID = "webtoons"
 const SOURCE_MANGA_ID = "99"
@@ -277,5 +282,79 @@ describe("ensureChapterListRefreshed", () => {
         const source = fakeSource(() => LIST_URL)
 
         await expect(ensureChapterListRefreshed(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)).resolves.toBeUndefined()
+    })
+})
+
+describe("scheduleChapterListRefresh cooldown", () => {
+    // fake-indexeddb's internal scheduling relies on real timers, so the cooldown
+    // clock is controlled by mocking Date.now directly instead of vi.useFakeTimers().
+    let nowSpy: ReturnType<typeof vi.spyOn>
+    let currentNow = 0
+
+    // Lets the fire-and-forget refresh (including its async IndexedDB writes) fully
+    // settle before the next assertion - several real macrotask ticks, since
+    // fake-indexeddb's transaction completion needs the real event loop, not just
+    // microtask flushing, and can take more than one round trip through it.
+    const flush = async () => {
+        for (let i = 0; i < 5; i++) {
+            await new Promise(resolve => setTimeout(resolve, 0))
+        }
+    }
+
+    beforeEach(() => {
+        fetchChapterHtmlViaTabMock.mockReset()
+        fetchChapterHtmlViaTabMock.mockResolvedValue(pageHtml([3, 2, 1], null))
+        _resetRefreshCooldownForTests()
+        currentNow = Date.now()
+        nowSpy = vi.spyOn(Date, "now").mockImplementation(() => currentNow)
+    })
+
+    afterEach(async () => {
+        // Let any refresh left in-flight by the test finish before the next test
+        // reuses the same manga key - otherwise it would be seen as still in-flight
+        // (inFlightRefreshes is module-scoped, unlike the cooldown map).
+        await flush()
+        nowSpy.mockRestore()
+    })
+
+    it("dedupes back-to-back schedule calls for the same manga into a single refresh", async () => {
+        await db.manga.put(manga)
+        const source = fakeSource(() => LIST_URL)
+
+        scheduleChapterListRefresh(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        scheduleChapterListRefresh(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        await flush()
+
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("allows a second refresh once the cooldown window has elapsed", async () => {
+        await db.manga.put(manga)
+        const source = fakeSource(() => LIST_URL)
+
+        scheduleChapterListRefresh(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        await flush()
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(1)
+
+        currentNow += 10 * 60 * 1000 + 1
+
+        scheduleChapterListRefresh(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        await flush()
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(2)
+    })
+
+    it("allows a second refresh immediately after _resetRefreshCooldownForTests", async () => {
+        await db.manga.put(manga)
+        const source = fakeSource(() => LIST_URL)
+
+        scheduleChapterListRefresh(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        await flush()
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(1)
+
+        _resetRefreshCooldownForTests()
+
+        scheduleChapterListRefresh(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        await flush()
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(2)
     })
 })

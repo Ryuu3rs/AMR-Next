@@ -440,14 +440,21 @@ export const libraryHandlers: HandlerMap = {
             // trust the cache and skip the fetch entirely.
             const cacheMightBeStaleForNext = current !== null && maxSortKey <= current
             if (!cacheMightBeStaleForNext) {
-                const source = sourceRegistry.get(manga.sourceId)
-                if (source) {
-                    scheduleChapterListRefresh(
-                        source,
-                        manga.sourceMangaId ?? "",
-                        manga.mangaUrl ?? manga.sourceUrl,
-                        manga.id
-                    )
+                // Skip when there's no sourceMangaId - an empty id would share a
+                // cooldown/dedup key across every such title for this source, and for
+                // tab-crawl sources (Webtoons) getChapterListUrl("", ...) builds a URL
+                // whose mined links can never pass the title_no guard, so it's a wasted
+                // tab load that can never produce useful data.
+                if (manga.sourceMangaId) {
+                    const source = sourceRegistry.get(manga.sourceId)
+                    if (source) {
+                        scheduleChapterListRefresh(
+                            source,
+                            manga.sourceMangaId,
+                            manga.mangaUrl ?? manga.sourceUrl,
+                            manga.id
+                        )
+                    }
                 }
                 return toResponse(next, prev)
             }
