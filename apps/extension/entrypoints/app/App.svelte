@@ -777,6 +777,24 @@
         }
     }
 
+    // A "Search all"/"Find better sources" reconcile sweep can auto-link dozens of
+    // titles in quick succession - each onLinked() call firing a synchronous load()
+    // (a full library-list + every cached cover re-read from IndexedDB) would flood
+    // the dashboard with ~1 full reload per link, competing with the sweep's own
+    // network traffic. Trailing-debounce collapses a burst of onLinked() calls into
+    // one load() 1s after the last one. The live-update-bus refresh() subscription
+    // (subscribeLive, see onMount) already covers incremental freshness in the
+    // meantime, so this doesn't lose reactivity between the last link and the
+    // debounced load().
+    let scheduledLoadTimer: ReturnType<typeof setTimeout> | undefined
+    function scheduleLoad() {
+        if (scheduledLoadTimer !== undefined) clearTimeout(scheduledLoadTimer)
+        scheduledLoadTimer = setTimeout(() => {
+            scheduledLoadTimer = undefined
+            void load()
+        }, 1000)
+    }
+
     async function load() {
         loading = true
         try {
@@ -3372,7 +3390,7 @@
                     if (reconcileIds.length === 0 && dataMessage.includes("need a live source")) {
                         dataMessage = dataMessage.replace(/\s*\d+ titles? need a live source[^.]*\.?/i, "").trim()
                     }
-                    void load()
+                    scheduleLoad()
                 }} />
 
             {#if libScanIds.length > 0}
@@ -3383,7 +3401,7 @@
                     isLibraryScan={true}
                     onLinked={id => {
                         libScanIds = libScanIds.filter(lid => lid !== id)
-                        void load()
+                        scheduleLoad()
                     }} />
             {/if}
 

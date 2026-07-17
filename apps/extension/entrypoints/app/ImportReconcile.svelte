@@ -59,6 +59,14 @@
     let autoLinkEnabled = $state(true)
     let autoLinkedSummary = $state<Array<{ title: string; sourceId: string }>>([])
 
+    // Sweep-scoped switch-failure memo: persists across the sequential
+    // candidate-retry loop within one title AND across the worker pool within one
+    // "Search all" run, but is cleared at the start of findAllSources() so it never
+    // leaks into a later separate run. Not $state - only consulted internally by
+    // the auto-link ranking below, never rendered. The manual per-result Link
+    // button calls linkSource() directly and never reads this memo.
+    const switchFailures = new Map<string, number>()
+
     function cardOf(id: string): CardState {
         if (!cards[id]) {
             untrack(() => {
@@ -338,8 +346,17 @@
 
         if (filtered.length === 0) return false
 
-        const ranked = rankCandidates(filtered, pagesCapableSourceIds).slice(0, 3)
-        for (const candidate of ranked) {
+        const ranked = rankCandidates(filtered, pagesCapableSourceIds)
+        // Sources that have already failed library:switch repeatedly this sweep are
+        // dropped entirely past 3 failures, and pushed to the back of the try-order
+        // (rather than dropped) once they've failed once or twice - see
+        // switchFailures above.
+        const usable = ranked.filter(r => (switchFailures.get(r.sourceId) ?? 0) < 3)
+        const ordered = [
+            ...usable.filter(r => (switchFailures.get(r.sourceId) ?? 0) < 2),
+            ...usable.filter(r => (switchFailures.get(r.sourceId) ?? 0) >= 2)
+        ].slice(0, 3)
+        for (const candidate of ordered) {
             if (await linkSource(manga, candidate)) {
                 autoLinkedSummary = [...autoLinkedSummary, { title: manga.title, sourceId: candidate.sourceId }]
                 return true
@@ -353,13 +370,17 @@
         stopRequested = false
         autoLinkedCount = 0
         autoLinkedSummary = []
+        switchFailures.clear()
         const queue = mangas.filter(m => {
             const c = cardOf(m.id)
             return !c.searched && !c.searching
         })
         searchProgress = { done: 0, total: queue.length, current: "" }
 
-        const CONCURRENCY = 3
+        // Safe at 6 only combined with sources.ts's searchManga skip-memo (repeated
+        // race-timeouts bench a source for the rest of the sweep) and the mangahub
+        // race-timeout exemption - both land alongside this change.
+        const CONCURRENCY = 6
         let idx = 0
 
         async function worker() {
@@ -373,6 +394,10 @@
         }
 
         await Promise.all(Array.from({ length: CONCURRENCY }, worker))
+        // One untargeted, fire-and-forget backfill at the end of the sweep -
+        // preserves the incidental full-batch dead-cover drain that used to happen
+        // on every single per-link backfill, without paying for it per-link.
+        void sendRuntimeMessage({ type: "library:covers:backfill" }).catch(() => {})
         searchingAll = false
         stopRequested = false
         searchProgress.current = ""
@@ -400,11 +425,13 @@
                 sourceMangaId: result.sourceMangaId,
                 mangaUrl: result.url
             })
-            await sendRuntimeMessage({ type: "library:covers:backfill" })
+            switchFailures.delete(result.sourceId)
+            void sendRuntimeMessage({ type: "library:covers:backfill", mangaId: manga.id }).catch(() => {})
             onLinked(manga.id)
             card.linking = null
             return true
         } catch (cause) {
+            switchFailures.set(result.sourceId, (switchFailures.get(result.sourceId) ?? 0) + 1)
             card.error = true
             card.message = describeError(cause, "Link failed - the source may be unreachable.")
             card.linking = null
@@ -422,7 +449,7 @@
         card.error = false
         try {
             await sendRuntimeMessage({ type: "library:link-url", mangaId: manga.id, mangaUrl: url })
-            await sendRuntimeMessage({ type: "library:covers:backfill" })
+            void sendRuntimeMessage({ type: "library:covers:backfill", mangaId: manga.id }).catch(() => {})
             onLinked(manga.id)
         } catch (cause) {
             card.error = true

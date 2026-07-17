@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createOriginAllowlist, type SourceManifest, type SourceSearchResult } from "@amr/source-sdk"
 
 const manifest = (id: string): SourceManifest => ({
@@ -125,6 +125,177 @@ describe("searchManga result filtering", () => {
     })
 })
 
+describe("searchManga timeout-skip memo", () => {
+    beforeEach(() => {
+        vi.useFakeTimers()
+    })
+    afterEach(() => {
+        vi.useRealTimers()
+    })
+
+    it("excludes a source from search after 3 sequential race-timeouts, then re-probes once after the retry window", async () => {
+        const { searchManga } = await import("./sources")
+        const id = "flaky-seq-timeout"
+        const hangingAdapter = makeAdapter(id, [])
+        hangingAdapter.search = vi.fn(() => new Promise(() => {}))
+        listMock = () => [hangingAdapter]
+
+        // 3 genuinely sequential timeouts (each call fully awaited before the next
+        // starts) build the streak to the skip threshold. The trailing 1ms advance
+        // after each is a fake-timer-only precaution: without any elapsed time
+        // between one call's settle and the next call's dispatch, both would read
+        // the exact same Date.now() tick, tying searchStartedAt with the previous
+        // lastIncrementAt and spuriously blocking the sequential-guard's own
+        // increment (which requires a STRICT >) - real sequential calls always have
+        // some real time pass between them, so this isn't the behavior under test.
+        for (let i = 0; i < 3; i++) {
+            const pending = searchManga("anything")
+            await vi.advanceTimersByTimeAsync(8000)
+            await pending
+            await vi.advanceTimersByTimeAsync(1)
+        }
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(3)
+
+        // The streak just crossed the skip threshold, and lastProbeAt hasn't been
+        // stamped yet (it defaults to 0, and real elapsed-since-epoch is always well
+        // past SEARCH_RETRY_PROBE_MS) - so the very next call is dispatched as an
+        // eager first probe, which is what actually stamps lastProbeAt. It times out
+        // again too.
+        const eagerProbe = searchManga("anything")
+        await vi.advanceTimersByTimeAsync(8000)
+        await eagerProbe
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(4)
+
+        // Genuinely within SEARCH_RETRY_PROBE_MS of that stamped probe now - skipped
+        // entirely, no dispatch.
+        const skipped = searchManga("anything")
+        await vi.advanceTimersByTimeAsync(8000)
+        await skipped
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(4)
+
+        // Past the retry window since the last probe - included exactly once. Make
+        // it succeed to also exercise the streak-reset-on-success path.
+        await vi.advanceTimersByTimeAsync(60_001)
+        hangingAdapter.search.mockResolvedValueOnce([result("Found It", id)])
+        const probeResults = await searchManga("found")
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(5)
+        expect(probeResults.map(r => r.title)).toEqual(["Found It"])
+
+        // Streak was reset (deleted) by the successful probe - immediately dispatches
+        // again rather than staying skipped.
+        const afterSuccess = searchManga("anything")
+        await vi.advanceTimersByTimeAsync(8000)
+        await afterSuccess
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(6)
+    })
+
+    it("does not double-count a source timing out for two overlapping (concurrent) searchManga calls", async () => {
+        const { searchManga } = await import("./sources")
+        const id = "flaky-concurrent-timeout"
+        const hangingAdapter = makeAdapter(id, [])
+        hangingAdapter.search = vi.fn(() => new Promise(() => {}))
+        listMock = () => [hangingAdapter]
+
+        // Two calls started close together, both racing the same adapter, both
+        // observing its timeout in the same window - the searchStartedAt >
+        // lastIncrementAt guard should only let ONE of them register a streak tick.
+        const p1 = searchManga("anything")
+        const p2 = searchManga("anything")
+        await vi.advanceTimersByTimeAsync(8000)
+        await Promise.all([p1, p2])
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(2)
+        // See the sequential test above for why this small gap is needed - it keeps
+        // each following call's searchStartedAt strictly after the previous one's
+        // settle, matching real-world timing instead of a fake-timer exact tie.
+        await vi.advanceTimersByTimeAsync(1)
+
+        // If the concurrent pair had counted as 2 streak ticks, streak would already
+        // be 3 (skip threshold) entering p4, and p4 itself would be skipped (call
+        // count would stay at 3, not reach 4). Since the guard collapses the
+        // concurrent pair to 1 tick, two MORE sequential timeouts (p3, p4) are
+        // needed to reach the threshold, so both still dispatch.
+        const p3 = searchManga("anything")
+        await vi.advanceTimersByTimeAsync(8000)
+        await p3
+        await vi.advanceTimersByTimeAsync(1)
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(3)
+
+        const p4 = searchManga("anything")
+        await vi.advanceTimersByTimeAsync(8000)
+        await p4
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(4)
+
+        // Streak just crossed the threshold - the immediate next call is dispatched
+        // as an eager first probe (lastProbeAt not yet stamped - see the sequential
+        // test above for the same quirk), and times out again too.
+        const p5 = searchManga("anything")
+        await vi.advanceTimersByTimeAsync(8000)
+        await p5
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(5)
+
+        // Now genuinely within the retry window of that stamped probe - skipped.
+        const p6 = searchManga("anything")
+        await vi.advanceTimersByTimeAsync(8000)
+        await p6
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(5)
+    })
+
+    it("does not apply the searchManga skip memo to searchMangaStreaming", async () => {
+        const { searchManga, searchMangaStreaming } = await import("./sources")
+        const id = "flaky-streaming-unaffected"
+        const hangingAdapter = makeAdapter(id, [])
+        hangingAdapter.search = vi.fn(() => new Promise(() => {}))
+        listMock = () => [hangingAdapter]
+
+        for (let i = 0; i < 3; i++) {
+            const pending = searchManga("anything")
+            await vi.advanceTimersByTimeAsync(8000)
+            await pending
+        }
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(3)
+
+        // Benched for searchManga now, but searchMangaStreaming must still dispatch.
+        hangingAdapter.search.mockResolvedValueOnce([result("Streaming Found", id)])
+        const partials: Array<{ sourceId: string; titles: string[] }> = []
+        await new Promise<void>(resolveDone => {
+            searchMangaStreaming(
+                "streaming",
+                (results, sourceId) => partials.push({ sourceId, titles: results.map(r => r.title) }),
+                () => resolveDone()
+            )
+        })
+        expect(hangingAdapter.search).toHaveBeenCalledTimes(4)
+        expect(partials).toEqual([{ sourceId: id, titles: ["Streaming Found"] }])
+    })
+
+    it("applies a 12s race timeout for mangahub search while other adapters use the 8s default", async () => {
+        const { searchManga } = await import("./sources")
+        const mangahubAdapter = makeAdapter("mangahub", [])
+        mangahubAdapter.search = vi.fn(
+            () =>
+                new Promise(resolve => {
+                    setTimeout(() => resolve([result("Searchable Title", "mangahub")]), 9000)
+                })
+        )
+        const otherAdapter = makeAdapter("other-source", [])
+        otherAdapter.search = vi.fn(
+            () =>
+                new Promise(resolve => {
+                    setTimeout(() => resolve([result("Searchable Title", "other-source")]), 9000)
+                })
+        )
+        listMock = () => [mangahubAdapter, otherAdapter]
+
+        const pending = searchManga("searchable")
+        await vi.advanceTimersByTimeAsync(9000)
+        const results = await pending
+
+        // other-source's 8s cap fires before its 9s response lands - only mangahub
+        // (12s cap) survives to return a result.
+        expect(results.map(r => r.sourceId)).toEqual(["mangahub"])
+    })
+})
+
 describe("createSourceContext response cache reuse", () => {
     it("shares the response cache across two separately-created contexts for the same sourceId", async () => {
         // Mirrors the real-world scenario this fix targets: resolveCover and
@@ -174,6 +345,65 @@ describe("createSourceContext response cache reuse", () => {
         // one underlying network fetch because the response cache Map is shared per
         // sourceId across createSourceContext calls.
         expect(fetchMock).toHaveBeenCalledTimes(1)
+
+        vi.unstubAllGlobals()
+    })
+})
+
+describe("listChaptersForSource overrides threading", () => {
+    it("threads a timeoutMs/maxRetries override into the real request client instead of the default budget", async () => {
+        const hangingFetch = vi.fn(
+            (_url: string, init: { signal: AbortSignal }) =>
+                new Promise<never>((_resolve, reject) => {
+                    init.signal.addEventListener("abort", () => reject(new Error("aborted")))
+                })
+        )
+        vi.stubGlobal("fetch", hangingFetch)
+
+        const adapter = {
+            manifest: manifest("hang-source"),
+            match: () => "none" as const,
+            resolveManga: vi.fn(),
+            resolveChapter: vi.fn(),
+            listChapters: vi.fn(async (_input: unknown, ctx: { request: { getText: (u: URL) => Promise<string> } }) => {
+                // Must be an origin actually present in the real (unmocked)
+                // SOURCE_ORIGINS allowlist - createBoundedRequestClient rejects any
+                // other origin before ever calling fetch, which would make this test
+                // pass for the wrong reason (an origin-check throw, not a timeout).
+                await ctx.request.getText(new URL("https://mangadex.org/manga/x"))
+                return []
+            }),
+            search: vi.fn()
+        }
+        const getMock = vi.fn(() => adapter)
+        const { sourceRegistry } = await import("@amr/sources")
+        vi.mocked(sourceRegistry.get).mockImplementation(getMock as never)
+
+        const { listChaptersForSource } = await import("./sources")
+        const manga = {
+            id: "hang-source:manga:x",
+            title: "X",
+            normalizedTitle: "x",
+            authors: [],
+            status: "ongoing",
+            addedAt: 0,
+            updatedAt: 0
+        } as never
+
+        // A tiny override (50ms timeout, 0 retries) should make this fail fast. If
+        // the override were silently dropped (falling back to the real default of a
+        // 15s timeout / 2 retries, ~46s worst case), this call would still be
+        // pending when vitest's own test timeout hits - a genuine regression signal,
+        // not just an assertion mismatch.
+        await expect(
+            listChaptersForSource(manga, "hang-source", "x", "https://mangadex.org/manga/x", {
+                timeoutMs: 50,
+                maxRetries: 0
+            })
+        ).rejects.toThrow()
+
+        // maxRetries: 0 means exactly one attempt, no retry.
+        expect(hangingFetch).toHaveBeenCalledTimes(1)
 
         vi.unstubAllGlobals()
     })
