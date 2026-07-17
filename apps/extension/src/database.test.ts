@@ -363,6 +363,155 @@ describe("mergeMangaRecords", () => {
         expect(new TextDecoder().decode(bytes)).toBe("loser-cover")
         expect(await db.covers.get(loser.id)).toBeUndefined()
     })
+
+    it("does not max chapter numbers across different sources - the primary's own number+id pairs win", async () => {
+        const primary: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:crossprimary",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/crossprimary",
+            mangaUrl: "https://mangadex.org/title/crossprimary",
+            lastReadChapterNumber: 18,
+            lastReadChapterId: "ch18",
+            latestChapterNumber: 20,
+            latestChapterId: "ch20",
+            categories: ["favorites"]
+        }
+        const loser: LibraryManga = {
+            ...manga,
+            id: "webtoons:manga:crossloser",
+            sourceId: "webtoons",
+            sourceUrl: "https://webtoons.com/chapter/crossloser",
+            mangaUrl: "https://webtoons.com/title/crossloser",
+            lastReadChapterNumber: 22,
+            lastReadChapterId: "webtoons:ch22",
+            latestChapterNumber: 22,
+            latestChapterId: "webtoons:ch22",
+            categories: ["action"]
+        }
+        await db.manga.bulkPut([primary, loser])
+
+        const merged = await mergeMangaRecords(primary.id, [loser.id])
+
+        expect(merged.lastReadChapterNumber).toBe(18)
+        expect(merged.lastReadChapterId).toBe("ch18")
+        expect(merged.latestChapterNumber).toBe(20)
+        expect(merged.latestChapterId).toBe("ch20")
+        // Non-numeric fields still merge - only the numeric cross-source policy changed.
+        expect(merged.categories).toEqual(expect.arrayContaining(["favorites", "action"]))
+    })
+
+    it("adopts a cross-source loser's number+id pair only when the primary has neither", async () => {
+        const primary: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:fillprimary",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/fillprimary",
+            mangaUrl: "https://mangadex.org/title/fillprimary"
+        }
+        const loser: LibraryManga = {
+            ...manga,
+            id: "webtoons:manga:fillloser",
+            sourceId: "webtoons",
+            sourceUrl: "https://webtoons.com/chapter/fillloser",
+            mangaUrl: "https://webtoons.com/title/fillloser",
+            latestChapterNumber: 22,
+            latestChapterId: "webtoons:ch22"
+        }
+        await db.manga.bulkPut([primary, loser])
+
+        const merged = await mergeMangaRecords(primary.id, [loser.id])
+
+        expect(merged.latestChapterNumber).toBe(22)
+        expect(merged.latestChapterId).toBe("webtoons:ch22")
+    })
+
+    it("does not carry a cross-source loser id when the primary has a number but no id", async () => {
+        const primary: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:numonlyprimary",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/numonlyprimary",
+            mangaUrl: "https://mangadex.org/title/numonlyprimary",
+            latestChapterNumber: 20
+        }
+        const loser: LibraryManga = {
+            ...manga,
+            id: "webtoons:manga:numonlyloser",
+            sourceId: "webtoons",
+            sourceUrl: "https://webtoons.com/chapter/numonlyloser",
+            mangaUrl: "https://webtoons.com/title/numonlyloser",
+            latestChapterNumber: 22,
+            latestChapterId: "webtoons:ch22"
+        }
+        await db.manga.bulkPut([primary, loser])
+
+        const merged = await mergeMangaRecords(primary.id, [loser.id])
+
+        expect(merged.latestChapterNumber).toBe(20)
+        expect(merged.latestChapterId).toBeUndefined()
+    })
+
+    it("still maxes lastReadAt across sources", async () => {
+        const primary: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:lastreadatprimary",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/lastreadatprimary",
+            mangaUrl: "https://mangadex.org/title/lastreadatprimary",
+            lastReadAt: 1_000
+        }
+        const loser: LibraryManga = {
+            ...manga,
+            id: "webtoons:manga:lastreadatloser",
+            sourceId: "webtoons",
+            sourceUrl: "https://webtoons.com/chapter/lastreadatloser",
+            mangaUrl: "https://webtoons.com/title/lastreadatloser",
+            lastReadAt: 5_000
+        }
+        await db.manga.bulkPut([primary, loser])
+
+        const merged = await mergeMangaRecords(primary.id, [loser.id])
+
+        expect(merged.lastReadAt).toBe(5_000)
+    })
+
+    it("processes same-source losers before cross-source losers so a later same-source max can't reintroduce a dangling cross-source id", async () => {
+        const primary: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:orderprimary",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/orderprimary",
+            mangaUrl: "https://mangadex.org/title/orderprimary"
+        }
+        const loserA: LibraryManga = {
+            ...manga,
+            id: "webtoons:manga:orderlosera",
+            sourceId: "webtoons",
+            sourceUrl: "https://webtoons.com/chapter/orderlosera",
+            mangaUrl: "https://webtoons.com/title/orderlosera",
+            latestChapterNumber: 22,
+            latestChapterId: "webtoons:ch22"
+        }
+        const loserB: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:orderloserb",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/orderloserb",
+            mangaUrl: "https://mangadex.org/title/orderloserb",
+            latestChapterNumber: 20,
+            latestChapterId: "mangadex:ch20"
+        }
+        await db.manga.bulkPut([primary, loserA, loserB])
+
+        // Pass A before B - if the function did NOT reorder, A (cross-source) would
+        // fill the empty slot first and B's later same-source max would then carry
+        // A's dangling webtoons id forward.
+        const merged = await mergeMangaRecords(primary.id, [loserA.id, loserB.id])
+
+        expect(merged.latestChapterId).toBe("mangadex:ch20")
+        expect(merged.latestChapterId).not.toBe("webtoons:ch22")
+    })
 })
 
 describe("export / import integrity", () => {
