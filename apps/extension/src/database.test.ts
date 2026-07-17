@@ -10,6 +10,7 @@ import {
     getLocalStats,
     importDatabase,
     listBackups,
+    mergeMangaRecords,
     rekeyManga,
     removeManga,
     restoreBackup,
@@ -92,6 +93,51 @@ describe("saveProgress", () => {
 
         const events = await db.historyEvents.toArray()
         expect(events.map(e => e.type).sort()).toEqual(["completed", "started"])
+    })
+
+    it("does not let a later report from an earlier page regress an already-completed chapter (Bug 1)", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+
+        await saveProgress({
+            mangaId: manga.id,
+            chapterId: chapter.id,
+            pageIndex: 9,
+            pageCount: 10,
+            completed: true,
+            updatedAt: 1_000
+        })
+
+        // Simulates paging back after finishing (or a fresh reader session's reporter
+        // starting again from page 0) reporting completed:false in a later, separate
+        // saveProgress call - not the same throttle.ts pending window.
+        await saveProgress({
+            mangaId: manga.id,
+            chapterId: chapter.id,
+            pageIndex: 2,
+            pageCount: 10,
+            completed: false,
+            updatedAt: 2_000
+        })
+
+        const afterRegressAttempt = await db.progress.get(chapter.id)
+        expect(afterRegressAttempt?.completed).toBe(true)
+        expect(afterRegressAttempt?.pageIndex).toBe(2)
+
+        // Re-reaching the last page and reporting completed:true again must not insert
+        // a second "completed" historyEvent for this chapter.
+        await saveProgress({
+            mangaId: manga.id,
+            chapterId: chapter.id,
+            pageIndex: 9,
+            pageCount: 10,
+            completed: true,
+            updatedAt: 3_000
+        })
+
+        const completedEvents = (await db.historyEvents.toArray()).filter(
+            e => e.chapterId === chapter.id && e.type === "completed"
+        )
+        expect(completedEvents).toHaveLength(1)
     })
 })
 
@@ -198,6 +244,15 @@ describe("removeManga", () => {
         expect(await db.historyEvents.where("mangaId").equals(manga.id).count()).toBe(0)
     })
 
+    it("deletes the manga's covers row (Bug 3)", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await db.covers.put({ mangaId: manga.id, blob: new Blob(["x"]), cachedAt: 1 })
+
+        await removeManga(manga.id)
+
+        expect(await db.covers.get(manga.id)).toBeUndefined()
+    })
+
     it("does not remove other manga's data", async () => {
         const manga2: MangaRecord = {
             ...manga,
@@ -216,6 +271,97 @@ describe("removeManga", () => {
         expect(await db.manga.get(manga2.id)).toBeDefined()
         expect(await db.chapters.where("mangaId").equals(manga2.id).count()).toBe(1)
         expect(await db.sourceLinks.get(manga2.id)).toBeDefined()
+    })
+})
+
+describe("mergeMangaRecords", () => {
+    it("carries the loser's chapter-id fields alongside whichever side's number won the max (Bug 2)", async () => {
+        const primary: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:primary",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/primary",
+            mangaUrl: "https://mangadex.org/title/primary",
+            lastReadChapterNumber: 18,
+            lastReadChapterId: "ch18",
+            latestChapterNumber: 20,
+            latestChapterId: "ch20"
+        }
+        const loser: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:loser",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/loser",
+            mangaUrl: "https://mangadex.org/title/loser",
+            lastReadChapterNumber: 22,
+            lastReadChapterId: "ch22",
+            latestChapterNumber: 22,
+            latestChapterId: "ch22"
+        }
+        await db.manga.bulkPut([primary, loser])
+
+        const merged = await mergeMangaRecords(primary.id, [loser.id])
+
+        expect(merged.latestChapterId).toBe("ch22")
+        expect(merged.lastReadChapterId).toBe("ch22")
+        expect(merged.latestChapterNumber).toBe(22)
+        expect(merged.lastReadChapterNumber).toBe(22)
+    })
+
+    it("leaves the primary's chapter-id fields untouched when the primary is already at the max and the loser has nothing set", async () => {
+        const primary: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:primary2",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/primary2",
+            mangaUrl: "https://mangadex.org/title/primary2",
+            lastReadChapterNumber: 18,
+            lastReadChapterId: "ch18",
+            latestChapterNumber: 20,
+            latestChapterId: "ch20"
+        }
+        const loser: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:loser2",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/loser2",
+            mangaUrl: "https://mangadex.org/title/loser2"
+        }
+        await db.manga.bulkPut([primary, loser])
+
+        const merged = await mergeMangaRecords(primary.id, [loser.id])
+
+        expect(merged.latestChapterId).toBe("ch20")
+        expect(merged.lastReadChapterId).toBe("ch18")
+        expect(merged.latestChapterNumber).toBe(20)
+        expect(merged.lastReadChapterNumber).toBe(18)
+    })
+
+    it("carries the loser's cover to the primary when the primary has none, and deletes the loser's cover row (Bug 3)", async () => {
+        const primary: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:coverprimary",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/coverprimary",
+            mangaUrl: "https://mangadex.org/title/coverprimary"
+        }
+        const loser: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:coverloser",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/coverloser",
+            mangaUrl: "https://mangadex.org/title/coverloser"
+        }
+        await db.manga.bulkPut([primary, loser])
+        await db.covers.put({ mangaId: loser.id, blob: new Blob(["loser-cover"]), cachedAt: 1 })
+
+        await mergeMangaRecords(primary.id, [loser.id])
+
+        const primaryCover = await db.covers.get(primary.id)
+        expect(primaryCover).toBeDefined()
+        const bytes = new Uint8Array(await primaryCover!.blob.arrayBuffer())
+        expect(new TextDecoder().decode(bytes)).toBe("loser-cover")
+        expect(await db.covers.get(loser.id)).toBeUndefined()
     })
 })
 
@@ -1158,6 +1304,20 @@ describe("rekeyManga", () => {
         expect(await db.progress.where("mangaId").equals(newId).count()).toBe(1)
         expect(await db.historyEvents.where("mangaId").equals(oldId).count()).toBe(0)
         expect(await db.historyEvents.where("mangaId").equals(newId).count()).toBeGreaterThan(0)
+    })
+
+    it("re-keys the manga's cover to the new id (Bug 3)", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await db.covers.put({ mangaId: oldId, blob: new Blob(["old-cover"]), cachedAt: 1 })
+
+        const next: LibraryManga = { ...manga, id: newId, sourceId: "mangadex", sourceUrl: newSourceLink.url }
+        await rekeyManga(oldId, next, newSourceLink)
+
+        expect(await db.covers.get(oldId)).toBeUndefined()
+        const newCover = await db.covers.get(newId)
+        expect(newCover).toBeDefined()
+        const bytes = new Uint8Array(await newCover!.blob.arrayBuffer())
+        expect(new TextDecoder().decode(bytes)).toBe("old-cover")
     })
 })
 

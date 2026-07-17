@@ -304,7 +304,16 @@ export async function clearHistory(): Promise<void> {
 export async function removeManga(mangaId: string): Promise<void> {
     await db.transaction(
         "rw",
-        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.downloads, db.pageBookmarks],
+        [
+            db.manga,
+            db.sourceLinks,
+            db.chapters,
+            db.progress,
+            db.historyEvents,
+            db.downloads,
+            db.pageBookmarks,
+            db.covers
+        ],
         async () => {
             await db.manga.delete(mangaId)
             await db.sourceLinks.delete(mangaId)
@@ -313,6 +322,7 @@ export async function removeManga(mangaId: string): Promise<void> {
             await db.historyEvents.where("mangaId").equals(mangaId).delete()
             await db.downloads.where("mangaId").equals(mangaId).delete()
             await db.pageBookmarks.where("mangaId").equals(mangaId).delete()
+            await db.covers.delete(mangaId)
         }
     )
 }
@@ -320,7 +330,16 @@ export async function removeManga(mangaId: string): Promise<void> {
 export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLink: SourceLinkRecord): Promise<void> {
     await db.transaction(
         "rw",
-        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.downloads, db.pageBookmarks],
+        [
+            db.manga,
+            db.sourceLinks,
+            db.chapters,
+            db.progress,
+            db.historyEvents,
+            db.downloads,
+            db.pageBookmarks,
+            db.covers
+        ],
         async () => {
             if (next.id === oldId) {
                 // Same ID - plain update, no migration needed
@@ -378,6 +397,11 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
             await db.historyEvents.where("mangaId").equals(oldId).modify({ mangaId: next.id })
             await db.downloads.where("mangaId").equals(oldId).modify({ mangaId: next.id })
             await db.pageBookmarks.where("mangaId").equals(oldId).modify({ mangaId: next.id })
+            const cover = await db.covers.get(oldId)
+            if (cover && (await db.covers.get(next.id)) === undefined) {
+                await db.covers.put({ ...cover, mangaId: next.id })
+            }
+            await db.covers.delete(oldId)
         }
     )
 }
@@ -393,7 +417,16 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
 export async function mergeMangaRecords(primaryId: string, loserIds: string[]): Promise<LibraryManga> {
     return db.transaction(
         "rw",
-        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.downloads, db.pageBookmarks],
+        [
+            db.manga,
+            db.sourceLinks,
+            db.chapters,
+            db.progress,
+            db.historyEvents,
+            db.downloads,
+            db.pageBookmarks,
+            db.covers
+        ],
         async () => {
             const primary = await db.manga.get(primaryId)
             if (!primary) throw new Error(`Cannot merge duplicates: primary manga "${primaryId}" does not exist`)
@@ -411,6 +444,21 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                     Math.max(merged.lastReadChapterNumber ?? 0, loser.lastReadChapterNumber ?? 0) || undefined
                 const mergedLatestNumber =
                     Math.max(merged.latestChapterNumber ?? 0, loser.latestChapterNumber ?? 0) || undefined
+                // Carry the chapter-ID fields alongside whichever side's NUMBER won the max, or
+                // the Unread badge (an id comparison: latestChapterId !== lastReadChapterId)
+                // contradicts the merged numbers. The carried id may reference a chapter row this
+                // merge deletes below for the losing side - that's the same tolerated dangling
+                // state the existing rekeyManga function already produces (progress/history rows
+                // keep chapterIds after their chapters are deleted on relink), and the next
+                // background update check re-points latestChapterId at a live row regardless.
+                const loserLatestWins =
+                    loser.latestChapterId !== undefined &&
+                    ((loser.latestChapterNumber ?? 0) > (merged.latestChapterNumber ?? 0) ||
+                        merged.latestChapterId === undefined)
+                const loserLastReadWins =
+                    loser.lastReadChapterId !== undefined &&
+                    ((loser.lastReadChapterNumber ?? 0) > (merged.lastReadChapterNumber ?? 0) ||
+                        merged.lastReadChapterId === undefined)
                 const mergedLastReadAt = Math.max(merged.lastReadAt ?? 0, loser.lastReadAt ?? 0) || undefined
                 const mergedCategories = [...new Set([...(merged.categories ?? []), ...(loser.categories ?? [])])]
                 const categories = mergedCategories.length > 0 ? mergedCategories : undefined
@@ -432,6 +480,8 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                     addedAt: Math.min(merged.addedAt, loser.addedAt),
                     ...(mergedLastReadNumber !== undefined ? { lastReadChapterNumber: mergedLastReadNumber } : {}),
                     ...(mergedLatestNumber !== undefined ? { latestChapterNumber: mergedLatestNumber } : {}),
+                    ...(loserLatestWins ? { latestChapterId: loser.latestChapterId } : {}),
+                    ...(loserLastReadWins ? { lastReadChapterId: loser.lastReadChapterId } : {}),
                     ...(mergedLastReadAt !== undefined ? { lastReadAt: mergedLastReadAt } : {}),
                     ...(categories !== undefined ? { categories } : {}),
                     ...(notes !== undefined ? { notes } : {}),
@@ -449,6 +499,16 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                 await db.historyEvents.where("mangaId").equals(loserId).modify({ mangaId: primaryId })
                 await db.downloads.where("mangaId").equals(loserId).modify({ mangaId: primaryId })
                 await db.pageBookmarks.where("mangaId").equals(loserId).modify({ mangaId: primaryId })
+
+                // Covers are keyed by mangaId and never re-resolved for ids that already have
+                // one (see the backfill handler's skip condition) - carry the loser's blob when
+                // the primary has none, then drop the loser's row so merge doesn't orphan blobs
+                // (removeManga now cleans these up too, on plain removal).
+                const loserCover = await db.covers.get(loserId)
+                if (loserCover && (await db.covers.get(primaryId)) === undefined) {
+                    await db.covers.put({ ...loserCover, mangaId: primaryId })
+                }
+                await db.covers.delete(loserId)
 
                 // Loser chapters are stale by definition once its progress/history
                 // point at the primary - same reasoning rekeyManga uses for the old
@@ -673,7 +733,16 @@ export async function trackExternalChapter(input: {
 export async function saveProgress(progress: ReadingProgress): Promise<void> {
     await db.transaction("rw", db.progress, db.manga, db.chapters, db.historyEvents, async () => {
         const existing = await db.progress.get(progress.chapterId)
-        await db.progress.put(progress)
+        // completed is a one-way ratchet: once a chapter has been completed, a later
+        // report from an earlier page (paging back after finishing, or re-reading from
+        // page 1 in a fresh reader session, since the progress reporter is recreated
+        // per chapter-load) must not flip it back to false. pageIndex/updatedAt still
+        // track the newest report. Mirrors the same regression guard the import path
+        // applies to a stale imported completed:false (see importDatabase's progress
+        // merge). This also keeps the "completed" historyEvent unique per chapter -
+        // without the ratchet, regress-then-recomplete would insert a duplicate event.
+        const next = existing?.completed && !progress.completed ? { ...progress, completed: true } : progress
+        await db.progress.put(next)
         const chapter = await db.chapters.get(progress.chapterId)
         await db.manga.update(progress.mangaId, {
             lastReadChapterId: progress.chapterId,
@@ -689,7 +758,7 @@ export async function saveProgress(progress: ReadingProgress): Promise<void> {
                 occurredAt: progress.updatedAt
             })
         }
-        if (progress.completed && !existing?.completed) {
+        if (next.completed && !existing?.completed) {
             await db.historyEvents.add({
                 mangaId: progress.mangaId,
                 chapterId: progress.chapterId,
