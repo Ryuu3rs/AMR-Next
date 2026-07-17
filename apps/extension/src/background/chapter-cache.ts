@@ -15,6 +15,23 @@ import { publishLive } from "../live"
 // directly - no two groups touch the same mutable Map.
 const inFlightRefreshes = new Map<string, Promise<void>>()
 
+// Fire-and-forget freshness refreshes are cheap for SW-fetch sources but expensive
+// for tab-crawl sources (Webtoons: up to 20 real background tab loads, ~25s each).
+// Gate them behind a per-manga cooldown so a burst of Prev/Next clicks or rapid
+// captures doesn't re-run the crawl back-to-back. Module-scope on purpose: an MV3
+// SW restart wiping this map just means at most one extra refresh per SW lifetime,
+// which is acceptable - persisting it to storage would add an async read to every
+// call for no real benefit. ensureChapterListRefreshed callers are NOT gated (they
+// explicitly need the refresh to run and await it).
+const REFRESH_COOLDOWN_MS = 10 * 60 * 1000
+const lastRefreshStartedAt = new Map<string, number>()
+
+// Test-only: clear cooldown state so tests aren't order-dependent on module-scope
+// state leaking between test cases.
+export function _resetRefreshCooldownForTests(): void {
+    lastRefreshStartedAt.clear()
+}
+
 // Start (or join) a chapter-list refresh, returning a promise that resolves once the
 // cache reflects the result (success or failure - this never rejects). Use this
 // instead of calling listChaptersWithTabFallback directly - it dedupes concurrent
@@ -30,6 +47,11 @@ export function ensureChapterListRefreshed(
     const mangaKey = `${source.manifest.id}:${sourceMangaId}`
     const existing = inFlightRefreshes.get(mangaKey)
     if (existing) return existing
+    // Record the attempt start (not completion) so a slow or failed crawl still
+    // resets scheduleChapterListRefresh's cooldown clock for this manga - this
+    // callback needs a real refresh, so a schedule() call moments later shouldn't
+    // redundantly re-crawl.
+    lastRefreshStartedAt.set(mangaKey, Date.now())
     const promise = listChaptersWithTabFallback(source, sourceMangaId, mangaUrl, mangaId)
         .catch(() => {})
         .finally(() => inFlightRefreshes.delete(mangaKey))
@@ -40,13 +62,18 @@ export function ensureChapterListRefreshed(
 // Fire-and-forget: cache the full chapter list so the on-page panel can show
 // prev/next siblings without a network round-trip on each visit. Call this instead
 // of calling listChaptersWithTabFallback directly - it dedupes concurrent calls for
-// the same manga.
+// the same manga, and skips the refresh entirely if one was started for this manga
+// within the last REFRESH_COOLDOWN_MS (see comment above).
 export function scheduleChapterListRefresh(
     source: ReturnType<typeof findSource>,
     sourceMangaId: string,
     mangaUrl: string,
     mangaId: string
 ): void {
+    if (!source) return
+    const mangaKey = `${source.manifest.id}:${sourceMangaId}`
+    const last = lastRefreshStartedAt.get(mangaKey)
+    if (last !== undefined && Date.now() - last < REFRESH_COOLDOWN_MS) return
     void ensureChapterListRefreshed(source, sourceMangaId, mangaUrl, mangaId)
 }
 
