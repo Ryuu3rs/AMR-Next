@@ -26,7 +26,6 @@ const allowedPermissions = ["alarms", "declarativeNetRequest", "downloads", "scr
 // VITE_COMMUNITY_API_ORIGIN is intentionally excluded - it comes from a local .env and must not be
 // part of the policy check (CI has no .env, local builds may have it set).
 const allowedRequiredHosts = [
-    "*://*.asuracomic.net/*",
     "*://*.asurascans.com/*",
     "*://*.compsci88.com/*",
     "*://*.images.mangafreak.me/*",
@@ -47,7 +46,6 @@ const allowedRequiredHosts = [
     "https://api.github.com/*",
     "https://api.mangadex.org/*",
     "https://aquamanga.com/*",
-    "https://asuracomic.net/*",
     "https://asurascans.com/*",
     "https://brainrotcomics.com/*",
     "https://comix.to/*",
