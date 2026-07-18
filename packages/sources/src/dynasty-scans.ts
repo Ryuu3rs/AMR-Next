@@ -62,14 +62,17 @@ function extractChapterSlug(url: URL): string | undefined {
 
 // Extract a float chapter sort key from a title string.
 // Handles patterns like "Ch. 1", "Chapter 1", "Volume 2 Chapter 3", "1.5", plain numbers.
-function chapterSortKey(title: string): number {
+// Returns undefined when the title has no parseable chapter number at all (e.g. "Toranoana
+// Extra", "Interlude: Before Daybreak") - callers decide the fallback, since the right
+// fallback differs by context (see extractChapterList vs extractChapterPageMeta below).
+function chapterSortKey(title: string): number | undefined {
     // Explicit chapter label
     const labeled = title.match(/(?:ch(?:apter)?\.?\s*)(\d+(?:[._-]\d+)?)/i)
     if (labeled) return parseFloat((captureGroup(labeled, 1) ?? "0").replace(/[_-]/, "."))
     // Trailing number in title
     const trailing = title.match(/(\d+(?:\.\d+)?)\s*$/)
     if (trailing) return parseFloat(captureGroup(trailing, 1) ?? "0")
-    return 0
+    return undefined
 }
 
 function extractTitle(html: string, fallback: string): string {
@@ -117,10 +120,20 @@ function extractCoverUrl(html: string): string | undefined {
 //   </dt>
 //
 // We scan all /chapters/ anchors found on the page.
+//
+// The raw HTML lists chapters in ascending reading order (Chapter 1 first, then increasing) -
+// live-verified against dynasty-scans.com/series/bloom_into_you. Bonus/extra/interlude entries
+// with no parseable chapter number (e.g. "Toranoana Extra", "Interlude: Before Daybreak") are
+// interleaved at their real reading position rather than grouped separately, so we interpolate
+// their sortKey just after the last real chapter number seen so far in this forward pass. That
+// keeps them sandwiched between the chapters they sit next to instead of collapsing to 0 and
+// sorting before every real chapter (the previous bug).
 function extractChapterList(html: string, seriesSlug: string): SourceChapter[] {
     const parentId = `${SOURCE_ID}:manga:${seriesSlug}`
     const out: SourceChapter[] = []
     const seen = new Set<string>()
+    let lastRealKey = 0
+    let unparsedRun = 0
 
     for (const a of html.matchAll(/<a\b[^>]*\bhref="(\/chapters\/([a-z0-9_-]+))[^"]*"[^>]*>([\s\S]*?)<\/a>/gi)) {
         const href = captureGroup(a, 1)
@@ -138,7 +151,16 @@ function extractChapterList(html: string, seriesSlug: string): SourceChapter[] {
         // Skip navigation/UI links that aren't chapter entries
         if (!rawTitle || rawTitle.length < 1) continue
 
-        const sortKey = chapterSortKey(rawTitle)
+        const parsedKey = chapterSortKey(rawTitle)
+        let sortKey: number
+        if (parsedKey !== undefined) {
+            sortKey = parsedKey
+            lastRealKey = parsedKey
+            unparsedRun = 0
+        } else {
+            unparsedRun += 1
+            sortKey = lastRealKey + unparsedRun / 1000
+        }
         out.push({
             id: `${SOURCE_ID}:chapter:${chapterSlug}`,
             mangaId: parentId,
@@ -195,7 +217,11 @@ function extractChapterPageMeta(html: string): { seriesSlug?: string; title: str
         const raw = docTitle ? decodeEntities(captureGroup(docTitle, 1) ?? "") : ""
         title = raw.split(/\s*[|]\s*/)[0]?.trim() ?? ""
     }
-    const sortKey = chapterSortKey(title)
+    // Unlike extractChapterList, this function only ever sees a single chapter's title in
+    // isolation - there's no surrounding chapter list to interpolate a position from. Fall
+    // back to +Infinity (not 0) so an unparseable title (e.g. "Toranoana Extra") sorts to the
+    // end of a chapter list rather than before every real chapter.
+    const sortKey = chapterSortKey(title) ?? Number.POSITIVE_INFINITY
     return { ...(seriesSlug ? { seriesSlug } : {}), title: title || "Chapter", sortKey }
 }
 
