@@ -338,8 +338,12 @@
             await loadBackups()
             // The restored library may no longer match a cleanup preview computed
             // against the pre-restore snapshot - drop it so a stale preview can
-            // never survive past a restore.
+            // never survive past a restore. Also clear the cleanup backup id and
+            // message so a stale "Merged N entries... Undo" banner from an earlier
+            // cleanup can never point at the wrong backup after a manual restore.
             cancelCleanup()
+            cleanupBackupId = null
+            cleanupMessage = ""
             return true
         } catch (cause) {
             backupMessage = cause instanceof Error ? cause.message : "Restore failed."
