@@ -60,6 +60,18 @@ const whitespaceSourceHtml = `<!DOCTYPE html><html class="postid-119390"><head>
 </div>
 <div class="entry-header"></div></body></html>`
 
+// Title with an isolated single-digit token ("2") before the real " - " separator. The old
+// `[--|]` character class was a RANGE from "-" to "|" (matches digits/letters/punctuation in
+// that code-point span), so `.split()` incorrectly split on the isolated "2" instead of the
+// intended " - " boundary, truncating the title to "Chainsaw Man Part".
+const isolatedDigitTitleHtml = `<!DOCTYPE html><html class="postid-321"><head>
+<title>Chainsaw Man Part 2 - Read Free Manga Online</title>
+<meta property="og:image" content="https://test-madara.example/cover.jpg" /></head><body>
+<div class="reading-content">
+  <div class="page-break no-gaps"><img id="image-0" src="https://cdn.example/cs1.jpg" data-src="https://test-madara.example/wp-content/uploads/junk-150x150.jpg" /></div>
+</div>
+<div class="entry-header"></div></body></html>`
+
 // Standard lazy-load layout: data-src = real URL, src = base64 placeholder (most Madara sites).
 const lazyLoadChapterHtml = `<!DOCTYPE html><html class="postid-777"><head>
 <title>Cool Manga - Chapter 12 - Test Madara</title>
@@ -156,6 +168,20 @@ describe("createMadaraAdapter", () => {
         const context = createContext({ "/series/cool-manga/ch-12/": srcFirstChapterHtml })
         const result = await srcFirstAdapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)
         expect(result.pages.map(p => p.url)).toEqual(["https://cdn.example/r1.jpg", "https://cdn.example/r2.jpg"])
+    })
+
+    it("extracts the full manga title when the <title> tag has an isolated digit before the real separator", async () => {
+        // Regression guard for the malformed `[--|]` character class (parsed as a code-point
+        // RANGE, not "hyphen or pipe") which truncated titles at any isolated char in that range.
+        const context = createContext({ "/series/cool-manga/ch-12/": isolatedDigitTitleHtml })
+        const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)
+        expect(result.manga.manga.title).toBe("Chainsaw Man Part 2")
+    })
+
+    it("still splits on a real hyphen/pipe separator (regression guard)", async () => {
+        const context = createContext({ "/series/cool-manga/ch-12/": chapterHtml })
+        const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)
+        expect(result.manga.manga.title).toBe("Cool Manga")
     })
 
     it("resolves a chapter via Strategy 1 with standard lazy-load (data-src first)", async () => {

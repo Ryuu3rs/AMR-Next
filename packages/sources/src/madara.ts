@@ -255,7 +255,7 @@ function extractMangaTitle(html: string, mangaSlug: string): string {
         // Require whitespace on both sides of the separator - a bare hyphen inside a
         // word (e.g. "Max-Level") is not a "<title> - <chapter/site>" boundary and must
         // not be split on, or a hyphenated manga title gets truncated to one fragment.
-        const parts = titleText.split(/\s+[--|]\s+/).filter(Boolean)
+        const parts = titleText.split(/\s+[-|]\s+/).filter(Boolean)
         // "<Manga Title> - Chapter N - <Site Name>" or "<Manga Title> - <Site Name>" -
         // the manga title is always the first segment, never the middle/last ones.
         const title = parts[0]?.trim()
