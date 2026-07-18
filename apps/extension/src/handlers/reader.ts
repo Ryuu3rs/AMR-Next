@@ -8,6 +8,7 @@ import {
 } from "../background/chapter-cache"
 import { fetchChapterHtmlViaTab } from "../background/tab-fetch"
 import { captureChapter, isBotBlocked } from "../background/capture"
+import { publishLive } from "../live"
 import type { HandlerMap } from "../background/handler-types"
 
 export const readerHandlers: HandlerMap = {
@@ -144,6 +145,7 @@ export const readerHandlers: HandlerMap = {
             // back to whatever's cached rather than showing a broken nav with 1-2 items.
             if (chapters.length <= 2) return await fromCache()
             await db.chapters.bulkPut(chapters)
+            publishLive(["chapters"], [request.mangaId])
             return chapters
                 .map(c => ({ url: c.url, sortKey: c.sortKey, title: c.title }))
                 .sort((a, b) => a.sortKey - b.sortKey)

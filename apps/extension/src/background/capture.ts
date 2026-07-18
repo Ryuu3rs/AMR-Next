@@ -68,6 +68,7 @@ async function doCaptureChapter(url: string) {
         if (mangaInfo) {
             scheduleChapterListRefresh(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
         }
+        publishLive(["library", "chapters"], [tracked.mangaId])
         await flashAddedBadge()
         return { supported: true as const, added: true as const, external: true as const, title: tracked.title }
     }

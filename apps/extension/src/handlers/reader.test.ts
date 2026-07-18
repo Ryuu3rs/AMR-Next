@@ -196,6 +196,12 @@ describe("doCaptureChapter scrape-failure fallback", () => {
 
         const tracked = await db.progress.toArray()
         expect(tracked.length).toBeGreaterThan(0)
+
+        // The external-tracking success branch must publish to the live bus too,
+        // not just the scraped-success branch a few lines below it in capture.ts.
+        const [trackedManga] = await db.manga.toArray()
+        expect(trackedManga).toBeDefined()
+        expect(publishLiveMock).toHaveBeenCalledWith(["library", "chapters"], [trackedManga!.id])
     })
 })
 
@@ -317,5 +323,55 @@ describe("reader:chapters (Webtoons-style getChapterListUrl sources)", () => {
         )) as Array<{ url: string; sortKey: number; title: string }>
 
         expect(result.map(c => c.sortKey).sort((a, b) => a - b)).toEqual([1, 2])
+    })
+})
+
+describe("reader:chapters (standard sources without getChapterListUrl)", () => {
+    const SOURCE_ID = "mangadex"
+    const SOURCE_MANGA_ID = "abc"
+    const MANGA_URL = "https://mangadex.org/title/abc"
+
+    beforeEach(() => {
+        getSourceByIdMock.mockReturnValue({ manifest: { id: SOURCE_ID } })
+    })
+
+    it("caches a freshly-fetched chapter list and publishes to the live bus", async () => {
+        listChaptersBySourceMock.mockResolvedValue([
+            chapter("c1", 1, "https://mangadex.org/chapter/1"),
+            chapter("c2", 2, "https://mangadex.org/chapter/2"),
+            chapter("c3", 3, "https://mangadex.org/chapter/3")
+        ])
+
+        const result = (await readerHandlers["reader:chapters"]!(
+            {
+                type: "reader:chapters",
+                sourceId: SOURCE_ID,
+                sourceMangaId: SOURCE_MANGA_ID,
+                mangaUrl: MANGA_URL,
+                mangaId: manga.id
+            },
+            mkCtx()
+        )) as Array<{ url: string; sortKey: number; title: string }>
+
+        expect(result.map(c => c.sortKey).sort((a, b) => a - b)).toEqual([1, 2, 3])
+        expect(await db.chapters.where("mangaId").equals(manga.id).count()).toBe(3)
+        expect(publishLiveMock).toHaveBeenCalledWith(["chapters"], [manga.id])
+    })
+
+    it("does not publish when falling back to the (possibly empty) cache", async () => {
+        listChaptersBySourceMock.mockRejectedValue(new Error("network down"))
+
+        await readerHandlers["reader:chapters"]!(
+            {
+                type: "reader:chapters",
+                sourceId: SOURCE_ID,
+                sourceMangaId: SOURCE_MANGA_ID,
+                mangaUrl: MANGA_URL,
+                mangaId: manga.id
+            },
+            mkCtx()
+        )
+
+        expect(publishLiveMock).not.toHaveBeenCalled()
     })
 })

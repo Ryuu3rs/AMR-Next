@@ -17,12 +17,20 @@ import type { RuntimeRequest } from "../runtime"
 //   - the mutation it causes is already published from elsewhere, so an entry
 //     here would double-publish:
 //       - "page:capture" and "chapter:open-in-reader" both funnel through
-//         captureChapter(), which itself calls publishLive() on success (see
-//         background/capture.ts) - same for the auto-capture path in
-//         entrypoints/background.ts's tabs.onUpdated listener, which doesn't
-//         go through the dispatcher at all.
-//       - "reader:chapters" can trigger scheduleChapterListRefresh(), which
-//         publishes from background/chapter-cache.ts once its bulkPut commits.
+//         captureChapter(), which itself calls publishLive() on both success
+//         paths (the scraped branch and the external-tracking fallback for
+//         anti-scrape/spoiler/dead-CDN sources - see background/capture.ts) -
+//         same for the auto-capture path in entrypoints/background.ts's
+//         tabs.onUpdated listener, which doesn't go through the dispatcher at
+//         all.
+//       - "reader:chapters" self-publishes on every path that writes
+//         db.chapters: the getChapterListUrl branch triggers
+//         scheduleChapterListRefresh(), which publishes from
+//         background/chapter-cache.ts once its bulkPut commits, and the
+//         standard-fetch fallback (listChaptersBySource) publishes directly
+//         after its own bulkPut in handlers/reader.ts.
+//       - "chapter:adjacent"'s two stale-cache-refresh branches each publish
+//         directly after their own db.chapters.bulkPut in handlers/library.ts.
 //       - "updates:check" only kicks off checkUpdates() fire-and-forget; the
 //         actual per-title mutations publish from inside that loop (see
 //         handlers/updates-sources.ts).

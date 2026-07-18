@@ -1146,7 +1146,10 @@ export const libraryHandlers: HandlerMap = {
                     manga.sourceMangaId ?? "",
                     manga.mangaUrl ?? manga.sourceUrl
                 )
-                if (chapters.length > 0) await db.chapters.bulkPut(chapters)
+                if (chapters.length > 0) {
+                    await db.chapters.bulkPut(chapters)
+                    publishLive(["chapters"], [request.mangaId])
+                }
                 const fresh = pickAdjacent(chapters.length > 0 ? chapters : cached)
                 return toResponse(fresh.next, fresh.prev)
             } catch {
@@ -1163,7 +1166,10 @@ export const libraryHandlers: HandlerMap = {
                 manga.sourceMangaId ?? "",
                 manga.mangaUrl ?? manga.sourceUrl
             )
-            if (chapters.length > 0) await db.chapters.bulkPut(chapters)
+            if (chapters.length > 0) {
+                await db.chapters.bulkPut(chapters)
+                publishLive(["chapters"], [request.mangaId])
+            }
             const { next, prev } = pickAdjacent(chapters)
             return toResponse(next, prev)
         } catch {
