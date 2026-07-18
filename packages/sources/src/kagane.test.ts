@@ -240,4 +240,25 @@ describe("kaganeAdapter.resolveChapter", () => {
             adapter.resolveChapter({ url: new URL("https://example.com/series/x/reader/y") }, context)
         ).rejects.toThrow()
     })
+
+    // Regression test: when fetchChapterListSafe can't find this chapter in the scraped
+    // list (series page fetch failed, or the chapter just isn't in it yet) while the
+    // integrity/manifest handshake still succeeds, resolveChapter falls back to a stub
+    // chapter record. That stub must not sort before every real chapter (the dynasty-scans
+    // bug class, fixed here the same way): sortKey should be +Infinity, not 0.
+    it("falls back to a stub chapter with sortKey Infinity when the chapter is missing from the list", async () => {
+        const context = createContext({
+            [SERIES_API_PATH]: seriesDetailJson,
+            // [`/series/${SERIES_ID}`] deliberately omitted -> fetchChapterListSafe's
+            // getText call fails and it returns [], so chapterList.find comes up empty.
+            [INTEGRITY_PATH]: integrityResponseJson,
+            [MANIFEST_API_PATH]: manifestResponseJson
+        })
+
+        const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)
+
+        expect(result.chapter.sourceChapterId).toBe(CHAPTER_ID)
+        expect(result.chapter.sortKey).toBe(Number.POSITIVE_INFINITY)
+        expect(result.pages.map(p => p.url)).toEqual(PAGE_URLS)
+    })
 })
