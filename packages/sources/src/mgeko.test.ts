@@ -59,10 +59,15 @@ function makeMangaStub(sourceMangaId: string) {
 }
 
 describe("mgekoAdapter.match", () => {
-    it("classifies reader, comic, and foreign URLs", () => {
+    it("classifies reader, manga, and foreign URLs", () => {
         expect(mgekoAdapter.match(new URL(CHAPTER_URL))).toBe("chapter")
-        expect(mgekoAdapter.match(new URL("https://www.mgeko.cc/comic/some-comic/"))).toBe("manga")
+        expect(mgekoAdapter.match(new URL("https://www.mgeko.cc/manga/some-manga/"))).toBe("manga")
         expect(mgekoAdapter.match(new URL("https://not-mgeko.cc/reader/en/x/"))).toBe("none")
+    })
+
+    it("recognizes a real mgeko.cc /manga/{slug}/ URL (site migrated off /comic/)", () => {
+        expect(mgekoAdapter.match(new URL("https://www.mgeko.cc/manga/j3pu-shadow-slave/"))).toBe("manga")
+        expect(mgekoAdapter.match(new URL("https://www.mgeko.cc/comic/j3pu-shadow-slave/"))).toBe("none")
     })
 })
 
