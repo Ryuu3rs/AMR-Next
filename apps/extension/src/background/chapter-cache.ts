@@ -151,29 +151,35 @@ export async function mineAndCacheEpisodesFromHtml(
         language: "en"
     }))
 
-    await db.chapters.bulkPut(dbChapters)
+    // SW can be killed between any two awaits, so the write + stale-row cleanup +
+    // latest-chapter update must land together - otherwise a mid-sequence restart
+    // leaves stale cross-series chapter rows undeleted and/or manga.latestChapterNumber/
+    // latestChapterId stuck pointing at a stale episode.
+    await db.transaction("rw", db.chapters, db.manga, async () => {
+        await db.chapters.bulkPut(dbChapters)
+
+        // Self-heal: delete any chapter rows under this mangaId left over from before the
+        // title_no filter above existed - those were mined from "Recommended for you"
+        // links and have an id embedding a DIFFERENT sourceMangaId, so this prefix check
+        // reliably identifies them without re-parsing every stored URL.
+        const validIdPrefix = `${sourceId}:chapter:${sourceMangaId}:`
+        const stale = await db.chapters
+            .where("mangaId")
+            .equals(mangaId)
+            .filter(c => !c.id.startsWith(validIdPrefix))
+            .toArray()
+        if (stale.length > 0) await db.chapters.bulkDelete(stale.map(c => c.id))
+
+        const maxEpNo = Math.max(...epLinks.map(e => e.epNo))
+        const existing = await db.manga.get(mangaId)
+        if (existing && maxEpNo > (existing.latestChapterNumber ?? 0)) {
+            await db.manga.update(mangaId, {
+                latestChapterNumber: maxEpNo,
+                latestChapterId: `${sourceId}:chapter:${sourceMangaId}:${maxEpNo}`
+            })
+        }
+    })
     publishLive(["chapters"], [mangaId])
-
-    // Self-heal: delete any chapter rows under this mangaId left over from before the
-    // title_no filter above existed - those were mined from "Recommended for you"
-    // links and have an id embedding a DIFFERENT sourceMangaId, so this prefix check
-    // reliably identifies them without re-parsing every stored URL.
-    const validIdPrefix = `${sourceId}:chapter:${sourceMangaId}:`
-    const stale = await db.chapters
-        .where("mangaId")
-        .equals(mangaId)
-        .filter(c => !c.id.startsWith(validIdPrefix))
-        .toArray()
-    if (stale.length > 0) await db.chapters.bulkDelete(stale.map(c => c.id))
-
-    const maxEpNo = Math.max(...epLinks.map(e => e.epNo))
-    const existing = await db.manga.get(mangaId)
-    if (existing && maxEpNo > (existing.latestChapterNumber ?? 0)) {
-        await db.manga.update(mangaId, {
-            latestChapterNumber: maxEpNo,
-            latestChapterId: `${sourceId}:chapter:${sourceMangaId}:${maxEpNo}`
-        })
-    }
 
     return epLinks.length
 }
@@ -221,18 +227,23 @@ export async function listChaptersWithTabFallback(
     // Standard path: SW-fetch the chapter list then persist + update latest count.
     const chapters = await listChaptersBySource(source!.manifest.id, sourceMangaId, mangaUrl)
     if (chapters.length === 0) return
-    await db.chapters.bulkPut(chapters)
-    if (source!.manifest.id === "mangahub") {
-        await purgeStaleMangahubChapterRows(mangaId, new Set(chapters.map(c => c.id)))
-    }
+    // Same bulkPut + stale-purge + latest-count write sequence as checkUpdates in
+    // updates-sources.ts - wrapped in one transaction there for the same SW-restart
+    // reason, so this sibling call site needs it too.
+    await db.transaction("rw", db.chapters, db.manga, async () => {
+        await db.chapters.bulkPut(chapters)
+        if (source!.manifest.id === "mangahub") {
+            await purgeStaleMangahubChapterRows(mangaId, new Set(chapters.map(c => c.id)))
+        }
+        const maxSortKey = Math.max(...chapters.map(c => c.sortKey))
+        const latestChapter = chapters.find(c => c.sortKey === maxSortKey)
+        const existing = await db.manga.get(mangaId)
+        if (existing && maxSortKey > (existing.latestChapterNumber ?? 0)) {
+            await db.manga.update(mangaId, {
+                latestChapterNumber: maxSortKey,
+                ...(latestChapter?.id ? { latestChapterId: latestChapter.id } : {})
+            })
+        }
+    })
     publishLive(["chapters"], [mangaId])
-    const maxSortKey = Math.max(...chapters.map(c => c.sortKey))
-    const latestChapter = chapters.find(c => c.sortKey === maxSortKey)
-    const existing = await db.manga.get(mangaId)
-    if (existing && maxSortKey > (existing.latestChapterNumber ?? 0)) {
-        await db.manga.update(mangaId, {
-            latestChapterNumber: maxSortKey,
-            ...(latestChapter?.id ? { latestChapterId: latestChapter.id } : {})
-        })
-    }
 }
