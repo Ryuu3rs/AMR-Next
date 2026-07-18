@@ -12,6 +12,7 @@ import {
 import { getSettings } from "../settings"
 import { isNewerVersion } from "../update-check"
 import { EXTENSION_UPDATE_INTERVAL_HOURS, GITHUB_RELEASES_URL } from "../background/alarms"
+import { isBotBlocked } from "../background/capture"
 import { MANGAHUB_INTERNAL_ID_MIN, purgeStaleMangahubChapterRows } from "../background/chapter-cache"
 import { delay, type HandlerMap } from "../background/handler-types"
 import { publishLive } from "../live"
@@ -83,6 +84,13 @@ export async function checkUpdates(sourceId?: string) {
         let done = 0
         const total = manga.length
         const errors: Array<{ mangaId: string; title: string; message: string }> = []
+        // Per-sourceId count of titles skipped this run because the source's own
+        // listChapters call threw a bot-block-shaped error (e.g. a Cloudflare 403) -
+        // see the per-title catch block below. Kept separate from `failed` since this
+        // routine background loop has no tab-fallback to recover with, so a persistent
+        // per-title "failed to update" row here is noisy and unactionable; one
+        // aggregate notice per source is added to `errors` after the loop instead.
+        const botBlockedCounts = new Map<string, number>()
 
         const writeProgress = async (currentTitle?: string) => {
             const progress: UpdateProgress = {
@@ -143,10 +151,22 @@ export async function checkUpdates(sourceId?: string) {
                     if (latestChanged) publishLive(["chapters", "library"], [item.id])
                     checked += 1
                 } catch (error) {
-                    failed += 1
-                    const message = error instanceof Error ? error.message : "Update failed"
-                    errors.push({ mangaId: item.id, title: item.title, message })
-                    console.warn("[AMR] Update check failed", { mangaId: item.id, error })
+                    if (isBotBlocked(error)) {
+                        botBlockedCounts.set(item.sourceId, (botBlockedCounts.get(item.sourceId) ?? 0) + 1)
+                        console.debug("[AMR] Update check skipped (bot-blocked)", {
+                            mangaId: item.id,
+                            sourceId: item.sourceId
+                        })
+                        // Fall through WITHOUT failed+=1, WITHOUT errors.push, WITHOUT the
+                        // console.warn below - this is a known, currently-unactionable-via-
+                        // this-path condition (no tab-fallback in this routine background
+                        // loop), not a real per-title failure.
+                    } else {
+                        failed += 1
+                        const message = error instanceof Error ? error.message : "Update failed"
+                        errors.push({ mangaId: item.id, title: item.title, message })
+                        console.warn("[AMR] Update check failed", { mangaId: item.id, error })
+                    }
                 } finally {
                     // Pause between every iteration (success or failure) so sites don't
                     // rate-limit when the library has many titles from the same source.
@@ -154,6 +174,19 @@ export async function checkUpdates(sourceId?: string) {
                 }
             }
             done += 1
+        }
+
+        // One aggregate notice per bot-blocked source, not full silence - a user
+        // still gets some signal that a whole source has stopped updating via this
+        // path, without a persistent noisy row per title. unshift (not push) so
+        // these survive the errors.slice(0, 20) cap below even when the library is
+        // large enough to otherwise push them out.
+        for (const [blockedSourceId, count] of botBlockedCounts) {
+            errors.unshift({
+                mangaId: "",
+                title: blockedSourceId,
+                message: `${count} title(s) skipped - this site is blocking automated checks; chapters still load in the reader`
+            })
         }
 
         // Keep only the most recent handful of errors so the status stays small.
@@ -190,13 +223,24 @@ export async function repairMangahubChapterNumbers(): Promise<void> {
     const stored = await browser.storage.local.get(MANGAHUB_CHAPTER_REPAIR_FLAG)
     if (stored[MANGAHUB_CHAPTER_REPAIR_FLAG]) return
 
+    // The initial query is pulled into its own try, separate from the completion
+    // flag's finally below: a transient failure here (before any title was even
+    // examined) must not permanently mark the one-shot sweep "done" with no retry
+    // path - only a genuine run of the per-title loop (even one where every title
+    // individually fails) earns that flag.
+    let poisoned: LibraryManga[]
     try {
-        const poisoned = await db.manga
+        poisoned = await db.manga
             .where("sourceId")
             .equals("mangahub")
             .filter(m => (m.latestChapterNumber ?? 0) >= MANGAHUB_INTERNAL_ID_MIN)
             .toArray()
+    } catch (error) {
+        console.error("[AMR] MangaHub chapter repair sweep failed to run", error)
+        return
+    }
 
+    try {
         for (const manga of poisoned) {
             try {
                 const link = await db.sourceLinks.get(manga.id)
@@ -212,7 +256,12 @@ export async function repairMangahubChapterNumbers(): Promise<void> {
                     chapters[0]
                 )
 
-                await db.transaction("rw", db.chapters, db.manga, async () => {
+                // Guard against writing back to a manga a concurrent remove/merge
+                // deleted while the chapter-list fetch above was in flight - the
+                // existence check is the first statement inside this transaction so
+                // both the writes AND the publishLive call below are gated on it.
+                const stillExists = await db.transaction("rw", db.chapters, db.manga, async () => {
+                    if ((await db.manga.get(manga.id)) === undefined) return false
                     await db.chapters.bulkPut(chapters)
                     await purgeStaleMangahubChapterRows(manga.id, new Set(chapters.map(c => c.id)))
                     if (latest) {
@@ -223,14 +272,13 @@ export async function repairMangahubChapterNumbers(): Promise<void> {
                             updatedAt: Date.now()
                         })
                     }
+                    return true
                 })
-                publishLive(["chapters", "library"], [manga.id])
+                if (stillExists) publishLive(["chapters", "library"], [manga.id])
             } catch (error) {
                 console.warn("[AMR] MangaHub chapter repair failed for one title", { mangaId: manga.id, error })
             }
         }
-    } catch (error) {
-        console.error("[AMR] MangaHub chapter repair sweep failed to run", error)
     } finally {
         await browser.storage.local.set({ [MANGAHUB_CHAPTER_REPAIR_FLAG]: true })
     }

@@ -464,6 +464,62 @@ describe("library:relink", () => {
         // Existing cover is preferred over the newly resolved one.
         expect(stored?.coverUrl).toBe("https://existing-cdn.example/cover.jpg")
     })
+
+    // Fix 3: rekeyManga and the post-rekey chapter put now run in one transaction -
+    // an SW restart (simulated here by the chapter put itself failing) between them
+    // used to leave the manga pointing at a chapter row that was never written.
+    // Forcing db.chapters.put to reject proves the whole rekey rolled back with it.
+    it("rolls back the rekey if the post-rekey chapter write fails (atomicity)", async () => {
+        const oldId = manga.id
+        const newId = "webtoons:manga:xyz"
+
+        await db.manga.put({ ...manga, id: oldId, sourceId: "mangadex", sourceUrl: sourceLink.url })
+        await db.sourceLinks.put({ ...sourceLink, mangaId: oldId })
+
+        const resolvedChapter: ChapterRecord & { sourceChapterId: string; language: string } = {
+            id: "webtoons:chapter:1",
+            mangaId: newId,
+            sourceId: "webtoons",
+            title: "Episode 1",
+            url: "https://www.webtoons.com/en/x/y/ep-1/viewer?title_no=99&episode_no=1",
+            sortKey: 1,
+            sourceChapterId: "1",
+            language: "en"
+        }
+        const resolvedManga: MangaRecord = {
+            id: newId,
+            title: "Relinked Title",
+            normalizedTitle: "relinked title",
+            authors: [],
+            status: "ongoing",
+            addedAt: 999,
+            updatedAt: 999
+        }
+        vi.mocked(resolveChapterUrl).mockResolvedValue({
+            manga: {
+                manga: resolvedManga,
+                sourceId: "webtoons",
+                sourceMangaId: "99",
+                url: "https://www.webtoons.com/en/x/y/"
+            },
+            chapter: resolvedChapter,
+            pages: []
+        } as never)
+        vi.mocked(findSource).mockReturnValue({ manifest: { id: "webtoons" } } as never)
+
+        const putSpy = vi.spyOn(db.chapters, "put").mockRejectedValueOnce(new Error("boom"))
+
+        const { libraryHandlers } = await import("./library")
+        const handler = libraryHandlers["library:relink"]!
+        await expect(
+            handler({ type: "library:relink", mangaId: oldId, url: resolvedChapter.url } as never, ctx)
+        ).rejects.toThrow("boom")
+
+        putSpy.mockRestore()
+        // The rekey must not have taken effect - old id still present, new id absent.
+        expect(await db.manga.get(oldId)).toBeDefined()
+        expect(await db.manga.get(newId)).toBeUndefined()
+    })
 })
 
 describe("chapter:adjacent", () => {
@@ -1572,5 +1628,51 @@ describe("library:cleanup:apply", () => {
         expect(result.merged).toBe(50)
         expect(result.groups).toBe(1)
         expect(await db.manga.get("mangafreak:manga:Foo")).toBeDefined()
+    })
+
+    // Fix 5: saveResolvedChapter's unconditional put used to resurrect the canonical
+    // record if a concurrent library:remove landed during the group's network
+    // resolution phase (representativeChapter re-resolution, cover fetch, etc). The
+    // existence check now happens fresh INSIDE the write transaction, not just before
+    // it, so a deletion that races the network phase actually sticks. Simulated here
+    // by deleting the canonical manga from inside the mocked listChaptersBySource
+    // call - after the handler's existedAtStart snapshot but before the write
+    // transaction runs.
+    it("skips (does not resurrect) a canonical manga deleted by a concurrent operation during the group's network phase", async () => {
+        const canonicalId = "mangafreak:manga:Foo"
+        await db.manga.put({
+            ...manga,
+            id: canonicalId,
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_2"
+        })
+
+        vi.mocked(listChaptersBySource).mockImplementationOnce(async () => {
+            await db.manga.delete(canonicalId)
+            return canonicalChapters as never
+        })
+
+        const handler = libraryHandlers["library:cleanup:apply"]!
+        const result = (await handler(
+            {
+                type: "library:cleanup:apply",
+                groups: [
+                    {
+                        canonicalId,
+                        sourceId: "mangafreak",
+                        sourceMangaId: "Foo",
+                        mangaUrl: "https://ww2.mangafreak.me/Manga/Foo",
+                        representativeChapterUrl: "https://ww2.mangafreak.me/Read1_Foo_2",
+                        losers: []
+                    }
+                ]
+            } as never,
+            ctx
+        )) as { merged: number; groups: number; skippedStale: number }
+
+        expect(result.skippedStale).toBe(1)
+        expect(result.groups).toBe(0)
+        expect(result.merged).toBe(0)
+        expect(await db.manga.get(canonicalId)).toBeUndefined()
     })
 })
