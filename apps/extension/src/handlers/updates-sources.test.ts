@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto"
 import type { ChapterRecord, MangaRecord, SourceLinkRecord } from "@amr/contracts"
+import { SourceRequestError } from "@amr/source-sdk"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { db } from "../database"
 import type { LibraryManga } from "../database"
@@ -117,6 +118,42 @@ describe("checkUpdates", () => {
 
         expect(listMangaChaptersMock).toHaveBeenCalledTimes(1)
         expect(listMangaChaptersMock.mock.calls[0]?.[0]?.id).toBe("m-normal")
+    })
+})
+
+describe("checkUpdates per-title error handling", () => {
+    // kagane.ts's listChapters() now propagates a Cloudflare-blocked series-page
+    // fetch as a real SourceRequestError instead of swallowing it to []. This
+    // confirms checkUpdates's per-title try/catch still handles that correctly:
+    // the title is counted as failed and recorded in the errors list, and the
+    // loop moves on to the rest of the library rather than throwing out of
+    // checkUpdates entirely.
+    it("records a thrown 403 (e.g. kagane's Cloudflare-gated series page) as a per-title failure without aborting the rest of the run", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const blocked = makeManga({ id: "m-blocked", sourceId: "kagane" })
+        const normal = makeManga({ id: "m-normal" })
+        await db.manga.bulkPut([blocked, normal])
+        await db.sourceLinks.bulkPut([makeLink(blocked.id, "kagane"), makeLink(normal.id)])
+
+        listMangaChaptersMock.mockImplementation(async (item: LibraryManga) => {
+            if (item.id === "m-blocked") throw new SourceRequestError("Request failed with status 403", 403)
+            return []
+        })
+
+        await checkUpdates()
+
+        expect(listMangaChaptersMock).toHaveBeenCalledTimes(2)
+        const status = storageLocal.store.get("updateStatus") as {
+            failed: number
+            checked: number
+            errors: Array<{ mangaId: string; title: string; message: string }>
+        }
+        expect(status.failed).toBe(1)
+        expect(status.checked).toBe(1)
+        expect(status.errors).toContainEqual(
+            expect.objectContaining({ mangaId: "m-blocked", message: "Request failed with status 403" })
+        )
     })
 })
 

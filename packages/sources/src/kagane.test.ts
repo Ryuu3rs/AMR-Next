@@ -114,11 +114,11 @@ describe("kaganeAdapter.listChapters", () => {
     // Regression test for the reconcile-search bug: a real background-context
     // fetch to the (gated) series page doesn't come back 200-with-challenge-html
     // like the fixture mock above defaults to - it comes back a bare 403 (verified
-    // live against kagane.to). Before this fix that 403 was an unhandled
-    // SourceRequestError thrown straight out of listChapters(), which propagated
-    // through library:switch (no try/catch there) to the reconcile UI as raw
-    // "Request failed with status 403 [...]" text instead of failing gracefully.
-    it("returns [] instead of throwing when the series page fetch itself is rejected with 403", async () => {
+    // live against kagane.to). listChapters() now lets that SourceRequestError
+    // propagate instead of swallowing it, so library:switch's isBotBlocked()
+    // check can detect the Cloudflare block and trigger a tab-render fallback
+    // rather than the mirror being reported as having no chapters at all.
+    it("rejects with a SourceRequestError(status: 403) when the series page fetch itself is rejected with 403", async () => {
         const fetch: FetchFunction = async () => ({
             ok: false,
             status: 403,
@@ -136,7 +136,9 @@ describe("kaganeAdapter.listChapters", () => {
             now: () => 1_700_000_000_000,
             logger: { debug: () => undefined, warn: () => undefined }
         }
-        await expect(adapter.listChapters({ manga: makeMangaStub(SERIES_ID) }, context)).resolves.toEqual([])
+        await expect(adapter.listChapters({ manga: makeMangaStub(SERIES_ID) }, context)).rejects.toMatchObject({
+            status: 403
+        })
     })
 })
 

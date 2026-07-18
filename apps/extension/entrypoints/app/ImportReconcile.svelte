@@ -5,6 +5,7 @@
     import {
         cleanQuery,
         rankCandidates,
+        filterEligibleCandidates,
         formatReconcileLog,
         type LinkAttempt,
         type TitleLogEntry,
@@ -407,23 +408,15 @@
             wordOverlap(normTitle(cleanQuery(card.results[0]!.title)), want) >= 0.85
                 ? card.results
                 : []
-        const eligible = [...exactMatches, ...overlapFallback]
-            .filter(r => Number.isFinite(parseFloat(r.latestChapter ?? "")))
-            .filter(
-                r =>
-                    manga.lastReadChapterNumber == null ||
-                    parseFloat(r.latestChapter!) >= Math.floor(manga.lastReadChapterNumber)
-            )
-
+        const candidates = [...exactMatches, ...overlapFallback]
+        const exactMatchSet = new Set(exactMatches)
         // "Find better sources" (isLibraryScan) can touch WORKING titles, unlike the
         // normal dead-source reconcile flow - a wrong-series exact-title collision
         // there would silently repoint a working source and library:switch deletes
         // the old source's chapter cache. Require a strictly-better candidate (more
         // chapters than what's already linked) in that context, on top of the shared
-        // eligibility filters above.
-        const filtered = isLibraryScan
-            ? eligible.filter(r => (manga.latestChapterNumber ?? 0) < parseFloat(r.latestChapter!))
-            : eligible
+        // eligibility filters - see filterEligibleCandidates.
+        const { eligible, filtered } = filterEligibleCandidates(candidates, manga, isLibraryScan, exactMatchSet)
 
         const ranked = rankCandidates(filtered, pagesCapableSourceIds)
         // Sources that have already failed library:switch repeatedly this sweep are
@@ -548,7 +541,8 @@
                 mangaId: manga.id,
                 sourceId: result.sourceId,
                 sourceMangaId: result.sourceMangaId,
-                mangaUrl: result.url
+                mangaUrl: result.url,
+                allowTabFallback: trigger === "manual"
             })
             switchFailures.delete(result.sourceId)
             const attempt: LinkAttempt = {
