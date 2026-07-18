@@ -26,6 +26,18 @@ var chapImages = "https://cdn.example/a.jpg,https://cdn.example/b.jpg,https://cd
 </script>
 </body></html>`
 
+// Title with an isolated single-digit token ("2") before the real " - " separator. The old
+// `[--|]` character class was a RANGE from "-" to "|" (matches digits/letters/punctuation in
+// that code-point span), so `.split()` incorrectly split on the isolated "2" instead of the
+// intended " - " boundary, truncating the title to "Chainsaw Man Part".
+const isolatedDigitTitleHtml = `<!DOCTYPE html><html><head>
+<title>Chainsaw Man Part 2 - Read Free Manga Online</title>
+<meta property="og:image" content="https://test-buddy.example/cover.jpg" /></head><body>
+<script>
+var chapImages = ["https://cdn.example/1.jpg","https://cdn.example/2.jpg"];
+</script>
+</body></html>`
+
 function createContext(fixtures: Readonly<Record<string, string>>): SourceContext {
     const fetch: FetchFunction = async url => {
         const body = fixtures[new URL(url).pathname]
@@ -72,5 +84,19 @@ describe("createMangaBuddyAdapter", () => {
             "https://cdn.example/c.jpg"
         ])
         expect(result.chapter.sortKey).toBe(5)
+    })
+
+    it("extracts the full manga title when the <title> tag has an isolated digit before the real separator", async () => {
+        // Regression guard for the malformed `[--|]` character class (parsed as a code-point
+        // RANGE, not "hyphen or pipe") which truncated titles at any isolated char in that range.
+        const context = createContext({ "/cool-manga/chapter-12": isolatedDigitTitleHtml })
+        const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)
+        expect(result.manga.manga.title).toBe("Chainsaw Man Part 2")
+    })
+
+    it("still splits on a real hyphen separator (regression guard)", async () => {
+        const context = createContext({ "/cool-manga/chapter-12": arrayChapterHtml })
+        const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)
+        expect(result.manga.manga.title).toBe("Cool Manga Chapter 12")
     })
 })
