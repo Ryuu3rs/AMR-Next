@@ -1,9 +1,24 @@
 import { createBoundedRequestClient, type FetchFunction, type SourceContext } from "@amr/source-sdk"
 import { describe, expect, it } from "vitest"
 import {
+    CHAPTER_HIGH_SLUGNUM_PATH,
+    CHAPTER_HIGH_SLUGNUM_URL,
+    CHAPTER_LIST_PATH,
+    CHAPTER_LIST_SLUG,
+    CHAPTER_LIST_URL,
+    CHAPTER_LOW_SLUGNUM_PATH,
+    CHAPTER_LOW_SLUGNUM_URL,
+    CHAPTER_PATH,
+    CHAPTER_URL,
+    chapterListHtml,
+    chapterListHtmlSwappedOrder,
+    chapterPageHtml,
+    chapterPageNoTitleNumberHtml,
+    chapterPageRedirectedHtml,
     COVER_PATH,
     COVER_SLUG,
     COVER_URL,
+    FOREIGN_SLUG,
     mangaDetailHtml,
     SEARCH_DECOY_SLUG,
     SEARCH_PATH_PAGE_1,
@@ -16,6 +31,23 @@ import {
     searchPage2Html
 } from "./__fixtures__/mangahub"
 import { mangahubAdapter } from "./mangahub"
+
+function makeMangaStub(sourceMangaId: string, url: string) {
+    return {
+        manga: {
+            id: `mangahub:manga:${sourceMangaId}`,
+            title: "Test",
+            normalizedTitle: "test",
+            authors: [],
+            status: "unknown" as const,
+            addedAt: 0,
+            updatedAt: 0
+        },
+        sourceId: "mangahub",
+        sourceMangaId,
+        url
+    }
+}
 
 function createContext(fixtures: Readonly<Record<string, string>>, requests: string[]): SourceContext {
     const fetch: FetchFunction = async (url, init) => {
@@ -119,6 +151,96 @@ describe("mangahubAdapter.search", () => {
 
         expect(results).toHaveLength(1)
         expect(results[0]).toMatchObject({ sourceMangaId: SEARCH_DECOY_SLUG, latestChapter: "52" })
+    })
+})
+
+describe("mangahubAdapter.listChapters", () => {
+    it("dedupes canonical + id-slug anchors by true chapter number and excludes foreign slider anchors", async () => {
+        const requests: string[] = []
+        const context = createContext({ [CHAPTER_LIST_PATH]: chapterListHtml }, requests)
+        const manga = makeMangaStub(CHAPTER_LIST_SLUG, CHAPTER_LIST_URL)
+
+        const chapters = await mangahubAdapter.listChapters({ manga }, context)
+
+        expect(chapters).toHaveLength(4)
+        expect(chapters.map(c => c.sortKey)).toEqual([1, 2, 3, 4])
+        // Every surviving sortKey is a real chapter number, never a site-wide internal id.
+        for (const c of chapters) expect(c.sortKey).toBeLessThan(100_000)
+
+        // ch2 and ch3 both had a canonical + id-slug duplicate (in opposite document
+        // orders) - the canonical URL must win regardless of which came first.
+        expect(chapters.find(c => c.sortKey === 1)!.url).toBe(
+            `https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-1`
+        )
+        expect(chapters.find(c => c.sortKey === 2)!.url).toBe(
+            `https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2`
+        )
+        expect(chapters.find(c => c.sortKey === 3)!.url).toBe(
+            `https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-3`
+        )
+        // ch4 only ever appeared as an id-slug anchor - falls back to that URL.
+        expect(chapters.find(c => c.sortKey === 4)!.url).toBe(
+            `https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2650004`
+        )
+
+        // Foreign "you might also like" slider anchors (different slug) must be
+        // completely absent - none of their real chapter numbers (15, 16, 17) leaked in,
+        // and nothing in the output references FOREIGN_SLUG.
+        expect(chapters.some(c => c.sortKey === 15 || c.sortKey === 16 || c.sortKey === 17)).toBe(false)
+        expect(chapters.some(c => c.url.includes(FOREIGN_SLUG))).toBe(false)
+    })
+
+    it("discards an id-slug anchor with no visible chapter number and an internal-id-range href", async () => {
+        const requests: string[] = []
+        const context = createContext({ [CHAPTER_LIST_PATH]: chapterListHtml }, requests)
+        const manga = makeMangaStub(CHAPTER_LIST_SLUG, CHAPTER_LIST_URL)
+
+        const chapters = await mangahubAdapter.listChapters({ manga }, context)
+
+        // chapter-2650099 (no visible "#N" text) never produces a chapter record.
+        expect(chapters.some(c => c.url.includes("chapter-2650099"))).toBe(false)
+    })
+
+    it("produces the identical correct result regardless of canonical/id-slug anchor order", async () => {
+        const requests: string[] = []
+        const context = createContext({ [CHAPTER_LIST_PATH]: chapterListHtml }, requests)
+        const swappedContext = createContext({ [CHAPTER_LIST_PATH]: chapterListHtmlSwappedOrder }, requests)
+        const manga = makeMangaStub(CHAPTER_LIST_SLUG, CHAPTER_LIST_URL)
+
+        const chapters = await mangahubAdapter.listChapters({ manga }, context)
+        const swappedChapters = await mangahubAdapter.listChapters({ manga }, swappedContext)
+
+        expect(swappedChapters).toEqual(chapters)
+    })
+})
+
+describe("mangahubAdapter.resolveChapter", () => {
+    it("derives the chapter number from the page title for a normal canonical chapter", async () => {
+        const requests: string[] = []
+        const context = createContext({ [CHAPTER_PATH]: chapterPageHtml }, requests)
+
+        const result = await mangahubAdapter.resolveChapter!({ url: new URL(CHAPTER_URL) }, context)
+
+        expect(result.chapter.sortKey).toBe(52)
+        expect(result.chapter.title).toBe("Chapter 52")
+    })
+
+    it("falls back to the URL slug number when the title has no chapter number but the slug number is real", async () => {
+        const requests: string[] = []
+        const context = createContext({ [CHAPTER_LOW_SLUGNUM_PATH]: chapterPageNoTitleNumberHtml }, requests)
+
+        const result = await mangahubAdapter.resolveChapter!({ url: new URL(CHAPTER_LOW_SLUGNUM_URL) }, context)
+
+        expect(result.chapter.sortKey).toBe(42)
+    })
+
+    it("throws instead of returning a chapter 0 record when neither the title nor a real slug number is available", async () => {
+        const requests: string[] = []
+        const context = createContext({ [CHAPTER_HIGH_SLUGNUM_PATH]: chapterPageRedirectedHtml }, requests)
+
+        await expect(
+            mangahubAdapter.resolveChapter!({ url: new URL(CHAPTER_HIGH_SLUGNUM_URL) }, context)
+        ).rejects.toMatchObject({ code: "invalid-response" })
     })
 })
 

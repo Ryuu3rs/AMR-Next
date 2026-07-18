@@ -6,6 +6,7 @@
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
     import { migrateLegacyImport } from "../../src/legacy-import"
     import { getCachedCovers } from "../../src/database"
+    import { repairMangahubChapterNumbers } from "../../src/handlers/updates-sources"
     import { subscribeLive } from "../../src/live"
     import ActivityHeatmap from "./ActivityHeatmap.svelte"
     import ImportReconcile from "./ImportReconcile.svelte"
@@ -694,7 +695,14 @@
         unsubscribeLive = subscribeLive(["library", "chapters", "progress", "all"], () => void refresh())
         await load()
         hasPermission = await sendRuntimeMessage<boolean>({ type: "source:permission:check" })
-        if (hasPermission) void maybeBackfillCovers()
+        if (hasPermission) {
+            void maybeBackfillCovers()
+            // Invisible, one-time maintenance: fixes already-poisoned MangaHub badges
+            // (see repairMangahubChapterNumbers) within a normal app session - no UI,
+            // no progress bar. The function itself guards against re-running via a
+            // persisted storage flag, so this call is safe on every mount.
+            void repairMangahubChapterNumbers()
+        }
         try {
             const stored = await browser.storage.local.get("onboardingDismissed")
             onboardingDismissed = Boolean(stored["onboardingDismissed"])

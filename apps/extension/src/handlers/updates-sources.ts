@@ -1,10 +1,18 @@
 import { sourceRegistry } from "@amr/sources"
 import { matchesSourceDomain } from "@amr/source-sdk"
 import { db, type LibraryManga } from "../database"
-import { checkSourcePermission, getMangaChapters, listMangaChapters, resolveGenresFor, searchManga } from "../sources"
+import {
+    checkSourcePermission,
+    getMangaChapters,
+    listChaptersForSource,
+    listMangaChapters,
+    resolveGenresFor,
+    searchManga
+} from "../sources"
 import { getSettings } from "../settings"
 import { isNewerVersion } from "../update-check"
 import { EXTENSION_UPDATE_INTERVAL_HOURS, GITHUB_RELEASES_URL } from "../background/alarms"
+import { MANGAHUB_INTERNAL_ID_MIN, purgeStaleMangahubChapterRows } from "../background/chapter-cache"
 import { delay, type HandlerMap } from "../background/handler-types"
 import { publishLive } from "../live"
 
@@ -103,6 +111,9 @@ export async function checkUpdates(sourceId?: string) {
                     let latestChanged = false
                     await db.transaction("rw", db.chapters, db.manga, async () => {
                         await db.chapters.bulkPut(chapters)
+                        if (link.sourceId === "mangahub") {
+                            await purgeStaleMangahubChapterRows(item.id, new Set(chapters.map(c => c.id)))
+                        }
                         if (latest && latest.id !== item.latestChapterId) {
                             // Always re-point on an id change - this is the self-heal path merges
                             // and relinks rely on (a carried/dangling latestChapterId gets
@@ -158,6 +169,70 @@ export async function checkUpdates(sourceId?: string) {
         return status
     } finally {
         updateCheckRunning = false
+    }
+}
+
+const MANGAHUB_CHAPTER_REPAIR_FLAG = "mangahubChapterRepairDone"
+
+// One-time repair sweep for libraries poisoned by the pre-fix extractChapters bug
+// (MangaHub's id-slug "alternate version" chapter anchors getting ingested as real
+// chapters, inflating latestChapterNumber into the hundreds-of-thousands/millions range
+// - see INTERNAL_ID_MIN in packages/sources/src/mangahub.ts). latestChapterNumber only
+// self-heals through a normal checkUpdates pass, but checkUpdates explicitly skips
+// manualTracking/onHold titles and never runs at all if the user has disabled automatic
+// update checking - some poisoned titles would otherwise never self-heal. This
+// intentionally does NOT apply those exclusions: a poisoned badge on a manually-tracked
+// or on-hold title needs the same one-time correction as everything else. Runs once per
+// install, guarded by a persisted (not session-scoped) storage flag so it survives a
+// service-worker restart. Best-effort: a failure on one title doesn't stop the sweep or
+// block the completion flag from being set.
+export async function repairMangahubChapterNumbers(): Promise<void> {
+    const stored = await browser.storage.local.get(MANGAHUB_CHAPTER_REPAIR_FLAG)
+    if (stored[MANGAHUB_CHAPTER_REPAIR_FLAG]) return
+
+    try {
+        const poisoned = await db.manga
+            .where("sourceId")
+            .equals("mangahub")
+            .filter(m => (m.latestChapterNumber ?? 0) >= MANGAHUB_INTERNAL_ID_MIN)
+            .toArray()
+
+        for (const manga of poisoned) {
+            try {
+                const link = await db.sourceLinks.get(manga.id)
+                const sourceMangaId = link?.sourceMangaId ?? manga.sourceMangaId
+                const mangaUrl = link?.url ?? manga.mangaUrl
+                if (!sourceMangaId || !mangaUrl) continue
+
+                const chapters = await listChaptersForSource(manga, "mangahub", sourceMangaId, mangaUrl)
+                if (chapters.length === 0) continue
+
+                const latest = chapters.reduce(
+                    (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
+                    chapters[0]
+                )
+
+                await db.transaction("rw", db.chapters, db.manga, async () => {
+                    await db.chapters.bulkPut(chapters)
+                    await purgeStaleMangahubChapterRows(manga.id, new Set(chapters.map(c => c.id)))
+                    if (latest) {
+                        await db.manga.update(manga.id, {
+                            latestChapterId: latest.id,
+                            sourceUrl: latest.url,
+                            ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
+                            updatedAt: Date.now()
+                        })
+                    }
+                })
+                publishLive(["chapters", "library"], [manga.id])
+            } catch (error) {
+                console.warn("[AMR] MangaHub chapter repair failed for one title", { mangaId: manga.id, error })
+            }
+        }
+    } catch (error) {
+        console.error("[AMR] MangaHub chapter repair sweep failed to run", error)
+    } finally {
+        await browser.storage.local.set({ [MANGAHUB_CHAPTER_REPAIR_FLAG]: true })
     }
 }
 

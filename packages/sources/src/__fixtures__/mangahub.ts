@@ -42,3 +42,92 @@ export const COVER_SLUG = "solo-leveling_105"
 export const COVER_PATH = "/manga/solo-leveling_105"
 export const COVER_URL = "https://thumb.mghcdn.com/mh/solo-leveling.jpg"
 export const mangaDetailHtml = `<!doctype html><html><head><title>Read Solo Leveling Manga Online for Free</title><meta property="og:title" content="Solo Leveling"/><meta property="og:image" content="${COVER_URL}"/></head><body></body></html>`
+
+// Chapter-list page fixtures - exercise extractChapters' dominant-slug filter and
+// canonical-vs-id-slug dedupe (see mangahub.ts).
+//
+// mangahub.io mixes two anchor styles per real chapter:
+//   - canonical (`_3pfyN`, href .../chapter-{N} where N IS the real chapter number)
+//   - "alternate version" id-slug (`_1AxFv` title="Chapter", href .../chapter-{internalId}
+//     where internalId is a SITE-WIDE sequential counter unrelated to this manga's
+//     chapter count - observed up to ~2.65 million)
+// Both carry the true chapter number as visible text in a
+// `<span class="text-secondary _3D1SJ">#<!-- -->{N}</span>` element nested in the anchor
+// (the HTML comment is a React hydration artifact).
+//
+// This fixture models four real chapters for CHAPTER_LIST_SLUG:
+//   ch1 - canonical only
+//   ch2 - canonical anchor FIRST, id-slug duplicate SECOND (canonical-then-id-slug order)
+//   ch3 - id-slug duplicate FIRST, canonical anchor SECOND (id-slug-then-canonical order)
+//   ch4 - id-slug only (no canonical duplicate exists for this one)
+// plus one id-slug anchor with NO visible number and an internalId over
+// INTERNAL_ID_MIN (discarded entirely - unusable), and a "you might also like" slider
+// near the end of the document with real-number chapter anchors for a DIFFERENT manga
+// (FOREIGN_SLUG) - real mangahub.io markup, no special class - that must be excluded by
+// the dominant-slug filter.
+export const CHAPTER_LIST_SLUG = "hero-returns"
+export const CHAPTER_LIST_PATH = "/manga/hero-returns"
+export const CHAPTER_LIST_URL = `https://mangahub.io${CHAPTER_LIST_PATH}`
+export const FOREIGN_SLUG = "unrelated-other-manga"
+
+export const chapterListHtml = `<!doctype html><html><body><div id="app">
+<div class="list-of-chapters">
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-1" class="_3pfyN">Chapter 1<span class="text-secondary _3D1SJ">#<!-- -->1</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2" class="_3pfyN">Chapter 2<span class="text-secondary _3D1SJ">#<!-- -->2</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2650002" class="_1AxFv" title="Chapter"><span class="text-secondary _3D1SJ">#<!-- -->2</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2650003" class="_1AxFv" title="Chapter"><span class="text-secondary _3D1SJ">#<!-- -->3</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-3" class="_3pfyN">Chapter 3<span class="text-secondary _3D1SJ">#<!-- -->3</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2650004" class="_1AxFv" title="Chapter"><span class="text-secondary _3D1SJ">#<!-- -->4</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2650099" class="_1AxFv" title="Chapter">View</a>
+</div>
+<div class="container"><div class="title-header h2-header"><h2>You might also like</h2></div><div class="manga-slider">
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-15">Chapter 15</a>
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-16">Chapter 16</a>
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-17">Chapter 17</a>
+</div></div>
+</div></body></html>`
+
+// Identical chapter set to chapterListHtml, but ch2/ch3's canonical vs id-slug anchor
+// order is swapped relative to the fixture above (ch2 becomes id-slug-first, ch3
+// becomes canonical-first) - proves the canonical-always-wins rule is genuinely
+// order-independent rather than "whichever anchor happens to come first in the
+// document wins".
+export const chapterListHtmlSwappedOrder = `<!doctype html><html><body><div id="app">
+<div class="list-of-chapters">
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-1" class="_3pfyN">Chapter 1<span class="text-secondary _3D1SJ">#<!-- -->1</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2650002" class="_1AxFv" title="Chapter"><span class="text-secondary _3D1SJ">#<!-- -->2</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2" class="_3pfyN">Chapter 2<span class="text-secondary _3D1SJ">#<!-- -->2</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-3" class="_3pfyN">Chapter 3<span class="text-secondary _3D1SJ">#<!-- -->3</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2650003" class="_1AxFv" title="Chapter"><span class="text-secondary _3D1SJ">#<!-- -->3</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2650004" class="_1AxFv" title="Chapter"><span class="text-secondary _3D1SJ">#<!-- -->4</span></a>
+<a href="https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2650099" class="_1AxFv" title="Chapter">View</a>
+</div>
+<div class="container"><div class="title-header h2-header"><h2>You might also like</h2></div><div class="manga-slider">
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-15">Chapter 15</a>
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-16">Chapter 16</a>
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-17">Chapter 17</a>
+</div></div>
+</div></body></html>`
+
+// resolveChapter fixtures.
+//
+// Normal case: a real canonical chapter page whose title carries the chapter number.
+export const CHAPTER_URL = `https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-52`
+export const CHAPTER_PATH = `/chapter/${CHAPTER_LIST_SLUG}/chapter-52`
+export const chapterPageHtml = `<!doctype html><html><head><title>Hero Returns Chapter 52</title><meta property="og:title" content="Hero Returns Chapter 52"/></head><body><img src="https://cdn.mghcdn.com/mh/hero-returns/52/1.webp"/><img src="https://cdn.mghcdn.com/mh/hero-returns/52/2.webp"/></body></html>`
+
+// Slug-number fallback case: title has no parseable chapter number, but the href
+// number is a real (low) chapter number rather than a site-wide internal id.
+export const CHAPTER_LOW_SLUGNUM_URL = `https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-42`
+export const CHAPTER_LOW_SLUGNUM_PATH = `/chapter/${CHAPTER_LIST_SLUG}/chapter-42`
+export const chapterPageNoTitleNumberHtml = `<!doctype html><html><head><title>MangaHub</title></head><body><img src="https://cdn.mghcdn.com/mh/hero-returns/42/1.webp"/></body></html>`
+
+// The 302-redirect-to-manga-page case: an id-slug URL whose href number is a
+// site-wide internal id (well over INTERNAL_ID_MIN, using the exact value from the
+// real user report) and whose page has no parseable chapter number anywhere (as if the
+// request landed on the plain manga page after a redirect). Still carries a real CDN
+// image so it clears the "blocked" check and actually reaches chapter-number
+// resolution - isolates the chNum-determination failure being tested.
+export const CHAPTER_HIGH_SLUGNUM_URL = `https://mangahub.io/chapter/${CHAPTER_LIST_SLUG}/chapter-2650711`
+export const CHAPTER_HIGH_SLUGNUM_PATH = `/chapter/${CHAPTER_LIST_SLUG}/chapter-2650711`
+export const chapterPageRedirectedHtml = `<!doctype html><html><head><title>MangaHub - Read Manga Online</title></head><body><img src="https://cdn.mghcdn.com/mh/hero-returns/1.webp"/></body></html>`

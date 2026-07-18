@@ -27,6 +27,8 @@ const {
     listChaptersWithTabFallback,
     ensureChapterListRefreshed,
     scheduleChapterListRefresh,
+    purgeStaleMangahubChapterRows,
+    MANGAHUB_INTERNAL_ID_MIN,
     _resetRefreshCooldownForTests
 } = await import("./chapter-cache")
 
@@ -236,6 +238,128 @@ describe("listChaptersWithTabFallback standard (SW-fetch) path", () => {
         await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
 
         expect(publishLiveMock).not.toHaveBeenCalled()
+    })
+
+    it("purges stale MangaHub junk rows after a fresh bulkPut, but leaves other sources untouched", async () => {
+        const MANGAHUB_MANGA_ID = "mangahub:manga:some-series"
+        const mangahubManga: LibraryManga = {
+            ...manga,
+            id: MANGAHUB_MANGA_ID,
+            sourceId: "mangahub",
+            sourceMangaId: "some-series"
+        }
+        await db.manga.put(mangahubManga)
+        // Pre-existing junk row from before the extractChapters fix - a poisoned
+        // internal-id sortKey that the fresh fetch below no longer returns.
+        await db.chapters.put({
+            id: "mangahub:chapter:some-series:2650711",
+            mangaId: MANGAHUB_MANGA_ID,
+            sourceId: "mangahub",
+            title: "Chapter 2650711",
+            url: "https://mangahub.io/chapter/some-series/chapter-2650711",
+            sortKey: 2650711
+        })
+        const freshChapters: ChapterRecord[] = [1, 2].map(n => ({
+            id: `mangahub:chapter:some-series:${n}`,
+            mangaId: MANGAHUB_MANGA_ID,
+            sourceId: "mangahub",
+            title: `Chapter ${n}`,
+            url: `https://mangahub.io/chapter/some-series/chapter-${n}`,
+            sortKey: n
+        }))
+        listChaptersBySourceMock.mockResolvedValue(freshChapters)
+
+        const mangahubSource = { manifest: { id: "mangahub" }, getChapterListUrl: () => null } as unknown as Parameters<
+            typeof ensureChapterListRefreshed
+        >[0]
+        await listChaptersWithTabFallback(
+            mangahubSource,
+            "some-series",
+            "https://mangahub.io/manga/some-series",
+            MANGAHUB_MANGA_ID
+        )
+
+        const remaining = await db.chapters.where("mangaId").equals(MANGAHUB_MANGA_ID).toArray()
+        expect(remaining.map(c => c.sortKey).sort((a, b) => a - b)).toEqual([1, 2])
+    })
+})
+
+describe("purgeStaleMangahubChapterRows", () => {
+    it("deletes only junk (sortKey >= MANGAHUB_INTERNAL_ID_MIN) MangaHub rows absent from the fresh id set", async () => {
+        const MANGAHUB_MANGA_ID = "mangahub:manga:some-series"
+        await db.chapters.bulkPut([
+            {
+                id: "mangahub:chapter:some-series:1",
+                mangaId: MANGAHUB_MANGA_ID,
+                sourceId: "mangahub",
+                title: "Chapter 1",
+                url: "https://mangahub.io/chapter/some-series/chapter-1",
+                sortKey: 1
+            },
+            {
+                id: "mangahub:chapter:some-series:2",
+                mangaId: MANGAHUB_MANGA_ID,
+                sourceId: "mangahub",
+                title: "Chapter 2",
+                url: "https://mangahub.io/chapter/some-series/chapter-2",
+                sortKey: 2
+            },
+            {
+                id: "mangahub:chapter:some-series:2650003",
+                mangaId: MANGAHUB_MANGA_ID,
+                sourceId: "mangahub",
+                title: "Chapter 2650003",
+                url: "https://mangahub.io/chapter/some-series/chapter-2650003",
+                sortKey: MANGAHUB_INTERNAL_ID_MIN + 3
+            },
+            {
+                id: "mangahub:chapter:some-series:2650004",
+                mangaId: MANGAHUB_MANGA_ID,
+                sourceId: "mangahub",
+                title: "Chapter 2650004",
+                url: "https://mangahub.io/chapter/some-series/chapter-2650004",
+                sortKey: MANGAHUB_INTERNAL_ID_MIN + 4
+            },
+            // A different source's row on the same manga id, with a similarly-large
+            // sortKey - must never be touched by a MangaHub-scoped purge.
+            {
+                id: "webtoons:chapter:some-series:2650005",
+                mangaId: MANGAHUB_MANGA_ID,
+                sourceId: "webtoons",
+                title: "Episode 2650005",
+                url: "https://www.webtoons.com/ep-2650005",
+                sortKey: MANGAHUB_INTERNAL_ID_MIN + 5
+            }
+        ])
+
+        const freshIds = new Set(["mangahub:chapter:some-series:1", "mangahub:chapter:some-series:2"])
+        await purgeStaleMangahubChapterRows(MANGAHUB_MANGA_ID, freshIds)
+
+        const remaining = await db.chapters.where("mangaId").equals(MANGAHUB_MANGA_ID).toArray()
+        expect(remaining.map(c => c.id).sort()).toEqual(
+            [
+                "mangahub:chapter:some-series:1",
+                "mangahub:chapter:some-series:2",
+                "webtoons:chapter:some-series:2650005"
+            ].sort()
+        )
+    })
+
+    it("does nothing when there are no stale rows", async () => {
+        const MANGAHUB_MANGA_ID = "mangahub:manga:clean-series"
+        await db.chapters.put({
+            id: "mangahub:chapter:clean-series:1",
+            mangaId: MANGAHUB_MANGA_ID,
+            sourceId: "mangahub",
+            title: "Chapter 1",
+            url: "https://mangahub.io/chapter/clean-series/chapter-1",
+            sortKey: 1
+        })
+
+        await purgeStaleMangahubChapterRows(MANGAHUB_MANGA_ID, new Set(["mangahub:chapter:clean-series:1"]))
+
+        const remaining = await db.chapters.where("mangaId").equals(MANGAHUB_MANGA_ID).toArray()
+        expect(remaining).toHaveLength(1)
     })
 })
 
