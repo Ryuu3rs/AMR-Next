@@ -183,7 +183,7 @@ function extractTitle(html: string, fallbackSlug: string): string {
     if (titleText) {
         // Whitespace required on both sides - a bare hyphen inside a word (e.g.
         // "Max-Level") isn't a "<title> - <site>" boundary and shouldn't be split on.
-        const cleaned = titleText.split(/\s+[--|]\s+/)[0]?.trim()
+        const cleaned = titleText.split(/\s+[-|]\s+/)[0]?.trim()
         if (cleaned) return cleaned
     }
     return fallbackSlug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
