@@ -129,7 +129,7 @@ type ChapterAnchorMatch = {
     innerHtml: string
 }
 
-function extractChapters(html: string, mangaId: string): SourceChapter[] {
+function extractChapters(html: string, mangaId: string, expectedSlug: string): SourceChapter[] {
     const matches: ChapterAnchorMatch[] = []
     for (const m of html.matchAll(CHAPTER_ANCHOR_RE)) {
         const url = captureGroup(m, 1)
@@ -144,8 +144,8 @@ function extractChapters(html: string, mangaId: string): SourceChapter[] {
     // anchors for OTHER manga titles (real-number hrefs, no special class) - trusting
     // any canonical-shaped anchor without this filter would misattribute those foreign
     // chapters to the current title. The real chapter-list anchors for this manga vastly
-    // outnumber the handful of foreign slider anchors, so a simple frequency count
-    // reliably finds the right slug. Discard everything else BEFORE any
+    // outnumber the handful of foreign slider anchors in the normal case, so a simple
+    // frequency count usually finds the right slug. Discard everything else BEFORE any
     // dedupe/number-parsing logic below.
     const slugCounts = new Map<string, number>()
     for (const match of matches) slugCounts.set(match.slug, (slugCounts.get(match.slug) ?? 0) + 1)
@@ -157,7 +157,21 @@ function extractChapters(html: string, mangaId: string): SourceChapter[] {
             dominantCount = count
         }
     }
-    const sameSlugMatches = matches.filter(match => match.slug === dominantSlug)
+
+    // A tie (or the foreign slider simply having MORE anchors than a very-short real
+    // chapter list, e.g. a brand-new 1-2 chapter manga) can hand the raw vote to a
+    // foreign slug - and with a strict `>` comparison over a document-order Map, even a
+    // non-tie can go the wrong way if the slider's markup happens to precede the real
+    // chapter list. The caller always knows which slug is actually this manga's own
+    // (expectedSlug, from manga.sourceMangaId), so cross-check the vote winner against
+    // it and prefer the real slug's own anchors whenever they disagree - even if that
+    // set has fewer anchors than the vote winner.
+    const targetSlug = dominantSlug === expectedSlug ? dominantSlug : expectedSlug
+    const sameSlugMatches = matches.filter(match => match.slug === targetSlug)
+    // The real slug has zero matched anchors at all - a genuine "no chapters found"
+    // case, not a misattribution. Return empty rather than falling back to the
+    // (foreign) vote winner's anchors.
+    if (sameSlugMatches.length === 0) return []
 
     // Dedupe by the TRUE chapter number, not by URL - the canonical anchor and the
     // "alternate version" id-slug anchor for the same real chapter yield different URLs
@@ -351,7 +365,7 @@ export const mangahubAdapter: SourceAdapter = {
         const { manga } = input
         const mangaUrl = new URL(manga.url)
         const html = await ctx.request.getText(mangaUrl, { headers: BROWSER_HEADERS })
-        return extractChapters(html, manga.manga.id)
+        return extractChapters(html, manga.manga.id, manga.sourceMangaId)
     },
 
     async search(query: string, ctx: SourceContext): Promise<SourceSearchResult[]> {

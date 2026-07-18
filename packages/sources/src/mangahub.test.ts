@@ -12,12 +12,16 @@ import {
     CHAPTER_URL,
     chapterListHtml,
     chapterListHtmlSwappedOrder,
+    chapterListNoRealAnchorsHtml,
     chapterPageHtml,
     chapterPageNoTitleNumberHtml,
     chapterPageRedirectedHtml,
     COVER_PATH,
     COVER_SLUG,
     COVER_URL,
+    EMPTY_REAL_CHAPTER_LIST_PATH,
+    EMPTY_REAL_CHAPTER_LIST_SLUG,
+    EMPTY_REAL_CHAPTER_LIST_URL,
     FOREIGN_SLUG,
     mangaDetailHtml,
     SEARCH_DECOY_SLUG,
@@ -28,7 +32,11 @@ import {
     searchDecoyChapterNumberHtml,
     searchEmptyHtml,
     searchPage1Html,
-    searchPage2Html
+    searchPage2Html,
+    SHORT_REAL_CHAPTER_LIST_PATH,
+    SHORT_REAL_CHAPTER_LIST_SLUG,
+    SHORT_REAL_CHAPTER_LIST_URL,
+    shortRealChapterListHtml
 } from "./__fixtures__/mangahub"
 import { mangahubAdapter } from "./mangahub"
 
@@ -211,6 +219,32 @@ describe("mangahubAdapter.listChapters", () => {
         const swappedChapters = await mangahubAdapter.listChapters({ manga }, swappedContext)
 
         expect(swappedChapters).toEqual(chapters)
+    })
+
+    it("prefers the manga's own known slug over a higher-count foreign slug from the recommendation widget", async () => {
+        const requests: string[] = []
+        const context = createContext({ [SHORT_REAL_CHAPTER_LIST_PATH]: shortRealChapterListHtml }, requests)
+        const manga = makeMangaStub(SHORT_REAL_CHAPTER_LIST_SLUG, SHORT_REAL_CHAPTER_LIST_URL)
+
+        const chapters = await mangahubAdapter.listChapters({ manga }, context)
+
+        // FOREIGN_SLUG has 5 anchors vs only 2 for the real manga, and appears first in
+        // document order - a raw frequency vote (or a first-encountered tiebreak) would
+        // pick FOREIGN_SLUG, but the cross-check against manga.sourceMangaId must win.
+        expect(chapters).toHaveLength(2)
+        expect(chapters.map(c => c.sortKey)).toEqual([1, 2])
+        expect(chapters.every(c => c.url.includes(SHORT_REAL_CHAPTER_LIST_SLUG))).toBe(true)
+        expect(chapters.some(c => c.url.includes(FOREIGN_SLUG))).toBe(false)
+    })
+
+    it("returns an empty list when the manga's own slug has zero matched anchors, instead of falling back to a foreign slug", async () => {
+        const requests: string[] = []
+        const context = createContext({ [EMPTY_REAL_CHAPTER_LIST_PATH]: chapterListNoRealAnchorsHtml }, requests)
+        const manga = makeMangaStub(EMPTY_REAL_CHAPTER_LIST_SLUG, EMPTY_REAL_CHAPTER_LIST_URL)
+
+        const chapters = await mangahubAdapter.listChapters({ manga }, context)
+
+        expect(chapters).toHaveLength(0)
     })
 })
 

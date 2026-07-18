@@ -109,6 +109,47 @@ export const chapterListHtmlSwappedOrder = `<!doctype html><html><body><div id="
 </div></div>
 </div></body></html>`
 
+// Regression fixture for the dominant-slug cross-check fix: a brand-new manga with
+// only 2 real chapters, where the "you might also like" slider (FOREIGN_SLUG) has
+// MORE anchors (5) than the real chapter list (2) and appears FIRST in document
+// order. A raw frequency vote (or a first-encountered tiebreak) would wrongly pick
+// FOREIGN_SLUG as the dominant slug here - extractChapters must cross-check the vote
+// winner against the manga's own known slug (manga.sourceMangaId) and prefer the real
+// slug's own anchors regardless of which has more matches.
+export const SHORT_REAL_CHAPTER_LIST_SLUG = "brand-new-manga"
+export const SHORT_REAL_CHAPTER_LIST_PATH = "/manga/brand-new-manga"
+export const SHORT_REAL_CHAPTER_LIST_URL = `https://mangahub.io${SHORT_REAL_CHAPTER_LIST_PATH}`
+
+export const shortRealChapterListHtml = `<!doctype html><html><body><div id="app">
+<div class="container"><div class="title-header h2-header"><h2>You might also like</h2></div><div class="manga-slider">
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-15">Chapter 15</a>
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-16">Chapter 16</a>
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-17">Chapter 17</a>
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-18">Chapter 18</a>
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-19">Chapter 19</a>
+</div></div>
+<div class="list-of-chapters">
+<a href="https://mangahub.io/chapter/${SHORT_REAL_CHAPTER_LIST_SLUG}/chapter-1" class="_3pfyN">Chapter 1<span class="text-secondary _3D1SJ">#<!-- -->1</span></a>
+<a href="https://mangahub.io/chapter/${SHORT_REAL_CHAPTER_LIST_SLUG}/chapter-2" class="_3pfyN">Chapter 2<span class="text-secondary _3D1SJ">#<!-- -->2</span></a>
+</div>
+</div></body></html>`
+
+// Companion fixture for the "genuinely no real chapters" failure mode: only the
+// slider's foreign anchors are present, so the manga's own slug (EMPTY_REAL_CHAPTER_LIST_SLUG)
+// has zero matched anchors. extractChapters must return an empty list here (the
+// existing safe "no chapters found" behavior) rather than falling back to the
+// foreign slug's anchors just because some anchors exist on the page.
+export const EMPTY_REAL_CHAPTER_LIST_SLUG = "totally-empty-manga"
+export const EMPTY_REAL_CHAPTER_LIST_PATH = "/manga/totally-empty-manga"
+export const EMPTY_REAL_CHAPTER_LIST_URL = `https://mangahub.io${EMPTY_REAL_CHAPTER_LIST_PATH}`
+
+export const chapterListNoRealAnchorsHtml = `<!doctype html><html><body><div id="app">
+<div class="container"><div class="title-header h2-header"><h2>You might also like</h2></div><div class="manga-slider">
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-15">Chapter 15</a>
+<a href="https://mangahub.io/chapter/${FOREIGN_SLUG}/chapter-16">Chapter 16</a>
+</div></div>
+</div></body></html>`
+
 // resolveChapter fixtures.
 //
 // Normal case: a real canonical chapter page whose title carries the chapter number.

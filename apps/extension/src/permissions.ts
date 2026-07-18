@@ -38,9 +38,11 @@ const BASE_SOURCE_ORIGINS = [
     // "https://mangapark.net/*",
     // "*://*.mangapark.net/*",
     // "*://*.mangapark.me/*",
-    // AsuraComic (Next.js adapter) - chapter images served from subdomains (e.g. gg.asuracomic.net)
-    "https://asuracomic.net/*",
-    "*://*.asuracomic.net/*",
+    // AsuraComic - retired 2026-07-18: asuracomic.net permanently redirects to
+    // asurascans.com (a different, already-registered adapter) - no active adapter
+    // targets this domain or a subdomain of it, so the permission is removed rather
+    // than kept for a shared CDN (verified: asurascans.ts only ever references
+    // cdn.asurascans.com, never any asuracomic.net host).
     // AsuraScans (React RSC adapter) - chapter images served from cdn.asurascans.com
     "https://asurascans.com/*",
     "*://*.asurascans.com/*",
