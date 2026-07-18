@@ -913,6 +913,35 @@ describe("export / import integrity", () => {
     })
 })
 
+// Fix 6: the 6 table reads used to be independent toArray() calls, each its own
+// transaction - a concurrent write could commit in the gaps and produce a torn
+// snapshot. They're now one "r" (read-only) transaction across all 6 tables.
+describe("exportDatabase reads via one snapshot transaction (Fix 6)", () => {
+    it("wraps all 6 table reads in a single read-only transaction over exactly the exported tables", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        const transactionSpy = vi.spyOn(db, "transaction")
+
+        await exportDatabase()
+
+        const exportCall = transactionSpy.mock.calls.find(call => call[0] === "r")
+        expect(exportCall).toBeDefined()
+        const tables = exportCall?.[1] as unknown as unknown[]
+        expect(tables).toEqual(
+            expect.arrayContaining([
+                db.manga,
+                db.sourceLinks,
+                db.chapters,
+                db.progress,
+                db.historyEvents,
+                db.pageBookmarks
+            ])
+        )
+        expect(tables).toHaveLength(6)
+
+        transactionSpy.mockRestore()
+    })
+})
+
 // Bug 5: the tests below are what should have caught Bugs 1 and 2 in the first
 // place - a full-fidelity round-trip across every table and every optional field,
 // a structural guard against future DB-shape/import-schema drift, and coverage for
@@ -1315,6 +1344,35 @@ describe("restoreBackup replaces state instead of merging (Bug 2)", () => {
 
         expect(await db.downloads.get(chapter.id)).toBeDefined()
         expect(await db.covers.get(manga.id)).toBeDefined()
+    })
+})
+
+// Fix 2: clearImportableTables() and importDatabase() used to be three independent
+// commits (createBackup, clear, import) - an SW restart between the clear and the
+// import left an empty library with no recovery. They're now wrapped in one
+// transaction together (createBackup stays outside it deliberately - see the doc
+// comment on restoreBackup). Proving this needs a genuine mid-import write failure,
+// not a mock of importDatabase itself (restoreBackup calls it as a same-module
+// direct function reference, which a spy on the module's export wouldn't intercept)
+// - so this forces db.manga.bulkPut (importDatabase's own write, once the clear has
+// already emptied db.manga so the incoming record resolves to "overwrite") to
+// reject, and checks the clear was rolled back along with it.
+describe("restoreBackup clear+import atomicity (Fix 2)", () => {
+    it("rolls back clearImportableTables if importDatabase's own write fails partway through, leaving the library intact", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await createBackup("pre-import")
+        const [backup] = await listBackups()
+
+        const bulkPutSpy = vi.spyOn(db.manga, "bulkPut").mockRejectedValueOnce(new Error("boom"))
+
+        await expect(restoreBackup(backup!.id)).rejects.toThrow("boom")
+
+        bulkPutSpy.mockRestore()
+        // The clear must have been rolled back along with the failed import - the
+        // library must NOT be left empty.
+        expect(await db.manga.get(manga.id)).toBeDefined()
+        expect(await db.chapters.get(chapter.id)).toBeDefined()
+        expect(await db.sourceLinks.get(manga.id)).toBeDefined()
     })
 })
 
@@ -1759,6 +1817,100 @@ describe("trackExternalChapter", () => {
 
         expect(result.mangaId).toBe(legacyHostnameRow.id)
         expect(await db.manga.count()).toBe(1)
+    })
+
+    // Fix 1: the whole function now runs inside one db.transaction, so an SW-restart-
+    // equivalent partial failure (a later write in the same call throwing) rolls back
+    // everything, including the manga/sourceLinks rows created earlier in the SAME
+    // call - before this fix those committed independently and would have survived.
+    it("rolls back the newly-created manga + sourceLink when a later write in the same call fails (atomicity)", async () => {
+        const putSpy = vi.spyOn(db.chapters, "put").mockRejectedValueOnce(new Error("boom"))
+
+        await expect(
+            trackExternalChapter({
+                url: "https://example.com/manga/brand-new-title/chapter-1",
+                sourceId: "genericsource"
+            })
+        ).rejects.toThrow("boom")
+
+        putSpy.mockRestore()
+        expect(await db.manga.count()).toBe(0)
+        expect(await db.sourceLinks.count()).toBe(0)
+        expect(await db.chapters.count()).toBe(0)
+    })
+
+    // Fix 7: chapter number lives only in a query string the number regex doesn't
+    // recognize (an opaque, non-"no="-suffixed param) - the old fallback key (bare
+    // last pathname segment) collided these onto the same chapterId, silently
+    // overwriting one chapter's progress with the other's.
+    it("gives distinct chapter keys to same-path chapters that differ only by a non-volatile query param the number regex can't parse (Fix 7)", async () => {
+        const mangaInfo = { sourceMangaId: "x1", mangaUrl: "https://example.com/manga/x1/" }
+        const first = await trackExternalChapter({
+            url: "https://example.com/manga/x1/reader?id=7",
+            sourceId: "genericsource",
+            mangaInfo
+        })
+        const second = await trackExternalChapter({
+            url: "https://example.com/manga/x1/reader?id=8",
+            sourceId: "genericsource",
+            mangaInfo
+        })
+
+        expect(first.mangaId).toBe(second.mangaId)
+        const chapters = await db.chapters.where("mangaId").equals(first.mangaId).toArray()
+        expect(chapters).toHaveLength(2)
+        expect(new Set(chapters.map(c => c.id)).size).toBe(2)
+        const p1 = await db.progress.get(chapters.find(c => c.url.endsWith("id=7"))!.id)
+        const p2 = await db.progress.get(chapters.find(c => c.url.endsWith("id=8"))!.id)
+        expect(p1).toBeDefined()
+        expect(p2).toBeDefined()
+    })
+
+    // Fix 7: a bare `ch=` param (no "no=" suffix) is now routed into the well-
+    // supported ch-N key shape via the extended numberMatch regex - the "better
+    // outcome" the fix prefers over falling back to query-string disambiguation.
+    it("parses a bare ch= query param (no 'no=' suffix) as the chapter number (Fix 7 regex extension)", async () => {
+        const mangaInfo = { sourceMangaId: "x2", mangaUrl: "https://example.com/manga/x2/" }
+        const first = await trackExternalChapter({
+            url: "https://example.com/manga/x2/reader?ch=7",
+            sourceId: "genericsource",
+            mangaInfo
+        })
+        const second = await trackExternalChapter({
+            url: "https://example.com/manga/x2/reader?ch=8",
+            sourceId: "genericsource",
+            mangaInfo
+        })
+
+        expect(first.chapterNumber).toBe(7)
+        expect(second.chapterNumber).toBe(8)
+        expect(first.mangaId).toBe(second.mangaId)
+        const chapters = await db.chapters.where("mangaId").equals(first.mangaId).toArray()
+        expect(new Set(chapters.map(c => c.id)).size).toBe(2)
+    })
+
+    // Fix 7 regression guard: a URL with no query string, and an otherwise-identical
+    // URL with only VOLATILE params (utm_source etc.), must still collapse onto the
+    // exact same fallback key as before the fix - no migration, no existing tracked
+    // chapter loses its id just because a tracking param happens to be present.
+    it("keeps the same fallback key for a URL with only volatile query params (Fix 7 regression guard)", async () => {
+        const mangaInfo = { sourceMangaId: "x3", mangaUrl: "https://example.com/manga/x3/" }
+        const first = await trackExternalChapter({
+            url: "https://example.com/manga/x3/reader",
+            sourceId: "genericsource",
+            mangaInfo
+        })
+        const second = await trackExternalChapter({
+            url: "https://example.com/manga/x3/reader?utm_source=newsletter&fbclid=abc",
+            sourceId: "genericsource",
+            mangaInfo
+        })
+
+        expect(second.mangaId).toBe(first.mangaId)
+        const chapters = await db.chapters.where("mangaId").equals(first.mangaId).toArray()
+        // Both calls collapsed onto the exact same chapterId - the volatile-only
+        // query string never changed the fallback key.
+        expect(chapters).toHaveLength(1)
     })
 })
 

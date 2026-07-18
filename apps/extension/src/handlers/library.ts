@@ -415,6 +415,16 @@ export const libraryHandlers: HandlerMap = {
 
             for (const group of request.groups) {
                 try {
+                    // 0. Snapshot whether the canonical record exists before this group's
+                    // (possibly slow) network resolution phase starts below - the request
+                    // wire shape (see the library:cleanup:apply zod schema in runtime.ts)
+                    // doesn't carry the scan-time CleanupGroup.inLibrary flag, so this is
+                    // the earliest available signal for telling a concurrent library:remove
+                    // during that phase apart from the normal "no canonical yet, this
+                    // group creates it" case. Re-checked fresh inside the write transaction
+                    // below, since a check done out here is still racy on its own.
+                    const existedAtStart = (await db.manga.get(group.canonicalId)) !== undefined
+
                     // 1. Re-validate every loser still exists and still qualifies -
                     // someone may have fixed it manually, or a concurrent operation
                     // touched it, since the scan ran.
@@ -536,10 +546,11 @@ export const libraryHandlers: HandlerMap = {
                         }
                     }
 
-                    // 3. Ensure the canonical manga row exists - create or enrich-in-place.
+                    // 3. Build the canonical manga record - create or enrich-in-place.
                     // saveResolvedChapter's existing merge-safe field behavior makes the
-                    // same call correct for both cases.
-                    const existedBefore = (await db.manga.get(group.canonicalId)) !== undefined
+                    // same call correct for both cases. The actual create/enrich write
+                    // happens below, inside the transaction, with a fresh existence
+                    // re-check - not here.
                     let title: string
                     let coverUrl: string | undefined
                     if (scrapeResolved) {
@@ -564,22 +575,78 @@ export const libraryHandlers: HandlerMap = {
                         addedAt: now,
                         updatedAt: now
                     }
-                    await saveResolvedChapter({
-                        manga: mangaRecord,
-                        chapter: representativeChapter,
-                        sourceLink: {
-                            mangaId: group.canonicalId,
-                            sourceId: group.sourceId,
-                            sourceMangaId,
-                            url: mangaUrl,
-                            title,
-                            addedAt: now,
-                            updatedAt: now
-                        },
-                        chapters: canonicalChapters
-                    })
+
+                    // 6+7+8: create/enrich the canonical record, then remap + merge + the
+                    // dangling-id fixup, all inside ONE transaction - with existence
+                    // re-checks done FRESH inside it, which is what actually closes the
+                    // create/enrich resurrection race (a re-check outside a transaction is
+                    // still racy): a concurrent library:remove on the canonical id (or on a
+                    // loser) during the network phase above must stick, not get silently
+                    // undone by saveResolvedChapter's unconditional put or by the merge.
+                    // saveResolvedChapter and applyCleanupGroup are both pure-IDB, safe to
+                    // run inside a Dexie transaction.
+                    const applied = await db.transaction(
+                        "rw",
+                        [
+                            db.manga,
+                            db.sourceLinks,
+                            db.chapters,
+                            db.progress,
+                            db.historyEvents,
+                            db.downloads,
+                            db.pageBookmarks,
+                            db.covers
+                        ],
+                        async () => {
+                            const canonicalExists = (await db.manga.get(group.canonicalId)) !== undefined
+                            // The canonical existed when this group's resolution started but
+                            // is gone now - a concurrent library:remove raced the network
+                            // phase above. Respect it; don't resurrect the record
+                            // saveResolvedChapter would otherwise unconditionally recreate.
+                            if (existedAtStart && !canonicalExists) return null
+                            // Re-check losers inside the transaction too - a concurrent
+                            // removal during the network phase above must stick.
+                            const liveLoserIds: string[] = []
+                            for (const id of verifiedLoserIds) {
+                                if (await db.manga.get(id)) liveLoserIds.push(id)
+                            }
+                            // Nothing left of this group at all - creating the canonical now
+                            // would resurrect a removal rather than legitimately create a new
+                            // record from scratch.
+                            if (!canonicalExists && liveLoserIds.length === 0) return null
+                            await saveResolvedChapter({
+                                manga: mangaRecord,
+                                chapter: representativeChapter,
+                                sourceLink: {
+                                    mangaId: group.canonicalId,
+                                    sourceId: group.sourceId,
+                                    sourceMangaId,
+                                    url: mangaUrl,
+                                    title,
+                                    addedAt: now,
+                                    updatedAt: now
+                                },
+                                chapters: canonicalChapters
+                            })
+                            let mergedCount = 0
+                            if (liveLoserIds.length > 0) {
+                                await applyCleanupGroup(group.canonicalId, liveLoserIds, canonicalChapters)
+                                mergedCount = liveLoserIds.length
+                            }
+                            return { mergedCount, existedBefore: canonicalExists }
+                        }
+                    )
+                    if (applied === null) {
+                        skippedStale += 1
+                        continue
+                    }
+                    merged += applied.mergedCount
+                    groupsApplied += 1
+                    if (applied.existedBefore) enriched += 1
+
                     // Best-effort cover cache, mirroring capture.ts's successful-capture
-                    // path - a cover failure must never fail the whole group.
+                    // path - a cover failure must never fail the whole group. Network call,
+                    // so it must run outside the Dexie transaction above.
                     if (coverUrl) {
                         try {
                             const blob = await fetchCoverBlob(coverUrl)
@@ -591,15 +658,6 @@ export const libraryHandlers: HandlerMap = {
                             })
                         }
                     }
-
-                    // 6+7+8: remap + merge + the dangling-id fixup, all inside one
-                    // parent transaction (see applyCleanupGroup in database.ts).
-                    if (verifiedLoserIds.length > 0) {
-                        await applyCleanupGroup(group.canonicalId, verifiedLoserIds, canonicalChapters)
-                        merged += verifiedLoserIds.length
-                    }
-                    groupsApplied += 1
-                    if (existedBefore) enriched += 1
                 } catch (error) {
                     failed.push({
                         canonicalId: group.canonicalId,
@@ -687,8 +745,29 @@ export const libraryHandlers: HandlerMap = {
             addedAt: now,
             updatedAt: now
         }
-        await rekeyManga(request.mangaId, next, newSourceLink)
-        await db.chapters.put(resolved.chapter)
+        // rekeyManga's own transaction declares exactly this 8-table set (its sole
+        // production call site is this one - verified), so wrapping the rekey and
+        // the chapter put together is a same-set join, not a superset that could
+        // break Dexie's nested-transaction rule. Without this, an SW restart between
+        // the two statements could leave the manga pointing at a chapter row that
+        // was never written.
+        await db.transaction(
+            "rw",
+            [
+                db.manga,
+                db.sourceLinks,
+                db.chapters,
+                db.progress,
+                db.historyEvents,
+                db.downloads,
+                db.pageBookmarks,
+                db.covers
+            ],
+            async () => {
+                await rekeyManga(request.mangaId, next, newSourceLink)
+                await db.chapters.put(resolved.chapter)
+            }
+        )
         // Fire-and-forget: populate the chapter list for the new source
         const relinkSource = findSource(new URL(request.url))
         scheduleChapterListRefresh(relinkSource, resolved.manga.sourceMangaId, resolved.manga.url, newId)

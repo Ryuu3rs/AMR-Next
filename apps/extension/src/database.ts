@@ -817,9 +817,25 @@ export function humanizeSlug(slug: string): string {
         .trim()
 }
 
+// Query params that vary per-visit/per-session without identifying a distinct
+// chapter - excluded from the fallback chapter-key's stable-params string below so
+// e.g. two visits to the same chapter with different tracking params never get
+// treated as different chapters.
+const VOLATILE_PARAMS = /^(utm_\w+|fbclid|gclid|ref|referrer|page|p|pg|token|sid|session(_id)?|t|ts)$/i
+
 // Track a chapter the user is reading on the source site directly (used when the
 // in-app reader can't load a site's images). Records progress + history by chapter
 // number without scraping pages, matching an existing library title when possible.
+//
+// The whole body runs inside one transaction - an SW restart between the
+// conditional manga/sourceLinks creation and the final chapter/progress writes used
+// to be able to leave a manga record with no sourceLinks row (silently excluded from
+// update-checks forever). saveProgress opens its own db.transaction over a strict
+// subset of the table list below (same "rw" mode), so it joins this one instead of
+// committing independently (Dexie's subset-join rule - see applyCleanupGroup's doc
+// comment for the same pattern already proven elsewhere in this file). Every await
+// in this function is IDB-only, so there's no network/non-Dexie work holding the
+// transaction open.
 export async function trackExternalChapter(input: {
     url: string
     sourceId: string
@@ -829,92 +845,115 @@ export async function trackExternalChapter(input: {
     // Important for sites like Webtoons where the path alone carries no per-title slug.
     mangaInfo?: { sourceMangaId: string; mangaUrl: string }
 }): Promise<{ tracked: boolean; title: string; chapterNumber: number | null; mangaId: string }> {
-    const now = Date.now()
-    const u = new URL(input.url)
-    // Some sites (e.g. Webtoons) never put the literal word "chapter" in the URL -
-    // they use an episode_no query param instead - so also match that generic shape.
-    const numberMatch =
-        input.url.match(/chapter[-_ ]?(\d+(?:\.\d+)?)/i) ??
-        input.url.match(/[?&](?:episode|chapter|ep)[-_]?no=(\d+(?:\.\d+)?)/i)
-    const number = numberMatch?.[1] !== undefined ? Number(numberMatch[1]) : undefined
+    return db.transaction("rw", [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents], async () => {
+        const now = Date.now()
+        const u = new URL(input.url)
+        // Some sites (e.g. Webtoons) never put the literal word "chapter" in the URL -
+        // they use an episode_no query param instead - so also match that generic shape.
+        // Also accepts a bare ch/chapter/ep/episode param with no "no=" suffix (e.g.
+        // ?ch=7), routing that case into the well-supported ch-N key shape below instead
+        // of the fallback path.
+        const numberMatch =
+            input.url.match(/chapter[-_ ]?(\d+(?:\.\d+)?)/i) ??
+            input.url.match(/[?&](?:episode|chapter|ep|ch)(?:[-_]?no)?=(\d+(?:\.\d+)?)/i)
+        const number = numberMatch?.[1] !== undefined ? Number(numberMatch[1]) : undefined
 
-    // When caller supplies series-level info, try direct ID lookup first - finds the manga
-    // even if it was previously added via resolveChapter (which uses a different code path).
-    let manga: LibraryManga | undefined
-    if (input.mangaInfo) {
-        manga = await db.manga.get(`${input.sourceId}:manga:${input.mangaInfo.sourceMangaId}`)
-    }
-
-    if (!manga) {
-        // Run an indexed same-source query first and check it against the two source-scoped
-        // slug matchers before falling back to a full table scan for the cross-source prefix
-        // matcher, since this fallback runs on every navigation on tracked/anti-scrape sites
-        // and scales with library size. This means precedence flips only in the rare case
-        // where a same-source slug match and a cross-source prefix match would both apply to
-        // the same navigation - the indexed same-source match now wins instead of the
-        // cross-source prefix match. Hostname-as-sourceId legacy rows are unaffected, since a
-        // source-scoped query on a fake hostname sourceId never matches and they always fall
-        // through to the full-scan cross-source pass below.
-        const sameSource = await db.manga.where("sourceId").equals(input.sourceId).toArray()
-        manga =
-            sameSource.find(m => m.mangaUrl && sameHostSlug(m.mangaUrl, input.url)) ??
-            sameSource.find(m => m.sourceUrl && sameHostSlug(m.sourceUrl, input.url))
+        // When caller supplies series-level info, try direct ID lookup first - finds the manga
+        // even if it was previously added via resolveChapter (which uses a different code path).
+        let manga: LibraryManga | undefined
+        if (input.mangaInfo) {
+            manga = await db.manga.get(`${input.sourceId}:manga:${input.mangaInfo.sourceMangaId}`)
+        }
 
         if (!manga) {
-            const all = await db.manga.toArray()
-            manga = all.find(m => m.mangaUrl && startsWithUrlPrefix(input.url, m.mangaUrl))
-        }
-    }
+            // Run an indexed same-source query first and check it against the two source-scoped
+            // slug matchers before falling back to a full table scan for the cross-source prefix
+            // matcher, since this fallback runs on every navigation on tracked/anti-scrape sites
+            // and scales with library size. This means precedence flips only in the rare case
+            // where a same-source slug match and a cross-source prefix match would both apply to
+            // the same navigation - the indexed same-source match now wins instead of the
+            // cross-source prefix match. Hostname-as-sourceId legacy rows are unaffected, since a
+            // source-scoped query on a fake hostname sourceId never matches and they always fall
+            // through to the full-scan cross-source pass below.
+            const sameSource = await db.manga.where("sourceId").equals(input.sourceId).toArray()
+            manga =
+                sameSource.find(m => m.mangaUrl && sameHostSlug(m.mangaUrl, input.url)) ??
+                sameSource.find(m => m.sourceUrl && sameHostSlug(m.sourceUrl, input.url))
 
-    if (!manga) {
-        const slug = deriveSlug(u)
-        const title = humanizeSlug(slug ?? "") || u.hostname
-        const mangaId = input.mangaInfo
-            ? `${input.sourceId}:manga:${input.mangaInfo.sourceMangaId}`
-            : `${input.sourceId}:manga:${slug || u.pathname}`
-        const mangaUrl = input.mangaInfo?.mangaUrl ?? deriveMangaUrl(u, slug)
-        manga = {
-            id: mangaId,
-            title,
-            normalizedTitle: title.toLocaleLowerCase("en"),
-            sourceId: input.sourceId,
-            sourceUrl: input.url,
-            mangaUrl,
-            authors: [],
-            status: "unknown",
-            addedAt: now,
-            updatedAt: now
+            if (!manga) {
+                const all = await db.manga.toArray()
+                manga = all.find(m => m.mangaUrl && startsWithUrlPrefix(input.url, m.mangaUrl))
+            }
         }
-        await db.manga.put(manga)
-        await db.sourceLinks.put({
+
+        if (!manga) {
+            const slug = deriveSlug(u)
+            const title = humanizeSlug(slug ?? "") || u.hostname
+            const mangaId = input.mangaInfo
+                ? `${input.sourceId}:manga:${input.mangaInfo.sourceMangaId}`
+                : `${input.sourceId}:manga:${slug || u.pathname}`
+            const mangaUrl = input.mangaInfo?.mangaUrl ?? deriveMangaUrl(u, slug)
+            manga = {
+                id: mangaId,
+                title,
+                normalizedTitle: title.toLocaleLowerCase("en"),
+                sourceId: input.sourceId,
+                sourceUrl: input.url,
+                mangaUrl,
+                authors: [],
+                status: "unknown",
+                addedAt: now,
+                updatedAt: now
+            }
+            await db.manga.put(manga)
+            await db.sourceLinks.put({
+                mangaId: manga.id,
+                sourceId: input.sourceId,
+                url: mangaUrl,
+                title: manga.title,
+                addedAt: now,
+                updatedAt: now
+            })
+        }
+
+        const lastSegment = u.pathname.split("/").filter(Boolean).pop() ?? "ext"
+        let chapterKey: string
+        if (number !== undefined) {
+            chapterKey = `ch-${number}`
+        } else {
+            // No parseable chapter number - two genuinely different chapters whose
+            // number lives only in a query string the regex above doesn't recognize
+            // (e.g. an opaque ?id=N param) would otherwise collide onto the same bare-
+            // pathname key. Fold in non-volatile query params to disambiguate that case,
+            // while a URL with no query string (or only volatile params like utm_source)
+            // keeps the exact key it always has - no migration, no existing tracked
+            // chapter loses its id.
+            const stableParams = [...u.searchParams.entries()]
+                .filter(([k]) => !VOLATILE_PARAMS.test(k))
+                .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+                .map(([k, v]) => `${k}=${v}`)
+                .join("&")
+            chapterKey = stableParams ? `${lastSegment}?${stableParams}`.slice(0, 200) : lastSegment
+        }
+        const chapterId = `${manga.id}:ext:${chapterKey}`
+        await db.chapters.put({
+            id: chapterId,
             mangaId: manga.id,
             sourceId: input.sourceId,
-            url: mangaUrl,
-            title: manga.title,
-            addedAt: now,
+            title: number !== undefined ? `Chapter ${number}` : "External chapter",
+            url: input.url,
+            sortKey: number ?? 0
+        })
+        await saveProgress({
+            mangaId: manga.id,
+            chapterId,
+            pageIndex: 0,
+            pageCount: 1,
+            completed: input.completed ?? true,
             updatedAt: now
         })
-    }
-
-    const chapterKey = number !== undefined ? `ch-${number}` : (u.pathname.split("/").filter(Boolean).pop() ?? "ext")
-    const chapterId = `${manga.id}:ext:${chapterKey}`
-    await db.chapters.put({
-        id: chapterId,
-        mangaId: manga.id,
-        sourceId: input.sourceId,
-        title: number !== undefined ? `Chapter ${number}` : "External chapter",
-        url: input.url,
-        sortKey: number ?? 0
+        return { tracked: true, title: manga.title, chapterNumber: number ?? null, mangaId: manga.id }
     })
-    await saveProgress({
-        mangaId: manga.id,
-        chapterId,
-        pageIndex: 0,
-        pageCount: 1,
-        completed: input.completed ?? true,
-        updatedAt: now
-    })
-    return { tracked: true, title: manga.title, chapterNumber: number ?? null, mangaId: manga.id }
 }
 
 export async function saveProgress(progress: ReadingProgress): Promise<void> {
@@ -984,24 +1023,56 @@ export async function downloadsCount(): Promise<number> {
     return db.downloads.count()
 }
 
-export async function exportDatabase() {
+// Explicit return type for exportDatabase - LibraryBackup.envelope below is typed
+// as `Awaited<ReturnType<typeof exportDatabase>>`, and exportDatabase itself now
+// calls db.transaction(), a method whose signature is generic over the WHOLE
+// AmrDatabase instance (including db.backups: EntityTable<LibraryBackup, ...>).
+// Left inferred, that makes the return type depend on LibraryBackup which depends
+// on the return type - a genuine circular type. An explicit annotation breaks the
+// cycle without changing the runtime shape at all.
+export type LibraryExportEnvelope = {
+    format: "all-mangas-reader"
+    version: 1
+    exportedAt: number
+    data: {
+        manga: LibraryManga[]
+        sourceLinks: SourceLinkRecord[]
+        chapters: ChapterRecord[]
+        progress: ReadingProgress[]
+        historyEvents: HistoryEvent[]
+        pageBookmarks: PageBookmark[]
+    }
+}
+
+// One "r" (read-only) transaction across all 6 tables so the snapshot is a true
+// point-in-time view - 6 independent toArray() calls could interleave with a
+// concurrent "rw" write and produce a torn export (e.g. a chapter that references a
+// manga id added moments after the manga array was already read).
+export async function exportDatabase(): Promise<LibraryExportEnvelope> {
+    const exportedAt = Date.now()
+    const [manga, sourceLinks, chapters, progress, historyEvents, pageBookmarks] = await db.transaction(
+        "r",
+        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.pageBookmarks],
+        async () =>
+            [
+                await db.manga.toArray(),
+                await db.sourceLinks.toArray(),
+                await db.chapters.toArray(),
+                await db.progress.toArray(),
+                await db.historyEvents.toArray(),
+                // pageBookmarks round-trip through export/import (previously silently
+                // dropped - see schema.ts's pageBookmarkSchema comment). db.downloads is
+                // intentionally NOT exported here: it holds full-page Blobs and would bloat
+                // a backup file enormously. db.covers is intentionally NOT exported either:
+                // covers are re-fetchable from the source on demand, and are also Blobs.
+                await db.pageBookmarks.toArray()
+            ] as const
+    )
     return {
         format: "all-mangas-reader",
         version: 1,
-        exportedAt: Date.now(),
-        data: {
-            manga: await db.manga.toArray(),
-            sourceLinks: await db.sourceLinks.toArray(),
-            chapters: await db.chapters.toArray(),
-            progress: await db.progress.toArray(),
-            historyEvents: await db.historyEvents.toArray(),
-            // pageBookmarks round-trip through export/import (previously silently
-            // dropped - see schema.ts's pageBookmarkSchema comment). db.downloads is
-            // intentionally NOT exported here: it holds full-page Blobs and would bloat
-            // a backup file enormously. db.covers is intentionally NOT exported either:
-            // covers are re-fetchable from the source on demand, and are also Blobs.
-            pageBookmarks: await db.pageBookmarks.toArray()
-        }
+        exportedAt,
+        data: { manga, sourceLinks, chapters, progress, historyEvents, pageBookmarks }
     } as const
 }
 
@@ -1361,9 +1432,24 @@ export async function restoreBackup(id: number): Promise<{ manga: number; chapte
     // snapshot wholesale instead of importDatabase's default merge-mode resolution
     // (existing-wins on most fields, Math.max on chapter numbers), which would leave
     // a bad import's junk data and clobbered values sitting alongside the restore.
+    // createBackup writes db.backups, a table deliberately outside the transaction
+    // below - its own completion is safe/idempotent on its own. clearImportableTables
+    // and importDatabase are wrapped TOGETHER in one transaction so an SW restart
+    // between them can never leave an emptied library with no way back: both
+    // functions' own internal transactions already declare exactly this table set,
+    // so they join this one instead of committing independently (Dexie's subset-join
+    // rule). importDatabase's own parsing/validation (parseImportData's zod
+    // safeParse loop) is fully synchronous - no awaits that would hold this
+    // transaction open idle.
     await createBackup("pre-import")
-    await clearImportableTables()
-    return await importDatabase(envelope)
+    return await db.transaction(
+        "rw",
+        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.pageBookmarks],
+        async () => {
+            await clearImportableTables()
+            return await importDatabase(envelope)
+        }
+    )
 }
 
 export async function seedDatabase(): Promise<void> {

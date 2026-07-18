@@ -140,22 +140,20 @@ describe("checkUpdates", () => {
 })
 
 describe("checkUpdates per-title error handling", () => {
-    // kagane.ts's listChapters() now propagates a Cloudflare-blocked series-page
-    // fetch as a real SourceRequestError instead of swallowing it to []. This
-    // confirms checkUpdates's per-title try/catch still handles that correctly:
-    // the title is counted as failed and recorded in the errors list, and the
-    // loop moves on to the rest of the library rather than throwing out of
-    // checkUpdates entirely.
-    it("records a thrown 403 (e.g. kagane's Cloudflare-gated series page) as a per-title failure without aborting the rest of the run", async () => {
+    // A non-bot-block-shaped failure (plain network/parse error, or a status this
+    // codebase's isBotBlocked() doesn't recognize) must still go through the
+    // ordinary failed+errors bookkeeping - only the bot-blocked branch (see the
+    // "checkUpdates bot-block suppression" describe block below) is suppressed.
+    it("records an ordinary per-title failure without aborting the rest of the run", async () => {
         const { checkUpdates } = await import("./updates-sources")
 
-        const blocked = makeManga({ id: "m-blocked", sourceId: "kagane" })
+        const broken = makeManga({ id: "m-broken", sourceId: "mangadex" })
         const normal = makeManga({ id: "m-normal" })
-        await db.manga.bulkPut([blocked, normal])
-        await db.sourceLinks.bulkPut([makeLink(blocked.id, "kagane"), makeLink(normal.id)])
+        await db.manga.bulkPut([broken, normal])
+        await db.sourceLinks.bulkPut([makeLink(broken.id, "mangadex"), makeLink(normal.id)])
 
         listMangaChaptersMock.mockImplementation(async (item: LibraryManga) => {
-            if (item.id === "m-blocked") throw new SourceRequestError("Request failed with status 403", 403)
+            if (item.id === "m-broken") throw new Error("Request failed with status 500")
             return []
         })
 
@@ -170,8 +168,80 @@ describe("checkUpdates per-title error handling", () => {
         expect(status.failed).toBe(1)
         expect(status.checked).toBe(1)
         expect(status.errors).toContainEqual(
-            expect.objectContaining({ mangaId: "m-blocked", message: "Request failed with status 403" })
+            expect.objectContaining({ mangaId: "m-broken", message: "Request failed with status 500" })
         )
+    })
+})
+
+// Fix 9: kagane.ts's listChapters() now propagates a Cloudflare-blocked series-page
+// fetch as a real SourceRequestError instead of swallowing it to []. The routine
+// background checkUpdates loop has no tab-fallback (unlike library:switch's manual
+// path), so treating that as an ordinary per-title failure surfaced a persistent,
+// unactionable "failed to update" row for every kagane-linked title on every check.
+// isBotBlocked() gates this on the error shape (403/502/503 status, or a "blocked"
+// message), not on sourceId - it's a bot-block detector, not a kagane-specific one.
+describe("checkUpdates bot-block suppression (Fix 9)", () => {
+    it("does not count a bot-blocked title as failed, still advances checked/done for the rest of the run, and adds exactly one aggregate notice", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const blocked = makeManga({ id: "m-blocked", sourceId: "kagane" })
+        const normal = makeManga({ id: "m-normal", sourceId: "mangadex" })
+        await db.manga.bulkPut([blocked, normal])
+        await db.sourceLinks.bulkPut([makeLink(blocked.id, "kagane"), makeLink(normal.id, "mangadex")])
+
+        listMangaChaptersMock.mockImplementation(async (item: LibraryManga) => {
+            if (item.id === "m-blocked") throw new SourceRequestError("Request failed with status 403", 403)
+            return []
+        })
+
+        await checkUpdates()
+
+        expect(listMangaChaptersMock).toHaveBeenCalledTimes(2)
+        const status = storageLocal.store.get("updateStatus") as {
+            checked: number
+            failed: number
+            errors: Array<{ mangaId: string; title: string; message: string }>
+        }
+        // The blocked title is neither counted as failed nor given its own errors
+        // entry - only the normal title counts toward `checked`.
+        expect(status.failed).toBe(0)
+        expect(status.checked).toBe(1)
+        expect(status.errors.filter(e => e.mangaId === "m-blocked")).toHaveLength(0)
+        // Exactly one aggregate notice for the whole "kagane" source, using the
+        // existing mangaId: "" aggregate-error shape.
+        const aggregate = status.errors.filter(e => e.mangaId === "")
+        expect(aggregate).toHaveLength(1)
+        expect(aggregate[0]?.title).toBe("kagane")
+        expect(aggregate[0]?.message).toContain("1 title(s) skipped")
+
+        const finalProgress = storageLocal.store.get("updateProgress") as { done: number }
+        expect(finalProgress.done).toBe(2)
+    })
+
+    it("does not suppress a non-bot-block error even when it comes from the same source as a blocked title", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const blocked = makeManga({ id: "m-blocked", sourceId: "kagane" })
+        const genuinelyBroken = makeManga({ id: "m-broken", sourceId: "kagane" })
+        await db.manga.bulkPut([blocked, genuinelyBroken])
+        await db.sourceLinks.bulkPut([makeLink(blocked.id, "kagane"), makeLink(genuinelyBroken.id, "kagane")])
+
+        listMangaChaptersMock.mockImplementation(async (item: LibraryManga) => {
+            if (item.id === "m-blocked") throw new SourceRequestError("Request failed with status 403", 403)
+            throw new Error("totally unrelated failure")
+        })
+
+        await checkUpdates()
+
+        const status = storageLocal.store.get("updateStatus") as {
+            failed: number
+            errors: Array<{ mangaId: string; title: string; message: string }>
+        }
+        expect(status.failed).toBe(1)
+        expect(status.errors).toContainEqual(
+            expect.objectContaining({ mangaId: "m-broken", message: "totally unrelated failure" })
+        )
+        expect(status.errors.filter(e => e.mangaId === "")).toHaveLength(1)
     })
 })
 
@@ -500,6 +570,95 @@ describe("repairMangahubChapterNumbers one-shot poisoned-library sweep", () => {
         // The failed title's poisoned number is left as-is - best-effort, not a retry loop.
         const stillPoisoned = await db.manga.get(poisoned.id)
         expect(stillPoisoned?.latestChapterNumber).toBe(2650711)
+    })
+
+    // Fix 4: guard against writing a freshly-fetched chapter list back to a manga a
+    // concurrent library:remove/merge deleted while the network fetch was in flight.
+    it("does not write chapters back or publish when the manga record is deleted during the chapter-list fetch (race guard)", async () => {
+        const { repairMangahubChapterNumbers } = await import("./updates-sources")
+
+        const poisoned = makeManga({
+            id: "mangahub:manga:some-series",
+            sourceId: "mangahub",
+            sourceMangaId: "some-series",
+            mangaUrl: "https://mangahub.io/manga/some-series",
+            latestChapterNumber: 2650711
+        })
+        await db.manga.put(poisoned)
+        const freshChapters: ChapterRecord[] = [
+            {
+                id: "mangahub:chapter:some-series:1",
+                mangaId: poisoned.id,
+                sourceId: "mangahub",
+                title: "Chapter 1",
+                url: "https://mangahub.io/chapter/some-series/chapter-1",
+                sortKey: 1
+            }
+        ]
+        // Simulate a concurrent library:remove landing exactly while the network
+        // fetch is in flight - by the time the fetch resolves, the manga row is gone.
+        listChaptersForSourceMock.mockImplementation(async () => {
+            await db.manga.delete(poisoned.id)
+            return freshChapters
+        })
+
+        await repairMangahubChapterNumbers()
+
+        expect(await db.chapters.count()).toBe(0)
+        expect(purgeStaleMangahubChapterRowsMock).not.toHaveBeenCalled()
+        expect(publishLiveMock).not.toHaveBeenCalled()
+        expect(await db.manga.get(poisoned.id)).toBeUndefined()
+        // The sweep still completes and sets the flag - a race on one title doesn't
+        // abort the rest of the (empty, in this case) loop.
+        expect(storageLocal.store.get("mangahubChapterRepairDone")).toBe(true)
+    })
+})
+
+// Fix 8: the completion flag used to be set in a finally attached to one try that
+// wrapped BOTH the initial poisoned-titles query AND the per-title loop, so a
+// transient failure on the initial query alone (before any title was examined)
+// permanently set the flag with no retry path. The query and the loop now have
+// separate try blocks - only a run where the loop itself actually executed (even
+// if every title in it failed) sets the flag.
+describe("repairMangahubChapterNumbers initial-query failure (Fix 8)", () => {
+    it("does not set the completion flag when the initial poisoned-titles query fails, and retries the query on the next call", async () => {
+        const { repairMangahubChapterNumbers } = await import("./updates-sources")
+
+        const whereSpy = vi.spyOn(db.manga, "where").mockImplementationOnce(() => {
+            throw new Error("query exploded")
+        })
+
+        await expect(repairMangahubChapterNumbers()).resolves.toBeUndefined()
+
+        expect(storageLocal.store.get("mangahubChapterRepairDone")).toBeUndefined()
+        expect(listChaptersForSourceMock).not.toHaveBeenCalled()
+        whereSpy.mockRestore()
+
+        // A second call must attempt the query again (not early-return because a
+        // flag was wrongly set) and, this time succeeding, actually run the sweep.
+        const poisoned = makeManga({
+            id: "mangahub:manga:some-series",
+            sourceId: "mangahub",
+            sourceMangaId: "some-series",
+            mangaUrl: "https://mangahub.io/manga/some-series",
+            latestChapterNumber: 2650711
+        })
+        await db.manga.put(poisoned)
+        listChaptersForSourceMock.mockResolvedValue([
+            {
+                id: "mangahub:chapter:some-series:1",
+                mangaId: poisoned.id,
+                sourceId: "mangahub",
+                title: "Chapter 1",
+                url: "https://mangahub.io/chapter/some-series/chapter-1",
+                sortKey: 1
+            }
+        ])
+
+        await repairMangahubChapterNumbers()
+
+        expect(listChaptersForSourceMock).toHaveBeenCalledTimes(1)
+        expect(storageLocal.store.get("mangahubChapterRepairDone")).toBe(true)
     })
 })
 
