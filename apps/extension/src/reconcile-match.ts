@@ -31,6 +31,37 @@ export function rankCandidates<T extends RankableCandidate>(
     })
 }
 
+// Splits ranked auto-link candidates into what's eligible to attempt at all, and
+// (for a library scan) what additionally clears the strictly-better bar. A
+// candidate with a numeric latestChapter is eligible whenever there's no read
+// position to regress behind, or its chapter count is at/above the floor set by
+// that read position. A candidate with an unknown ("?" or missing) chapter count
+// is only eligible for an exact-title match (never the overlap-fallback set),
+// only when there's no read position (an unverifiable count can't be checked
+// against a floor that doesn't exist), and never during a library scan - that
+// mode can repoint a WORKING title's source, and "strictly better" can't be
+// verified for an unknown count. library:switch still fetches the real chapter
+// list and fails cleanly ("No chapters on that mirror") if the mirror turns out
+// to be empty/dead, so admitting it here is a bounded risk, not a silent one.
+export function filterEligibleCandidates<T extends RankableCandidate>(
+    candidates: T[],
+    manga: { lastReadChapterNumber?: number | null; latestChapterNumber?: number | null },
+    isLibraryScan: boolean,
+    exactMatchSet: ReadonlySet<T>
+): { eligible: T[]; filtered: T[] } {
+    const eligible = candidates.filter(r => {
+        const n = parseFloat(r.latestChapter ?? "")
+        if (Number.isFinite(n)) {
+            return manga.lastReadChapterNumber == null || n >= Math.floor(manga.lastReadChapterNumber)
+        }
+        return !isLibraryScan && manga.lastReadChapterNumber == null && exactMatchSet.has(r)
+    })
+    const filtered = isLibraryScan
+        ? eligible.filter(r => (manga.latestChapterNumber ?? 0) < parseFloat(r.latestChapter ?? ""))
+        : eligible
+    return { eligible, filtered }
+}
+
 // One attempt to link a manga to a candidate result, from either the auto-link
 // retry loop ("auto") or the panel's manual per-result Link button ("manual").
 // Tagging the trigger keeps a manual click on a card that already went through

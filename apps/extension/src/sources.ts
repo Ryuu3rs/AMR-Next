@@ -195,6 +195,55 @@ export async function resolveChapterFromHtml(urlStr: string, html: string) {
     return source.resolveChapter({ url: parsedUrl }, context)
 }
 
+// List chapters using pre-fetched HTML (tab injection fallback for bot-blocked
+// sources) for the library:switch handler's chapter-list fetch. Mirrors
+// resolveChapterFromHtml above - the manga URL is served from `html`; any
+// secondary requests use a limited normal client.
+//
+// Assumes `mangaUrl` has the same origin+pathname as whatever URL the adapter's
+// listChapters() actually fetches internally (e.g. kagane's series page) - if
+// it doesn't, the HTML-serving match below silently misses and falls through
+// to a real (likely-403ing) fetch via the fallback client.
+export async function listChaptersFromSourceHtml(
+    manga: LibraryManga,
+    sourceId: string,
+    sourceMangaId: string,
+    mangaUrl: string,
+    html: string
+) {
+    const source = sourceRegistry.get(sourceId)
+    if (!source) throw new Error("That source is not supported")
+    const parsedUrl = new URL(mangaUrl)
+
+    const fallbackClient = createBoundedRequestClient({
+        fetch: wrapFetch,
+        allowedOrigins: SOURCE_ORIGINS,
+        maxRequests: 5,
+        maxResponseBytes: 5 * 1024 * 1024,
+        timeoutMs: 15_000
+    })
+
+    const context: SourceContext = {
+        request: {
+            getText: async (url, opts) => {
+                if (url.origin + url.pathname === parsedUrl.origin + parsedUrl.pathname) return html
+                return fallbackClient.getText(url, opts)
+            },
+            getJson: (url, schema, opts) => fallbackClient.getJson(url, schema, opts),
+            postForm: (url, params, opts) => fallbackClient.postForm(url, params, opts),
+            postJson: (url, body, schema, opts) => fallbackClient.postJson(url, body, schema, opts)
+        },
+        now: () => Date.now(),
+        logger: {
+            debug: (message, details) => console.debug(`[AMR source tab] ${message}`, details),
+            warn: (message, details) => console.warn(`[AMR source tab] ${message}`, details)
+        }
+    }
+
+    const sourceManga: SourceManga = { manga, sourceId, sourceMangaId, url: mangaUrl }
+    return source.listChapters({ manga: sourceManga, limit: 500 }, context)
+}
+
 // Normalize a title the same way entrypoints/app/App.svelte's normTitle does
 // (lowercase, non-alphanumeric runs collapsed to a single space, trimmed) so
 // matching behaves consistently between the mirror-check UI and search here.

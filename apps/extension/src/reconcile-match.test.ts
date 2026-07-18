@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { cleanQuery, formatReconcileLog, rankCandidates, type TitleLogEntry } from "./reconcile-match"
+import {
+    cleanQuery,
+    filterEligibleCandidates,
+    formatReconcileLog,
+    rankCandidates,
+    type RankableCandidate,
+    type TitleLogEntry
+} from "./reconcile-match"
 
 describe("cleanQuery", () => {
     it("strips a trailing (Official) marker", () => {
@@ -84,6 +91,82 @@ describe("rankCandidates", () => {
         const ranked = rankCandidates(input, pagesCapable)
         expect(input.map(c => c.sourceId)).toEqual(["kagane", "mangadex"])
         expect(ranked).not.toBe(input)
+    })
+})
+
+describe("filterEligibleCandidates", () => {
+    const exact: RankableCandidate = { sourceId: "kagane", latestChapter: "?" }
+    const known: RankableCandidate = { sourceId: "mangadex", latestChapter: "50" }
+    const overlapOnly: RankableCandidate = { sourceId: "asura", latestChapter: "?" }
+
+    it("admits an unknown-count exact match when there is no read position", () => {
+        const { eligible } = filterEligibleCandidates(
+            [exact],
+            { lastReadChapterNumber: null, latestChapterNumber: null },
+            false,
+            new Set([exact])
+        )
+        expect(eligible).toEqual([exact])
+    })
+
+    it("rejects an unknown-count exact match when the title has a nonzero read position", () => {
+        const { eligible } = filterEligibleCandidates(
+            [exact],
+            { lastReadChapterNumber: 12, latestChapterNumber: null },
+            false,
+            new Set([exact])
+        )
+        expect(eligible).toEqual([])
+    })
+
+    // Deliberate, conservative choice: `0 == null` is false in JS, so a title with
+    // recorded progress at chapter/position 0 is treated as "has progress" and an
+    // unknown-count candidate is rejected exactly as it would be for any other
+    // non-null read position. Not an oversight - `0` is a real, meaningful read
+    // position (e.g. a prologue/chapter 0), not "no progress recorded".
+    it("rejects an unknown-count exact match when the read position is 0", () => {
+        const { eligible } = filterEligibleCandidates(
+            [exact],
+            { lastReadChapterNumber: 0, latestChapterNumber: null },
+            false,
+            new Set([exact])
+        )
+        expect(eligible).toEqual([])
+    })
+
+    it("rejects an unknown-count exact match during a library scan even with no read position", () => {
+        const { eligible } = filterEligibleCandidates(
+            [exact],
+            { lastReadChapterNumber: null, latestChapterNumber: null },
+            true,
+            new Set([exact])
+        )
+        expect(eligible).toEqual([])
+    })
+
+    it("rejects an unknown-count candidate from the overlap-fallback set (not in exactMatchSet)", () => {
+        const { eligible } = filterEligibleCandidates(
+            [overlapOnly],
+            { lastReadChapterNumber: null, latestChapterNumber: null },
+            false,
+            new Set() // overlapOnly is deliberately not in the exact-match set
+        )
+        expect(eligible).toEqual([])
+    })
+
+    it("keeps a known-count exact match ranked first over an admitted unknown-count exact match", () => {
+        const { eligible } = filterEligibleCandidates(
+            [exact, known],
+            { lastReadChapterNumber: null, latestChapterNumber: null },
+            false,
+            new Set([exact, known])
+        )
+        expect(eligible).toEqual([exact, known])
+        // Unknown counts already sort last via NaN || 0 in rankCandidates' own
+        // comparator - confirm the interaction still holds without changing
+        // rankCandidates itself.
+        const ranked = rankCandidates(eligible, new Set())
+        expect(ranked.map(c => c.sourceId)).toEqual(["mangadex", "kagane"])
     })
 })
 

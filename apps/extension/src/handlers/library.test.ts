@@ -1,5 +1,6 @@
 import "fake-indexeddb/auto"
 import type { ChapterRecord, MangaRecord, SourceLinkRecord } from "@amr/contracts"
+import { SourceRequestError } from "@amr/source-sdk"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { db, listBackups } from "../database"
 import type { LibraryManga } from "../database"
@@ -11,6 +12,7 @@ vi.mock("../sources", async () => {
         resolveChapterUrl: vi.fn(),
         resolveCoverFor: vi.fn(),
         listChaptersForSource: vi.fn(),
+        listChaptersFromSourceHtml: vi.fn(),
         listChaptersBySource: vi.fn(),
         findSource: vi.fn()
     }
@@ -24,11 +26,25 @@ vi.mock("../background/chapter-cache", () => ({
     scheduleChapterListRefresh: vi.fn()
 }))
 
+// isBotBlocked (imported by the handler from ../background/capture) is
+// deliberately left unmocked - it's a pure function and these tests exercise
+// its real bot-block-detection logic against SourceRequestError instances.
+vi.mock("../background/tab-fetch", () => ({
+    fetchChapterHtmlViaTab: vi.fn()
+}))
+
 const { libraryHandlers, isFallbackCreated } = await import("./library")
-const { resolveChapterUrl, listChaptersForSource, listChaptersBySource, findSource, resolveCoverFor } =
-    await import("../sources")
+const {
+    resolveChapterUrl,
+    listChaptersForSource,
+    listChaptersFromSourceHtml,
+    listChaptersBySource,
+    findSource,
+    resolveCoverFor
+} = await import("../sources")
 const { fetchCoverBlob } = await import("../background/covers")
 const { scheduleChapterListRefresh } = await import("../background/chapter-cache")
+const { fetchChapterHtmlViaTab } = await import("../background/tab-fetch")
 
 const ctx = { sender: {} } as never
 
@@ -247,6 +263,127 @@ describe("library:switch", () => {
             "https://othermirror.example/title/new-src-id",
             { timeoutMs: 10_000, maxRetries: 1 }
         )
+    })
+
+    it("falls back to a tab-rendered chapter list when the direct fetch is bot-blocked and allowTabFallback is set", async () => {
+        const libraryManga: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: sourceLink.url,
+            sourceMangaId: "abc",
+            mangaUrl: "https://mangadex.org/title/abc"
+        }
+        await db.manga.put(libraryManga)
+        await db.sourceLinks.put(sourceLink)
+
+        vi.mocked(listChaptersForSource).mockRejectedValue(
+            new SourceRequestError("Request failed with status 403", 403)
+        )
+        vi.mocked(fetchChapterHtmlViaTab).mockResolvedValue("<html>kagane series page</html>")
+        const tabChapter: ChapterRecord = {
+            id: "kagane:chapter:new-1",
+            mangaId: manga.id,
+            sourceId: "kagane",
+            title: "New Chapter 1",
+            url: "https://kagane.to/series/new-src-id/reader/new-1",
+            sortKey: 1
+        }
+        vi.mocked(listChaptersFromSourceHtml).mockResolvedValue([tabChapter] as never)
+
+        const handler = libraryHandlers["library:switch"]!
+        await handler(
+            {
+                type: "library:switch",
+                mangaId: manga.id,
+                sourceId: "kagane",
+                sourceMangaId: "new-src-id",
+                mangaUrl: "https://kagane.to/series/new-src-id",
+                allowTabFallback: true
+            } as never,
+            ctx
+        )
+
+        expect(fetchChapterHtmlViaTab).toHaveBeenCalledWith("https://kagane.to/series/new-src-id")
+        expect(listChaptersFromSourceHtml).toHaveBeenCalledWith(
+            expect.objectContaining({ id: manga.id }),
+            "kagane",
+            "new-src-id",
+            "https://kagane.to/series/new-src-id",
+            "<html>kagane series page</html>"
+        )
+        const chaptersAfter = await db.chapters.where("mangaId").equals(manga.id).toArray()
+        expect(chaptersAfter.map(c => c.id)).toEqual([tabChapter.id])
+    })
+
+    it("rethrows a bot-blocked failure without opening a tab when allowTabFallback is not set", async () => {
+        const libraryManga: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: sourceLink.url,
+            sourceMangaId: "abc",
+            mangaUrl: "https://mangadex.org/title/abc"
+        }
+        await db.manga.put(libraryManga)
+        await db.sourceLinks.put(sourceLink)
+
+        vi.mocked(listChaptersForSource).mockRejectedValue(
+            new SourceRequestError("Request failed with status 403", 403)
+        )
+
+        const handler = libraryHandlers["library:switch"]!
+        await expect(
+            handler(
+                {
+                    type: "library:switch",
+                    mangaId: manga.id,
+                    sourceId: "kagane",
+                    sourceMangaId: "new-src-id",
+                    mangaUrl: "https://kagane.to/series/new-src-id"
+                    // allowTabFallback intentionally omitted - this is the auto-link sweep path.
+                } as never,
+                ctx
+            )
+        ).rejects.toThrow()
+
+        expect(fetchChapterHtmlViaTab).not.toHaveBeenCalled()
+        expect(listChaptersFromSourceHtml).not.toHaveBeenCalled()
+    })
+
+    it("rethrows a non-bot-block failure (e.g. a timeout) even with allowTabFallback set", async () => {
+        const libraryManga: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: sourceLink.url,
+            sourceMangaId: "abc",
+            mangaUrl: "https://mangadex.org/title/abc"
+        }
+        await db.manga.put(libraryManga)
+        await db.sourceLinks.put(sourceLink)
+
+        // status: undefined -> a network timeout/connection failure. isBotBlocked
+        // deliberately excludes these (a genuinely-down site can't be helped by a
+        // tab load either), so this must rethrow even with the flag set.
+        vi.mocked(listChaptersForSource).mockRejectedValue(
+            new SourceRequestError("Request timed out after 10000ms", undefined)
+        )
+
+        const handler = libraryHandlers["library:switch"]!
+        await expect(
+            handler(
+                {
+                    type: "library:switch",
+                    mangaId: manga.id,
+                    sourceId: "kagane",
+                    sourceMangaId: "new-src-id",
+                    mangaUrl: "https://kagane.to/series/new-src-id",
+                    allowTabFallback: true
+                } as never,
+                ctx
+            )
+        ).rejects.toThrow()
+
+        expect(fetchChapterHtmlViaTab).not.toHaveBeenCalled()
+        expect(listChaptersFromSourceHtml).not.toHaveBeenCalled()
     })
 })
 

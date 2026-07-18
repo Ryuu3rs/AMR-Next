@@ -21,12 +21,15 @@ import {
     findSource,
     listChaptersBySource,
     listChaptersForSource,
+    listChaptersFromSourceHtml,
     resolveChapterUrl,
     resolveCoverFor,
     resolveMangaUrl
 } from "../sources"
+import { isBotBlocked } from "../background/capture"
 import { scheduleChapterListRefresh } from "../background/chapter-cache"
 import { fetchCoverBlob } from "../background/covers"
+import { fetchChapterHtmlViaTab } from "../background/tab-fetch"
 import type { HandlerMap } from "../background/handler-types"
 import { publishLive } from "../live"
 
@@ -777,16 +780,35 @@ export const libraryHandlers: HandlerMap = {
         // sequentially per title with no outer race - one hanging candidate at the
         // default budget would blow the whole sweep's time estimate by itself.
         // Worst case here: ~10s + one retry with ~300-600ms backoff.
-        const chapters = await listChaptersForSource(
-            existing,
-            request.sourceId,
-            request.sourceMangaId,
-            request.mangaUrl,
-            {
-                timeoutMs: 10_000,
-                maxRetries: 1
-            }
-        )
+        let chapters: ChapterRecord[]
+        try {
+            chapters = await listChaptersForSource(
+                existing,
+                request.sourceId,
+                request.sourceMangaId,
+                request.mangaUrl,
+                {
+                    timeoutMs: 10_000,
+                    maxRetries: 1
+                }
+            )
+        } catch (cause) {
+            // Only the manual per-mirror Switch button opts into the tab-render
+            // fallback (allowTabFallback) - the auto-link sweep never opens a tab, it
+            // just fails this candidate and moves to the next ranked one. And only a
+            // bot-block-shaped rejection (e.g. kagane's Cloudflare-gated series page)
+            // is worth the ~25s tab cost; any other failure (timeout, invalid-response,
+            // etc.) rethrows exactly as before.
+            if (!request.allowTabFallback || !isBotBlocked(cause)) throw cause
+            const html = await fetchChapterHtmlViaTab(request.mangaUrl)
+            chapters = await listChaptersFromSourceHtml(
+                existing,
+                request.sourceId,
+                request.sourceMangaId,
+                request.mangaUrl,
+                html
+            )
+        }
         const switchAdapter = sourceRegistry.get(request.sourceId)
         const hasPages = switchAdapter?.manifest.capabilities.includes("pages") ?? true
         if (chapters.length === 0 && hasPages) throw new SourceError("invalid-response", "No chapters on that mirror")

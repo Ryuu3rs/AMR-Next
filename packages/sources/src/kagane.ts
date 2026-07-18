@@ -252,22 +252,31 @@ function extractChapterList(html: string, seriesId: string): SourceChapter[] {
     return chapters.sort((a, b) => a.sortKey - b.sortKey)
 }
 
-// Fetch + parse the chapter list, degrading to an empty list rather than
-// throwing when kagane.to's Cloudflare challenge blocks the underlying fetch
-// (or anything else about it fails). This series page sits behind the gate
+// Fetch + parse the chapter list. This series page sits behind the gate
 // documented at the top of this file - a background-context fetch to it can
-// come back a 403 on essentially every call. Without this catch, that 403
-// propagated as an unhandled SourceRequestError from listChapters() through
-// library:switch (no try/catch there) all the way to the reconcile UI as raw
-// "Request failed with status 403 [https://kagane.to/series/{id}]" text -
-// instead of the existing, friendlier "No chapters on that mirror" message
-// library:switch already shows for an empty chapter list. Mirrors the
-// best-effort "return empty on failure" convention resolveCover/resolveGenres
-// use below for the same reason.
+// come back a 403 on essentially every call. That's now allowed to propagate
+// as a SourceRequestError(status: 403) rather than being swallowed here:
+// listChapters() below calls this directly (no catch), so library:switch sees
+// the real rejection and its isBotBlocked() check can recognize the
+// Cloudflare block and trigger a tab-render fallback (see
+// listChaptersFromSourceHtml in apps/extension/src/sources.ts and the
+// "library:switch" handler) instead of silently reporting an empty mirror.
+// fetchChapterListSafe below wraps this for resolveChapter(), where the
+// chapter list is only auxiliary metadata and a missing list is tolerated.
+async function fetchChapterList(seriesId: string, context: SourceContext): Promise<SourceChapter[]> {
+    const html = await context.request.getText(new URL(seriesUrl(seriesId)))
+    return extractChapterList(html, seriesId)
+}
+
+// Best-effort wrapper around fetchChapterList for resolveChapter(), which uses
+// the chapter list only as auxiliary metadata (title/sortKey/etc alongside a
+// stub-chapter fallback when it comes back empty - see resolveChapter below).
+// A throw here would be wrong: unlike listChapters(), resolveChapter() must
+// still resolve the chapter's pages even when the series page itself is
+// Cloudflare-blocked.
 async function fetchChapterListSafe(seriesId: string, context: SourceContext): Promise<SourceChapter[]> {
     try {
-        const html = await context.request.getText(new URL(seriesUrl(seriesId)))
-        return extractChapterList(html, seriesId)
+        return await fetchChapterList(seriesId, context)
     } catch {
         return []
     }
@@ -346,7 +355,7 @@ export const kaganeAdapter: SourceAdapter = {
     async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
         const seriesId = input.manga.sourceMangaId
         if (!seriesId) throw new SourceError("invalid-input", "A valid Kagane series id is required")
-        const chapters = await fetchChapterListSafe(seriesId, context)
+        const chapters = await fetchChapterList(seriesId, context)
         return input.limit ? chapters.slice(-input.limit) : chapters
     },
 

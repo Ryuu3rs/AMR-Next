@@ -401,6 +401,11 @@
     let mirrorResults = $state<SearchResult[]>([])
     let mirrorChecking = $state(false)
     let mirrorCheckedFor = $state("")
+    // The mirror switch this manga's Switch button set is in flight for, keyed by
+    // sourceId - a tab-fallback switch can take up to ~35s, so this both labels the
+    // in-flight button and (via disabled={mirrorSwitching !== null} below) blocks a
+    // second concurrent switch on the same manga while one is still running.
+    let mirrorSwitching = $state<string | null>(null)
 
     function closeDetail() {
         detailManga = null
@@ -470,19 +475,23 @@
 
     async function switchMirror(manga: LibraryManga, result: SearchResult) {
         mirrorCheckedFor = manga.id
+        mirrorSwitching = result.sourceId
         try {
             await sendRuntimeMessage({
                 type: "library:switch",
                 mangaId: manga.id,
                 sourceId: result.sourceId,
                 sourceMangaId: result.sourceMangaId,
-                mangaUrl: result.url
+                mangaUrl: result.url,
+                allowTabFallback: true
             })
             await load()
             detailManga = library.find(m => m.id === manga.id) ?? null
             relinkMessage = `Switched to ${result.sourceId}. Progress preserved by chapter number.`
         } catch (cause) {
             relinkMessage = describeError(cause, "Switch failed - this source may be temporarily unavailable.")
+        } finally {
+            mirrorSwitching = null
         }
     }
 
@@ -4387,8 +4396,9 @@
                                             <button
                                                 type="button"
                                                 class="btn-sm"
+                                                disabled={mirrorSwitching !== null}
                                                 onclick={() => detailManga && void switchMirror(detailManga, r)}>
-                                                Switch
+                                                {mirrorSwitching === r.sourceId ? "Switching…" : "Switch"}
                                             </button>
                                         {:else}
                                             <span class="muted">current</span>
