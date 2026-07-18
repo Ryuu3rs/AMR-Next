@@ -1,5 +1,5 @@
 export const MANGA_SLUG = "barbarians-adventure-in-a-fantasy-world"
-export const MANGA_PATH = `/comic/${MANGA_SLUG}/`
+export const MANGA_PATH = `/manga/${MANGA_SLUG}/`
 export const MANGA_URL = `https://www.mgeko.cc${MANGA_PATH}`
 
 export const CHAPTER_SLUG = "barbarians-adventure-in-a-fantasy-world-chapter-52-eng-li"
@@ -36,19 +36,19 @@ export const searchHtml = `<!DOCTYPE html>
 <body>
 <div class="manga-list">
   <div class="manga-item">
-    <a href="/comic/barbarians-adventure-in-a-fantasy-world/">
+    <a href="/manga/barbarians-adventure-in-a-fantasy-world/">
       <img src="${COVER_URL}" alt="cover" />
       <span class="manga-title">Barbarian's Adventure in a Fantasy World</span>
     </a>
   </div>
   <div class="manga-item">
-    <a href="/comic/barbarian-quest/">
+    <a href="/manga/barbarian-quest/">
       <img src="https://www.mgeko.cc/uploads/cover-bq.jpg" alt="cover" />
       <span class="manga-title">Barbarian Quest</span>
     </a>
   </div>
   <div class="manga-item">
-    <a href="/comic/"><!-- junk: no slug --></a>
+    <a href="/manga/"><!-- junk: no slug --></a>
   </div>
 </div>
 </body>

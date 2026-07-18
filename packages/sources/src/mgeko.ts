@@ -33,7 +33,7 @@ function extractChapterSlug(url: URL): string | undefined {
 
 function extractMangaSlug(url: URL): string | undefined {
     if (!matchesSourceDomain(url.hostname, DOMAINS)) return undefined
-    const match = url.pathname.match(/^\/comic\/([^/]+)\/?$/)
+    const match = url.pathname.match(/^\/manga\/([^/]+)\/?$/)
     return match?.[1]
 }
 
@@ -154,7 +154,7 @@ function extractChapterList(html: string, mangaSlug: string): SourceChapter[] {
 function extractSearchResults(html: string): SourceSearchResult[] {
     const out: SourceSearchResult[] = []
     const seen = new Set<string>()
-    for (const m of html.matchAll(/<a\b[^>]*\bhref="(\/comic\/([^/"]+)\/)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+    for (const m of html.matchAll(/<a\b[^>]*\bhref="(\/manga\/([^/"]+)\/)"[^>]*>([\s\S]*?)<\/a>/gi)) {
         const href = m[1]
         const slug = m[2]
         const inner = m[3] ?? ""
@@ -288,14 +288,14 @@ export const mgekoAdapter: SourceAdapter = {
             },
             sourceId: SOURCE_ID,
             sourceMangaId: slug,
-            url: `${ORIGIN}/comic/${slug}/`
+            url: `${ORIGIN}/manga/${slug}/`
         }
     },
 
     async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
         const slug = input.manga.sourceMangaId
         if (!slug) throw new SourceError("invalid-input", "A valid Mgeko manga URL is required")
-        const html = await context.request.getText(new URL(`${ORIGIN}/comic/${slug}/`), {
+        const html = await context.request.getText(new URL(`${ORIGIN}/manga/${slug}/`), {
             headers: BROWSER_HEADERS
         })
         return extractChapterList(html, slug)
@@ -308,7 +308,7 @@ export const mgekoAdapter: SourceAdapter = {
         const slug = input.sourceMangaId ?? (input.url ? extractMangaSlug(input.url) : undefined)
         if (!slug) return undefined
         try {
-            const html = await context.request.getText(new URL(`${ORIGIN}/comic/${slug}/`), {
+            const html = await context.request.getText(new URL(`${ORIGIN}/manga/${slug}/`), {
                 headers: BROWSER_HEADERS
             })
             return extractCoverUrl(html)
@@ -321,7 +321,7 @@ export const mgekoAdapter: SourceAdapter = {
         const slug = input.sourceMangaId ?? (input.url ? extractMangaSlug(input.url) : undefined)
         if (!slug) return []
         try {
-            const html = await context.request.getText(new URL(`${ORIGIN}/comic/${slug}/`), {
+            const html = await context.request.getText(new URL(`${ORIGIN}/manga/${slug}/`), {
                 headers: BROWSER_HEADERS
             })
             return extractGenres(html)
@@ -373,7 +373,7 @@ export const mgekoAdapter: SourceAdapter = {
             },
             sourceId: SOURCE_ID,
             sourceMangaId: mangaSlug,
-            url: `${ORIGIN}/comic/${mangaSlug}/`
+            url: `${ORIGIN}/manga/${mangaSlug}/`
         }
 
         const chapter: SourceChapter = {
