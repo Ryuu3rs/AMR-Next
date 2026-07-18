@@ -5,14 +5,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { db } from "../database"
 import type { LibraryManga } from "../database"
 
-const { listMangaChaptersMock, resolveGenresForMock, publishLiveMock } = vi.hoisted(() => ({
+const {
+    listMangaChaptersMock,
+    listChaptersForSourceMock,
+    resolveGenresForMock,
+    publishLiveMock,
+    purgeStaleMangahubChapterRowsMock
+} = vi.hoisted(() => ({
     listMangaChaptersMock: vi.fn(),
+    listChaptersForSourceMock: vi.fn(),
     resolveGenresForMock: vi.fn(),
-    publishLiveMock: vi.fn()
+    publishLiveMock: vi.fn(),
+    purgeStaleMangahubChapterRowsMock: vi.fn()
 }))
 
 vi.mock("../sources", () => ({
     listMangaChapters: listMangaChaptersMock,
+    listChaptersForSource: listChaptersForSourceMock,
     checkSourcePermission: vi.fn(),
     getMangaChapters: vi.fn(),
     resolveGenresFor: resolveGenresForMock,
@@ -21,6 +30,13 @@ vi.mock("../sources", () => ({
 
 vi.mock("../live", () => ({
     publishLive: publishLiveMock
+}))
+
+const MANGAHUB_INTERNAL_ID_MIN = 100_000
+
+vi.mock("../background/chapter-cache", () => ({
+    purgeStaleMangahubChapterRows: purgeStaleMangahubChapterRowsMock,
+    MANGAHUB_INTERNAL_ID_MIN
 }))
 
 // Minimal in-memory stand-in for browser.storage.local - a plain Map-backed
@@ -61,8 +77,10 @@ beforeEach(async () => {
         runtime: { getManifest: () => ({ version: "1.0.0" }) }
     }
     listMangaChaptersMock.mockReset()
+    listChaptersForSourceMock.mockReset()
     resolveGenresForMock.mockReset()
     publishLiveMock.mockReset()
+    purgeStaleMangahubChapterRowsMock.mockReset()
 })
 
 afterEach(() => {
@@ -312,6 +330,176 @@ describe("checkUpdates latestChapterNumber advance gate", () => {
         const updatedManga = await db.manga.get(manga.id)
         expect(updatedManga?.latestChapterId).toBe("new")
         expect(updatedManga?.latestChapterNumber).toBe(20)
+    })
+})
+
+describe("checkUpdates MangaHub junk-row purge wiring", () => {
+    it("calls the shared purge helper for a mangahub title after a successful chapter-list fetch", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-mangahub", sourceId: "mangahub" })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id, "mangahub"))
+        const chapters: ChapterRecord[] = [
+            {
+                id: "mangahub:chapter:some-series:1",
+                mangaId: manga.id,
+                sourceId: "mangahub",
+                title: "Chapter 1",
+                url: "https://mangahub.io/chapter/some-series/chapter-1",
+                sortKey: 1
+            }
+        ]
+        listMangaChaptersMock.mockResolvedValue(chapters)
+
+        await checkUpdates()
+
+        expect(purgeStaleMangahubChapterRowsMock).toHaveBeenCalledTimes(1)
+        expect(purgeStaleMangahubChapterRowsMock).toHaveBeenCalledWith(
+            manga.id,
+            new Set(["mangahub:chapter:some-series:1"])
+        )
+    })
+
+    it("does not call the purge helper for a non-mangahub title", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-mangadex", sourceId: "mangadex" })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id, "mangadex"))
+        listMangaChaptersMock.mockResolvedValue([])
+
+        await checkUpdates()
+
+        expect(purgeStaleMangahubChapterRowsMock).not.toHaveBeenCalled()
+    })
+})
+
+describe("repairMangahubChapterNumbers one-shot poisoned-library sweep", () => {
+    it("corrects a poisoned mangahub manga's latestChapterNumber even when manualTracking/onHold would make checkUpdates skip it", async () => {
+        const { repairMangahubChapterNumbers } = await import("./updates-sources")
+
+        const poisoned = makeManga({
+            id: "mangahub:manga:some-series",
+            sourceId: "mangahub",
+            sourceMangaId: "some-series",
+            mangaUrl: "https://mangahub.io/manga/some-series",
+            latestChapterNumber: 2650711,
+            latestChapterId: "mangahub:chapter:some-series:2650711",
+            manualTracking: true,
+            onHold: true
+        })
+        await db.manga.put(poisoned)
+        const freshChapters: ChapterRecord[] = [
+            {
+                id: "mangahub:chapter:some-series:1",
+                mangaId: poisoned.id,
+                sourceId: "mangahub",
+                title: "Chapter 1",
+                url: "https://mangahub.io/chapter/some-series/chapter-1",
+                sortKey: 1
+            },
+            {
+                id: "mangahub:chapter:some-series:2",
+                mangaId: poisoned.id,
+                sourceId: "mangahub",
+                title: "Chapter 2",
+                url: "https://mangahub.io/chapter/some-series/chapter-2",
+                sortKey: 2
+            }
+        ]
+        listChaptersForSourceMock.mockResolvedValue(freshChapters)
+
+        await repairMangahubChapterNumbers()
+
+        expect(listChaptersForSourceMock).toHaveBeenCalledTimes(1)
+        const updated = await db.manga.get(poisoned.id)
+        expect(updated?.latestChapterNumber).toBe(2)
+        expect(updated?.latestChapterId).toBe("mangahub:chapter:some-series:2")
+        // manualTracking/onHold are untouched by the repair - only the poisoned numbers are.
+        expect(updated?.manualTracking).toBe(true)
+        expect(updated?.onHold).toBe(true)
+        expect(purgeStaleMangahubChapterRowsMock).toHaveBeenCalledWith(
+            poisoned.id,
+            new Set(["mangahub:chapter:some-series:1", "mangahub:chapter:some-series:2"])
+        )
+    })
+
+    it("ignores non-mangahub and non-poisoned manga", async () => {
+        const { repairMangahubChapterNumbers } = await import("./updates-sources")
+
+        const healthy = makeManga({
+            id: "mangahub:manga:healthy",
+            sourceId: "mangahub",
+            sourceMangaId: "healthy",
+            mangaUrl: "https://mangahub.io/manga/healthy",
+            latestChapterNumber: 42
+        })
+        const otherSourcePoisoned = makeManga({
+            id: "other:manga:weird",
+            sourceId: "mangadex",
+            sourceMangaId: "weird",
+            mangaUrl: "https://mangadex.org/title/weird",
+            latestChapterNumber: 2_000_000
+        })
+        await db.manga.bulkPut([healthy, otherSourcePoisoned])
+
+        await repairMangahubChapterNumbers()
+
+        expect(listChaptersForSourceMock).not.toHaveBeenCalled()
+    })
+
+    it("sets the one-time completion flag and does not re-fetch on a second invocation", async () => {
+        const { repairMangahubChapterNumbers } = await import("./updates-sources")
+
+        const poisoned = makeManga({
+            id: "mangahub:manga:some-series",
+            sourceId: "mangahub",
+            sourceMangaId: "some-series",
+            mangaUrl: "https://mangahub.io/manga/some-series",
+            latestChapterNumber: 2650711
+        })
+        await db.manga.put(poisoned)
+        listChaptersForSourceMock.mockResolvedValue([
+            {
+                id: "mangahub:chapter:some-series:1",
+                mangaId: poisoned.id,
+                sourceId: "mangahub",
+                title: "Chapter 1",
+                url: "https://mangahub.io/chapter/some-series/chapter-1",
+                sortKey: 1
+            }
+        ])
+
+        await repairMangahubChapterNumbers()
+        expect(listChaptersForSourceMock).toHaveBeenCalledTimes(1)
+        expect(storageLocal.store.get("mangahubChapterRepairDone")).toBe(true)
+
+        listChaptersForSourceMock.mockClear()
+        await repairMangahubChapterNumbers()
+
+        expect(listChaptersForSourceMock).not.toHaveBeenCalled()
+    })
+
+    it("still sets the completion flag even when an individual title fails", async () => {
+        const { repairMangahubChapterNumbers } = await import("./updates-sources")
+
+        const poisoned = makeManga({
+            id: "mangahub:manga:some-series",
+            sourceId: "mangahub",
+            sourceMangaId: "some-series",
+            mangaUrl: "https://mangahub.io/manga/some-series",
+            latestChapterNumber: 2650711
+        })
+        await db.manga.put(poisoned)
+        listChaptersForSourceMock.mockRejectedValue(new Error("network exploded"))
+
+        await expect(repairMangahubChapterNumbers()).resolves.toBeUndefined()
+
+        expect(storageLocal.store.get("mangahubChapterRepairDone")).toBe(true)
+        // The failed title's poisoned number is left as-is - best-effort, not a retry loop.
+        const stillPoisoned = await db.manga.get(poisoned.id)
+        expect(stillPoisoned?.latestChapterNumber).toBe(2650711)
     })
 })
 

@@ -26,6 +26,28 @@ const inFlightRefreshes = new Map<string, Promise<void>>()
 const REFRESH_COOLDOWN_MS = 10 * 60 * 1000
 const lastRefreshStartedAt = new Map<string, number>()
 
+// Site-wide sequential id floor for MangaHub's "alternate version" id-slug chapter
+// anchors - see INTERNAL_ID_MIN in packages/sources/src/mangahub.ts (that package only
+// exposes a single entrypoint, so this app-side copy mirrors the same threshold rather
+// than importing it; keep the two in sync if it ever changes).
+export const MANGAHUB_INTERNAL_ID_MIN = 100_000
+
+// Delete MangaHub chapter rows left over from before extractChapters' dominant-slug/
+// canonical-vs-id-slug dedupe fix - poisoned rows have a junk sortKey (a site-wide
+// internal id, not a real chapter number) that's no longer present in a fresh
+// chapter-list fetch. Mirrors the title_no self-heal in mineAndCacheEpisodesFromHtml
+// above (Webtoons' equivalent stale-row purge), generalized for MangaHub. Call this
+// from every path that persists a fresh MangaHub chapter list (checkUpdates and
+// listChaptersWithTabFallback below) so the deletion logic never drifts between them.
+export async function purgeStaleMangahubChapterRows(mangaId: string, freshChapterIds: Set<string>): Promise<void> {
+    const stale = await db.chapters
+        .where("mangaId")
+        .equals(mangaId)
+        .filter(c => c.sourceId === "mangahub" && c.sortKey >= MANGAHUB_INTERNAL_ID_MIN && !freshChapterIds.has(c.id))
+        .toArray()
+    if (stale.length > 0) await db.chapters.bulkDelete(stale.map(c => c.id))
+}
+
 // Test-only: clear cooldown state so tests aren't order-dependent on module-scope
 // state leaking between test cases.
 export function _resetRefreshCooldownForTests(): void {
@@ -200,6 +222,9 @@ export async function listChaptersWithTabFallback(
     const chapters = await listChaptersBySource(source!.manifest.id, sourceMangaId, mangaUrl)
     if (chapters.length === 0) return
     await db.chapters.bulkPut(chapters)
+    if (source!.manifest.id === "mangahub") {
+        await purgeStaleMangahubChapterRows(mangaId, new Set(chapters.map(c => c.id)))
+    }
     publishLive(["chapters"], [mangaId])
     const maxSortKey = Math.max(...chapters.map(c => c.sortKey))
     const latestChapter = chapters.find(c => c.sortKey === maxSortKey)

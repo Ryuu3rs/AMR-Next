@@ -18,6 +18,17 @@ const SOURCE_ID = "mangahub"
 const ORIGIN = "https://mangahub.io"
 const DOMAIN = "mangahub.io"
 
+// mangahub.io's chapter-list pages carry two anchor styles per real chapter: a
+// canonical one (href .../chapter-{N} where N really is the chapter number) and an
+// "alternate version" id-slug one (href .../chapter-{internalId} where internalId is a
+// SITE-WIDE sequential counter observed up to ~2.65 million, completely unrelated to
+// any single manga's chapter count). This is a floor on that counter, NOT a ceiling on
+// real chapter counts - no series on this site has anywhere near 100k chapters, so any
+// bare href number at or above this is treated as an internal id rather than a genuine
+// chapter number. Exported so resolveChapter below reuses the exact same threshold
+// instead of a second copy of the magic number.
+export const INTERNAL_ID_MIN = 100_000
+
 // MangaHub's /search route is server-rendered (confirmed via direct fetch - no
 // __NEXT_DATA__ blob, no GraphQL call needed): each result is a plain
 // `<div class="media-manga media">` card in the initial HTML response, and
@@ -83,23 +94,114 @@ function parseChapterNumber(chapterPath: string): number | undefined {
     return m?.[1] !== undefined ? Number(m[1]) : undefined
 }
 
+// Chapter pages' <title>/og:title reliably read "... Chapter {N} ..." for real chapter
+// pages. Used by resolveChapter as the primary source of truth for the true chapter
+// number - see the INTERNAL_ID_MIN fallback below it for why the URL alone isn't enough.
+function extractChapterNumberFromTitle(html: string): number | undefined {
+    const og =
+        html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i) ??
+        html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:title"/i)
+    const titleTag = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+    for (const raw of [og ? captureGroup(og, 1) : undefined, titleTag ? captureGroup(titleTag, 1) : undefined]) {
+        if (!raw) continue
+        const m = decodeEntities(raw).match(/chapter\s+(\d+(?:\.\d+)?)/i)
+        if (m?.[1] !== undefined) return Number(m[1])
+    }
+    return undefined
+}
+
+// Bounded on the inner-content capture ({0,600}?) as insurance against a pathological
+// unterminated-anchor scan across a multi-MB document. `<a\b[^>]*?\bhref="` (rather than
+// requiring href to be the very first attribute) tolerates markup variation like a
+// leading class attribute.
+const CHAPTER_ANCHOR_RE =
+    /<a\b[^>]*?\bhref="(https?:\/\/mangahub\.io\/chapter\/([^/"]+)\/chapter-(\d+(?:\.\d+)?))"[^>]*>([\s\S]{0,600}?)<\/a>/gi
+
+// Matches the visible "#<!-- -->{N}" chapter-number span's text content - the HTML
+// comment is a React hydration artifact between the "#" and the digits, tolerated but
+// not required (plain "#{N}" also matches).
+const VISIBLE_CHAPTER_NUM_RE = /#(?:<!--\s*-->)?\s*(\d+(?:\.\d+)?)/
+
+type ChapterAnchorMatch = {
+    url: string
+    slug: string
+    slugNum: number
+    innerHtml: string
+}
+
 function extractChapters(html: string, mangaId: string): SourceChapter[] {
-    const seen = new Set<string>()
-    const out: SourceChapter[] = []
-    for (const m of html.matchAll(/href="(https?:\/\/mangahub\.io\/chapter\/([^/]+)\/chapter-(\d+(?:\.\d+)?))"/gi)) {
+    const matches: ChapterAnchorMatch[] = []
+    for (const m of html.matchAll(CHAPTER_ANCHOR_RE)) {
         const url = captureGroup(m, 1)
-        const chNum = captureGroup(m, 3)
-        if (!url || !chNum || seen.has(url)) continue
-        seen.add(url)
-        const sortKey = Number(chNum)
+        const slug = captureGroup(m, 2)
+        const slugNumRaw = captureGroup(m, 3)
+        if (!url || !slug || slugNumRaw === undefined) continue
+        matches.push({ url, slug, slugNum: Number(slugNumRaw), innerHtml: captureGroup(m, 4) ?? "" })
+    }
+    if (matches.length === 0) return []
+
+    // Every mangahub page also carries a "you might also like" slider with chapter
+    // anchors for OTHER manga titles (real-number hrefs, no special class) - trusting
+    // any canonical-shaped anchor without this filter would misattribute those foreign
+    // chapters to the current title. The real chapter-list anchors for this manga vastly
+    // outnumber the handful of foreign slider anchors, so a simple frequency count
+    // reliably finds the right slug. Discard everything else BEFORE any
+    // dedupe/number-parsing logic below.
+    const slugCounts = new Map<string, number>()
+    for (const match of matches) slugCounts.set(match.slug, (slugCounts.get(match.slug) ?? 0) + 1)
+    let dominantSlug = matches[0]!.slug
+    let dominantCount = 0
+    for (const [slug, count] of slugCounts) {
+        if (count > dominantCount) {
+            dominantSlug = slug
+            dominantCount = count
+        }
+    }
+    const sameSlugMatches = matches.filter(match => match.slug === dominantSlug)
+
+    // Dedupe by the TRUE chapter number, not by URL - the canonical anchor and the
+    // "alternate version" id-slug anchor for the same real chapter yield different URLs
+    // but must collapse into a single chapter record.
+    const byChNum = new Map<number, { url: string; canonical: boolean }>()
+    for (const match of sameSlugMatches) {
+        const visible = match.innerHtml.match(VISIBLE_CHAPTER_NUM_RE)
+        let chNum: number | undefined
+        if (visible?.[1] !== undefined) {
+            chNum = Number(visible[1])
+        } else if (match.slugNum < INTERNAL_ID_MIN) {
+            // No visible number - only trust the href number itself when it's below the
+            // internal-id floor. Otherwise this match is unusable, not a real chapter.
+            chNum = match.slugNum
+        }
+        if (chNum === undefined || !Number.isFinite(chNum)) continue
+
+        const canonical = match.slugNum === chNum
+        const existing = byChNum.get(chNum)
+        if (!existing) {
+            byChNum.set(chNum, { url: match.url, canonical })
+            continue
+        }
+        // A canonical-shaped match always wins over an id-slug match for the same
+        // chNum, regardless of encounter order in the document. If BOTH matches are
+        // canonical-shaped (shouldn't normally happen after the same-slug filter above,
+        // but handled defensively), the FIRST one wins - never let a later canonical
+        // match silently replace an earlier one via plain last-write-wins Map semantics.
+        if (canonical && !existing.canonical) {
+            byChNum.set(chNum, { url: match.url, canonical })
+        }
+    }
+
+    const out: SourceChapter[] = []
+    for (const [chNum, entry] of byChNum) {
+        const chNumStr = String(chNum)
         out.push({
-            id: `${SOURCE_ID}:chapter:${mangaId.replace(`${SOURCE_ID}:manga:`, "")}:${chNum}`,
+            id: `${SOURCE_ID}:chapter:${mangaId.replace(`${SOURCE_ID}:manga:`, "")}:${chNumStr}`,
             mangaId,
             sourceId: SOURCE_ID,
-            sourceChapterId: chNum,
-            title: `Chapter ${chNum}`,
-            url,
-            sortKey,
+            sourceChapterId: chNumStr,
+            title: `Chapter ${chNumStr}`,
+            url: entry.url,
+            sortKey: chNum,
             language: "en"
         })
     }
@@ -315,7 +417,24 @@ export const mangahubAdapter: SourceAdapter = {
         const pathParts = url.pathname.split("/").filter(Boolean)
         const chSlug = pathParts[1] ?? ""
         const mangaSlug = chSlug.replace(/_\d+$/, "") || chSlug
-        const chNum = parseChapterNumber(url.pathname) ?? 0
+
+        // Derive the TRUE chapter number - never fall back to 0. Id-slug chapter URLs
+        // (.../chapter-{internalId}) actually 302-REDIRECT to the plain manga page (not
+        // a 404/error), which is the COMMON outcome when resolving through one of these
+        // - the redirect lands on a page whose title has no chapter number at all. A
+        // silent 0-fallback here would create a "Chapter 0" record (sortKey 0, which is
+        // BELOW INTERNAL_ID_MIN so no junk-purge would ever catch it) and flow into
+        // lastReadChapterNumber via the normal save-progress path, silently corrupting a
+        // user's real reading position downward.
+        const titleChNum = extractChapterNumberFromTitle(html)
+        const slugNum = parseChapterNumber(url.pathname)
+        const chNum = titleChNum ?? (slugNum !== undefined && slugNum < INTERNAL_ID_MIN ? slugNum : undefined)
+        if (chNum === undefined) {
+            throw new SourceError(
+                "invalid-response",
+                "Could not determine the chapter number for this MangaHub chapter"
+            )
+        }
 
         const listUrl = new URL(`${ORIGIN}/manga/${mangaSlug}`)
         const manga: SourceManga = {
