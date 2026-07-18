@@ -133,6 +133,27 @@ describe("mineAndCacheEpisodesFromHtml", () => {
         expect(chapters).toHaveLength(0)
         expect(publishLiveMock).not.toHaveBeenCalled()
     })
+
+    it("advances manga.latestChapterNumber/latestChapterId when a mined episode outranks the stored one", async () => {
+        await db.manga.put({
+            ...manga,
+            latestChapterNumber: 1,
+            latestChapterId: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:1`
+        })
+        const html = `
+            <div>
+                ${link(SOURCE_MANGA_ID, 1)}
+                ${link(SOURCE_MANGA_ID, 2)}
+                ${link(SOURCE_MANGA_ID, 3)}
+            </div>
+        `
+
+        await mineAndCacheEpisodesFromHtml(MANGA_ID, SOURCE_ID, SOURCE_MANGA_ID, HOSTNAME, html)
+
+        const updated = await db.manga.get(MANGA_ID)
+        expect(updated?.latestChapterNumber).toBe(3)
+        expect(updated?.latestChapterId).toBe(`${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:3`)
+    })
 })
 
 // A fake source matching the subset of findSource()'s return value that
@@ -238,6 +259,30 @@ describe("listChaptersWithTabFallback standard (SW-fetch) path", () => {
         await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
 
         expect(publishLiveMock).not.toHaveBeenCalled()
+    })
+
+    it("advances manga.latestChapterNumber/latestChapterId when a fetched chapter outranks the stored one", async () => {
+        await db.manga.put({
+            ...manga,
+            latestChapterNumber: 1,
+            latestChapterId: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:1`
+        })
+        const chapters: ChapterRecord[] = [1, 2, 3].map(n => ({
+            id: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:${n}`,
+            mangaId: MANGA_ID,
+            sourceId: SOURCE_ID,
+            title: `Episode ${n}`,
+            url: `https://${HOSTNAME}/ep-${n}`,
+            sortKey: n
+        }))
+        listChaptersBySourceMock.mockResolvedValue(chapters)
+
+        const source = fakeSource(() => null)
+        await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+
+        const updated = await db.manga.get(MANGA_ID)
+        expect(updated?.latestChapterNumber).toBe(3)
+        expect(updated?.latestChapterId).toBe(`${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:3`)
     })
 
     it("purges stale MangaHub junk rows after a fresh bulkPut, but leaves other sources untouched", async () => {
