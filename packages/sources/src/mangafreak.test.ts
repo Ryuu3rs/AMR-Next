@@ -163,7 +163,16 @@ describe("mangafreakAdapter.parseMangaUrl", () => {
 })
 
 describe("mangafreakAdapter.search", () => {
-    it("prefers a real per-result thumbnail, falling back to the blind guess when absent", async () => {
+    it("requests the path-segment /Find/{query} endpoint, trimmed and lowercased", async () => {
+        const requests: string[] = []
+        const context = createContext({ [SEARCH_PATH]: searchHtml }, requests)
+
+        await mangafreakAdapter.search!(SEARCH_QUERY, context)
+
+        expect(requests).toEqual([`GET ${ORIGIN}${SEARCH_PATH}`])
+    })
+
+    it("parses two-anchor result rows (thumbnail anchor + title anchor) for the same slug", async () => {
         const requests: string[] = []
         const context = createContext({ [SEARCH_PATH]: searchHtml }, requests)
 
@@ -171,8 +180,10 @@ describe("mangafreakAdapter.search", () => {
 
         expect(results).toHaveLength(2)
         expect(results[0]!.sourceMangaId).toBe(MANGA_SLUG)
-        expect(results[0]!.coverUrl).toBe(REAL_COVER_URL)
+        expect(results[0]!.title).toBe("One Piece")
+        expect(results[0]!.coverUrl).toBe(`https://images.mangafreak.me/manga_images/${MANGA_SLUG.toLowerCase()}.jpg`)
         expect(results[1]!.sourceMangaId).toBe("One_Punch_Man")
+        expect(results[1]!.title).toBe("One Punch Man")
         expect(results[1]!.coverUrl).toBe(`https://images.mangafreak.me/manga_images/one_punch_man.jpg`)
     })
 

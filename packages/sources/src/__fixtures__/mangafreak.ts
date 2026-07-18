@@ -13,7 +13,7 @@ export const CHAPTER_URL = `${ORIGIN}${CHAPTER_PATH}`
 // Deliberately different from the blind CDN-path guess below so tests can tell them apart.
 export const REAL_COVER_URL = "https://images.mangafreak.me/012/manga_images/onepiece_cover_real.jpg"
 
-// What resolveCover/resolveManga/resolveChapter fall back to when real extraction fails —
+// What resolveCover/resolveManga/resolveChapter fall back to when real extraction fails -
 // mirrors the adaptor's `${CDN}/manga_images/${slug.toLowerCase()}.jpg` pattern.
 export const BLIND_GUESS_COVER_URL = `${CDN}/manga_images/${MANGA_SLUG.toLowerCase()}.jpg`
 
@@ -39,7 +39,7 @@ export const mangaHtml = `<!DOCTYPE html>
 </body>
 </html>`
 
-// Same manga page, but with no og:image/twitter:image meta tag at all — extraction should
+// Same manga page, but with no og:image/twitter:image meta tag at all - extraction should
 // fail here and callers must fall back to the blind CDN-path guess.
 export const mangaHtmlNoCoverMeta = `<!DOCTYPE html>
 <html>
@@ -66,18 +66,24 @@ export const chapterHtml = `<!DOCTYPE html>
 </body>
 </html>`
 
-export const SEARCH_QUERY = "one piece"
-export const SEARCH_PATH = "/Find"
+// Deliberately mixed-case with surrounding whitespace, matching the adapter's
+// trim + lowercase transformation before the query is placed on the path.
+export const SEARCH_QUERY = "  One Piece  "
+export const SEARCH_PATH = `/Find/${encodeURIComponent(SEARCH_QUERY.trim().toLowerCase())}`
 
-// One result carries a real <img> thumbnail (should be preferred over the blind guess);
-// the other has no <img> at all (should fall back to the blind CDN-path guess).
+// Mirrors the real /Find/{query} response: each result row links the same slug twice,
+// an image-only thumbnail anchor first, then a separate text-only title anchor. There is
+// no <img> inside the title anchor itself, so cover extraction always falls back to the
+// blind CDN-path guess for search results (verified against the live site).
 export const searchHtml = `<!DOCTYPE html>
 <html>
 <body>
 <div class="manga_search_item">
-  <a href="/Manga/${MANGA_SLUG}"><img src="${REAL_COVER_URL}" alt="cover" />One Piece</a>
+  <a href="/Manga/${MANGA_SLUG}"><img src="${CDN}/manga_images/${MANGA_SLUG.toLowerCase()}.jpg" alt="cover" /></a>
+  <a href="/Manga/${MANGA_SLUG}">One Piece</a>
 </div>
 <div class="manga_search_item">
+  <a href="/Manga/One_Punch_Man"><img src="${CDN}/manga_images/one_punch_man.jpg" alt="cover" /></a>
   <a href="/Manga/One_Punch_Man">One Punch Man</a>
 </div>
 </body>

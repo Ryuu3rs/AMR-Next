@@ -146,9 +146,12 @@ function extractSearchResults(html: string): SourceSearchResult[] {
         const slug = captureGroup(m, 1)
         const inner = captureGroup(m, 2) ?? ""
         if (!slug || seen.has(slug)) continue
-        seen.add(slug)
         const title = decodeHtml(inner.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "))
+        // Result rows link the same slug twice: an image-only thumbnail anchor first,
+        // then the real title anchor. Skip the empty-title anchor without marking the
+        // slug seen, so the title anchor that follows still produces a result.
         if (title.length < 2) continue
+        seen.add(slug)
         // Result rows embed a real thumbnail <img>; prefer it over the blind CDN guess.
         const imgMatch =
             inner.match(/<img\b[^>]*\bsrc="(https?:\/\/[^"]+)"/i) ??
@@ -260,10 +263,10 @@ export const mangafreakAdapter: SourceAdapter = {
     },
 
     async search(query: string, context: SourceContext): Promise<SourceSearchResult[]> {
-        if (!query.trim()) return []
+        const trimmed = query.trim()
+        if (!trimmed) return []
         try {
-            const url = new URL(`${ORIGIN}/Find`)
-            url.searchParams.set("s", query)
+            const url = new URL(`${ORIGIN}/Find/${encodeURIComponent(trimmed.toLowerCase())}`)
             const html = await context.request.getText(url, { headers: BROWSER_HEADERS })
             return extractSearchResults(html)
         } catch {
