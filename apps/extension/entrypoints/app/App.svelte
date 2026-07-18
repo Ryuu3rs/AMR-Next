@@ -297,6 +297,7 @@
             cleanupSelected = {}
             cleanupExpanded = {}
             await load()
+            await loadBackups()
         } catch (cause) {
             cleanupMessage = cause instanceof Error ? cause.message : "Cleanup apply failed."
         } finally {
@@ -327,7 +328,7 @@
         }
     })
 
-    async function restoreBackupById(id: number) {
+    async function restoreBackupById(id: number): Promise<boolean> {
         backupRestoring = true
         try {
             await sendRuntimeMessage({ type: "data:backup:restore", id })
@@ -335,8 +336,14 @@
             backupRestoreConfirm = null
             await load()
             await loadBackups()
+            // The restored library may no longer match a cleanup preview computed
+            // against the pre-restore snapshot - drop it so a stale preview can
+            // never survive past a restore.
+            cancelCleanup()
+            return true
         } catch (cause) {
             backupMessage = cause instanceof Error ? cause.message : "Restore failed."
+            return false
         } finally {
             backupRestoring = false
         }
@@ -346,8 +353,10 @@
         if (cleanupBackupId === null) return
         const id = cleanupBackupId
         cleanupBackupId = null
-        await restoreBackupById(id)
-        cleanupMessage = "Cleanup undone - backup restored."
+        const restored = await restoreBackupById(id)
+        cleanupMessage = restored
+            ? "Cleanup undone - backup restored."
+            : "Undo failed - the backup could not be restored. See the Backups panel for details."
     }
 
     const showRestoreBanner = $derived(
@@ -407,6 +416,19 @@
     // in-flight button and (via disabled={mirrorSwitching !== null} below) blocks a
     // second concurrent switch on the same manga while one is still running.
     let mirrorSwitching = $state<string | null>(null)
+
+    // Re-point detailManga at the freshly-fetched record so an open detail
+    // overlay reflects the latest library data (e.g. another tab's edit, a
+    // backup restore, or a cleanup merge) - if the manga was deleted in the
+    // process, leave the existing (now-dangling) reference alone rather than
+    // clearing it out from under the user. Shared by both load() and refresh().
+    function reconcileDetailManga() {
+        const openDetailId = detailManga?.id
+        if (openDetailId) {
+            const updated = library.find(m => m.id === openDetailId)
+            if (updated) detailManga = updated
+        }
+    }
 
     function closeDetail() {
         detailManga = null
@@ -998,6 +1020,7 @@
         } finally {
             loading = false
         }
+        reconcileDetailManga()
         void loadCachedCovers()
     }
 
@@ -1040,15 +1063,7 @@
         if (libraryNeedsAttention.length > 0) {
             reconcileIds = [...new Set([...reconcileIds, ...libraryNeedsAttention])]
         }
-        // Re-point detailManga at the freshly-fetched record so the open detail
-        // overlay reflects the refresh (e.g. another tab's edit) - if the manga was
-        // deleted mid-refresh, leave the existing (now-dangling) reference alone
-        // rather than clearing it out from under the user.
-        const openDetailId = detailManga?.id
-        if (openDetailId) {
-            const updated = library.find(m => m.id === openDetailId)
-            if (updated) detailManga = updated
-        }
+        reconcileDetailManga()
         void loadCachedCovers()
     }
 
