@@ -33,6 +33,14 @@ vi.mock("../background/tab-fetch", () => ({
     fetchChapterHtmlViaTab: vi.fn()
 }))
 
+// publishLive touches browser.storage, which isn't stubbed in this test file -
+// stub it out here so handlers that call it (e.g. chapter:adjacent) can be
+// asserted on without needing a full browser.storage mock.
+const publishLiveMock = vi.fn()
+vi.mock("../live", () => ({
+    publishLive: (...args: unknown[]) => publishLiveMock(...args)
+}))
+
 const { libraryHandlers, isFallbackCreated } = await import("./library")
 const {
     resolveChapterUrl,
@@ -585,6 +593,10 @@ describe("chapter:adjacent", () => {
 
         const stored = await db.chapters.where("mangaId").equals(manga.id).toArray()
         expect(stored.map(c => c.id).sort()).toEqual(["mangadex:chapter:1", "mangadex:chapter:3"])
+
+        // A stale-cache refresh that actually wrote new chapters must publish, or
+        // open tabs never learn the cache changed underneath them.
+        expect(publishLiveMock).toHaveBeenCalledWith(["chapters"], [manga.id])
     })
 
     it("re-checks the network when the cache's highest chapter isn't past the current one, but still serves the stale cache if that network call fails", async () => {
@@ -608,6 +620,24 @@ describe("chapter:adjacent", () => {
         expect(result.current).toBe(2)
         expect(result.next).toBeNull()
         expect(result.prev?.number).toBe(1)
+        // Nothing was written, so nothing should be published.
+        expect(publishLiveMock).not.toHaveBeenCalled()
+    })
+
+    it("publishes after a successful stale-cache refresh that finds new chapters", async () => {
+        // Same setup as the re-check test above, but the network call succeeds this
+        // time and returns a longer list - the bulkPut it triggers must publish.
+        await db.manga.put(libraryManga)
+        await db.chapters.bulkPut([chapter(1), chapter(2)])
+        vi.mocked(listChaptersForSource).mockResolvedValue([chapter(1), chapter(2), chapter(3)] as never)
+
+        const handler = libraryHandlers["chapter:adjacent"]!
+        const result = (await handler({ type: "chapter:adjacent", mangaId: manga.id } as never, ctx)) as {
+            next: { number: number } | null
+        }
+
+        expect(result.next?.number).toBe(3)
+        expect(publishLiveMock).toHaveBeenCalledWith(["chapters"], [manga.id])
     })
 })
 
