@@ -46,11 +46,14 @@ function extractChapterId(url: URL): string | undefined {
     return m ? captureGroup(m, 1)?.toUpperCase() : undefined
 }
 
-function chapterNumberFromText(text: string): number {
-    // "Chapter 1", "Ch. 1.5", "Vol.2 Chapter 12", etc.
+// Extract a float chapter number from a title string, e.g. "Chapter 1", "Ch. 1.5",
+// "Vol.2 Chapter 12". Returns undefined when the text has no parseable chapter number at all
+// (e.g. "Extra", "Special") - callers decide the fallback since the right one differs by
+// context (see extractChapterList vs extractChapterPageMeta below).
+function chapterNumberFromText(text: string): number | undefined {
     const m = text.match(/(?:ch(?:apter)?\.?\s*)(\d+(?:[.-]\d+)?)/i)
     const raw = m ? captureGroup(m, 1) : undefined
-    return raw ? parseFloat(raw.replace("-", ".")) : 0
+    return raw ? parseFloat(raw.replace("-", ".")) : undefined
 }
 
 function extractCoverUrl(html: string): string | undefined {
@@ -83,13 +86,26 @@ function extractSeriesTitle(html: string, fallback: string): string {
 }
 
 // Parse the chapter list from a series page.
+//
+// Chapter links are /chapters/{ULID} or /chapters/{ULID}/ - the href may be relative or
+// absolute (weebcentral emits absolute https://weebcentral.com/... hrefs as of 2025; the old
+// relative-only regex matched none of them).
+//
+// The series page lists chapters newest-first (descending chapter number) - live-verified
+// against weebcentral.com/series/<id> (Chapter 200 first, counting down to Chapter 0 last).
+// Bonus/extra entries with no parseable chapter number (e.g. "Extra") get their sortKey
+// interpolated between the two real chapter numbers they sit next to in the document, walking
+// forward in chronological (ascending) order - detected from the document regardless of
+// whether it happens to list chapters ascending or descending, so an unparseable title never
+// collapses to sortKey 0 and sorts before every real chapter (the previous bug).
 function extractChapterList(html: string, seriesId: string): SourceChapter[] {
     const parentId = `${SOURCE_ID}:manga:${seriesId}`
-    const out: SourceChapter[] = []
     const seen = new Set<string>()
+    const entries: { chapterId: string; text: string; parsedKey: number | undefined }[] = []
 
-    // Chapter links: /chapters/{ULID} or /chapters/{ULID}/
-    for (const a of html.matchAll(/<a\b[^>]*\bhref="\/chapters\/([0-9A-Z]{26})[^"]*"[^>]*>([\s\S]*?)<\/a>/gi)) {
+    for (const a of html.matchAll(
+        /<a\b[^>]*\bhref="(?:https?:\/\/(?:www\.)?weebcentral\.com)?\/chapters\/([0-9A-Z]{26})[^"]*"[^>]*>([\s\S]*?)<\/a>/gi
+    )) {
         const chapterId = captureGroup(a, 1)?.toUpperCase()
         const inner = captureGroup(a, 2) ?? ""
         if (!chapterId || seen.has(chapterId)) continue
@@ -100,19 +116,41 @@ function extractChapterList(html: string, seriesId: string): SourceChapter[] {
                 .replace(/\s+/g, " ")
                 .trim()
         )
-        const sortKey = chapterNumberFromText(text)
-        out.push({
-            id: `${SOURCE_ID}:chapter:${chapterId}`,
+        entries.push({ chapterId, text, parsedKey: chapterNumberFromText(text) })
+    }
+
+    const firstParsed = entries.find(e => e.parsedKey !== undefined)?.parsedKey
+    const lastParsed = [...entries].reverse().find(e => e.parsedKey !== undefined)?.parsedKey
+    const descending = firstParsed !== undefined && lastParsed !== undefined && firstParsed > lastParsed
+    const chronological = descending ? [...entries].reverse() : entries
+
+    let lastRealKey = 0
+    let unparsedRun = 0
+    const sortKeyById = new Map<string, number>()
+    for (const entry of chronological) {
+        if (entry.parsedKey !== undefined) {
+            sortKeyById.set(entry.chapterId, entry.parsedKey)
+            lastRealKey = entry.parsedKey
+            unparsedRun = 0
+        } else {
+            unparsedRun += 1
+            sortKeyById.set(entry.chapterId, lastRealKey + unparsedRun / 1000)
+        }
+    }
+
+    return entries.map(entry => {
+        const sortKey = sortKeyById.get(entry.chapterId) ?? 0
+        return {
+            id: `${SOURCE_ID}:chapter:${entry.chapterId}`,
             mangaId: parentId,
             sourceId: SOURCE_ID,
-            sourceChapterId: chapterId,
-            title: text || `Chapter ${sortKey || "?"}`,
-            url: `${ORIGIN}/chapters/${chapterId}/`,
+            sourceChapterId: entry.chapterId,
+            title: entry.text || `Chapter ${sortKey || "?"}`,
+            url: `${ORIGIN}/chapters/${entry.chapterId}/`,
             sortKey,
             language: "en"
-        })
-    }
-    return out
+        }
+    })
 }
 
 function extractImages(html: string): string[] {
@@ -133,8 +171,11 @@ function extractImages(html: string): string[] {
 
 // From a chapter page, extract the linked series ULID and the chapter title.
 function extractChapterPageMeta(html: string): { seriesId?: string; title: string; sortKey: number } {
-    // Look for a link to /series/{ULID}...
-    const seriesMatch = html.match(/<a\b[^>]*\bhref="\/series\/([0-9A-Z]{26})[^"]*"[^>]*>([\s\S]*?)<\/a>/i)
+    // Look for a link to /series/{ULID}... - href may be relative or absolute (see
+    // extractChapterList above for why).
+    const seriesMatch = html.match(
+        /<a\b[^>]*\bhref="(?:https?:\/\/(?:www\.)?weebcentral\.com)?\/series\/([0-9A-Z]{26})[^"]*"[^>]*>([\s\S]*?)<\/a>/i
+    )
     const seriesId = seriesMatch ? captureGroup(seriesMatch, 1)?.toUpperCase() : undefined
 
     // Chapter title: prefer og:title or <title>, strip site/series suffix
@@ -151,14 +192,27 @@ function extractChapterPageMeta(html: string): { seriesId?: string; title: strin
         const raw = docTitle ? decodeEntities(captureGroup(docTitle, 1) ?? "") : ""
         title = raw.split(/\s*[-|]\s*/)[0]?.trim() ?? ""
     }
-    const sortKey = chapterNumberFromText(title)
-    return { ...(seriesId ? { seriesId } : {}), title: title || `Chapter ${sortKey || "?"}`, sortKey }
+    // Unlike extractChapterList, this function only ever sees a single chapter's title in
+    // isolation - there's no surrounding chapter list to interpolate a position from. Fall back
+    // to +Infinity (not 0) so an unparseable title (e.g. "Extra") sorts to the end of a chapter
+    // list rather than before every real chapter.
+    const sortKey = chapterNumberFromText(title) ?? Number.POSITIVE_INFINITY
+    return {
+        ...(seriesId ? { seriesId } : {}),
+        title: title || `Chapter ${sortKey === Number.POSITIVE_INFINITY ? "?" : sortKey}`,
+        sortKey
+    }
 }
 
 function extractSearchResults(html: string): SourceSearchResult[] {
     const out: SourceSearchResult[] = []
     const seen = new Set<string>()
-    for (const a of html.matchAll(/<a\b[^>]*\bhref="(\/series\/([0-9A-Z]{26})[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+    // href may be relative or absolute (see extractChapterList above for why); the capture
+    // group only ever grabs the relative path portion, so the ${ORIGIN}${href} join below
+    // still works either way.
+    for (const a of html.matchAll(
+        /<a\b[^>]*\bhref="(?:https?:\/\/(?:www\.)?weebcentral\.com)?(\/series\/([0-9A-Z]{26})[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi
+    )) {
         const href = captureGroup(a, 1)
         const seriesId = captureGroup(a, 2)?.toUpperCase()
         const inner = captureGroup(a, 3) ?? ""
@@ -261,12 +315,22 @@ export const weebCentralAdapter: SourceAdapter = {
     async search(query: string, context: SourceContext): Promise<SourceSearchResult[]> {
         if (!query.trim()) return []
         try {
-            const url = new URL(`${ORIGIN}/search`)
+            // /search only renders the static advanced-search FORM page (zero real result
+            // links - live-verified). The actual results come from /search/data, the htmx
+            // endpoint the form's "load"/"submit" triggers fetch from. Live-verified required
+            // params: "text" (the query), "sort" (radio: "Best Match" | "Alphabet" |
+            // "Popularity" | "Subscribers" | "Recently Added" | "Latest Updates"), "order"
+            // (radio: "Ascending" | "Descending"), and "display_mode" (radio: "Full Display" |
+            // "Minimal Display") - omitting display_mode returns a 400. "Best Match" is the
+            // form's own default sort for a text search.
+            const url = new URL(`${ORIGIN}/search/data`)
             url.searchParams.set("text", query)
-            url.searchParams.set("order_by", "title")
-            url.searchParams.set("asc_or_desc", "asc")
-            url.searchParams.set("limit", "20")
-            const html = await context.request.getText(url, { headers: BROWSER_HEADERS })
+            url.searchParams.set("sort", "Best Match")
+            url.searchParams.set("order", "Ascending")
+            url.searchParams.set("display_mode", "Full Display")
+            const html = await context.request.getText(url, {
+                headers: { ...BROWSER_HEADERS, "HX-Request": "true" }
+            })
             return extractSearchResults(html)
         } catch {
             return []

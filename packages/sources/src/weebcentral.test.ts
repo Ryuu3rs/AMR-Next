@@ -5,7 +5,11 @@ import {
     ORIGIN,
     SERIES_ID,
     SERIES_URL,
+    bonusChapterTitlesById,
+    bonusSeriesHtml,
+    bonusSeriesId,
     chapterPageHtml,
+    chapterPageHtmlUnparseableTitle,
     imagesHtml,
     searchHtml,
     seriesHtml
@@ -80,6 +84,72 @@ describe("weebCentralAdapter.listChapters", () => {
         expect(chapters[1]!.sortKey).toBeLessThanOrEqual(chapters[2]!.sortKey)
         expect(chapters[0]!.sourceChapterId).toBe(CHAPTER_ID)
     })
+
+    // The old regex required a relative href ("/chapters/{ULID}") - weebcentral now emits
+    // absolute hrefs, so the old regex matched zero anchors. seriesHtml uses absolute hrefs
+    // throughout, so a non-empty result here already exercises the fix; this test just makes
+    // the expectation explicit and future-proofs against a regression back to relative-only.
+    it("matches chapter anchors with absolute hrefs", async () => {
+        const ctx = makeContext({ [`${ORIGIN}/series/${SERIES_ID}`]: seriesHtml })
+        const stubManga = {
+            manga: {
+                id: `weebcentral:manga:${SERIES_ID}`,
+                title: "Solo Leveling",
+                normalizedTitle: "solo leveling",
+                authors: [] as string[],
+                status: "unknown" as const,
+                addedAt: 0,
+                updatedAt: 0
+            },
+            sourceId: "weebcentral",
+            sourceMangaId: SERIES_ID,
+            url: SERIES_URL
+        }
+        const chapters = await adapter.listChapters({ manga: stubManga }, ctx as never)
+        expect(chapters.map(c => c.sourceChapterId).sort()).toEqual(
+            ["01HV3K9MXNP2Q4R6S8T0V2W4Z9", "01HV3K9MXNP2Q4R6S8T1V2W4Y6", "01HV3K9MXNP2Q4R6S8T2V2W4Y6"].sort()
+        )
+    })
+
+    // seriesHtml lists chapters newest-first (descending) - live-verified against a real
+    // weebcentral series page. bonusSeriesHtml adds a non-numeric "Extra" chapter between
+    // Chapter 3 and Chapter 4 in that same descending listing. The old code returned sortKey 0
+    // for "Extra", which would sort it before Chapter 1 in the final ascending list - the bonus
+    // chapter should instead land strictly between Chapter 3 and Chapter 4.
+    it("interpolates a non-numeric bonus chapter's sortKey between its real neighbors, even in a descending document", async () => {
+        const ctx = makeContext({ [`${ORIGIN}/series/${bonusSeriesId}`]: bonusSeriesHtml })
+        const stubManga = {
+            manga: {
+                id: `weebcentral:manga:${bonusSeriesId}`,
+                title: "Bonus Test Manga",
+                normalizedTitle: "bonus test manga",
+                authors: [] as string[],
+                status: "unknown" as const,
+                addedAt: 0,
+                updatedAt: 0
+            },
+            sourceId: "weebcentral",
+            sourceMangaId: bonusSeriesId,
+            url: `${ORIGIN}/series/${bonusSeriesId}`
+        }
+        const chapters = await adapter.listChapters({ manga: stubManga }, ctx as never)
+        expect(chapters.length).toBe(5)
+
+        // Ascending sort should exactly reproduce chronological reading order: 1, 2, 3, Extra, 4.
+        expect(chapters.map(c => bonusChapterTitlesById[c.sourceChapterId])).toEqual([
+            "Chapter 1",
+            "Chapter 2",
+            "Chapter 3",
+            "Extra",
+            "Chapter 4"
+        ])
+
+        const chapter3 = chapters.find(c => bonusChapterTitlesById[c.sourceChapterId] === "Chapter 3")!
+        const chapter4 = chapters.find(c => bonusChapterTitlesById[c.sourceChapterId] === "Chapter 4")!
+        const extra = chapters.find(c => bonusChapterTitlesById[c.sourceChapterId] === "Extra")!
+        expect(extra.sortKey).toBeGreaterThan(chapter3.sortKey)
+        expect(extra.sortKey).toBeLessThan(chapter4.sortKey)
+    })
 })
 
 describe("weebCentralAdapter.resolveChapter", () => {
@@ -106,14 +176,61 @@ describe("weebCentralAdapter.resolveChapter", () => {
         expect(result.pages).toEqual([])
         expect(result.manga.manga.title).toBe("Solo Leveling")
     })
+
+    // A chapter titled "Extra" has no parseable chapter number. Resolved in isolation (no
+    // surrounding chapter list to interpolate a position from), it must fall back to
+    // +Infinity rather than 0 - otherwise it would sort before every real chapter.
+    it("falls back to +Infinity sortKey for an unparseable chapter title", async () => {
+        const ctx = makeContext({
+            [`${ORIGIN}/chapters/${CHAPTER_ID}/`]: chapterPageHtmlUnparseableTitle,
+            [`${ORIGIN}/chapters/${CHAPTER_ID}/images`]: imagesHtml,
+            [`${ORIGIN}/series/${SERIES_ID}`]: seriesHtml
+        })
+        const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, ctx as never)
+        expect(result.chapter.sortKey).toBe(Number.POSITIVE_INFINITY)
+        expect(result.chapter.title).toBe("Extra")
+    })
 })
 
 describe("weebCentralAdapter.search", () => {
-    it("returns results from the search page", async () => {
-        const ctx = makeContext({ [`${ORIGIN}/search`]: searchHtml })
+    // The old endpoint (/search?order_by=title&asc_or_desc=asc) only renders the static
+    // advanced-search FORM page - live-verified to contain zero real result links. The real
+    // results come from the htmx endpoint /search/data.
+    it("queries the /search/data endpoint, not the static /search form page", async () => {
+        const ctx = makeContext({ [`${ORIGIN}/search/data`]: searchHtml })
         const results = await adapter.search!("solo leveling", ctx as never)
-        expect(results.length).toBeGreaterThanOrEqual(1)
+        expect(results.length).toBe(2)
         expect(results[0]!.title).toBe("Solo Leveling")
         expect(results[0]!.sourceId).toBe("weebcentral")
+        expect(results[1]!.title).toBe("Solo Leveling 2")
+    })
+
+    it("sends the HX-Request header and the live-verified param names", async () => {
+        const getText = vi.fn(async (url: URL, _options?: { headers?: Record<string, string> }) => {
+            expect(url.pathname).toBe("/search/data")
+            expect(url.searchParams.get("text")).toBe("solo leveling")
+            expect(url.searchParams.get("sort")).toBe("Best Match")
+            expect(url.searchParams.get("order")).toBe("Ascending")
+            expect(url.searchParams.get("display_mode")).toBe("Full Display")
+            return searchHtml
+        })
+        const ctx = {
+            request: { getText },
+            now: () => 1_000_000,
+            logger: { debug: vi.fn(), warn: vi.fn() }
+        }
+        await adapter.search!("solo leveling", ctx as never)
+        expect(getText).toHaveBeenCalledTimes(1)
+        const [, options] = getText.mock.calls[0]!
+        expect(options?.headers?.["HX-Request"]).toBe("true")
+    })
+
+    // extractSearchResults must also accept absolute hrefs (see the chapter-list fix above) -
+    // searchHtml uses absolute hrefs throughout for both the image-wrapper anchor (skipped,
+    // empty text) and the real title anchor.
+    it("skips the empty-text image-wrapper anchor and dedupes to the title anchor per series", async () => {
+        const ctx = makeContext({ [`${ORIGIN}/search/data`]: searchHtml })
+        const results = await adapter.search!("solo leveling", ctx as never)
+        expect(results.map(r => r.sourceMangaId)).toEqual([...new Set(results.map(r => r.sourceMangaId))])
     })
 })
