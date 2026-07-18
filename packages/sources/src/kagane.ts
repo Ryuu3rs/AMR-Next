@@ -432,6 +432,11 @@ export const kaganeAdapter: SourceAdapter = {
         const chapterRecord = chapterList.find(c => c.sourceChapterId === chapterId)
         const chapterRecordId = `${SOURCE_ID}:chapter:${chapterId}`
 
+        // This stub only fires when the chapter list fetch failed/came back empty, or the
+        // chapter simply isn't in the scraped list yet - there's no surrounding list to
+        // interpolate a position from (matches extractChapterPageMeta's case in
+        // dynasty-scans.ts, not extractChapterList's). Fall back to +Infinity (not 0) so the
+        // stub sorts to the end of the chapter list rather than before every real chapter.
         const chapter: SourceChapter = chapterRecord ?? {
             id: chapterRecordId,
             mangaId: manga.manga.id,
@@ -439,7 +444,7 @@ export const kaganeAdapter: SourceAdapter = {
             sourceChapterId: chapterId,
             title: "Chapter",
             url: readerUrl(seriesId, chapterId),
-            sortKey: 0,
+            sortKey: Number.POSITIVE_INFINITY,
             language: LANGUAGE
         }
 
