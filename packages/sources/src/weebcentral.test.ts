@@ -252,11 +252,24 @@ describe("weebCentralAdapter.search", () => {
     })
 
     // extractSearchResults must also accept absolute hrefs (see the chapter-list fix above) -
-    // searchHtml uses absolute hrefs throughout for both the image-wrapper anchor (skipped,
-    // empty text) and the real title anchor.
-    it("skips the empty-text image-wrapper anchor and dedupes to the title anchor per series", async () => {
+    // searchHtml uses absolute hrefs throughout for both anchors of each result.
+    it("dedupes to a single result per series", async () => {
         const ctx = makeContext({ [`${ORIGIN}/search/data`]: searchHtml })
         const results = await adapter.search!("solo leveling", ctx as never)
         expect(results.map(r => r.sourceMangaId)).toEqual([...new Set(results.map(r => r.sourceMangaId))])
+    })
+
+    // Each result card renders a mobile-only badge anchor (no class attribute, text can be
+    // prefixed with an "Official" ribbon) BEFORE the desktop-only clean-title anchor
+    // (class="line-clamp-1 link link-hover") - live-verified, see searchHtml's fixture comment.
+    // The old dedup logic kept whichever anchor was encountered first, so on the real site it
+    // kept the badge-prefixed title ("Official Solo Leveling") instead of the clean one. This
+    // must resolve to the clean title regardless of anchor order in the document.
+    it("prefers the clean desktop title over the badge-prefixed mobile title for the same series", async () => {
+        const ctx = makeContext({ [`${ORIGIN}/search/data`]: searchHtml })
+        const results = await adapter.search!("solo leveling", ctx as never)
+        const solo = results.find(r => r.sourceMangaId === SERIES_ID)
+        expect(solo?.title).toBe("Solo Leveling")
+        expect(solo?.title).not.toContain("Official")
     })
 })

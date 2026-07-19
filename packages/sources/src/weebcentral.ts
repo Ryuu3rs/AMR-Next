@@ -218,19 +218,34 @@ function extractChapterPageMeta(html: string): { seriesId?: string; title: strin
     }
 }
 
+// Each search result card on /search/data renders TWO anchors to the same series (live-verified
+// against weebcentral.com/search/data): a mobile-only card with no class attribute on the <a>
+// itself, whose text can include an "Official" ribbon badge ahead of the title (e.g. "Official
+// Solo Leveling"), and a desktop-only anchor carrying class="line-clamp-1 link link-hover" with
+// just the clean title text. The badge anchor always comes first in the document.
+//
+// The "Official" ribbon is NOT a reliable text marker - live-verified across a 32-result search,
+// only 8 results had the ribbon at all, while every single result had exactly one link-hover
+// anchor. So dedup must prefer the link-hover anchor structurally, not by stripping badge text.
+const LINK_HOVER_CLASS_RE = /\bclass="[^"]*\blink-hover\b[^"]*"/i
+
 function extractSearchResults(html: string): SourceSearchResult[] {
-    const out: SourceSearchResult[] = []
-    const seen = new Set<string>()
+    const order: string[] = []
+    const bySeriesId = new Map<string, { href: string | undefined; title: string; isCleanAnchor: boolean }>()
+
     // href may be relative or absolute (see extractChapterList above for why); the capture
     // group only ever grabs the relative path portion, so the ${ORIGIN}${href} join below
     // still works either way.
     for (const a of html.matchAll(
-        /<a\b[^>]*\bhref="(?:https?:\/\/(?:www\.)?weebcentral\.com)?(\/series\/([0-9A-Z]{26})[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi
+        /<a\b([^>]*)\bhref="(?:https?:\/\/(?:www\.)?weebcentral\.com)?(\/series\/([0-9A-Z]{26})[^"]*)"([^>]*)>([\s\S]*?)<\/a>/gi
     )) {
-        const href = captureGroup(a, 1)
-        const seriesId = captureGroup(a, 2)?.toUpperCase()
-        const inner = captureGroup(a, 3) ?? ""
-        if (!seriesId || seen.has(seriesId)) continue
+        const attrsBefore = captureGroup(a, 1) ?? ""
+        const href = captureGroup(a, 2)
+        const seriesId = captureGroup(a, 3)?.toUpperCase()
+        const attrsAfter = captureGroup(a, 4) ?? ""
+        const inner = captureGroup(a, 5) ?? ""
+        if (!seriesId) continue
+
         const title = decodeEntities(
             stripAnchorNoise(inner)
                 .replace(/<[^>]+>/g, " ")
@@ -238,12 +253,29 @@ function extractSearchResults(html: string): SourceSearchResult[] {
                 .trim()
         )
         if (title.length < 2) continue
-        seen.add(seriesId)
+
+        const isCleanAnchor = LINK_HOVER_CLASS_RE.test(attrsBefore) || LINK_HOVER_CLASS_RE.test(attrsAfter)
+
+        const existing = bySeriesId.get(seriesId)
+        if (!existing) {
+            order.push(seriesId)
+            bySeriesId.set(seriesId, { href, title, isCleanAnchor })
+        } else if (isCleanAnchor && !existing.isCleanAnchor) {
+            // Prefer the desktop clean-title anchor over the mobile badge anchor, regardless of
+            // which one was encountered first in the document.
+            bySeriesId.set(seriesId, { href, title, isCleanAnchor })
+        }
+    }
+
+    const out: SourceSearchResult[] = []
+    for (const seriesId of order) {
+        const result = bySeriesId.get(seriesId)
+        if (!result) continue
         out.push({
             sourceId: SOURCE_ID,
             sourceMangaId: seriesId,
-            title,
-            url: href ? `${ORIGIN}${href}` : `${ORIGIN}/series/${seriesId}`
+            title: result.title,
+            url: result.href ? `${ORIGIN}${result.href}` : `${ORIGIN}/series/${seriesId}`
         })
     }
     return out
