@@ -111,6 +111,32 @@ describe("weebCentralAdapter.listChapters", () => {
         )
     })
 
+    // The CHAPTER_ID_2 anchor in seriesHtml reproduces the real per-row markup verbatim: a
+    // hidden "Last Read" span, an inline SVG with an embedded <style> block, and a trailing
+    // <time> element whose text content is a raw ISO timestamp, all inside the same <a>. None of
+    // that is a chapter tag, so plain tag-stripping alone would leak it straight into the title
+    // (e.g. "Chapter 2 Last Read .st0 { fill: #d3d629; } 2024-09-07T17:04:15.717343Z").
+    it("strips embedded style/time/last-read noise from a chapter anchor, keeping only the label", async () => {
+        const ctx = makeContext({ [`${ORIGIN}/series/${SERIES_ID}`]: seriesHtml })
+        const stubManga = {
+            manga: {
+                id: `weebcentral:manga:${SERIES_ID}`,
+                title: "Solo Leveling",
+                normalizedTitle: "solo leveling",
+                authors: [] as string[],
+                status: "unknown" as const,
+                addedAt: 0,
+                updatedAt: 0
+            },
+            sourceId: "weebcentral",
+            sourceMangaId: SERIES_ID,
+            url: SERIES_URL
+        }
+        const chapters = await adapter.listChapters({ manga: stubManga }, ctx as never)
+        const chapterTwo = chapters.find(c => c.sourceChapterId === "01HV3K9MXNP2Q4R6S8T1V2W4Y6")!
+        expect(chapterTwo.title).toBe("Chapter 2")
+    })
+
     // seriesHtml lists chapters newest-first (descending) - live-verified against a real
     // weebcentral series page. bonusSeriesHtml adds a non-numeric "Extra" chapter between
     // Chapter 3 and Chapter 4 in that same descending listing. The old code returned sortKey 0

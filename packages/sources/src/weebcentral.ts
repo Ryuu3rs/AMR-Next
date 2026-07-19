@@ -56,6 +56,20 @@ function chapterNumberFromText(text: string): number | undefined {
     return raw ? parseFloat(raw.replace("-", ".")) : undefined
 }
 
+// Chapter (and search-result) anchors on the live site can wrap more than just the label text:
+// a hidden "Last Read" indicator span, an inline SVG with an embedded <style> block, and (for
+// chapter anchors) a trailing <time> element whose text content is a raw ISO timestamp. Plain
+// tag-stripping only removes the tags themselves, not the CSS text sitting inside <style> or the
+// timestamp text sitting inside <time>, so both survive as literal text and leak into the
+// extracted label (e.g. "Chapter 200 Last Read .st0 { fill: #d3d629; } 2024-09-07T17:04:15Z").
+// Strip these blocks - content included, not just the tags - before the generic tag-strip runs.
+function stripAnchorNoise(html: string): string {
+    return html
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+        .replace(/<time\b[^>]*>[\s\S]*?<\/time>/gi, " ")
+        .replace(/<span\b[^>]*\bx-show="[^"]*"[^>]*>[\s\S]*?<\/span>/gi, " ")
+}
+
 function extractCoverUrl(html: string): string | undefined {
     const patterns = [
         /<meta\s[^>]*\bproperty="og:image"\s[^>]*\bcontent="(https?:\/\/[^"]+)"/i,
@@ -111,7 +125,7 @@ function extractChapterList(html: string, seriesId: string): SourceChapter[] {
         if (!chapterId || seen.has(chapterId)) continue
         seen.add(chapterId)
         const text = decodeEntities(
-            inner
+            stripAnchorNoise(inner)
                 .replace(/<[^>]+>/g, " ")
                 .replace(/\s+/g, " ")
                 .trim()
@@ -218,7 +232,7 @@ function extractSearchResults(html: string): SourceSearchResult[] {
         const inner = captureGroup(a, 3) ?? ""
         if (!seriesId || seen.has(seriesId)) continue
         const title = decodeEntities(
-            inner
+            stripAnchorNoise(inner)
                 .replace(/<[^>]+>/g, " ")
                 .replace(/\s+/g, " ")
                 .trim()
