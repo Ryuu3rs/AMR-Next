@@ -1,3 +1,9 @@
+export const FIXTURE_META = {
+    capturedAt: "2026-07-18",
+    sourceUrl: "https://mangahub.io/manga/hero-returns",
+    note: "Date inferred from git history, re-capture on next change."
+}
+
 export const SEARCH_QUERY = "solo"
 export const SEARCH_PATH_PAGE_1 = "/search/page/1"
 export const SEARCH_PATH_PAGE_2 = "/search/page/2"

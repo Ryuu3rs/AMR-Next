@@ -1,3 +1,9 @@
+export const FIXTURE_META = {
+    capturedAt: "2026-06-14",
+    sourceUrl: "https://api.mangadex.org/manga",
+    note: "API base these manga/chapter/feed/at-home JSON responses model; date inferred from git history, re-capture on next change."
+}
+
 export const MANGA_ID = "11111111-1111-4111-8111-111111111111"
 export const CHAPTER_ID = "22222222-2222-4222-8222-222222222222"
 export const SECOND_CHAPTER_ID = "33333333-3333-4333-8333-333333333333"

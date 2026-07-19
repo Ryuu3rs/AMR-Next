@@ -1,3 +1,9 @@
+export const FIXTURE_META = {
+    capturedAt: "2026-07-18",
+    sourceUrl: "https://www.mgeko.cc/manga/barbarians-adventure-in-a-fantasy-world/",
+    note: "Date inferred from git history, re-capture on next change."
+}
+
 export const MANGA_SLUG = "barbarians-adventure-in-a-fantasy-world"
 export const MANGA_PATH = `/manga/${MANGA_SLUG}/`
 export const MANGA_URL = `https://www.mgeko.cc${MANGA_PATH}`

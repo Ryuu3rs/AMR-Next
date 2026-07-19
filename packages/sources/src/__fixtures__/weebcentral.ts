@@ -1,5 +1,11 @@
 // Fixture data for Weeb Central adapter tests.
 // ULIDs must be exactly 26 chars from Crockford base32: [0-9A-HJKMNP-TV-Z].
+export const FIXTURE_META = {
+    capturedAt: "2026-07-19",
+    sourceUrl: "https://weebcentral.com/series/01J76XYCPSY3C4BNPBRY8JMCBE",
+    note: "sourceUrl from the fixture's live-verified comment; date inferred from git history, re-capture on next change."
+}
+
 export const SERIES_ID = "01HV3K9MXNP2Q4R6S8T0V2W4Y6"
 export const CHAPTER_ID = "01HV3K9MXNP2Q4R6S8T0V2W4Z9"
 const CHAPTER_ID_2 = "01HV3K9MXNP2Q4R6S8T1V2W4Y6"

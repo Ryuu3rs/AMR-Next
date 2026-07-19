@@ -1,3 +1,9 @@
+export const FIXTURE_META = {
+    capturedAt: "2026-06-14",
+    sourceUrl: "https://www.mangaread.org/manga/entomologist-in-sichuan-tang-clan/chapter-79/",
+    note: "Date inferred from git history, re-capture on next change."
+}
+
 export const MANGA_SLUG = "entomologist-in-sichuan-tang-clan"
 export const CHAPTER_SLUG = "chapter-79"
 export const CHAPTER_PATH = `/manga/${MANGA_SLUG}/${CHAPTER_SLUG}/`
