@@ -147,23 +147,56 @@ export const imagesHtml = `<img src="https://cdn.weebcentral.com/chapters/${CHAP
 <img src="https://cdn.weebcentral.com/chapters/${CHAPTER_ID}/002.jpg" alt="Page 2">
 <img src="https://cdn.weebcentral.com/chapters/${CHAPTER_ID}/003.jpg" alt="Page 3">`
 
-// Live-verified shape of the htmx /search/data response fragment: no surrounding <html> doc,
-// each result rendered as two anchors to the same series - an image-wrapper anchor with no text
-// content (which extractSearchResults must skip), followed by the real title anchor - both using
-// ABSOLUTE hrefs.
+// Live-verified shape of the htmx /search/data response fragment (no surrounding <html> doc):
+// each result renders TWO anchors to the same series, both using ABSOLUTE hrefs.
+//
+// The first anchor has no class attribute and wraps both a desktop cover image (hidden on
+// mobile) and a mobile-only card. The mobile card can carry an "Official" ribbon badge div ahead
+// of a truncated title div - when tag-stripped, that anchor's text reads "Official Solo Leveling"
+// instead of the clean title. The second anchor - later in the document, inside the desktop-only
+// details section - carries class="line-clamp-1 link link-hover" and has just the clean title
+// text. This is the reverse of what the old fixture modeled (clean anchor first, empty-text
+// image-wrapper anchor second), which is why the old test suite didn't catch the real bug: the
+// old buggy dedup kept whichever anchor for a seriesId was seen FIRST, so on the real site it
+// kept the badge-prefixed "Official Solo Leveling" title.
+//
+// The first result below includes the "Official" ribbon (an officially-licensed title); the
+// second does not (live-verified: only some results carry the ribbon - only the link-hover class
+// is present on every result, so that's the structural marker extractSearchResults must key on).
 export const searchHtml = `<article class="bg-base-300 flex gap-4 p-4">
   <a href="https://weebcentral.com/series/${SERIES_ID}/solo-leveling">
-    <article><img src="https://cdn.weebcentral.com/series/${SERIES_ID}/cover.jpg" alt="Solo Leveling cover"></article>
+    <article class="hidden lg:block w-full aspect-4/6 overflow-hidden">
+      <img src="https://cdn.weebcentral.com/series/${SERIES_ID}/cover.jpg" alt="Solo Leveling cover">
+    </article>
+    <article class="lg:hidden relative overflow-hidden">
+      <div class="absolute right-0 top-0 h-16 w-16">
+        <div class="absolute transform rotate-45 bg-orange-600 text-center text-white font-semibold py-1 right-[-55px] top-[12px] w-[170px]">Official</div>
+      </div>
+      <div class="w-full h-16 absolute bottom-0 flex flex-col items-center justify-center">
+        <div class="text-ellipsis truncate text-white text-center text-lg z-20 w-[90%]">Solo Leveling</div>
+      </div>
+    </article>
   </a>
-  <section>
-    <a href="https://weebcentral.com/series/${SERIES_ID}/solo-leveling" class="line-clamp-1 link link-hover">Solo Leveling</a>
+  <section class="hidden lg:block">
+    <span class="tooltip tooltip-bottom" data-tip="Solo Leveling">
+      <a href="https://weebcentral.com/series/${SERIES_ID}/solo-leveling" class="line-clamp-1 link link-hover">Solo Leveling</a>
+    </span>
   </section>
 </article>
 <article class="bg-base-300 flex gap-4 p-4">
   <a href="https://weebcentral.com/series/${SERIES_ID_2}/solo-leveling-2">
-    <article><img src="https://cdn.weebcentral.com/series/${SERIES_ID_2}/cover.jpg" alt="Solo Leveling 2 cover"></article>
+    <article class="hidden lg:block w-full aspect-4/6 overflow-hidden">
+      <img src="https://cdn.weebcentral.com/series/${SERIES_ID_2}/cover.jpg" alt="Solo Leveling 2 cover">
+    </article>
+    <article class="lg:hidden relative overflow-hidden">
+      <div class="w-full h-16 absolute bottom-0 flex flex-col items-center justify-center">
+        <div class="text-ellipsis truncate text-white text-center text-lg z-20 w-[90%]">Solo Leveling 2</div>
+      </div>
+    </article>
   </a>
-  <section>
-    <a href="https://weebcentral.com/series/${SERIES_ID_2}/solo-leveling-2" class="line-clamp-1 link link-hover">Solo Leveling 2</a>
+  <section class="hidden lg:block">
+    <span class="tooltip tooltip-bottom" data-tip="Solo Leveling 2">
+      <a href="https://weebcentral.com/series/${SERIES_ID_2}/solo-leveling-2" class="line-clamp-1 link link-hover">Solo Leveling 2</a>
+    </span>
   </section>
 </article>`
