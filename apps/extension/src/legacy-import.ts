@@ -47,8 +47,6 @@ const LEGACY_DOMAIN_ALIASES: Readonly<Record<string, string>> = {
     // match() rejects; fall back via alias so the source is still recognised as mangadex.
     "mangadex.org": "mangadex",
     "www.mangadex.org": "mangadex",
-    // Aqua Manga - import alias for the still-registered adapter
-    "aquamanga.com": "aquamanga",
     // ManhwaTop - still-registered Madara site
     "manhwatop.com": "manhwatop"
     // Removed 2026-07-16: manganato, mangapark, manhuaplus, mangabuddy, flamecomics,
