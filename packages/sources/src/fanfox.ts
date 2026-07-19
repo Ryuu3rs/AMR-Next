@@ -1,6 +1,8 @@
 import {
     SourceError,
+    UNNUMBERED_SORT_KEY,
     matchesSourceDomain,
+    parseChapterNumber,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -112,7 +114,7 @@ function extractChapterList(html: string, mangaSlug: string, sourceId: string, o
         const rawChapter = captureGroup(m, 2)
         if (!path || !rawChapter || seen.has(path)) continue
         seen.add(path)
-        const sortKey = parseFloat(rawChapter) || 0
+        const sortKey = parseChapterNumber(rawChapter) ?? UNNUMBERED_SORT_KEY
         chapters.push({
             id: `${sourceId}:chapter:${mangaSlug}:${rawChapter}`,
             mangaId,
@@ -313,7 +315,7 @@ export function createFanfoxFamilyAdapter(cfg: FanfoxFamilyConfig): SourceAdapte
                 sourceChapterId: chapterNum,
                 title: `Ch.${chapterNum}`,
                 url: canonicalUrl,
-                sortKey: parseFloat(chapterNum) || 0,
+                sortKey: parseChapterNumber(chapterNum) ?? UNNUMBERED_SORT_KEY,
                 language: "en"
             }
             // Images require JavaScript - chapter captured for panel prev/next, pages empty.

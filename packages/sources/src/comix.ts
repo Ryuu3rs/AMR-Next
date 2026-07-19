@@ -1,6 +1,8 @@
 import {
     SourceError,
+    UNNUMBERED_SORT_KEY,
     matchesSourceDomain,
+    parseChapterNumber,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -50,7 +52,7 @@ type ComixDetail = {
 }
 
 // Extract manga metadata from the <script id="initial-data"> JSON block.
-// Comix.to is a React app — metadata is SSR'd in a React Query dehydrated state.
+// Comix.to is a React app - metadata is SSR'd in a React Query dehydrated state.
 // `queries` is an object keyed by the JSON-stringified queryKey array (e.g.
 // `["manga","detail","<hid>"]`), NOT an array of {queryKey, state} entries.
 function extractFromInitialData(html: string): ComixDetail {
@@ -174,7 +176,7 @@ export const comixAdapter: SourceAdapter = {
     async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
         // The full chapter feed is client-side only (React Query, no public API found),
         // but the manga page's SSR "detail" data carries the first and latest chapter
-        // URLs/number directly — enough to keep latestChapterNumber from going stale.
+        // URLs/number directly - enough to keep latestChapterNumber from going stale.
         // The on-page sidebar mines the rest as the user reads (mineAndCacheEpisodesFromHtml).
         const slug = input.manga.sourceMangaId
         const { latestChapter, latestChapterUrl, firstChapterUrl } = await fetchMangaData(slug, context)
@@ -188,7 +190,10 @@ export const comixAdapter: SourceAdapter = {
             const parts = matchChapterParts(new URL(href, ORIGIN))
             if (!parts) continue
             const chapterNum = parts.chapterNum
-            const sortKey = parseFloat(chapterNum) || fallbackNum || 0
+            // A genuine "0" must survive as sortKey 0 (Chapter 0), not fall through
+            // to the fallback - parseChapterNumber("0") returns 0, only unparseable
+            // input returns undefined and defers to fallbackNum.
+            const sortKey = parseChapterNumber(chapterNum) ?? fallbackNum ?? UNNUMBERED_SORT_KEY
             const id = `${SOURCE_ID}:chapter:${slug}:${chapterNum}`
             if (out.some(c => c.id === id)) continue
             out.push({
@@ -219,7 +224,7 @@ export const comixAdapter: SourceAdapter = {
         return []
     },
 
-    // No search endpoint available — omitting `search` so canSearch reports false
+    // No search endpoint available - omitting `search` so canSearch reports false
     // instead of presenting Comix as searchable and silently returning zero results.
 
     async resolveChapter(input: ResolveChapterInput, context: SourceContext): Promise<ResolvedChapter> {
@@ -254,11 +259,11 @@ export const comixAdapter: SourceAdapter = {
             sourceChapterId: chapterNum,
             title: `Ch.${chapterNum}`,
             url: input.url.toString(),
-            sortKey: parseFloat(chapterNum) || 0,
+            sortKey: parseChapterNumber(chapterNum) ?? UNNUMBERED_SORT_KEY,
             language: "en"
         }
 
-        // Images require JavaScript — chapter captured for panel tracking, pages empty.
+        // Images require JavaScript - chapter captured for panel tracking, pages empty.
         return { manga, chapter, pages: [] }
     }
 }

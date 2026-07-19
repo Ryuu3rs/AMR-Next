@@ -165,6 +165,74 @@ describe("export / import round-trip", () => {
         expect(restored?.latestChapterNumber).toBe(5)
     })
 
+    // An unnumbered chapter is stored with sortKey = Number.POSITIVE_INFINITY
+    // (UNNUMBERED_SORT_KEY). IndexedDB keeps that, but a backup file is JSON and
+    // JSON.stringify turns Infinity into null. The import chapter schema must round-
+    // trip that null back to the sentinel; otherwise the finite() check skips the
+    // whole chapter on restore. This test FAILS before the schema fix (chapter
+    // dropped as RECORD_INVALID) and passes after.
+    it("round-trips an unnumbered chapter (sortKey Infinity -> null in JSON) without skipping it, its progress, or its bookmark", async () => {
+        const oneshot: ChapterRecord = {
+            id: "mangadex:chapter:oneshot",
+            mangaId: manga.id,
+            sourceId: "mangadex",
+            title: "Oneshot",
+            url: "https://mangadex.org/chapter/oneshot",
+            sortKey: Number.POSITIVE_INFINITY
+        }
+        await saveResolvedChapter({ manga, chapter: oneshot, sourceLink })
+        await saveProgress({
+            mangaId: manga.id,
+            chapterId: oneshot.id,
+            pageIndex: 3,
+            pageCount: 10,
+            completed: false,
+            updatedAt: 1_700_000_000_000
+        })
+        const bookmark: PageBookmark = {
+            id: `${oneshot.id}:3`,
+            mangaId: manga.id,
+            chapterId: oneshot.id,
+            pageIndex: 3,
+            mangaTitle: manga.title,
+            chapterTitle: oneshot.title,
+            chapterUrl: oneshot.url,
+            addedAt: 1_700_000_000_000
+        }
+        await db.pageBookmarks.put(bookmark)
+
+        // Runtime IndexedDB keeps the sentinel as-is.
+        expect((await db.chapters.get(oneshot.id))?.sortKey).toBe(Number.POSITIVE_INFINITY)
+
+        // Simulate a real backup file: export -> JSON.stringify -> JSON.parse. This is
+        // where Infinity becomes null.
+        const envelope = await exportDatabase()
+        const serialized = JSON.parse(JSON.stringify(envelope)) as typeof envelope
+        const serializedChapter = serialized.data.chapters.find(c => c.id === oneshot.id)
+        expect(serializedChapter).toBeDefined()
+        expect(serializedChapter?.sortKey).toBeNull()
+
+        await Promise.all([
+            db.manga.clear(),
+            db.chapters.clear(),
+            db.sourceLinks.clear(),
+            db.progress.clear(),
+            db.pageBookmarks.clear()
+        ])
+
+        const result = await importDatabase(serialized)
+
+        // The chapter survived import with its sentinel restored - not skipped.
+        expect(result.skipped).toEqual([])
+        const restoredChapter = await db.chapters.get(oneshot.id)
+        expect(restoredChapter).toBeDefined()
+        expect(restoredChapter?.sortKey).toBe(Number.POSITIVE_INFINITY)
+
+        // Its progress and bookmark were not lost in the process.
+        expect(await db.progress.get(oneshot.id)).toBeDefined()
+        expect(await db.pageBookmarks.get(bookmark.id)).toBeDefined()
+    })
+
     it("rejects a malformed envelope", async () => {
         await expect(importDatabase({ format: "wrong", version: 9, data: {} })).rejects.toThrow(/invalid/i)
     })

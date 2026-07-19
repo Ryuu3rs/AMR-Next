@@ -1,5 +1,6 @@
 import {
     SourceError,
+    UNNUMBERED_SORT_KEY,
     matchesSourceDomain,
     type ListChaptersInput,
     type ResolveChapterInput,
@@ -444,7 +445,7 @@ export const kaganeAdapter: SourceAdapter = {
             sourceChapterId: chapterId,
             title: "Chapter",
             url: readerUrl(seriesId, chapterId),
-            sortKey: Number.POSITIVE_INFINITY,
+            sortKey: UNNUMBERED_SORT_KEY,
             language: LANGUAGE
         }
 

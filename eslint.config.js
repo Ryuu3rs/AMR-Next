@@ -53,5 +53,23 @@ export default tseslint.config(
             "svelte/require-each-key": "off",
             "svelte/prefer-svelte-reactivity": "off"
         }
+    },
+    {
+        // Closes the "sortKey 0" bug class permanently: a sortKey must never fall
+        // back to a literal 0 (0 sorts before Chapter 1 AND clobbers reading
+        // progress). It must come from parseChapterNumber / assignListSortKeys /
+        // UNNUMBERED_SORT_KEY instead. See packages/source-sdk/src/chapter-numbering.ts.
+        files: ["packages/sources/src/**/*.ts"],
+        rules: {
+            "no-restricted-syntax": [
+                "error",
+                {
+                    selector:
+                        "Property[key.name='sortKey'] > LogicalExpression:matches([operator='||'], [operator='??']) > Literal[value=0]",
+                    message:
+                        "sortKey must come from parseChapterNumber/assignListSortKeys/UNNUMBERED_SORT_KEY, never a 0 fallback"
+                }
+            ]
+        }
     }
 )

@@ -1,8 +1,12 @@
 import {
     SourceError,
     SourceRequestError,
+    UNNUMBERED_SORT_KEY,
+    assignListSortKeys,
     decodeHtmlEntities as decodeEntities,
     matchesSourceDomain,
+    parseChapterNumber,
+    sanitizeScrapedText,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -358,39 +362,23 @@ function extractChapterList(
         const chapterSlug = absolute.pathname.replace(/\/$/, "").split("/").pop()
         if (!chapterSlug || seen.has(chapterSlug)) continue
         seen.add(chapterSlug)
-        const label = (anchor ? (captureGroup(anchor, 2) ?? "") : "").replace(/<[^>]+>/g, "").trim()
+        const label = sanitizeScrapedText(anchor ? (captureGroup(anchor, 2) ?? "") : "")
         const numMatch = label.match(/(\d+(?:\.\d+)?)/) ?? chapterSlug.match(/(\d+(?:\.\d+)?)/)
         const numberStr = numMatch ? captureGroup(numMatch, 1) : undefined
-        entries.push({ chapterSlug, absolute, label, number: numberStr ? parseFloat(numberStr) : undefined })
+        entries.push({ chapterSlug, absolute, label, number: parseChapterNumber(numberStr) })
     }
 
-    const firstParsed = entries.find(e => e.number !== undefined)?.number
-    const lastParsed = [...entries].reverse().find(e => e.number !== undefined)?.number
-    const descending = firstParsed !== undefined && lastParsed !== undefined && firstParsed > lastParsed
-    const chronological = descending ? [...entries].reverse() : entries
-
-    let lastRealKey = 0
-    let unparsedRun = 0
-    const sortKeyBySlug = new Map<string, number>()
-    for (const entry of chronological) {
-        if (entry.number !== undefined) {
-            sortKeyBySlug.set(entry.chapterSlug, entry.number)
-            lastRealKey = entry.number
-            unparsedRun = 0
-        } else {
-            unparsedRun += 1
-            sortKeyBySlug.set(entry.chapterSlug, lastRealKey + unparsedRun / 1000)
-        }
-    }
-
-    return entries.map(entry => ({
+    // Madara chapter lists render newest-first (descending). Unnumbered bonus
+    // entries interpolate between the real chapters they sit next to.
+    const sortKeys = assignListSortKeys(entries, e => e.number, "newest-first")
+    return entries.map((entry, i) => ({
         id: `${config.id}:chapter:${slug}:${entry.chapterSlug}`,
         mangaId,
         sourceId: config.id,
         sourceChapterId: `${slug}:${entry.chapterSlug}`,
         title: entry.label || `Chapter ${entry.number ?? "?"}`,
         url: entry.absolute.toString(),
-        sortKey: sortKeyBySlug.get(entry.chapterSlug) ?? 0,
+        sortKey: sortKeys[i] as number,
         language
     }))
 }
@@ -685,7 +673,7 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
                     sourceChapterId: `${slugs.mangaSlug}:${slugs.chapterSlug}`,
                     title: `Chapter ${chapterNumber}`,
                     url: input.url.toString(),
-                    sortKey: parseFloat(chapterNumber) || 0,
+                    sortKey: parseChapterNumber(chapterNumber) ?? UNNUMBERED_SORT_KEY,
                     language
                 }
                 return { manga, chapter, pages: [] }
@@ -747,7 +735,7 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
                 sourceChapterId: `${slugs.mangaSlug}:${slugs.chapterSlug}`,
                 title: `Chapter ${chapterNumber}`,
                 url: input.url.toString(),
-                sortKey: parseFloat(chapterNumber) || 0,
+                sortKey: parseChapterNumber(chapterNumber) ?? UNNUMBERED_SORT_KEY,
                 language
             }
 

@@ -1,6 +1,8 @@
 import {
     SourceError,
+    UNNUMBERED_SORT_KEY,
     matchesSourceDomain,
+    parseChapterNumber,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -177,14 +179,6 @@ function mapManga(data: z.infer<typeof mangaSchema>, now: number): SourceManga {
     }
 }
 
-function chapterSortKey(chapter: string | null | undefined): number {
-    if (!chapter) {
-        return 0
-    }
-    const parsed = Number.parseFloat(chapter)
-    return Number.isFinite(parsed) ? parsed : 0
-}
-
 function mapChapter(data: z.infer<typeof chapterSchema>, mangaId: string): SourceChapter {
     const number = data.attributes.chapter?.trim()
     const subtitle = data.attributes.title?.trim()
@@ -197,7 +191,10 @@ function mapChapter(data: z.infer<typeof chapterSchema>, mangaId: string): Sourc
         sourceChapterId: data.id,
         title,
         url: chapterUrl(data.id),
-        sortKey: chapterSortKey(number),
+        // A null/oneshot/unparseable chapter number is unnumbered - it must sort to
+        // the end, never collapse to sortKey 0 (which sorts before Chapter 1 and
+        // clobbers reading progress). A literal "0" stays 0 (a genuine Chapter 0).
+        sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
         language: data.attributes.translatedLanguage
     }
 }

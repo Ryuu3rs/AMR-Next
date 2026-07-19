@@ -1,6 +1,9 @@
 import {
     SourceError,
+    UNNUMBERED_SORT_KEY,
     matchesSourceDomain,
+    parseChapterNumber,
+    sanitizeScrapedText,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -91,7 +94,7 @@ function extractChapterLinks(html: string, slug: string): Array<{ num: string; t
         // Try to find a title div near the link - best-effort; fall back to "Ch.N"
         const afterHref = html.slice(m.index ?? 0, (m.index ?? 0) + 600)
         const divTexts = [...afterHref.matchAll(/<div[^>]*>([\s\S]*?)<\/div>/gi)]
-            .map(d => decodeHtml((captureGroup(d, 1) ?? "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ")))
+            .map(d => sanitizeScrapedText(captureGroup(d, 1) ?? ""))
             .filter(t => t.length > 2 && t.length < 120 && !/^\d/.test(t) && !/ago$/.test(t))
         const title = divTexts[0] ?? `Ch.${num}`
 
@@ -226,7 +229,7 @@ export const olympusstaffAdapter: SourceAdapter = {
                 sourceChapterId: l.num,
                 title: l.title,
                 url: l.url,
-                sortKey: parseFloat(l.num) || 0,
+                sortKey: parseChapterNumber(l.num) ?? UNNUMBERED_SORT_KEY,
                 language: "en"
             }))
             .sort((a, b) => b.sortKey - a.sortKey)
@@ -266,7 +269,7 @@ export const olympusstaffAdapter: SourceAdapter = {
                 const inner = captureGroup(m, 2) ?? ""
                 if (!slug || seen.has(slug)) continue
                 seen.add(slug)
-                const title = decodeHtml(inner.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "))
+                const title = sanitizeScrapedText(inner)
                 if (title.length < 2) continue
                 const imgM = inner.match(/\bsrc="(https?:\/\/[^"]+)"/)
                 out.push({
@@ -326,7 +329,7 @@ export const olympusstaffAdapter: SourceAdapter = {
             sourceChapterId: chapterNum,
             title: `Ch.${chapterNum}`,
             url: input.url.toString(),
-            sortKey: parseFloat(chapterNum) || 0,
+            sortKey: parseChapterNumber(chapterNum) ?? UNNUMBERED_SORT_KEY,
             language: "en"
         }
 

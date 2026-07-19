@@ -1,8 +1,11 @@
 import {
     SourceError,
     SourceRequestError,
+    UNNUMBERED_SORT_KEY,
     decodeHtmlEntities as decodeEntities,
     matchesSourceDomain,
+    parseChapterNumber,
+    sanitizeScrapedText,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -153,7 +156,7 @@ function extractGenres(html: string): string[] {
     for (const a of anchors) {
         const href = captureGroup(a, 1) ?? ""
         if (!mgenMatch && !/\/genres?\//i.test(href)) continue
-        const text = decodeEntities((captureGroup(a, 2) ?? "").replace(/<[^>]+>/g, "")).trim()
+        const text = sanitizeScrapedText(captureGroup(a, 2) ?? "")
         const key = text.toLowerCase()
         if (text.length < 2 || seen.has(key)) continue
         seen.add(key)
@@ -285,7 +288,7 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
                 sourceChapterId: cslug,
                 title: `Chapter ${number}`,
                 url: absolute.toString(),
-                sortKey: parseFloat(number) || 0,
+                sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
                 language
             })
         }
@@ -432,7 +435,7 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
                 sourceChapterId: slug,
                 title: `Chapter ${number}`,
                 url: input.url.toString(),
-                sortKey: parseFloat(number) || 0,
+                sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
                 language
             }
 

@@ -4,6 +4,7 @@
 // (no preferences/sourceHealth tables here). Built from the contract record schemas
 // so record-level rules stay shared.
 import { chapterRecordSchema, mangaRecordSchema, readingProgressSchema, sourceLinkRecordSchema } from "@amr/contracts"
+import { UNNUMBERED_SORT_KEY } from "@amr/source-sdk"
 import { z } from "zod"
 
 export const libraryMangaSchema = mangaRecordSchema.extend({
@@ -40,7 +41,18 @@ export const libraryMangaSchema = mangaRecordSchema.extend({
 // contract schema at the import/export boundary instead of loosening the contract
 // schema itself (which other, stricter consumers rely on).
 export const importChapterSchema = chapterRecordSchema.extend({
-    sourceChapterId: z.string().optional()
+    sourceChapterId: z.string().optional(),
+    // An unnumbered chapter stores sortKey = UNNUMBERED_SORT_KEY
+    // (Number.POSITIVE_INFINITY) at runtime. IndexedDB keeps that, but a backup
+    // file is JSON, and JSON.stringify turns Infinity into null. The bare contract
+    // schema's `sortKey: z.number().finite()` would then reject the whole chapter on
+    // restore - cascade-skipping its progress and page bookmarks too. Round-trip it
+    // at the import boundary only (the runtime write schema intentionally still
+    // allows Infinity): accept null - and defensively any non-finite value - and map
+    // it back to the sentinel. A genuine finite sortKey passes through unchanged.
+    sortKey: z
+        .union([z.number(), z.null()])
+        .transform(value => (value === null || !Number.isFinite(value) ? UNNUMBERED_SORT_KEY : value))
 })
 
 export const historyEventSchema = z.object({

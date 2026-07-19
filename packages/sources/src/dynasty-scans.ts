@@ -1,6 +1,10 @@
 import {
     SourceError,
+    UNNUMBERED_SORT_KEY,
+    assignListSortKeys,
     decodeHtmlEntities as decodeEntities,
+    parseChapterNumber,
+    sanitizeScrapedText,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -68,10 +72,10 @@ function extractChapterSlug(url: URL): string | undefined {
 function chapterSortKey(title: string): number | undefined {
     // Explicit chapter label
     const labeled = title.match(/(?:ch(?:apter)?\.?\s*)(\d+(?:[._-]\d+)?)/i)
-    if (labeled) return parseFloat((captureGroup(labeled, 1) ?? "0").replace(/[_-]/, "."))
+    if (labeled) return parseChapterNumber((captureGroup(labeled, 1) ?? "").replace(/[_-]/, "."))
     // Trailing number in title
     const trailing = title.match(/(\d+(?:\.\d+)?)\s*$/)
-    if (trailing) return parseFloat(captureGroup(trailing, 1) ?? "0")
+    if (trailing) return parseChapterNumber(captureGroup(trailing, 1))
     return undefined
 }
 
@@ -83,16 +87,16 @@ function extractTitle(html: string, fallback: string): string {
     if (og) {
         const raw = decodeEntities(captureGroup(og, 1) ?? "")
         // Strip trailing " | Dynasty Scans" etc.
-        const cleaned = raw.split(/\s*[|–-]\s*Dynasty/i)[0]?.trim()
+        const cleaned = raw.split(/\s*[|\u2013-]\s*Dynasty/i)[0]?.trim()
         if (cleaned && cleaned.length > 1) return cleaned
     }
     const h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)
-    const h1Text = h1 ? decodeEntities((captureGroup(h1, 1) ?? "").replace(/<[^>]+>/g, "").trim()) : ""
+    const h1Text = h1 ? sanitizeScrapedText(captureGroup(h1, 1) ?? "") : ""
     if (h1Text.length > 1) return h1Text
     const docTitle = html.match(/<title>([^<]+)<\/title>/i)
     if (docTitle) {
         const raw = decodeEntities(captureGroup(docTitle, 1) ?? "")
-        const cleaned = raw.split(/\s*[|–-]\s*/)[0]?.trim()
+        const cleaned = raw.split(/\s*[|\u2013-]\s*/)[0]?.trim()
         if (cleaned && cleaned.length > 1) return cleaned
     }
     return fallback
@@ -130,10 +134,8 @@ function extractCoverUrl(html: string): string | undefined {
 // sorting before every real chapter (the previous bug).
 function extractChapterList(html: string, seriesSlug: string): SourceChapter[] {
     const parentId = `${SOURCE_ID}:manga:${seriesSlug}`
-    const out: SourceChapter[] = []
     const seen = new Set<string>()
-    let lastRealKey = 0
-    let unparsedRun = 0
+    const entries: { chapterSlug: string; rawTitle: string; parsedKey: number | undefined }[] = []
 
     for (const a of html.matchAll(/<a\b[^>]*\bhref="(\/chapters\/([a-z0-9_-]+))[^"]*"[^>]*>([\s\S]*?)<\/a>/gi)) {
         const href = captureGroup(a, 1)
@@ -142,37 +144,26 @@ function extractChapterList(html: string, seriesSlug: string): SourceChapter[] {
         if (!chapterSlug || !href || seen.has(chapterSlug)) continue
         seen.add(chapterSlug)
 
-        const rawTitle = decodeEntities(
-            inner
-                .replace(/<[^>]+>/g, " ")
-                .replace(/\s+/g, " ")
-                .trim()
-        )
+        const rawTitle = sanitizeScrapedText(inner)
         // Skip navigation/UI links that aren't chapter entries
         if (!rawTitle || rawTitle.length < 1) continue
 
-        const parsedKey = chapterSortKey(rawTitle)
-        let sortKey: number
-        if (parsedKey !== undefined) {
-            sortKey = parsedKey
-            lastRealKey = parsedKey
-            unparsedRun = 0
-        } else {
-            unparsedRun += 1
-            sortKey = lastRealKey + unparsedRun / 1000
-        }
-        out.push({
-            id: `${SOURCE_ID}:chapter:${chapterSlug}`,
-            mangaId: parentId,
-            sourceId: SOURCE_ID,
-            sourceChapterId: chapterSlug,
-            title: rawTitle,
-            url: `${ORIGIN}/chapters/${chapterSlug}`,
-            sortKey,
-            language: "en"
-        })
+        entries.push({ chapterSlug, rawTitle, parsedKey: chapterSortKey(rawTitle) })
     }
-    return out
+
+    // Dynasty lists chapters oldest-first (Chapter 1 at the top). Unnumbered
+    // bonus/extra/interlude entries interpolate at their real reading position.
+    const sortKeys = assignListSortKeys(entries, e => e.parsedKey, "oldest-first")
+    return entries.map((entry, i) => ({
+        id: `${SOURCE_ID}:chapter:${entry.chapterSlug}`,
+        mangaId: parentId,
+        sourceId: SOURCE_ID,
+        sourceChapterId: entry.chapterSlug,
+        title: entry.rawTitle,
+        url: `${ORIGIN}/chapters/${entry.chapterSlug}`,
+        sortKey: sortKeys[i] as number,
+        language: "en"
+    }))
 }
 
 // Extract pages from the embedded JSON in a chapter page.
@@ -221,7 +212,7 @@ function extractChapterPageMeta(html: string): { seriesSlug?: string; title: str
     // isolation - there's no surrounding chapter list to interpolate a position from. Fall
     // back to +Infinity (not 0) so an unparseable title (e.g. "Toranoana Extra") sorts to the
     // end of a chapter list rather than before every real chapter.
-    const sortKey = chapterSortKey(title) ?? Number.POSITIVE_INFINITY
+    const sortKey = chapterSortKey(title) ?? UNNUMBERED_SORT_KEY
     return { ...(seriesSlug ? { seriesSlug } : {}), title: title || "Chapter", sortKey }
 }
 
@@ -235,12 +226,7 @@ function extractSearchResults(html: string): SourceSearchResult[] {
         const seriesSlug = captureGroup(a, 1)
         const inner = captureGroup(a, 2) ?? ""
         if (!seriesSlug || seen.has(seriesSlug)) continue
-        const title = decodeEntities(
-            inner
-                .replace(/<[^>]+>/g, " ")
-                .replace(/\s+/g, " ")
-                .trim()
-        )
+        const title = sanitizeScrapedText(inner)
         if (title.length < 2) continue
         seen.add(seriesSlug)
         out.push({
