@@ -83,6 +83,7 @@ export const readerHandlers: HandlerMap = {
                 })
             }
         }
+        publishLive(["chapters"], [resolved.manga.manga.id])
         return resolved
     },
 
