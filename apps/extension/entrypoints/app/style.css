@@ -345,10 +345,6 @@ button:disabled {
     display: block;
 }
 
-.poster img[data-source="vortexscans"] {
-    object-position: right center;
-}
-
 .cover-initial {
     display: grid;
     place-items: center;
@@ -2551,9 +2547,6 @@ button:disabled {
     height: 100%;
     object-fit: cover;
     display: block;
-}
-.list-cover img[data-source="vortexscans"] {
-    object-position: right center;
 }
 .list-cover .cover-initial {
     font-size: 1.1rem;
