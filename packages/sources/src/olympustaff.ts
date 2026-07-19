@@ -88,7 +88,7 @@ function extractChapterLinks(html: string, slug: string): Array<{ num: string; t
         if (!num || seen.has(num)) continue
         seen.add(num)
 
-        // Try to find a title div near the link — best-effort; fall back to "Ch.N"
+        // Try to find a title div near the link - best-effort; fall back to "Ch.N"
         const afterHref = html.slice(m.index ?? 0, (m.index ?? 0) + 600)
         const divTexts = [...afterHref.matchAll(/<div[^>]*>([\s\S]*?)<\/div>/gi)]
             .map(d => decodeHtml((captureGroup(d, 1) ?? "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ")))
@@ -260,7 +260,8 @@ export const olympusstaffAdapter: SourceAdapter = {
             const html = await context.request.getText(url, { headers: BROWSER_HEADERS })
             const out: SourceSearchResult[] = []
             const seen = new Set<string>()
-            for (const m of html.matchAll(/href="\/series\/([^/"]+)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+            const searchResultRe = new RegExp(`href="(?:${ORIGIN})?/series/([^/"]+)"[^>]*>([\\s\\S]*?)<\\/a>`, "gi")
+            for (const m of html.matchAll(searchResultRe)) {
                 const slug = captureGroup(m, 1)
                 const inner = captureGroup(m, 2) ?? ""
                 if (!slug || seen.has(slug)) continue
@@ -296,7 +297,7 @@ export const olympusstaffAdapter: SourceAdapter = {
 
         const imageUrls = extractImages(html)
         if (imageUrls.length === 0) {
-            throw new SourceError("invalid-response", "No chapter images found — the page may require JavaScript")
+            throw new SourceError("invalid-response", "No chapter images found - the page may require JavaScript")
         }
 
         const title = extractTitle(html) ?? slug.toUpperCase()
