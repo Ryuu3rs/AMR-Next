@@ -323,6 +323,15 @@ function extractSearchResults(html: string, config: MadaraConfig, mangaPath: str
 }
 
 // Parse a Madara chapter list (from the manga page or the admin-ajax fragment).
+//
+// Madara chapter lists render newest-first (descending chapter number) - live-verified
+// against tritinia.org/manga/live-dungeon/ajax/chapters/ (Chapter 88 first, counting down
+// to Chapter 1 last). Bonus/extra entries with no parseable chapter number (e.g. "Extra",
+// "Oneshot") get their sortKey interpolated between the two real chapter numbers they sit
+// next to in the document, walking forward in chronological (ascending) order - detected
+// from the document regardless of whether it happens to list chapters ascending or
+// descending, so an unparseable title never collapses to sortKey 0 and sorts before every
+// real chapter (the previous bug).
 function extractChapterList(
     html: string,
     config: MadaraConfig,
@@ -334,8 +343,8 @@ function extractChapterList(
     const items = [...html.matchAll(/<li[^>]*\bwp-manga-chapter\b[^>]*>([\s\S]*?)<\/li>/gi)].map(
         m => captureGroup(m, 1) ?? ""
     )
-    const out: SourceChapter[] = []
     const seen = new Set<string>()
+    const entries: { chapterSlug: string; absolute: URL; label: string; number: number | undefined }[] = []
     for (const item of items) {
         const anchor = item.match(/<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i)
         const href = anchor ? captureGroup(anchor, 1) : undefined
@@ -351,19 +360,39 @@ function extractChapterList(
         seen.add(chapterSlug)
         const label = (anchor ? (captureGroup(anchor, 2) ?? "") : "").replace(/<[^>]+>/g, "").trim()
         const numMatch = label.match(/(\d+(?:\.\d+)?)/) ?? chapterSlug.match(/(\d+(?:\.\d+)?)/)
-        const number = numMatch ? captureGroup(numMatch, 1) : undefined
-        out.push({
-            id: `${config.id}:chapter:${slug}:${chapterSlug}`,
-            mangaId,
-            sourceId: config.id,
-            sourceChapterId: `${slug}:${chapterSlug}`,
-            title: label || `Chapter ${number ?? "?"}`,
-            url: absolute.toString(),
-            sortKey: number ? parseFloat(number) : 0,
-            language
-        })
+        const numberStr = numMatch ? captureGroup(numMatch, 1) : undefined
+        entries.push({ chapterSlug, absolute, label, number: numberStr ? parseFloat(numberStr) : undefined })
     }
-    return out
+
+    const firstParsed = entries.find(e => e.number !== undefined)?.number
+    const lastParsed = [...entries].reverse().find(e => e.number !== undefined)?.number
+    const descending = firstParsed !== undefined && lastParsed !== undefined && firstParsed > lastParsed
+    const chronological = descending ? [...entries].reverse() : entries
+
+    let lastRealKey = 0
+    let unparsedRun = 0
+    const sortKeyBySlug = new Map<string, number>()
+    for (const entry of chronological) {
+        if (entry.number !== undefined) {
+            sortKeyBySlug.set(entry.chapterSlug, entry.number)
+            lastRealKey = entry.number
+            unparsedRun = 0
+        } else {
+            unparsedRun += 1
+            sortKeyBySlug.set(entry.chapterSlug, lastRealKey + unparsedRun / 1000)
+        }
+    }
+
+    return entries.map(entry => ({
+        id: `${config.id}:chapter:${slug}:${entry.chapterSlug}`,
+        mangaId,
+        sourceId: config.id,
+        sourceChapterId: `${slug}:${entry.chapterSlug}`,
+        title: entry.label || `Chapter ${entry.number ?? "?"}`,
+        url: entry.absolute.toString(),
+        sortKey: sortKeyBySlug.get(entry.chapterSlug) ?? 0,
+        language
+    }))
 }
 
 export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
