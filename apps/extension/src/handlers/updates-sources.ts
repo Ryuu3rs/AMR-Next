@@ -1,6 +1,6 @@
 import { sourceRegistry } from "@amr/sources"
 import { matchesSourceDomain } from "@amr/source-sdk"
-import { db, type LibraryManga } from "../database"
+import { applyUpdateCheckResult, db, repairMangahubChapters, updateManga, type LibraryManga } from "../database"
 import {
     checkSourcePermission,
     getMangaChapters,
@@ -116,39 +116,31 @@ export async function checkUpdates(sourceId?: string) {
                         (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
                         chapters[0]
                     )
-                    let latestChanged = false
-                    await db.transaction("rw", db.chapters, db.manga, async () => {
-                        await db.chapters.bulkPut(chapters)
-                        if (link.sourceId === "mangahub") {
-                            await purgeStaleMangahubChapterRows(item.id, new Set(chapters.map(c => c.id)))
-                        }
-                        if (latest && latest.id !== item.latestChapterId) {
-                            // Always re-point on an id change - this is the self-heal path merges
-                            // and relinks rely on (a carried/dangling latestChapterId gets
-                            // replaced by the source's real latest row, and a merge-inflated
-                            // latestChapterNumber drops back to the source's true count - see
-                            // mergeMangaRecords's cross-source policy). But only COUNT it as an
-                            // update and publish a live event when the chapter number actually
-                            // advanced: an id change with a same-or-lower number is a re-slug or
-                            // a post-merge correction, not a new chapter, and reporting it
-                            // inflated the "N updated" status and pushed phantom entries onto
-                            // the Updates page. Chapters without a finite sortKey can't be
-                            // compared, so they keep the old id-change-means-updated behavior.
-                            const advanced =
-                                !Number.isFinite(latest.sortKey) || latest.sortKey > (item.latestChapterNumber ?? -1)
-                            if (advanced) {
-                                updated += 1
-                                latestChanged = true
-                            }
-                            await db.manga.update(item.id, {
-                                latestChapterId: latest.id,
-                                sourceUrl: latest.url,
-                                ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
-                                updatedAt: Date.now()
-                            })
-                        }
+                    // Always re-point on an id change - this is the self-heal path merges
+                    // and relinks rely on (a carried/dangling latestChapterId gets
+                    // replaced by the source's real latest row, and a merge-inflated
+                    // latestChapterNumber drops back to the source's true count - see
+                    // mergeMangaRecords's cross-source policy). But only COUNT it as an
+                    // update and publish a live event when the chapter number actually
+                    // advanced: an id change with a same-or-lower number is a re-slug or
+                    // a post-merge correction, not a new chapter, and reporting it
+                    // inflated the "N updated" status and pushed phantom entries onto
+                    // the Updates page. Chapters without a finite sortKey can't be
+                    // compared, so they keep the old id-change-means-updated behavior.
+                    const { advanced } = await applyUpdateCheckResult({
+                        mangaId: item.id,
+                        chapters,
+                        latest,
+                        previousLatestChapterId: item.latestChapterId,
+                        previousLatestChapterNumber: item.latestChapterNumber,
+                        ...(link.sourceId === "mangahub"
+                            ? { purgeStaleMangahub: (ids: Set<string>) => purgeStaleMangahubChapterRows(item.id, ids) }
+                            : {})
                     })
-                    if (latestChanged) publishLive(["chapters", "library"], [item.id])
+                    if (advanced) {
+                        updated += 1
+                        publishLive(["chapters", "library"], [item.id])
+                    }
                     checked += 1
                 } catch (error) {
                     if (isBotBlocked(error)) {
@@ -258,21 +250,13 @@ export async function repairMangahubChapterNumbers(): Promise<void> {
 
                 // Guard against writing back to a manga a concurrent remove/merge
                 // deleted while the chapter-list fetch above was in flight - the
-                // existence check is the first statement inside this transaction so
+                // existence check is the first statement inside the transaction so
                 // both the writes AND the publishLive call below are gated on it.
-                const stillExists = await db.transaction("rw", db.chapters, db.manga, async () => {
-                    if ((await db.manga.get(manga.id)) === undefined) return false
-                    await db.chapters.bulkPut(chapters)
-                    await purgeStaleMangahubChapterRows(manga.id, new Set(chapters.map(c => c.id)))
-                    if (latest) {
-                        await db.manga.update(manga.id, {
-                            latestChapterId: latest.id,
-                            sourceUrl: latest.url,
-                            ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
-                            updatedAt: Date.now()
-                        })
-                    }
-                    return true
+                const stillExists = await repairMangahubChapters({
+                    mangaId: manga.id,
+                    chapters,
+                    latest,
+                    purgeStaleMangahub: (ids: Set<string>) => purgeStaleMangahubChapterRows(manga.id, ids)
                 })
                 if (stillExists) publishLive(["chapters", "library"], [manga.id])
             } catch (error) {
@@ -333,7 +317,7 @@ export async function backfillMangaGenres(): Promise<void> {
                     ...(manga.mangaUrl ? { mangaUrl: manga.mangaUrl } : {})
                 })
                 if (genres.length > 0) {
-                    await db.manga.update(manga.id, { genres } as Partial<LibraryManga>)
+                    await updateManga(manga.id, { genres } as Partial<LibraryManga>)
                 }
             } catch {
                 // Skip - source may not support genres or fetch failed transiently
@@ -512,7 +496,7 @@ export const updatesSourcesHandlers: HandlerMap = {
             ...(manga.mangaUrl ? { mangaUrl: manga.mangaUrl } : {})
         })
         if (genres.length > 0) {
-            void db.manga.update(request.mangaId, { genres } as Partial<LibraryManga>)
+            void updateManga(request.mangaId, { genres } as Partial<LibraryManga>)
         }
         return genres
     }

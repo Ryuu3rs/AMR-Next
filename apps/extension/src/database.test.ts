@@ -587,6 +587,105 @@ describe("mergeMangaRecords", () => {
     })
 })
 
+// The falsy-0 merge bug class: `Math.max(a ?? 0, b ?? 0) || undefined` maps a
+// genuine chapter-0 value (Math.max(0, x) === 0, then `0 || undefined`) to
+// undefined, silently wiping real chapter-0 reading progress. Each of these FAILS
+// before the maxDefined() fix (the merged number comes back undefined) and passes
+// after. Scenarios are chosen so the merged value REPLACES the base record's field
+// rather than falling back to it - otherwise a conditional spread would mask the bug.
+describe("chapter-0 progress survives merge, import, and relink (falsy-0 merge bug)", () => {
+    it("adopts a same-source loser's chapter-0 lastReadChapterNumber when the primary has none (merge)", async () => {
+        const primary: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:zero-primary",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/zero-primary",
+            mangaUrl: "https://mangadex.org/title/zero-primary"
+        }
+        const loser: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:zero-loser",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/zero-loser",
+            mangaUrl: "https://mangadex.org/title/zero-loser",
+            lastReadChapterNumber: 0,
+            lastReadChapterId: "ch0"
+        }
+        await db.manga.bulkPut([primary, loser])
+
+        const merged = await mergeMangaRecords(primary.id, [loser.id])
+
+        expect(merged.lastReadChapterNumber).toBe(0)
+        expect(merged.lastReadChapterId).toBe("ch0")
+    })
+
+    it("preserves an existing record's chapter-0 progress when a relink merges it into the resolved record (rekeyManga)", async () => {
+        const oldId = "mangadex:manga:relink-old"
+        const newId = "mangadex:manga:relink-new"
+        // A record already exists at the canonical new id, at chapter 0.
+        await db.manga.put({
+            ...manga,
+            id: newId,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/relink-new",
+            mangaUrl: "https://mangadex.org/title/relink-new",
+            lastReadChapterNumber: 0,
+            lastReadChapterId: "ch0"
+        })
+        // The old record being relinked away.
+        await db.manga.put({
+            ...manga,
+            id: oldId,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/relink-old"
+        })
+        // The resolved "next" record carries no read progress of its own - the merge
+        // must pull the existing record's chapter-0 forward, not wipe it.
+        const next: LibraryManga = {
+            ...manga,
+            id: newId,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/relink-new",
+            mangaUrl: "https://mangadex.org/title/relink-new"
+        }
+        const newSourceLink: SourceLinkRecord = {
+            mangaId: newId,
+            sourceId: "mangadex",
+            url: "https://mangadex.org/title/relink-new",
+            addedAt: 1,
+            updatedAt: 1
+        }
+
+        await rekeyManga(oldId, next, newSourceLink)
+
+        const restored = await db.manga.get(newId)
+        expect(restored?.lastReadChapterNumber).toBe(0)
+    })
+
+    it("preserves an existing chapter-0 progress across a merge import when the imported side has none", async () => {
+        // Build a valid backup envelope for the imported side (no chapter numbers set).
+        const importedManga: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:import-zero",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/import-zero",
+            mangaUrl: "https://mangadex.org/title/import-zero"
+        }
+        await db.manga.put(importedManga)
+        const envelope = await exportDatabase()
+        await db.manga.clear()
+
+        // The record already in the library is at chapter 0.
+        await db.manga.put({ ...importedManga, lastReadChapterNumber: 0, lastReadChapterId: "ch0" })
+
+        // Default resolution is "merge" - the merge must not wipe the local 0.
+        await importDatabase(envelope)
+
+        const restored = await db.manga.get(importedManga.id)
+        expect(restored?.lastReadChapterNumber).toBe(0)
+    })
+})
+
 // The cleanup tool's core correctness requirements (see handlers/library.ts) - two
 // separate adversarial reviews of the original plan caught real bugs here: a naive
 // per-loser (not per-chapter) remap corrupts history for any loser that tracked more

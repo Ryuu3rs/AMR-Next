@@ -1,5 +1,12 @@
 import type { ReadingProgress } from "@amr/contracts"
-import { db, recordAnalyticsEvent, saveProgress, trackExternalChapter } from "../database"
+import {
+    db,
+    putChapters,
+    recordAnalyticsEvent,
+    saveProgress,
+    saveReaderResolvedChapter,
+    trackExternalChapter
+} from "../database"
 import { findSource, getSourceById, listChaptersBySource, resolveChapterFromHtml, resolveChapterUrl } from "../sources"
 import {
     ensureChapterListRefreshed,
@@ -72,18 +79,15 @@ export const readerHandlers: HandlerMap = {
                 throw fetchError
             }
         }
-        // Persist chapter so saveProgress can look up its sortKey for lastReadChapterNumber
-        await db.chapters.put(resolved.chapter)
-        // Backfill coverUrl into library entry if missing
-        if (resolved.manga.manga.coverUrl) {
-            const existing = await db.manga.get(resolved.manga.manga.id)
-            if (existing && !existing.coverUrl) {
-                await db.manga.update(resolved.manga.manga.id, {
-                    coverUrl: resolved.manga.manga.coverUrl
-                })
-            }
-        }
-        publishLive(["chapters"], [resolved.manga.manga.id])
+        // Persist chapter so saveProgress can look up its sortKey for
+        // lastReadChapterNumber, plus backfill coverUrl into the library entry if
+        // missing - one transaction. The live publish is driven by MUTATION_SCOPES
+        // (["chapters", "library"]) so the library scope also covers the backfill.
+        await saveReaderResolvedChapter({
+            chapter: resolved.chapter,
+            mangaId: resolved.manga.manga.id,
+            ...(resolved.manga.manga.coverUrl ? { coverUrl: resolved.manga.manga.coverUrl } : {})
+        })
         return resolved
     },
 
@@ -145,7 +149,7 @@ export const readerHandlers: HandlerMap = {
             // A list that's just the 2-3 paginate prev/next links isn't useful - fall
             // back to whatever's cached rather than showing a broken nav with 1-2 items.
             if (chapters.length <= 2) return await fromCache()
-            await db.chapters.bulkPut(chapters)
+            await putChapters(chapters)
             publishLive(["chapters"], [request.mangaId])
             return chapters
                 .map(c => ({ url: c.url, sortKey: c.sortKey, title: c.title }))

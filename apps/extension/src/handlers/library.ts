@@ -11,10 +11,15 @@ import {
     getActivityCalendar,
     getLocalStats,
     humanizeSlug,
+    linkMangaToUrl,
     mergeMangaRecords,
-    rekeyManga,
+    putChapters,
+    relinkMangaWithChapter,
     removeManga,
+    saveLinkedChapters,
     saveResolvedChapter,
+    switchMangaSource,
+    updateManga,
     type LibraryManga
 } from "../database"
 import {
@@ -274,21 +279,21 @@ export const libraryHandlers: HandlerMap = {
 
     "library:rate": async request => {
         const rating = request.rating === 0 ? undefined : request.rating
-        await db.manga.update(request.mangaId, { rating } as Partial<{ rating: number }>)
+        await updateManga(request.mangaId, { rating } as Partial<LibraryManga>)
         return null
     },
 
     "library:manual": async request => {
-        await db.manga.update(request.mangaId, {
+        await updateManga(request.mangaId, {
             manualTracking: request.manual ? true : undefined
-        } as Partial<{ manualTracking: boolean }>)
+        } as Partial<LibraryManga>)
         return null
     },
 
     "library:hold": async request => {
-        await db.manga.update(request.mangaId, {
+        await updateManga(request.mangaId, {
             onHold: request.onHold ? true : undefined
-        } as Partial<{ onHold: boolean }>)
+        } as Partial<LibraryManga>)
         return null
     },
 
@@ -297,10 +302,10 @@ export const libraryHandlers: HandlerMap = {
         // so it no longer appears in the reconcile panel.
         const target = await db.manga.get(request.mangaId)
         if (target && target.sourceId.includes(".")) {
-            await db.manga.update(request.mangaId, {
+            await updateManga(request.mangaId, {
                 sourceId: "manual",
                 manualTracking: true
-            } as Partial<{ sourceId: string; manualTracking: boolean }>)
+            } as Partial<LibraryManga>)
         }
         return null
     },
@@ -688,16 +693,16 @@ export const libraryHandlers: HandlerMap = {
             patch["lastReadChapterNumber"] = request.lastReadChapterNumber ?? undefined
         if (request.lastReadChapterId !== undefined) patch["lastReadChapterId"] = request.lastReadChapterId ?? undefined
         if (Object.keys(patch).length > 0) {
-            await db.manga.update(request.mangaId, patch as Partial<{ latestChapterNumber: number }>)
+            await updateManga(request.mangaId, patch as Partial<LibraryManga>)
         }
         return null
     },
 
     "library:categories": async request => {
         const categories = [...new Set(request.categories.map(c => c.trim()).filter(Boolean))]
-        await db.manga.update(request.mangaId, {
+        await updateManga(request.mangaId, {
             categories: categories.length > 0 ? categories : undefined
-        } as Partial<{ categories: string[] }>)
+        } as Partial<LibraryManga>)
         return null
     },
 
@@ -745,29 +750,7 @@ export const libraryHandlers: HandlerMap = {
             addedAt: now,
             updatedAt: now
         }
-        // rekeyManga's own transaction declares exactly this 8-table set (its sole
-        // production call site is this one - verified), so wrapping the rekey and
-        // the chapter put together is a same-set join, not a superset that could
-        // break Dexie's nested-transaction rule. Without this, an SW restart between
-        // the two statements could leave the manga pointing at a chapter row that
-        // was never written.
-        await db.transaction(
-            "rw",
-            [
-                db.manga,
-                db.sourceLinks,
-                db.chapters,
-                db.progress,
-                db.historyEvents,
-                db.downloads,
-                db.pageBookmarks,
-                db.covers
-            ],
-            async () => {
-                await rekeyManga(request.mangaId, next, newSourceLink)
-                await db.chapters.put(resolved.chapter)
-            }
-        )
+        await relinkMangaWithChapter(request.mangaId, next, newSourceLink, resolved.chapter)
         // Fire-and-forget: populate the chapter list for the new source
         const relinkSource = findSource(new URL(request.url))
         scheduleChapterListRefresh(relinkSource, resolved.manga.sourceMangaId, resolved.manga.url, newId)
@@ -799,21 +782,16 @@ export const libraryHandlers: HandlerMap = {
         }
         if (!sourceMangaId) throw new SourceError("invalid-input", "Could not extract manga ID from that URL")
         const sourceId = adapter.manifest.id
-        await db.transaction("rw", db.manga, db.sourceLinks, async () => {
-            await db.manga.update(request.mangaId, {
+        await linkMangaToUrl(
+            request.mangaId,
+            {
                 sourceId,
                 sourceMangaId,
                 mangaUrl: request.mangaUrl,
                 manualTracking: false,
                 updatedAt: Date.now()
-            } as Partial<{
-                sourceId: string
-                sourceMangaId: string
-                mangaUrl: string
-                manualTracking: boolean
-                updatedAt: number
-            }>)
-            await db.sourceLinks.put({
+            } as Partial<LibraryManga>,
+            {
                 mangaId: request.mangaId,
                 sourceId,
                 sourceMangaId,
@@ -821,8 +799,8 @@ export const libraryHandlers: HandlerMap = {
                 title: existing.title,
                 addedAt: existing.addedAt,
                 updatedAt: Date.now()
-            })
-        })
+            }
+        )
         // Fire-and-forget chapter fetch so chapters appear immediately
         // after linking rather than waiting for the next update alarm.
         void (async () => {
@@ -832,17 +810,18 @@ export const libraryHandlers: HandlerMap = {
                 const chapters = await listChaptersForSource(linked, sourceId, sourceMangaId, request.mangaUrl)
                 if (chapters.length === 0) return
                 const latest = chapters.reduce((cur, ch) => (ch.sortKey > (cur?.sortKey ?? -1) ? ch : cur), chapters[0])
-                await db.transaction("rw", db.chapters, db.manga, async () => {
-                    await db.chapters.bulkPut(chapters)
-                    if (latest) {
-                        await db.manga.update(request.mangaId, {
-                            latestChapterId: latest.id,
-                            sourceUrl: latest.url,
-                            ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
-                            updatedAt: Date.now()
-                        })
-                    }
-                })
+                await saveLinkedChapters(
+                    request.mangaId,
+                    chapters,
+                    latest
+                        ? ({
+                              latestChapterId: latest.id,
+                              sourceUrl: latest.url,
+                              ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
+                              updatedAt: Date.now()
+                          } as Partial<LibraryManga>)
+                        : undefined
+                )
                 publishLive(["chapters", "library"], [request.mangaId])
             } catch {
                 // best-effort; update alarm will retry
@@ -895,17 +874,27 @@ export const libraryHandlers: HandlerMap = {
             (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
             chapters[0]
         )
-        await db.transaction("rw", db.manga, db.sourceLinks, db.chapters, async () => {
-            // Old mirror's chapters are stale by definition after switching source -
-            // otherwise they coexist with the new mirror's under the same mangaId and
-            // chapter:siblings interleaves dead and live URLs in prev/next.
-            await db.chapters
-                .where("mangaId")
-                .equals(request.mangaId)
-                .and(c => c.sourceId !== request.sourceId)
-                .delete()
-            await db.chapters.bulkPut(chapters)
-            await db.manga.update(request.mangaId, {
+        // MangaHub numbers chapters by its own internal sequential URL slug
+        // (chapter-N), which can diverge from the numbering other sources use for
+        // the same manga. This handler never touches the existing
+        // lastReadChapterNumber, so after switching TO mangahub from a different
+        // source it sits next to mangahub's latestChapterNumber with nothing
+        // indicating the two may not be directly comparable. Flag it so a future
+        // UI can warn instead of silently comparing chapter counts that don't mean
+        // what they look like they mean.
+        const numberingMayMismatch =
+            request.sourceId === "mangahub" &&
+            existing.sourceId !== "mangahub" &&
+            existing.lastReadChapterNumber !== undefined
+        // Old mirror's chapters are stale by definition after switching source -
+        // switchMangaSource drops them (any row whose sourceId isn't the new one)
+        // before writing the new mirror's, so chapter:siblings never interleaves
+        // dead and live URLs in prev/next.
+        await switchMangaSource({
+            mangaId: request.mangaId,
+            sourceId: request.sourceId,
+            chapters,
+            mangaPatch: {
                 sourceId: request.sourceId,
                 sourceMangaId: request.sourceMangaId,
                 mangaUrl: request.mangaUrl,
@@ -917,26 +906,9 @@ export const libraryHandlers: HandlerMap = {
                       }
                     : {}),
                 updatedAt: Date.now()
-            })
-            await db.manga.update(request.mangaId, {
-                manualTracking: undefined
-            } as unknown as Partial<{ manualTracking: boolean }>)
-            // MangaHub numbers chapters by its own internal sequential URL slug
-            // (chapter-N), which can diverge from the numbering other sources use for
-            // the same manga. This handler never touches the existing
-            // lastReadChapterNumber, so after switching TO mangahub from a different
-            // source it sits next to mangahub's latestChapterNumber with nothing
-            // indicating the two may not be directly comparable. Flag it so a future
-            // UI can warn instead of silently comparing chapter counts that don't mean
-            // what they look like they mean.
-            const numberingMayMismatch =
-                request.sourceId === "mangahub" &&
-                existing.sourceId !== "mangahub" &&
-                existing.lastReadChapterNumber !== undefined
-            await db.manga.update(request.mangaId, {
-                chapterNumberingUnreliable: numberingMayMismatch ? true : undefined
-            } as Partial<{ chapterNumberingUnreliable: boolean }>)
-            await db.sourceLinks.put({
+            } as Partial<LibraryManga>,
+            numberingUnreliable: numberingMayMismatch,
+            sourceLink: {
                 mangaId: request.mangaId,
                 sourceId: request.sourceId,
                 sourceMangaId: request.sourceMangaId,
@@ -944,15 +916,15 @@ export const libraryHandlers: HandlerMap = {
                 title: existing.title,
                 addedAt: existing.addedAt,
                 updatedAt: Date.now()
-            })
+            }
         })
         return { sourceId: request.sourceId, latest: latest?.sortKey ?? null }
     },
 
     "library:nsfw": async request => {
-        await db.manga.update(request.mangaId, {
+        await updateManga(request.mangaId, {
             nsfw: request.nsfw ? true : undefined
-        } as Partial<{ nsfw: boolean }>)
+        } as Partial<LibraryManga>)
         return null
     },
 
@@ -1007,7 +979,7 @@ export const libraryHandlers: HandlerMap = {
                             // Store the source's own remote URL as-is - covers are never inlined
                             // as data: URIs anymore (see database.ts's v8 migration).
                             if (!m.coverUrl) {
-                                await db.manga.update(m.id, { coverUrl: remote })
+                                await updateManga(m.id, { coverUrl: remote })
                                 touched = true
                             }
                             // Cache the raw blob so the UI can serve it from IndexedDB without
@@ -1025,7 +997,7 @@ export const libraryHandlers: HandlerMap = {
                                     if (freshBlob) {
                                         remote = fresh
                                         blob = freshBlob
-                                        await db.manga.update(m.id, { coverUrl: fresh })
+                                        await updateManga(m.id, { coverUrl: fresh })
                                         touched = true
                                     }
                                 }
@@ -1147,7 +1119,7 @@ export const libraryHandlers: HandlerMap = {
                     manga.mangaUrl ?? manga.sourceUrl
                 )
                 if (chapters.length > 0) {
-                    await db.chapters.bulkPut(chapters)
+                    await putChapters(chapters)
                     publishLive(["chapters"], [request.mangaId])
                 }
                 const fresh = pickAdjacent(chapters.length > 0 ? chapters : cached)
@@ -1167,7 +1139,7 @@ export const libraryHandlers: HandlerMap = {
                 manga.mangaUrl ?? manga.sourceUrl
             )
             if (chapters.length > 0) {
-                await db.chapters.bulkPut(chapters)
+                await putChapters(chapters)
                 publishLive(["chapters"], [request.mangaId])
             }
             const { next, prev } = pickAdjacent(chapters)
@@ -1178,9 +1150,9 @@ export const libraryHandlers: HandlerMap = {
     },
 
     "library:note": async request => {
-        await db.manga.update(request.mangaId, {
+        await updateManga(request.mangaId, {
             notes: request.note.trim() || undefined
-        } as Partial<{ notes: string }>)
+        } as Partial<LibraryManga>)
         return null
     },
 
@@ -1194,7 +1166,7 @@ export const libraryHandlers: HandlerMap = {
         if (request.pageFit !== undefined) patch.pageFit = request.pageFit ?? undefined
         if (request.noGapContinuous !== undefined) patch.noGapContinuous = request.noGapContinuous ?? undefined
         if (Object.keys(patch).length > 0) {
-            await db.manga.update(request.mangaId, patch as Partial<LibraryManga>)
+            await updateManga(request.mangaId, patch as Partial<LibraryManga>)
         }
         return null
     }

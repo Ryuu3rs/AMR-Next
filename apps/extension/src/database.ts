@@ -247,6 +247,19 @@ export class AmrDatabase extends Dexie {
 
 export const db = new AmrDatabase()
 
+// Merges two optional numbers, keeping the larger; returns undefined only when
+// BOTH are undefined. Replaces the `Math.max(a ?? 0, b ?? 0) || undefined` idiom,
+// which mapped two genuine chapter-0 values (Math.max(0, 0) === 0, then
+// `0 || undefined`) to undefined, silently wiping real chapter-0 reading progress
+// on relink/merge/import. Behavior-equivalent to that idiom for the lastReadAt
+// TIMESTAMP merges too (a genuine 0 epoch never occurs), so those route through it
+// as well - keeping the eslint guard that bans the old idiom carve-out-free.
+function maxDefined(a: number | undefined, b: number | undefined): number | undefined {
+    if (a === undefined) return b
+    if (b === undefined) return a
+    return Math.max(a, b)
+}
+
 export async function cacheCover(mangaId: string, blob: Blob): Promise<void> {
     await db.covers.put({ mangaId, blob, cachedAt: Date.now() })
 }
@@ -355,9 +368,8 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                 // Merge preserved user fields from whichever record has them. Build with
                 // conditional spreads so we never assign `undefined` to an optional field
                 // (exactOptionalPropertyTypes is on).
-                const mergedLastReadNumber =
-                    Math.max(existing.lastReadChapterNumber ?? 0, next.lastReadChapterNumber ?? 0) || undefined
-                const mergedLastReadAt = Math.max(existing.lastReadAt ?? 0, next.lastReadAt ?? 0) || undefined
+                const mergedLastReadNumber = maxDefined(existing.lastReadChapterNumber, next.lastReadChapterNumber)
+                const mergedLastReadAt = maxDefined(existing.lastReadAt, next.lastReadAt)
                 const lastReadChapterId = next.lastReadChapterId ?? existing.lastReadChapterId
                 const rating = next.rating ?? existing.rating
                 // Categories are a list - union them instead of letting one side's tags
@@ -475,12 +487,12 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                 const fillLatest =
                     !sameSource && merged.latestChapterNumber === undefined && merged.latestChapterId === undefined
                 const mergedLastReadNumber = sameSource
-                    ? Math.max(merged.lastReadChapterNumber ?? 0, loser.lastReadChapterNumber ?? 0) || undefined
+                    ? maxDefined(merged.lastReadChapterNumber, loser.lastReadChapterNumber)
                     : fillLastRead
                       ? loser.lastReadChapterNumber
                       : merged.lastReadChapterNumber
                 const mergedLatestNumber = sameSource
-                    ? Math.max(merged.latestChapterNumber ?? 0, loser.latestChapterNumber ?? 0) || undefined
+                    ? maxDefined(merged.latestChapterNumber, loser.latestChapterNumber)
                     : fillLatest
                       ? loser.latestChapterNumber
                       : merged.latestChapterNumber
@@ -494,7 +506,7 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                       ((loser.lastReadChapterNumber ?? 0) > (merged.lastReadChapterNumber ?? 0) ||
                           merged.lastReadChapterId === undefined)
                     : fillLastRead && loser.lastReadChapterId !== undefined
-                const mergedLastReadAt = Math.max(merged.lastReadAt ?? 0, loser.lastReadAt ?? 0) || undefined
+                const mergedLastReadAt = maxDefined(merged.lastReadAt, loser.lastReadAt)
                 const mergedCategories = [...new Set([...(merged.categories ?? []), ...(loser.categories ?? [])])]
                 const categories = mergedCategories.length > 0 ? mergedCategories : undefined
                 // Notes: if both sides have non-empty notes, concatenate them (never
@@ -744,6 +756,187 @@ export async function saveResolvedChapter(input: {
         await db.manga.put(manga)
         await db.sourceLinks.put(input.sourceLink)
         await db.chapters.bulkPut(input.chapters ?? [input.chapter])
+    })
+}
+
+// Persists the reader's freshly-resolved chapter, and (only if the library entry
+// exists and has no cover yet) backfills its coverUrl - both in ONE transaction so
+// an SW restart between the two writes can't leave the manga pointing at a chapter
+// row that was never written, or vice versa. Unlike saveResolvedChapter above this
+// never creates or overwrites the manga record itself - reader:resolve must not
+// resurrect a title the user removed while reading.
+export async function saveReaderResolvedChapter(input: {
+    chapter: ChapterRecord
+    mangaId: string
+    coverUrl?: string
+}): Promise<void> {
+    await db.transaction("rw", [db.chapters, db.manga], async () => {
+        await db.chapters.put(input.chapter)
+        if (input.coverUrl) {
+            const existing = await db.manga.get(input.mangaId)
+            if (existing && !existing.coverUrl) {
+                await db.manga.update(input.mangaId, { coverUrl: input.coverUrl })
+            }
+        }
+    })
+}
+
+// Thin wrapper so handlers never call db.manga.update directly (see the
+// no-restricted-syntax guard scoped to handlers/** in eslint.config.js). Passing
+// `undefined` for a field clears it, matching Dexie's update() semantics.
+export async function updateManga(mangaId: string, patch: Partial<LibraryManga>): Promise<void> {
+    await db.manga.update(mangaId, patch)
+}
+
+// Thin wrapper so handlers never call db.chapters.bulkPut directly.
+export async function putChapters(chapters: ChapterRecord[]): Promise<void> {
+    await db.chapters.bulkPut(chapters)
+}
+
+// library:relink - rekey the manga and write the resolved chapter in ONE
+// transaction (rekeyManga declares exactly this 8-table set, so this is a
+// same-set join, not a superset that would break Dexie's nested-transaction
+// rule). Without it, an SW restart between the two could leave the manga
+// pointing at a chapter row that was never written.
+export async function relinkMangaWithChapter(
+    oldId: string,
+    next: LibraryManga,
+    newSourceLink: SourceLinkRecord,
+    chapter: ChapterRecord
+): Promise<void> {
+    await db.transaction(
+        "rw",
+        [
+            db.manga,
+            db.sourceLinks,
+            db.chapters,
+            db.progress,
+            db.historyEvents,
+            db.downloads,
+            db.pageBookmarks,
+            db.covers
+        ],
+        async () => {
+            await rekeyManga(oldId, next, newSourceLink)
+            await db.chapters.put(chapter)
+        }
+    )
+}
+
+// library:link-url synchronous part - update the manga's source fields and write
+// its source link in one transaction.
+export async function linkMangaToUrl(
+    mangaId: string,
+    mangaPatch: Partial<LibraryManga>,
+    sourceLink: SourceLinkRecord
+): Promise<void> {
+    await db.transaction("rw", db.manga, db.sourceLinks, async () => {
+        await db.manga.update(mangaId, mangaPatch)
+        await db.sourceLinks.put(sourceLink)
+    })
+}
+
+// library:link-url background chapter fetch - store the fetched chapters and,
+// when a latest patch is supplied, the manga's latest-chapter fields, atomically.
+export async function saveLinkedChapters(
+    mangaId: string,
+    chapters: ChapterRecord[],
+    latestPatch: Partial<LibraryManga> | undefined
+): Promise<void> {
+    await db.transaction("rw", db.chapters, db.manga, async () => {
+        await db.chapters.bulkPut(chapters)
+        if (latestPatch) await db.manga.update(mangaId, latestPatch)
+    })
+}
+
+// library:switch - swap a title's source: drop the old mirror's now-stale chapter
+// rows, write the new mirror's, and update the manga's source/latest fields plus
+// its source link, all in one transaction.
+export async function switchMangaSource(input: {
+    mangaId: string
+    sourceId: string
+    chapters: ChapterRecord[]
+    mangaPatch: Partial<LibraryManga>
+    numberingUnreliable: boolean
+    sourceLink: SourceLinkRecord
+}): Promise<void> {
+    await db.transaction("rw", db.manga, db.sourceLinks, db.chapters, async () => {
+        await db.chapters
+            .where("mangaId")
+            .equals(input.mangaId)
+            .and(c => c.sourceId !== input.sourceId)
+            .delete()
+        await db.chapters.bulkPut(input.chapters)
+        await db.manga.update(input.mangaId, input.mangaPatch)
+        await db.manga.update(input.mangaId, {
+            manualTracking: undefined
+        } as unknown as Partial<LibraryManga>)
+        await db.manga.update(input.mangaId, {
+            chapterNumberingUnreliable: input.numberingUnreliable ? true : undefined
+        } as Partial<LibraryManga>)
+        await db.sourceLinks.put(input.sourceLink)
+    })
+}
+
+// updates:check per-title write - store the freshly-listed chapters (optionally
+// purging stale MangaHub rows), and re-point the manga's latest-chapter fields on
+// an id change. Returns whether the latest chapter genuinely ADVANCED (a higher
+// number, or an unnumberable chapter) - the caller uses that to count the title as
+// updated and publish a live event. An id change with a same-or-lower number is a
+// re-slug / post-merge correction, still written, but not reported as an update.
+// purgeStaleMangahub is injected (not imported) to keep database.ts free of a
+// circular import on background/chapter-cache; it runs inside this transaction.
+export async function applyUpdateCheckResult(input: {
+    mangaId: string
+    chapters: ChapterRecord[]
+    latest: ChapterRecord | undefined
+    previousLatestChapterId: string | undefined
+    previousLatestChapterNumber: number | undefined
+    purgeStaleMangahub?: (freshChapterIds: Set<string>) => Promise<void>
+}): Promise<{ advanced: boolean }> {
+    let advanced = false
+    await db.transaction("rw", db.chapters, db.manga, async () => {
+        await db.chapters.bulkPut(input.chapters)
+        if (input.purgeStaleMangahub) {
+            await input.purgeStaleMangahub(new Set(input.chapters.map(c => c.id)))
+        }
+        const latest = input.latest
+        if (latest && latest.id !== input.previousLatestChapterId) {
+            advanced = !Number.isFinite(latest.sortKey) || latest.sortKey > (input.previousLatestChapterNumber ?? -1)
+            await db.manga.update(input.mangaId, {
+                latestChapterId: latest.id,
+                sourceUrl: latest.url,
+                ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
+                updatedAt: Date.now()
+            })
+        }
+    })
+    return { advanced }
+}
+
+// MangaHub stale-chapter repair - like applyUpdateCheckResult but gated on the
+// manga still existing (a concurrent remove/merge during the network fetch must
+// stick). Returns false when the manga was gone, so the caller skips its
+// publishLive. purgeStaleMangahub is injected for the same circular-import reason.
+export async function repairMangahubChapters(input: {
+    mangaId: string
+    chapters: ChapterRecord[]
+    latest: ChapterRecord | undefined
+    purgeStaleMangahub: (freshChapterIds: Set<string>) => Promise<void>
+}): Promise<boolean> {
+    return db.transaction("rw", db.chapters, db.manga, async () => {
+        if ((await db.manga.get(input.mangaId)) === undefined) return false
+        await db.chapters.bulkPut(input.chapters)
+        await input.purgeStaleMangahub(new Set(input.chapters.map(c => c.id)))
+        if (input.latest) {
+            await db.manga.update(input.mangaId, {
+                latestChapterId: input.latest.id,
+                sourceUrl: input.latest.url,
+                ...(Number.isFinite(input.latest.sortKey) ? { latestChapterNumber: input.latest.sortKey } : {}),
+                updatedAt: Date.now()
+            })
+        }
+        return true
     })
 }
 
@@ -1253,10 +1446,8 @@ function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryMang
     const readingDirection = existing.readingDirection ?? imported.readingDirection
     const pageFit = existing.pageFit ?? imported.pageFit
     const noGapContinuous = existing.noGapContinuous ?? imported.noGapContinuous
-    const lastReadChapterNumber =
-        Math.max(existing.lastReadChapterNumber ?? 0, imported.lastReadChapterNumber ?? 0) || undefined
-    const latestChapterNumber =
-        Math.max(existing.latestChapterNumber ?? 0, imported.latestChapterNumber ?? 0) || undefined
+    const lastReadChapterNumber = maxDefined(existing.lastReadChapterNumber, imported.lastReadChapterNumber)
+    const latestChapterNumber = maxDefined(existing.latestChapterNumber, imported.latestChapterNumber)
     const lastReadAt = existing.lastReadAt
         ? imported.lastReadAt
             ? Math.max(existing.lastReadAt, imported.lastReadAt)
