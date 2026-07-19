@@ -15,6 +15,13 @@ export const CHAPTER_URL = `${ORIGIN}/chapters/${CHAPTER_ID}/`
 // (https://weebcentral.com/chapters/<ULID>), and the list is newest-first (descending chapter
 // number) - Chapter 2 appears before Chapter 1.5 before Chapter 1 here, mirroring the real
 // site's Chapter 200 ... Chapter 0 ordering.
+//
+// The Chapter 2 anchor below reproduces the real per-row markup verbatim (live-verified against
+// weebcentral.com/series/01J76XYCPSY3C4BNPBRY8JMCBE): a hidden "Last Read" indicator span, an
+// inline SVG with an embedded <style> block, and a trailing <time> element whose text content is
+// a raw ISO timestamp - all inside the single <a>...</a> the chapter-anchor regex captures. This
+// verifies extractChapterList's title comes out as the plain "Chapter 2" label, not
+// "Chapter 2 Last Read .st0 { fill: #d3d629; } 2024-09-07T17:04:15.717343Z".
 export const seriesHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -27,7 +34,27 @@ export const seriesHtml = `<!DOCTYPE html>
 <h1>Solo Leveling</h1>
 <div class="chapter-list">
   <ul>
-    <li><a href="https://weebcentral.com/chapters/${CHAPTER_ID_2}">Chapter 2</a></li>
+    <li><a href="https://weebcentral.com/chapters/${CHAPTER_ID_2}" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2"><svg class="w-4 h-4" viewBox="0 0 24 24"><path d="M8.5 12.5"></path></svg></span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Chapter 2</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '${CHAPTER_ID_2}'">
+                <svg class="w-4 h-4" viewBox="0 0 384 512"><path d="M215.7 499.2"></path></svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <svg class="w-5 h-5" viewBox="0 0 512 512">
+                    <style type="text/css">
+                        .st0 {
+                            fill: #d3d629;
+                        }
+                    </style>
+                    <path class="st0" d="M13.175,203.061"></path>
+                </svg>
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2024-09-07T17:04:15.717Z">2024-09-07T17:04:15.717343Z</time>
+    </a></li>
     <li><a href="https://weebcentral.com/chapters/${CHAPTER_ID_3}">Chapter 1.5</a></li>
     <li><a href="https://weebcentral.com/chapters/${CHAPTER_ID}">Chapter 1</a></li>
   </ul>
