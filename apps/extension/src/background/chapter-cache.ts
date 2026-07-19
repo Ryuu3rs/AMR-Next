@@ -172,7 +172,7 @@ export async function mineAndCacheEpisodesFromHtml(
 
         const maxEpNo = Math.max(...epLinks.map(e => e.epNo))
         const existing = await db.manga.get(mangaId)
-        if (existing && maxEpNo > (existing.latestChapterNumber ?? 0)) {
+        if (existing && maxEpNo > (existing.latestChapterNumber ?? -1)) {
             await db.manga.update(mangaId, {
                 latestChapterNumber: maxEpNo,
                 latestChapterId: `${sourceId}:chapter:${sourceMangaId}:${maxEpNo}`
@@ -238,7 +238,7 @@ export async function listChaptersWithTabFallback(
         const maxSortKey = Math.max(...chapters.map(c => c.sortKey))
         const latestChapter = chapters.find(c => c.sortKey === maxSortKey)
         const existing = await db.manga.get(mangaId)
-        if (existing && maxSortKey > (existing.latestChapterNumber ?? 0)) {
+        if (existing && maxSortKey > (existing.latestChapterNumber ?? -1)) {
             await db.manga.update(mangaId, {
                 latestChapterNumber: maxSortKey,
                 ...(latestChapter?.id ? { latestChapterId: latestChapter.id } : {})
