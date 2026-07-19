@@ -73,9 +73,10 @@ const BASE_SOURCE_ORIGINS = [
     "https://comix.to/*",
     "https://www.comix.to/*",
     "*://*.static.comix.to/*",
-    // User-requested Madara sites
-    "https://likemanga.io/*",
-    "*://*.likemanga.io/*",
+    // LikeManga - retired 2026-07-19: likemanga.io permanently redirects to mgread.io
+    // (a different, already-registered Madara adapter - see madara-sites.ts) - no
+    // active adapter targets this domain, so the permission is removed rather than
+    // kept.
     // Kagane - Next.js RSC adapter. kagane.to itself sits behind a Cloudflare
     // managed challenge (series/reader pages + /api/integrity); the data API
     // (yuzuki.kagane.to: series metadata, search, covers, DRM page manifest) and
