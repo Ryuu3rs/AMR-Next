@@ -55,6 +55,8 @@
     let selectMode = $state(false)
     let selectedIds = $state<Set<string>>(new Set())
     let bulkCategory = $state("")
+    let bulkMessage = $state("")
+    let bulkWorking = $state(false)
     let bookmarks = $state<PageBookmark[]>([])
     let bookmarksLoaded = $state(false)
 
@@ -68,13 +70,40 @@
     function clearSelection() {
         selectedIds = new Set()
         selectMode = false
+        bulkMessage = ""
     }
 
+    // Each id is removed independently - a mid-loop failure (SW restart, transient
+    // error, one bad id) must not leave the local library out of sync with what was
+    // actually deleted. Only the ids that actually succeeded are dropped from
+    // `library` and cleared from the selection; failed ids stay selected so the
+    // user can see what didn't go through and retry just those.
     async function bulkRemove() {
         const ids = [...selectedIds]
-        for (const id of ids) await sendRuntimeMessage({ type: "library:remove", mangaId: id })
-        library = library.filter(m => !selectedIds.has(m.id))
-        clearSelection()
+        bulkMessage = ""
+        bulkWorking = true
+        const removedIds = new Set<string>()
+        let failed = 0
+        try {
+            for (const id of ids) {
+                try {
+                    await sendRuntimeMessage({ type: "library:remove", mangaId: id })
+                    removedIds.add(id)
+                } catch (cause) {
+                    console.warn("[AMR] bulk remove failed for", id, cause)
+                    failed += 1
+                }
+            }
+        } finally {
+            bulkWorking = false
+        }
+        library = library.filter(m => !removedIds.has(m.id))
+        if (failed > 0) {
+            selectedIds = new Set([...selectedIds].filter(id => !removedIds.has(id)))
+            bulkMessage = `Removed ${removedIds.size} of ${ids.length}. ${failed} failed - still selected, try again.`
+        } else {
+            clearSelection()
+        }
     }
 
     async function bulkAddCategory() {
@@ -94,10 +123,36 @@
         clearSelection()
     }
 
+    // Same per-id success/failure tracking as bulkRemove: only the ids that
+    // actually succeeded get their local manualTracking flag flipped and cleared
+    // from the selection, so a mid-loop failure can't make the dashboard claim a
+    // manga is manual (or not) when the write never landed.
     async function bulkManual(on: boolean) {
-        for (const id of [...selectedIds]) await sendRuntimeMessage({ type: "library:manual", mangaId: id, manual: on })
-        library = library.map(m => (selectedIds.has(m.id) ? { ...m, manualTracking: on } : m))
-        clearSelection()
+        const ids = [...selectedIds]
+        bulkMessage = ""
+        bulkWorking = true
+        const updatedIds = new Set<string>()
+        let failed = 0
+        try {
+            for (const id of ids) {
+                try {
+                    await sendRuntimeMessage({ type: "library:manual", mangaId: id, manual: on })
+                    updatedIds.add(id)
+                } catch (cause) {
+                    console.warn("[AMR] bulk manual toggle failed for", id, cause)
+                    failed += 1
+                }
+            }
+        } finally {
+            bulkWorking = false
+        }
+        library = library.map(m => (updatedIds.has(m.id) ? { ...m, manualTracking: on } : m))
+        if (failed > 0) {
+            selectedIds = new Set([...selectedIds].filter(id => !updatedIds.has(id)))
+            bulkMessage = `Updated ${updatedIds.size} of ${ids.length}. ${failed} failed - still selected, try again.`
+        } else {
+            clearSelection()
+        }
     }
 
     let showDuplicates = $state(false)
@@ -2663,23 +2718,24 @@
                     <button
                         type="button"
                         class="btn-sm"
-                        disabled={selectedIds.size === 0 || !bulkCategory.trim()}
+                        disabled={selectedIds.size === 0 || !bulkCategory.trim() || bulkWorking}
                         onclick={() => void bulkAddCategory()}>Add tags</button>
                     <button
                         type="button"
                         class="btn-sm"
-                        disabled={selectedIds.size === 0}
-                        onclick={() => void bulkManual(true)}>Mark manual</button>
+                        disabled={selectedIds.size === 0 || bulkWorking}
+                        onclick={() => void bulkManual(true)}>{bulkWorking ? "Working…" : "Mark manual"}</button>
                     <button
                         type="button"
                         class="btn-sm"
-                        disabled={selectedIds.size === 0}
-                        onclick={() => void bulkManual(false)}>Unmark manual</button>
+                        disabled={selectedIds.size === 0 || bulkWorking}
+                        onclick={() => void bulkManual(false)}>{bulkWorking ? "Working…" : "Unmark manual"}</button>
                     <button
                         type="button"
                         class="btn-sm confirm-remove-btn"
-                        disabled={selectedIds.size === 0}
-                        onclick={() => void bulkRemove()}>Remove</button>
+                        disabled={selectedIds.size === 0 || bulkWorking}
+                        onclick={() => void bulkRemove()}>{bulkWorking ? "Working…" : "Remove"}</button>
+                    {#if bulkMessage}<p class="notice" role="status" aria-live="polite">{bulkMessage}</p>{/if}
                 </div>
             {/if}
             {#if visibleLibrary.length === 0}
