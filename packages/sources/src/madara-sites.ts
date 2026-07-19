@@ -87,8 +87,7 @@ const SITES: MadaraConfig[] = [
     },
     { id: "eahentai", name: "EA Hentai", origin: "https://eahentai.com", domains: ["eahentai.com"] },
     { id: "hentalk", name: "HenTalk", origin: "https://hentalk.pw", domains: ["hentalk.pw"] },
-    // User-requested additions - Cloudflare-gated; tab fallback handles first-read for new users
-    { id: "likemanga", name: "LikeManga", origin: "https://likemanga.io", domains: ["likemanga.io"] },
+    // { id: "likemanga", name: "LikeManga", origin: "https://likemanga.io", domains: ["likemanga.io"] }, // retired 2026-07-19: likemanga.io now permanently 301-redirects every path (root, /manga/<slug>/, ?s=<query> search) to the bare root of https://mgread.io/ - not a path-preserving redirect, the path and query are dropped entirely. mgread.io is already registered below as its own working source (id: "mgread"), so this isn't a same-engine rebrand needing a new entry (like aryascans->brainrotcomics) - it's a dead domain merged into an already-registered site. Verified live 2026-07-19.
     // { id: "suryatoon", name: "Surya Toon", origin: "https://suryatoon.com", domains: ["suryatoon.com"] }, // retired: domain hijacked/stalled 2026-07 - 200s but body is a bare stuck "Loading..." placeholder, no real content, verified 2026-07-11
     // { id: "mangagalaxy", name: "Manga Galaxy", origin: "https://mangagalaxy.me", domains: ["mangagalaxy.me"] }, // retired: domain hijacked 2026-07 - homepage 200s with a JS redirect chain that lands on an unrelated TikTok video, verified 2026-07-11
     { id: "tritinia", name: "Tritinia Scans", origin: "https://tritinia.org", domains: ["tritinia.org"] },
