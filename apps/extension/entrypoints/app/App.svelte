@@ -3,6 +3,7 @@
     import type { AppSettings } from "../../src/settings"
     import { onDestroy, onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
+    import { runSettled } from "../../src/bulk"
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
     import { migrateLegacyImport } from "../../src/legacy-import"
     import { getCachedCovers } from "../../src/database"
@@ -82,25 +83,20 @@
         const ids = [...selectedIds]
         bulkMessage = ""
         bulkWorking = true
-        const removedIds = new Set<string>()
-        let failed = 0
+        let succeeded: string[] = []
+        let failed: string[] = []
         try {
-            for (const id of ids) {
-                try {
-                    await sendRuntimeMessage({ type: "library:remove", mangaId: id })
-                    removedIds.add(id)
-                } catch (cause) {
-                    console.warn("[AMR] bulk remove failed for", id, cause)
-                    failed += 1
-                }
-            }
+            ;({ succeeded, failed } = await runSettled(ids, async id => {
+                await sendRuntimeMessage({ type: "library:remove", mangaId: id })
+            }))
         } finally {
             bulkWorking = false
         }
+        const removedIds = new Set(succeeded)
         library = library.filter(m => !removedIds.has(m.id))
-        if (failed > 0) {
+        if (failed.length > 0) {
             selectedIds = new Set([...selectedIds].filter(id => !removedIds.has(id)))
-            bulkMessage = `Removed ${removedIds.size} of ${ids.length}. ${failed} failed - still selected, try again.`
+            bulkMessage = `Removed ${removedIds.size} of ${ids.length}. ${failed.length} failed - still selected, try again.`
         } else {
             clearSelection()
         }
@@ -131,25 +127,20 @@
         const ids = [...selectedIds]
         bulkMessage = ""
         bulkWorking = true
-        const updatedIds = new Set<string>()
-        let failed = 0
+        let succeeded: string[] = []
+        let failed: string[] = []
         try {
-            for (const id of ids) {
-                try {
-                    await sendRuntimeMessage({ type: "library:manual", mangaId: id, manual: on })
-                    updatedIds.add(id)
-                } catch (cause) {
-                    console.warn("[AMR] bulk manual toggle failed for", id, cause)
-                    failed += 1
-                }
-            }
+            ;({ succeeded, failed } = await runSettled(ids, async id => {
+                await sendRuntimeMessage({ type: "library:manual", mangaId: id, manual: on })
+            }))
         } finally {
             bulkWorking = false
         }
+        const updatedIds = new Set(succeeded)
         library = library.map(m => (updatedIds.has(m.id) ? { ...m, manualTracking: on } : m))
-        if (failed > 0) {
+        if (failed.length > 0) {
             selectedIds = new Set([...selectedIds].filter(id => !updatedIds.has(id)))
-            bulkMessage = `Updated ${updatedIds.size} of ${ids.length}. ${failed} failed - still selected, try again.`
+            bulkMessage = `Updated ${updatedIds.size} of ${ids.length}. ${failed.length} failed - still selected, try again.`
         } else {
             clearSelection()
         }

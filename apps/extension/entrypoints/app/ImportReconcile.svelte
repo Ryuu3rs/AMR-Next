@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { LibraryManga } from "../../src/database"
     import { sendRuntimeMessage } from "../../src/runtime"
+    import { runSettled } from "../../src/bulk"
     import { untrack, onMount } from "svelte"
     import {
         cleanQuery,
@@ -271,14 +272,28 @@
     }
 
     let removingAll = $state(false)
+    let removeAllMessage = $state("")
+    let removeAllError = $state(false)
 
+    // Each title is removed independently - a mid-loop failure (SW restart,
+    // transient error, one bad id) must not stop the batch or silently swallow the
+    // error. Only the ids that actually succeeded are handed to onLinked() (which
+    // drops them from the reconcile list); failed ones stay on screen with a
+    // partial-failure message so the user can retry just those.
     async function removeAll() {
-        if (!confirm(`Remove all ${mangas.length} titles from your library? This cannot be undone.`)) return
+        const targets = [...mangas]
+        if (!confirm(`Remove all ${targets.length} titles from your library? This cannot be undone.`)) return
         removingAll = true
+        removeAllMessage = ""
+        removeAllError = false
         try {
-            for (const manga of mangas) {
+            const { succeeded, failed } = await runSettled(targets, async manga => {
                 await sendRuntimeMessage({ type: "library:remove", mangaId: manga.id })
-                onLinked(manga.id)
+            })
+            for (const manga of succeeded) onLinked(manga.id)
+            if (failed.length > 0) {
+                removeAllError = true
+                removeAllMessage = `Removed ${succeeded.length} of ${targets.length}. ${failed.length} failed - try again.`
             }
         } finally {
             removingAll = false
@@ -706,6 +721,10 @@
                     {removingAll ? "Removing…" : `Remove all ${mangas.length}`}
                 </button>
             </div>
+
+            {#if removeAllMessage}
+                <p class="reconcile-msg" class:reconcile-error={removeAllError}>{removeAllMessage}</p>
+            {/if}
 
             {#if searchingAll || (searchProgress.total > 0 && searchProgress.done > 0)}
                 <div class="search-progress-wrap">
