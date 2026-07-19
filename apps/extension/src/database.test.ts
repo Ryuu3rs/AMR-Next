@@ -1912,6 +1912,30 @@ describe("trackExternalChapter", () => {
         // query string never changed the fallback key.
         expect(chapters).toHaveLength(1)
     })
+
+    // Bug fix: a URL with no regex-parseable chapter number used to store sortKey
+    // as 0 instead of following the same "no number" sentinel the function's own
+    // return value uses (chapterNumber: null). A sortKey of 0 sorted this external
+    // chapter before every real numbered chapter in chapter:siblings/chapter:adjacent,
+    // and saveProgress's Number.isFinite(chapter.sortKey) guard treated 0 as a real,
+    // finite chapter number and clobbered lastReadChapterNumber to 0. sortKey must now
+    // be +Infinity - consistent with the same sentinel dynasty-scans.ts/weebcentral.ts/
+    // kagane.ts use for an isolated, unparseable chapter - and Number.isFinite(Infinity)
+    // is false, so saveProgress correctly leaves lastReadChapterNumber untouched.
+    it("stores sortKey as +Infinity, not 0, for an unparseable chapter number, and does not clobber lastReadChapterNumber", async () => {
+        const result = await trackExternalChapter({
+            url: "https://example.com/manga/x5/reader",
+            sourceId: "genericsource"
+        })
+
+        expect(result.chapterNumber).toBeNull()
+        const chapters = await db.chapters.where("mangaId").equals(result.mangaId).toArray()
+        expect(chapters).toHaveLength(1)
+        expect(chapters[0]!.sortKey).toBe(Number.POSITIVE_INFINITY)
+
+        const storedManga = await db.manga.get(result.mangaId)
+        expect(storedManga?.lastReadChapterNumber).toBeUndefined()
+    })
 })
 
 describe("rekeyManga", () => {

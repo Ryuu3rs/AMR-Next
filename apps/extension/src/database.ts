@@ -942,7 +942,7 @@ export async function trackExternalChapter(input: {
             sourceId: input.sourceId,
             title: number !== undefined ? `Chapter ${number}` : "External chapter",
             url: input.url,
-            sortKey: number ?? 0
+            sortKey: number ?? Number.POSITIVE_INFINITY
         })
         await saveProgress({
             mangaId: manga.id,
