@@ -8,32 +8,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { BROWSER_HEADERS, CMS, IMAGE_HINTS, SIGNATURES } from "./signatures.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CONCURRENCY = 6
 const TIMEOUT_MS = 15_000
 const MAX_BODY = 200_000
-
-const UA =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-
-const SIGNATURES = {
-    cloudflare: /just a moment|cf_chl|challenge-platform|attention required.*cloudflare|cf-mitigated/i,
-    turnstile: /challenges\.cloudflare\.com\/turnstile|cf-turnstile/i,
-    ddosGuard: /ddos-guard/i,
-    captcha: /hcaptcha|g-recaptcha|recaptcha\/api|captcha-delivery/i
-}
-
-const CMS = {
-    madara: /wp-manga|madara|manga_get_chapter_img_list|wp-manga-chapter-img/i,
-    mangastream: /ts_reader|reader-area|id=["']readerarea["']/i,
-    mangabuddy: /mangabuddy|chapter-images|chapterimages|loadchapter/i,
-    wordpress: /wp-content|wp-includes/i,
-    spa: /<div id=["']root["']|__next_data__|window\.__nuxt__/i
-}
-
-const IMAGE_HINTS =
-    /wp-manga-chapter-img|id=["']image-\d+|chapter_preloaded_images|ts_reader\.run|class=["'][^"']*reader-area/i
 
 async function probeOne(site) {
     const result = {
@@ -61,11 +41,7 @@ async function probeOne(site) {
             method: "GET",
             redirect: "follow",
             signal: controller.signal,
-            headers: {
-                "User-Agent": UA,
-                Accept: "text/html,application/xhtml+xml,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5"
-            }
+            headers: BROWSER_HEADERS
         })
         result.reachable = true
         result.status = res.status
@@ -133,7 +109,7 @@ async function runPool(sites, worker) {
             out[i] = await worker(sites[i], i)
             const r = out[i]
             console.log(
-                `[${r.verdict.toUpperCase().padEnd(6)}] ${String(r.score)}  ${r.name} — ${r.reachable ? r.status : r.error}`
+                `[${r.verdict.toUpperCase().padEnd(6)}] ${String(r.score)}  ${r.name} - ${r.reachable ? r.status : r.error}`
             )
         }
     }
@@ -146,14 +122,14 @@ function toMarkdown(results, stamp) {
     const sorted = [...results].sort((a, b) => order[a.verdict] - order[b.verdict] || b.score - a.score)
     const rows = sorted.map(
         r =>
-            `| ${r.verdict} | ${r.score} | ${r.name} | ${r.priority} | ${r.reachable ? r.status : "—"} | ${r.antiScrape.join(", ") || "—"} | ${r.cmsDetected.join(", ") || "—"} | ${r.imageHints ? "yes" : "no"} | ${r.note || r.error || ""} |`
+            `| ${r.verdict} | ${r.score} | ${r.name} | ${r.priority} | ${r.reachable ? r.status : "-"} | ${r.antiScrape.join(", ") || "-"} | ${r.cmsDetected.join(", ") || "-"} | ${r.imageHints ? "yes" : "no"} | ${r.note || r.error || ""} |`
     )
     return [
         `# Mirror probe report`,
         ``,
         `Generated: ${stamp}`,
         ``,
-        `Verdict policy: green (>=4) add via generic adapter · yellow (2–3) revisit with content-script/cookies · red (<=1) skip, prefer Suwayomi.`,
+        `Verdict policy: green (>=4) add via generic adapter · yellow (2-3) revisit with content-script/cookies · red (<=1) skip, prefer Suwayomi.`,
         ``,
         `| verdict | score | site | priority | status | anti-scrape | cms | img hints | note |`,
         `| --- | --- | --- | --- | --- | --- | --- | --- | --- |`,

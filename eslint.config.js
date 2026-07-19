@@ -20,6 +20,7 @@ export default tseslint.config(
             "**/dist/**",
             "archive/**",
             "tooling/source-probe/output/**",
+            "tooling/source-health/output/**",
             "tooling/browser-tests/runner/**"
         ]
     },
@@ -46,7 +47,7 @@ export default tseslint.config(
         rules: {
             "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
             "@typescript-eslint/no-explicit-any": "off",
-            // Opinionated style/perf rules — not correctness. Revisit later:
+            // Opinionated style/perf rules - not correctness. Revisit later:
             // each-key would mean keying ~18 list blocks; the SvelteSet/SvelteMap
             // rule conflicts with our reassign-to-trigger-reactivity pattern.
             "svelte/require-each-key": "off",
