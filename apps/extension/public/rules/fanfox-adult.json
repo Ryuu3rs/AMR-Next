@@ -1,0 +1,38 @@
+[
+    {
+        "id": 1,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "requestHeaders": [
+                {
+                    "header": "Cookie",
+                    "operation": "append",
+                    "value": "isAdult=1"
+                }
+            ]
+        },
+        "condition": {
+            "urlFilter": "||fanfox.net/",
+            "resourceTypes": ["xmlhttprequest", "other", "main_frame", "sub_frame"]
+        }
+    },
+    {
+        "id": 2,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "requestHeaders": [
+                {
+                    "header": "Cookie",
+                    "operation": "append",
+                    "value": "isAdult=1"
+                }
+            ]
+        },
+        "condition": {
+            "urlFilter": "||mangahere.cc/",
+            "resourceTypes": ["xmlhttprequest", "other", "main_frame", "sub_frame"]
+        }
+    }
+]

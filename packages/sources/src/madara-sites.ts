@@ -8,7 +8,7 @@ import { createMadaraAdapter, type MadaraConfig } from "./madara"
 const SITES: MadaraConfig[] = [
     // { id: "arvenscans", name: "Arven Scans", origin: "https://arvenscans.org", domains: ["arvenscans.org"] }, // retired: site down 2026-07 - TLS certificate expired, verified 2026-07-11
     // { id: "arvencomics", name: "Arven Comics", origin: "https://arvencomics.com", domains: ["arvencomics.com"] }, // retired: site down 2026-07 - TLS handshake fails, verified 2026-07-11
-    { id: "novelmic", name: "Novelmic", origin: "https://novelmic.com", domains: ["novelmic.com"] },
+    // { id: "novelmic", name: "Novelmic", origin: "https://novelmic.com", domains: ["novelmic.com"] }, // retired 2026-07-19: novelmic.com is now an openresty domain-parking lander with no manga content - zero wp-manga/wp-content markup, no /manga/<slug>/ pages resolve. Verified live 2026-07-19.
     // Renamed 2026-07-11: aryascans.com now redirects to brainrotcomics.com. Verified it's
     // the same Madara-engine site (still /manga/<slug>/ URLs, wp-manga-chapter list markup,
     // ?post_type=wp-manga search) - just a rebrand, not a hijack. id kept stable so existing
@@ -21,11 +21,11 @@ const SITES: MadaraConfig[] = [
     },
     // { id: "agrcomics", name: "AGR Comics", origin: "https://agrcomics.com", domains: ["agrcomics.com"] }, // retired: site down 2026-06 - re-enable when back
     // { id: "manhuaplus", name: "ManhuaPlus", origin: "https://manhuaplus.org", domains: ["manhuaplus.org"] }, // retired 2026-07-14: fully migrated off WordPress/Madara to a custom "liliana" theme - verified live: no wp-content/wp-json/wp-admin markers anywhere on the site, chapter pages have zero wp-manga-chapter/reading-content/wp-manga-chapter-img markup, and POSTing to /wp-admin/admin-ajax.php (both manga_get_chapters and manga_get_chapter_img_list) 302-redirects to /home since the endpoint no longer exists - matches the user's reported redirect exactly. Not a same-engine rebrand like aryascans; the whole template changed, so re-adding needs a bespoke adapter, not a config row.
-    { id: "rawkuma", name: "Rawkuma", origin: "https://rawkuma.com", domains: ["rawkuma.com"] },
+    // { id: "rawkuma", name: "Rawkuma", origin: "https://rawkuma.com", domains: ["rawkuma.com"] }, // retired 2026-07-19: rawkuma moved its catalog to rawkuma.net with a non-Madara query-string URL scheme; rawkuma.com no longer serves manga content (no wp-manga /manga/<slug>/ pages). Re-adding the .net site needs a bespoke adapter, not this config row. Verified live 2026-07-19.
     // { id: "hivetoon", name: "HiveToon", origin: "https://hivetoon.com", domains: ["hivetoon.com"], imageOrigins: ["*://*.hivetoon.com/*"] }, // retired 2026-07-16: hivetoon.com 301-redirects to a different domain, hivetoons.org - verified live it is NOT a same-engine rebrand like aryascans->brainrotcomics: hivetoons.org runs Astro (astro-view-transitions markers, astro-island hydration islands, /_vcomics/*.js module scripts), zero wp-manga-chapter/reading-content/c-tabs-item/manga-chapters-holder markup anywhere, and chapter URLs are /series/<slug>/chapter-N with no trailing slash - a full engine change like the manhuaplus/templescan precedent above, so re-adding needs a bespoke adapter, not a config row.
     { id: "lhtranslation", name: "LHTranslation", origin: "https://lhtranslation.net", domains: ["lhtranslation.net"] },
     // { id: "harimanga", name: "HariManga", origin: "https://harimanga.me", domains: ["harimanga.me"] }, // retired: site down 2026-06 - re-enable when back
-    { id: "utoon", name: "UToon", origin: "https://utoon.net", domains: ["utoon.net"] },
+    // { id: "utoon", name: "UToon", origin: "https://utoon.net", domains: ["utoon.net"] }, // retired 2026-07-19: utoon.net hijacked - serves a fake ransom/invoice page, no Madara markup or manga content. Verified live 2026-07-19.
     { id: "mangasushi", name: "MangaSushi", origin: "https://mangasushi.org", domains: ["mangasushi.org"] },
     // chapters-only: chapter pages are ad-gated; sidebar tracking works, reader shows "open on site"
     {
@@ -52,16 +52,7 @@ const SITES: MadaraConfig[] = [
     // { id: "manytoon", name: "ManyToon", origin: "https://manytoon.com", domains: ["manytoon.com"] }, // retired: domain hijacked 2026-07 - resolves and returns 200 but redirects to an unrelated adult popunder ad network (purplesacam.com), verified 2026-07-11
     // { id: "omegascans", name: "Omega Scans", origin: "https://omegascans.org", domains: ["omegascans.org"] }, // retired 2026-07-16: omegascans.org has been fully rewritten as a Next.js/HeanCMS site - verified live zero wp-manga/wp-content/wp-admin/wp-json markers anywhere on the homepage, real content lives under /series/<slug> URLs served by Next.js (_next/static assets, image optimizer at /_next/image). A full engine change like the manhuaplus/templescan precedent above, not a same-engine rebrand like aryascans->brainrotcomics, so re-adding needs a bespoke adapter, not a config row. NOTE: apps/extension/src/database.ts's seedDatabase has a sample entry "seed-oms-001" pointing at an omegascans.org /manga/ URL that will now 404 and reference an unregistered sourceId - flagged for the owning agent, not edited here.
     // { id: "kunmanga", name: "KunManga", origin: "https://kunmanga.com", domains: ["kunmanga.com"] }, // retired: site down 2026-06 - re-enable when back
-    {
-        id: "vortexscans",
-        name: "Vortex Scans",
-        origin: "https://vortexscans.org",
-        domains: ["vortexscans.org"],
-        mangaPath: "series",
-        // Chapter images are served from storage.vortexscans.org, a subdomain not
-        // covered by "https://vortexscans.org/*". Confirmed live 2026-07-14.
-        imageOrigins: ["*://*.vortexscans.org/*"]
-    },
+    // { id: "vortexscans", name: "Vortex Scans", origin: "https://vortexscans.org", domains: ["vortexscans.org"], mangaPath: "series", imageOrigins: ["*://*.vortexscans.org/*"] }, // retired 2026-07-19: vortexscans.org migrated off WordPress/Madara to an Astro SPA (data-astro markers, /_vcomics/ scripts, zero wp-manga markup) - a full engine change like the manhuaplus/omegascans precedent above, not a same-engine rebrand, so re-adding needs a bespoke adapter, not a config row. Supersedes the earlier "images confirmed live 2026-07-14" note - the whole template changed since. Verified live 2026-07-19.
     // { id: "casacomic", name: "Casa Comic", origin: "https://casacomic.com", domains: ["casacomic.com"] }, // retired: site down 2026-06 - re-enable when back
     {
         id: "natomanga",
@@ -103,14 +94,8 @@ const SITES: MadaraConfig[] = [
         // Chapter images are served from a numbered CDN subdomain (e.g. c4.manhwatop.com),
         // not covered by "https://manhwatop.com/*". Confirmed live 2026-07-14.
         imageOrigins: ["*://*.manhwatop.com/*"]
-    },
-    {
-        id: "aquamanga",
-        name: "Aqua Manga",
-        origin: "https://aquamanga.com",
-        domains: ["aquamanga.com"],
-        mangaPath: "read"
     }
+    // { id: "aquamanga", name: "Aqua Manga", origin: "https://aquamanga.com", domains: ["aquamanga.com"], mangaPath: "read" }, // retired 2026-07-19: aquamanga.com redirects through parklogic.com ad-arbitrage, no Madara markup or manga content. Verified live 2026-07-19.
     // { id: "manhwahentai", name: "Manhwa Hentai", origin: "https://manhwahentai.me", domains: ["manhwahentai.me"], mangaPath: "webtoon" }, // retired: domain hijacked 2026-07 - resolves and returns 200 but redirects to the same unrelated adult popunder ad network as manytoon (purplesacam.com), verified 2026-07-11
 ]
 

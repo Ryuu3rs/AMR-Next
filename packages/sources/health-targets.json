@@ -57,28 +57,13 @@
         "expectTitle": "Solo Leveling",
         "note": "best-guess slug"
     },
-    "novelmic": {
-        "seriesUrl": "https://novelmic.com/manga/the-beginning-after-the-end/",
-        "expectTitle": "Beginning After the End",
-        "note": "best-guess slug"
-    },
     "aryascans": {
         "seriesUrl": "https://brainrotcomics.com/manga/the-beginning-after-the-end/",
         "expectTitle": "Beginning After the End",
         "note": "best-guess slug on brainrotcomics.com (renamed from aryascans.com)"
     },
-    "rawkuma": {
-        "seriesUrl": "https://rawkuma.com/manga/one-piece/",
-        "expectTitle": "One Piece",
-        "note": "best-guess slug"
-    },
     "lhtranslation": {
         "seriesUrl": "https://lhtranslation.net/manga/the-beginning-after-the-end/",
-        "expectTitle": "Beginning After the End",
-        "note": "best-guess slug"
-    },
-    "utoon": {
-        "seriesUrl": "https://utoon.net/manga/the-beginning-after-the-end/",
         "expectTitle": "Beginning After the End",
         "note": "best-guess slug"
     },
@@ -95,11 +80,6 @@
     "mangadistrict": {
         "seriesUrl": "https://mangadistrict.com/series/the-beginning-after-the-end/",
         "expectTitle": "Beginning After the End",
-        "note": "best-guess slug (mangaPath=series)"
-    },
-    "vortexscans": {
-        "seriesUrl": "https://vortexscans.org/series/the-primordial-emperor-returns/",
-        "expectTitle": "Primordial",
         "note": "best-guess slug (mangaPath=series)"
     },
     "natomanga": {
@@ -152,11 +132,6 @@
         "expectTitle": "Beginning After the End",
         "note": "best-guess slug"
     },
-    "aquamanga": {
-        "seriesUrl": "https://aquamanga.com/read/the-beginning-after-the-end/",
-        "expectTitle": "Beginning After the End",
-        "note": "best-guess slug (mangaPath=read)"
-    },
     "thunderscans": {
         "seriesUrl": "https://en-thunderscans.com/manga/nano-machine/",
         "expectTitle": "Nano Machine",
@@ -166,11 +141,6 @@
         "seriesUrl": "https://kappabeast.com/reader/nano-machine/",
         "expectTitle": "Nano Machine",
         "note": "best-guess slug (mangaPath=reader, hierarchical chapters)"
-    },
-    "phoenixscans": {
-        "seriesUrl": "https://www.phoenixscans.com/manga/nano-machine/",
-        "expectTitle": "Nano Machine",
-        "note": "best-guess slug"
     },
     "spiderscans": {
         "seriesUrl": "https://spiderscans.xyz/manga/nano-machine/",

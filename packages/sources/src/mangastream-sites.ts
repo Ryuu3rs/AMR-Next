@@ -20,12 +20,7 @@ const SITES: MangaStreamConfig[] = [
         mangaPath: "reader",
         chapterFormat: "hierarchical"
     },
-    {
-        id: "phoenixscans",
-        name: "Phoenix Scans",
-        origin: "https://www.phoenixscans.com",
-        domains: ["phoenixscans.com", "www.phoenixscans.com"]
-    },
+    // { id: "phoenixscans", name: "Phoenix Scans", origin: "https://www.phoenixscans.com", domains: ["phoenixscans.com", "www.phoenixscans.com"] }, // retired 2026-07-19: phoenixscans.com is now a Vue SPA backed by a client-side API - no server-rendered ts_reader.run()/#readerarea markup at all, so the shared MangaStream scraper matches nothing. A full engine change like the templescan precedent above, needs a bespoke adapter, not a config row. Verified live 2026-07-19.
     { id: "spiderscans", name: "Spider Scans", origin: "https://spiderscans.xyz", domains: ["spiderscans.xyz"] }
     // Probe-green by homepage; needs live chapter confirmation (mangaPath/chapterPrefix may need tuning per site).
     // asuracomic migrated to Next.js - removed from MangaStream; see asuracomic.ts

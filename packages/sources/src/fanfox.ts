@@ -107,12 +107,19 @@ function extractChapterList(html: string, mangaSlug: string, sourceId: string, o
     const mangaId = `${sourceId}:manga:${mangaSlug}`
     const seen = new Set<string>()
     const chapters: SourceChapter[] = []
-    const linkRe = new RegExp(`href="(/manga/${mangaSlug}/(?:v[^/]+/)?c([^/"]+)/?)"`, "gi")
+    // Real chapter hrefs are /manga/<slug>/cNNN/<page>.html (and volume-prefixed
+    // /manga/<slug>/vNN/cNNN.N/<page>.html) - see CHAPTER_RE above. Capture the
+    // chapter segment (group 1, incl. any volume prefix) to rebuild the canonical
+    // /cNNN/ URL, and the chapter number (group 2) for the id/sortKey. The trailing
+    // /<page>.html is optional so bare /cNNN/ links still match.
+    const linkRe = new RegExp(`href="/manga/${mangaSlug}/((?:v[^/"]+/)?c([^/"]+?))(?:/\\d+\\.html)?/?"`, "gi")
 
     for (const m of html.matchAll(linkRe)) {
-        const path = captureGroup(m, 1)
+        const segment = captureGroup(m, 1)
         const rawChapter = captureGroup(m, 2)
-        if (!path || !rawChapter || seen.has(path)) continue
+        if (!segment || !rawChapter) continue
+        const path = `/manga/${mangaSlug}/${segment}/`
+        if (seen.has(path)) continue
         seen.add(path)
         const sortKey = parseChapterNumber(rawChapter) ?? UNNUMBERED_SORT_KEY
         chapters.push({
@@ -121,7 +128,7 @@ function extractChapterList(html: string, mangaSlug: string, sourceId: string, o
             sourceId,
             sourceChapterId: rawChapter,
             title: `Ch.${rawChapter}`,
-            url: `${origin}${path.endsWith("/") ? path : path + "/"}`,
+            url: `${origin}${path}`,
             sortKey,
             language: "en"
         })
@@ -163,6 +170,12 @@ export function createFanfoxFamilyAdapter(cfg: FanfoxFamilyConfig): SourceAdapte
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
         Referer: origin + "/"
+        // fanfox.net / mangahere.cc gate Mature-tagged titles (e.g. Berserk) behind an
+        // age check and render an empty chapter list until an isAdult=1 cookie is set.
+        // That cookie can't be set here: Cookie is a forbidden fetch request header and
+        // the browser silently drops it from any fetch() (incl. the MV3 service worker).
+        // It is instead injected below fetch via a declarativeNetRequest modifyHeaders
+        // rule - see apps/extension/public/rules/fanfox-adult.json.
     }
 
     function matchMangaSlug(url: URL): string | undefined {
