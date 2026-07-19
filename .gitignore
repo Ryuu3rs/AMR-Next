@@ -14,6 +14,10 @@ dist-*/
 **/.wxt/
 coverage/
 **/coverage/
+
+# Generated tool reports (source-probe / source-health)
+tooling/source-probe/output/
+tooling/source-health/output/
 *.zip
 *.xpi
 *.crx
