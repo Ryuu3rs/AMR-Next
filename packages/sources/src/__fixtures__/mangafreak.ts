@@ -1,3 +1,9 @@
+export const FIXTURE_META = {
+    capturedAt: "2026-07-18",
+    sourceUrl: "https://ww2.mangafreak.me/Manga/One_Piece",
+    note: "Date inferred from git history, re-capture on next change."
+}
+
 export const ORIGIN = "https://ww2.mangafreak.me"
 export const CDN = "https://images.mangafreak.me"
 

@@ -1,3 +1,9 @@
+export const FIXTURE_META = {
+    capturedAt: "2026-06-17",
+    sourceUrl: "https://chapmanganato.to/manga-ae977661",
+    note: "Date inferred from git history, re-capture on next change."
+}
+
 export const MANGA_ID = "manga-ae977661"
 export const CHAPTER_SLUG = "chapter-68"
 

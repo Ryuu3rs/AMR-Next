@@ -1,3 +1,9 @@
+export const FIXTURE_META = {
+    capturedAt: "2026-07-19",
+    sourceUrl: "https://olympustaff.com/series",
+    note: 'Search-results grid for query "demon"; date from the captured-2026-07-19 fixture comment.'
+}
+
 export const SEARCH_QUERY = "demon"
 export const SEARCH_PATH = "/series"
 

@@ -3,6 +3,12 @@
 // integrity/manifest handshake below were all captured from the actual site
 // ("The Glutton: Devourer of Kings") rather than invented.
 
+export const FIXTURE_META = {
+    capturedAt: "2026-07-16",
+    sourceUrl: "https://kagane.to/series/019d151f-94bc-7b93-bd74-1d8670ebd313",
+    note: "Site verified live 2026-07 per fixture header; exact day inferred from git history."
+}
+
 export const ORIGIN = "https://kagane.to"
 export const API_ORIGIN = "https://yuzuki.kagane.to"
 

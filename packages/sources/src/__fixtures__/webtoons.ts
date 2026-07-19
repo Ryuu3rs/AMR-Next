@@ -1,3 +1,9 @@
+export const FIXTURE_META = {
+    capturedAt: "2026-07-12",
+    sourceUrl: "https://www.webtoons.com/en/romance/daisy-how-to-become-the-dukes-fiancee/list?title_no=8579",
+    note: "Date inferred from git history, re-capture on next change."
+}
+
 export const ORIGIN = "https://www.webtoons.com"
 
 export const TITLE_NO = "8579"
