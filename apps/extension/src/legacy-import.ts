@@ -60,6 +60,10 @@ const LEGACY_DOMAIN_ALIASES: Readonly<Record<string, string>> = {
     // App.svelte's `m.sourceId.includes(".")` reconcile check can never catch. Deleting
     // them lets those domains fall through to the hostname-based unknown-source path
     // instead, which IS reconcile-flagged.
+    // Also removed 2026-07-19: aquamanga (aquamanga.com is retired in madara-sites.ts -
+    // it now redirects to a parklogic ad-arbitrage lander, so its alias pointed imports
+    // at a dead sourceId; dropping it lets aquamanga.com fall through to the same
+    // reconcile-flagged hostname path).
 }
 
 export function isLegacyExport(raw: unknown): raw is LegacyExport {
