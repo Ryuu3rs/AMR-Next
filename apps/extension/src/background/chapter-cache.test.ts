@@ -285,6 +285,32 @@ describe("listChaptersWithTabFallback standard (SW-fetch) path", () => {
         expect(updated?.latestChapterId).toBe(`${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:3`)
     })
 
+    it("sets manga.latestChapterNumber to 0 for a fresh manga whose only fetched chapter is Chapter 0 (Prologue)", async () => {
+        // No latestChapterNumber on the seeded manga - simulates a manga that has
+        // never had its chapter list fetched before. A genuine sortKey-0 chapter
+        // (e.g. "Chapter 0: Prologue") must still register as an advance over the
+        // unset baseline, not get skipped because 0 > 0 is false.
+        await db.manga.put(manga)
+        const chapters: ChapterRecord[] = [
+            {
+                id: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:0`,
+                mangaId: MANGA_ID,
+                sourceId: SOURCE_ID,
+                title: "Chapter 0: Prologue",
+                url: `https://${HOSTNAME}/ep-0`,
+                sortKey: 0
+            }
+        ]
+        listChaptersBySourceMock.mockResolvedValue(chapters)
+
+        const source = fakeSource(() => null)
+        await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+
+        const updated = await db.manga.get(MANGA_ID)
+        expect(updated?.latestChapterNumber).toBe(0)
+        expect(updated?.latestChapterId).toBe(`${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:0`)
+    })
+
     it("purges stale MangaHub junk rows after a fresh bulkPut, but leaves other sources untouched", async () => {
         const MANGAHUB_MANGA_ID = "mangahub:manga:some-series"
         const mangahubManga: LibraryManga = {
