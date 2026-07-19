@@ -29,11 +29,12 @@ import type { RuntimeRequest } from "../runtime"
 //         background/chapter-cache.ts once its bulkPut commits, and the
 //         standard-fetch fallback (listChaptersBySource) publishes directly
 //         after its own bulkPut in handlers/reader.ts.
-//       - "reader:resolve" self-publishes after its own db.chapters.put (and
-//         optional manga.coverUrl backfill) in handlers/reader.ts. Its
-//         bot-blocked fallback branch also mines sibling episodes via
-//         mineAndCacheEpisodesFromHtml(), which publishes on its own once that
-//         write commits (see background/chapter-cache.ts).
+//       - "reader:resolve"'s bot-blocked fallback branch mines sibling episodes
+//         via mineAndCacheEpisodesFromHtml(), which publishes on its own once that
+//         write commits (see background/chapter-cache.ts). Its own chapter put +
+//         optional coverUrl backfill (saveReaderResolvedChapter) is published from
+//         MUTATION_SCOPES below with ["chapters", "library"] - the "library" scope
+//         is what covers the coverUrl backfill a chapters-only publish would miss.
 //       - "chapter:adjacent"'s two stale-cache-refresh branches each publish
 //         directly after their own db.chapters.bulkPut in handlers/library.ts.
 //       - "updates:check" only kicks off checkUpdates() fire-and-forget; the
@@ -71,6 +72,7 @@ export const MUTATION_SCOPES: Partial<Record<RuntimeRequest["type"], LiveScope[]
     "data:seed": ["all"],
     "data:backup:restore": ["all"],
     "sync:pull": ["all"],
+    "reader:resolve": ["chapters", "library"],
     "reader:progress": ["progress"],
     "bookmark:toggle": ["progress"],
     "bookmark:remove": ["progress"],
@@ -111,7 +113,6 @@ export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<Runt
     "updates:new-chapters",
     "page:current",
     "page:capture",
-    "reader:resolve",
     "chapter:siblings",
     "analytics:record",
     "analytics:summary",

@@ -71,5 +71,49 @@ export default tseslint.config(
                 }
             ]
         }
+    },
+    {
+        // Closes the "falsy-0 merge" bug class: `Math.max(a ?? 0, b ?? 0) || undefined`
+        // maps two genuine chapter-0 values (Math.max(0,0) === 0, then `0 || undefined`)
+        // to undefined, silently wiping real chapter-0 reading progress on
+        // relink/merge/import. Merge chapter NUMBERS with maxDefined() instead.
+        files: ["apps/extension/src/**/*.ts"],
+        rules: {
+            "no-restricted-syntax": [
+                "error",
+                {
+                    selector:
+                        "LogicalExpression[operator='||'] > CallExpression.left[callee.object.name='Math'][callee.property.name='max']",
+                    message: "Math.max(...) || undefined wipes a genuine chapter 0; use maxDefined"
+                }
+            ]
+        }
+    },
+    {
+        // Handlers must never write Dexie directly - every mutation goes through a
+        // named function in database.ts (multi-step writes get a db.transaction there,
+        // single writes get a thin wrapper). This keeps every write in one place where
+        // its transaction scope and MV3-restart atomicity can be reasoned about, and
+        // stops the untransacted multi-step-write bug class from creeping back in.
+        // (The Math.max guard is repeated here because a file's `no-restricted-syntax`
+        // config does not merge across blocks - the later, more-specific block wins.)
+        files: ["apps/extension/src/handlers/**/*.ts"],
+        ignores: ["apps/extension/src/handlers/**/*.test.ts"],
+        rules: {
+            "no-restricted-syntax": [
+                "error",
+                {
+                    selector:
+                        "LogicalExpression[operator='||'] > CallExpression.left[callee.object.name='Math'][callee.property.name='max']",
+                    message: "Math.max(...) || undefined wipes a genuine chapter 0; use maxDefined"
+                },
+                {
+                    selector:
+                        "CallExpression[callee.object.object.name='db'][callee.property.name=/^(put|bulkPut|add|bulkAdd|update|delete|bulkDelete|modify|clear)$/]",
+                    message:
+                        "Handlers must not write Dexie directly; move the write into a named function in database.ts"
+                }
+            ]
+        }
     }
 )

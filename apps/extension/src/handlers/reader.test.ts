@@ -247,13 +247,19 @@ describe("reader:resolve bot-block path", () => {
     })
 })
 
-describe("reader:resolve publishes to the live bus", () => {
-    it("publishes the chapters scope for the resolved manga id after persisting the chapter", async () => {
+describe("reader:resolve persists the chapter", () => {
+    it("writes the resolved chapter and backfills a missing coverUrl in one call, without publishing inline", async () => {
+        // The live publish now comes from the dispatcher via MUTATION_SCOPES
+        // (["chapters", "library"]) - the handler itself no longer publishes, so a
+        // direct handler call must NOT touch the live bus. See mutation-scopes.test.ts
+        // for the classification invariant that drives the dispatcher's publish.
         const source = { manifest: { id: "mangadex" }, match: vi.fn().mockReturnValue("chapter") }
         findSourceMock.mockReturnValue(source)
+        // Library entry exists but has no cover yet - the backfill should fill it.
+        await db.manga.put({ ...manga, id: "mangadex:manga:resolve-publish", coverUrl: undefined } as never)
         resolveChapterUrlMock.mockResolvedValue({
             manga: {
-                manga: { ...manga, id: "mangadex:manga:resolve-publish" },
+                manga: { ...manga, id: "mangadex:manga:resolve-publish", coverUrl: "https://cdn.example/c.jpg" },
                 sourceId: "mangadex",
                 sourceMangaId: "resolve-publish",
                 url: "https://mangadex.org/title/resolve-publish"
@@ -266,7 +272,11 @@ describe("reader:resolve publishes to the live bus", () => {
             mkCtx()
         )
 
-        expect(publishLiveMock).toHaveBeenCalledWith(["chapters"], ["mangadex:manga:resolve-publish"])
+        const storedChapter = await db.chapters.get("mangadex:chapter:resolve-publish:1")
+        expect(storedChapter).toBeDefined()
+        const storedManga = await db.manga.get("mangadex:manga:resolve-publish")
+        expect(storedManga?.coverUrl).toBe("https://cdn.example/c.jpg")
+        expect(publishLiveMock).not.toHaveBeenCalled()
     })
 })
 

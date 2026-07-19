@@ -40,6 +40,15 @@ describe("mutation-scopes exhaustiveness", () => {
         expect(Object.keys(MUTATION_SCOPES).length + READ_ONLY_TYPES.size).toBe(allRequestTypes.length)
     })
 
+    it("classifies reader:resolve as mutating with the chapters + library scopes", () => {
+        // reader:resolve persists the resolved chapter and backfills the library
+        // entry's coverUrl (saveReaderResolvedChapter) - it must publish, and the
+        // "library" scope is what covers the coverUrl backfill a chapters-only
+        // publish would miss. It must not be classified read-only.
+        expect(MUTATION_SCOPES["reader:resolve"]).toEqual(["chapters", "library"])
+        expect(READ_ONLY_TYPES.has("reader:resolve")).toBe(false)
+    })
+
     it("does not add a 'settings' scope or an entry for settings:update", () => {
         // Settings live under a single storage.local "settings" key already -
         // pages watch storage.onChanged for that key directly instead of going
