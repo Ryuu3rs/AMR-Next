@@ -1,7 +1,9 @@
 import {
     SourceError,
     SourceRequestError,
+    UNNUMBERED_SORT_KEY,
     matchesSourceDomain,
+    parseChapterNumber,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolvedChapter,
@@ -132,7 +134,7 @@ function extractImages(html: string): string[] {
         }
     }
 
-    // Strategy 3: <img src="..."> scan — works on fully rendered DOM (tab fallback)
+    // Strategy 3: <img src="..."> scan - works on fully rendered DOM (tab fallback)
     const urls: string[] = []
     for (const m of html.matchAll(
         /<img\b[^>]*\bsrc=["'](https?:\/\/[^"']+\.(?:jpe?g|png|webp|gif)[^"']*?)["'][^>]*>/gi
@@ -198,7 +200,7 @@ function extractChapterList(html: string, mangaSlug: string): SourceChapter[] {
                         sourceChapterId: `${mangaSlug}/${num}`,
                         title: String(r.title ?? `Chapter ${num}`),
                         url: `${ORIGIN}/series/${mangaSlug}/${num}`,
-                        sortKey: parseFloat(num) || 0,
+                        sortKey: parseChapterNumber(num) ?? UNNUMBERED_SORT_KEY,
                         language: LANGUAGE
                     }
                 })
@@ -224,7 +226,7 @@ function extractChapterList(html: string, mangaSlug: string): SourceChapter[] {
             sourceChapterId: `${mangaSlug}/${num}`,
             title: `Chapter ${num}`,
             url: `${ORIGIN}/series/${mangaSlug}/${num}`,
-            sortKey: parseFloat(num) || 0,
+            sortKey: parseChapterNumber(num) ?? UNNUMBERED_SORT_KEY,
             language: LANGUAGE
         })
     }
@@ -309,7 +311,7 @@ export const asuraComicAdapter: SourceAdapter = {
             const url = new URL(`${ORIGIN}/series`)
             url.searchParams.set("q", query)
             const html = await context.request.getText(url, { headers: browserHeaders })
-            // Series cards in the search/listing page — href="/series/<slug>" with a title attribute or heading
+            // Series cards in the search/listing page - href="/series/<slug>" with a title attribute or heading
             const cardRe =
                 /href=["'](?:https:\/\/asuracomic\.net)?\/series\/([a-z0-9][a-z0-9-]*)["'][^>]*>[^<]*<[^>]*>([^<]+)/gi
             const out: SourceSearchResult[] = []
@@ -345,7 +347,7 @@ export const asuraComicAdapter: SourceAdapter = {
         const imageUrls = extractImages(html)
 
         if (imageUrls.length === 0) {
-            // SSR HTML has no images — AsuraComic may render pages client-side.
+            // SSR HTML has no images - AsuraComic may render pages client-side.
             // isBotBlocked() in background.ts matches on the literal message "blocked"
             // to trigger the fetchChapterHtmlViaTab fallback, which captures the fully
             // JS-rendered DOM (Strategy 3 img scan will find them).
@@ -381,7 +383,7 @@ export const asuraComicAdapter: SourceAdapter = {
             sourceChapterId: parsed.type === "new" ? `${mangaSlug}/${chapterNum}` : parsed.slug,
             title: `Chapter ${chapterNum}`,
             url: parsed.type === "new" ? input.url.toString() : `${ORIGIN}/series/${mangaSlug}/${chapterNum}`,
-            sortKey: parseFloat(chapterNum) || 0,
+            sortKey: parseChapterNumber(chapterNum) ?? UNNUMBERED_SORT_KEY,
             language: LANGUAGE
         }
 

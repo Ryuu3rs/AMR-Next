@@ -1,6 +1,9 @@
 import {
     SourceError,
+    UNNUMBERED_SORT_KEY,
     matchesSourceDomain,
+    parseChapterNumber,
+    sanitizeScrapedText,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -94,13 +97,13 @@ function extractTitle(html: string, fallbackSlug: string): string {
         html.match(/<meta\s[^>]*\bcontent="([^"]+)"\s[^>]*\bproperty="og:title"/i)
     const og = ogMatch ? captureGroup(ogMatch, 1) : undefined
     if (og) {
-        const cleaned = og.split(/\s+[-–|]\s+/)[0]?.trim()
+        const cleaned = og.split(/\s+[-|\u2013]\s+/)[0]?.trim()
         if (cleaned) return cleaned
     }
     const titleMatch = html.match(/<title>([^<]+)<\/title>/i)
     const title = titleMatch ? captureGroup(titleMatch, 1) : undefined
     if (title) {
-        const cleaned = title.split(/\s+[-–|]\s+/)[0]?.trim()
+        const cleaned = title.split(/\s+[-|\u2013]\s+/)[0]?.trim()
         if (cleaned) return cleaned
     }
     return fallbackSlug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
@@ -233,7 +236,7 @@ function extractChapterList(html: string, mangaId: string, mangaSlug: string, la
             sourceChapterId: `${mangaId}:${chapterId}`,
             title: `Chapter ${number}`,
             url,
-            sortKey: parseFloat(number) || 0,
+            sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
             language: lang
         })
     }
@@ -257,11 +260,8 @@ function extractSearchResults(html: string): SourceSearchResult[] {
         const rawTitle =
             (titleAttrMatch ? captureGroup(titleAttrMatch, 1) : undefined) ??
             (headingMatch ? captureGroup(headingMatch, 1) : undefined) ??
-            innerHtml.replace(/<[^>]+>/g, "").trim()
-        const title = rawTitle
-            .replace(/&amp;/g, "&")
-            .replace(/&#\d+;/g, "")
-            .trim()
+            innerHtml
+        const title = sanitizeScrapedText(rawTitle)
         if (!title || title.length < 2) continue
         out.push({
             sourceId: SOURCE_ID,
@@ -364,7 +364,7 @@ export const mangaparkAdapter: SourceAdapter = {
         if (imageUrls.length === 0) {
             const hasCf = /cf-browser-verification|cf_chl_jschl|__cf_chl_captcha/.test(html)
             context.logger.warn(
-                `No images found [html:${html.length}b cf=${hasCf}] — returning pages:[] so siblings can be cached`,
+                `No images found [html:${html.length}b cf=${hasCf}] - returning pages:[] so siblings can be cached`,
                 {
                     url: input.url.toString()
                 }
@@ -401,7 +401,7 @@ export const mangaparkAdapter: SourceAdapter = {
             sourceChapterId: `${slugs.mangaId}:${slugs.chapterId}`,
             title: `Chapter ${number}`,
             url: input.url.toString(),
-            sortKey: parseFloat(number) || 0,
+            sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
             language: slugs.lang
         }
 

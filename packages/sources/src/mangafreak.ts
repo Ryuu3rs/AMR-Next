@@ -1,6 +1,9 @@
 import {
     SourceError,
+    UNNUMBERED_SORT_KEY,
     matchesSourceDomain,
+    parseChapterNumber,
+    sanitizeScrapedText,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -38,17 +41,6 @@ function captureGroup(m: RegExpMatchArray, i: number): string | undefined {
     return typeof v === "string" ? v : undefined
 }
 
-function decodeHtml(s: string): string {
-    return s
-        .replace(/&amp;/g, "&")
-        .replace(/&quot;/g, '"')
-        .replace(/&#0*39;|&apos;/g, "'")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .trim()
-}
-
 function matchMangaSlug(url: URL): string | undefined {
     if (!matchesSourceDomain(url.hostname, DOMAINS)) return undefined
     return url.pathname.match(MANGA_RE)?.[1]
@@ -80,7 +72,7 @@ function extractTitle(html: string): string | undefined {
     ]) {
         const m = html.match(p)
         if (m) {
-            const t = decodeHtml((captureGroup(m, 1) ?? "").replace(/<[^>]+>/g, ""))
+            const t = sanitizeScrapedText(captureGroup(m, 1) ?? "")
             if (t.length > 1) return t
         }
     }
@@ -146,7 +138,7 @@ function extractSearchResults(html: string): SourceSearchResult[] {
         const slug = captureGroup(m, 1)
         const inner = captureGroup(m, 2) ?? ""
         if (!slug || seen.has(slug)) continue
-        const title = decodeHtml(inner.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "))
+        const title = sanitizeScrapedText(inner)
         // Result rows link the same slug twice: an image-only thumbnail anchor first,
         // then the real title anchor. Skip the empty-title anchor without marking the
         // slug seen, so the title anchor that follows still produces a result.
@@ -235,7 +227,7 @@ export const mangafreakAdapter: SourceAdapter = {
                 sourceChapterId: l.num,
                 title: `Ch.${l.num}`,
                 url: l.url,
-                sortKey: parseFloat(l.num) || 0,
+                sortKey: parseChapterNumber(l.num) ?? UNNUMBERED_SORT_KEY,
                 language: "en"
             }))
             .sort((a, b) => b.sortKey - a.sortKey)
@@ -333,7 +325,7 @@ export const mangafreakAdapter: SourceAdapter = {
             sourceChapterId: chapterNum,
             title: `Ch.${chapterNum}`,
             url: input.url.toString(),
-            sortKey: parseFloat(chapterNum) || 0,
+            sortKey: parseChapterNumber(chapterNum) ?? UNNUMBERED_SORT_KEY,
             language: "en"
         }
 

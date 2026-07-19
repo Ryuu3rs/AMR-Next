@@ -1,6 +1,10 @@
 import {
     SourceError,
+    UNNUMBERED_SORT_KEY,
+    assignListSortKeys,
     decodeHtmlEntities as decodeEntities,
+    parseChapterNumber,
+    sanitizeScrapedText,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -53,21 +57,17 @@ function extractChapterId(url: URL): string | undefined {
 function chapterNumberFromText(text: string): number | undefined {
     const m = text.match(/(?:ch(?:apter)?\.?\s*)(\d+(?:[.-]\d+)?)/i)
     const raw = m ? captureGroup(m, 1) : undefined
-    return raw ? parseFloat(raw.replace("-", ".")) : undefined
+    return parseChapterNumber(raw?.replace("-", "."))
 }
 
-// Chapter (and search-result) anchors on the live site can wrap more than just the label text:
-// a hidden "Last Read" indicator span, an inline SVG with an embedded <style> block, and (for
-// chapter anchors) a trailing <time> element whose text content is a raw ISO timestamp. Plain
-// tag-stripping only removes the tags themselves, not the CSS text sitting inside <style> or the
-// timestamp text sitting inside <time>, so both survive as literal text and leak into the
-// extracted label (e.g. "Chapter 200 Last Read .st0 { fill: #d3d629; } 2024-09-07T17:04:15Z").
-// Strip these blocks - content included, not just the tags - before the generic tag-strip runs.
+// Weeb Central chapter/search anchors wrap a hidden "Last Read" indicator span
+// (x-show, Alpine.js) ahead of the label. sanitizeScrapedText already removes the
+// inline SVG <style> block and the trailing <time> timestamp (the shared leak fix),
+// but the x-show span is site-specific: its content "Last Read" is real text, so
+// only removing the <span> block itself keeps it out of the label. Run this before
+// handing the anchor inner HTML to sanitizeScrapedText.
 function stripAnchorNoise(html: string): string {
-    return html
-        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-        .replace(/<time\b[^>]*>[\s\S]*?<\/time>/gi, " ")
-        .replace(/<span\b[^>]*\bx-show="[^"]*"[^>]*>[\s\S]*?<\/span>/gi, " ")
+    return html.replace(/<span\b[^>]*\bx-show="[^"]*"[^>]*>[\s\S]*?<\/span>/gi, " ")
 }
 
 function extractCoverUrl(html: string): string | undefined {
@@ -94,7 +94,7 @@ function extractSeriesTitle(html: string, fallback: string): string {
         if (cleaned && cleaned.length > 1) return cleaned
     }
     const h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)
-    const h1Text = h1 ? decodeEntities((captureGroup(h1, 1) ?? "").replace(/<[^>]+>/g, "").trim()) : ""
+    const h1Text = h1 ? sanitizeScrapedText(captureGroup(h1, 1) ?? "") : ""
     if (h1Text.length > 1) return h1Text
     return fallback
 }
@@ -124,42 +124,21 @@ function extractChapterList(html: string, seriesId: string): SourceChapter[] {
         const inner = captureGroup(a, 2) ?? ""
         if (!chapterId || seen.has(chapterId)) continue
         seen.add(chapterId)
-        const text = decodeEntities(
-            stripAnchorNoise(inner)
-                .replace(/<[^>]+>/g, " ")
-                .replace(/\s+/g, " ")
-                .trim()
-        )
+        const text = sanitizeScrapedText(stripAnchorNoise(inner))
         entries.push({ chapterId, text, parsedKey: chapterNumberFromText(text) })
     }
 
-    const firstParsed = entries.find(e => e.parsedKey !== undefined)?.parsedKey
-    const lastParsed = [...entries].reverse().find(e => e.parsedKey !== undefined)?.parsedKey
-    const descending = firstParsed !== undefined && lastParsed !== undefined && firstParsed > lastParsed
-    const chronological = descending ? [...entries].reverse() : entries
-
-    let lastRealKey = 0
-    let unparsedRun = 0
-    const sortKeyById = new Map<string, number>()
-    for (const entry of chronological) {
-        if (entry.parsedKey !== undefined) {
-            sortKeyById.set(entry.chapterId, entry.parsedKey)
-            lastRealKey = entry.parsedKey
-            unparsedRun = 0
-        } else {
-            unparsedRun += 1
-            sortKeyById.set(entry.chapterId, lastRealKey + unparsedRun / 1000)
-        }
-    }
-
-    return entries.map(entry => {
-        const sortKey = sortKeyById.get(entry.chapterId) ?? 0
+    // The series page lists chapters newest-first (descending). Unnumbered bonus
+    // entries interpolate between the real chapters they sit next to.
+    const sortKeys = assignListSortKeys(entries, e => e.parsedKey, "newest-first")
+    return entries.map((entry, i) => {
+        const sortKey = sortKeys[i] as number
         return {
             id: `${SOURCE_ID}:chapter:${entry.chapterId}`,
             mangaId: parentId,
             sourceId: SOURCE_ID,
             sourceChapterId: entry.chapterId,
-            title: entry.text || `Chapter ${sortKey || "?"}`,
+            title: entry.text || `Chapter ${Number.isFinite(sortKey) ? sortKey : "?"}`,
             url: `${ORIGIN}/chapters/${entry.chapterId}/`,
             sortKey,
             language: "en"
@@ -210,10 +189,10 @@ function extractChapterPageMeta(html: string): { seriesId?: string; title: strin
     // isolation - there's no surrounding chapter list to interpolate a position from. Fall back
     // to +Infinity (not 0) so an unparseable title (e.g. "Extra") sorts to the end of a chapter
     // list rather than before every real chapter.
-    const sortKey = chapterNumberFromText(title) ?? Number.POSITIVE_INFINITY
+    const sortKey = chapterNumberFromText(title) ?? UNNUMBERED_SORT_KEY
     return {
         ...(seriesId ? { seriesId } : {}),
-        title: title || `Chapter ${sortKey === Number.POSITIVE_INFINITY ? "?" : sortKey}`,
+        title: title || `Chapter ${sortKey === UNNUMBERED_SORT_KEY ? "?" : sortKey}`,
         sortKey
     }
 }
@@ -246,12 +225,7 @@ function extractSearchResults(html: string): SourceSearchResult[] {
         const inner = captureGroup(a, 5) ?? ""
         if (!seriesId) continue
 
-        const title = decodeEntities(
-            stripAnchorNoise(inner)
-                .replace(/<[^>]+>/g, " ")
-                .replace(/\s+/g, " ")
-                .trim()
-        )
+        const title = sanitizeScrapedText(stripAnchorNoise(inner))
         if (title.length < 2) continue
 
         const isCleanAnchor = LINK_HOVER_CLASS_RE.test(attrsBefore) || LINK_HOVER_CLASS_RE.test(attrsAfter)

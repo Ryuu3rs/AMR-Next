@@ -1,7 +1,9 @@
 import {
     SourceError,
     SourceRequestError,
+    UNNUMBERED_SORT_KEY,
     matchesSourceDomain,
+    parseChapterNumber,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolvedChapter,
@@ -110,7 +112,7 @@ function extractChapterList(html: string, slug: string): SourceChapter[] {
             sourceChapterId: `${slug}/${num}`,
             title: `Chapter ${num}`,
             url: `${ORIGIN}/comics/${slug}/chapter/${num}`,
-            sortKey: parseFloat(num) || 0,
+            sortKey: parseChapterNumber(num) ?? UNNUMBERED_SORT_KEY,
             language: LANGUAGE
         })
     }
@@ -272,7 +274,7 @@ export const asuraScansAdapter: SourceAdapter = {
             sourceChapterId: `${slug}/${num}`,
             title: `Chapter ${num}`,
             url: input.url.toString(),
-            sortKey: parseFloat(num) || 0,
+            sortKey: parseChapterNumber(num) ?? UNNUMBERED_SORT_KEY,
             language: LANGUAGE
         }
 

@@ -1,7 +1,9 @@
 import {
     SourceError,
-    decodeHtmlEntities as decodeEntities,
+    UNNUMBERED_SORT_KEY,
     matchesSourceDomain,
+    parseChapterNumber,
+    sanitizeScrapedText,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -101,12 +103,12 @@ function extractCoverUrl(html: string): string | undefined {
 
 function extractTitle(html: string, fallbackId: string): string {
     const h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)
-    const h1Text = h1 ? decodeEntities((captureGroup(h1, 1) ?? "").replace(/<[^>]+>/g, "")) : ""
+    const h1Text = h1 ? sanitizeScrapedText(captureGroup(h1, 1) ?? "") : ""
     if (h1Text) return h1Text
     const titleMatch = html.match(/<title>([^<]+)<\/title>/i)
     const titleText = titleMatch ? captureGroup(titleMatch, 1) : undefined
     if (titleText) {
-        const cleaned = titleText.split(/\s+[-–|]\s+/)[0]?.trim()
+        const cleaned = titleText.split(/\s+[-|\u2013]\s+/)[0]?.trim()
         if (cleaned) return cleaned
     }
     return fallbackId
@@ -119,7 +121,7 @@ function extractGenres(html: string): string[] {
     for (const a of anchors) {
         const href = captureGroup(a, 1) ?? ""
         if (!/\/genre-/i.test(href)) continue
-        const text = decodeEntities((captureGroup(a, 2) ?? "").replace(/<[^>]+>/g, ""))
+        const text = sanitizeScrapedText(captureGroup(a, 2) ?? "")
         const key = text.toLowerCase()
         if (text.length < 2 || seen.has(key)) continue
         seen.add(key)
@@ -155,7 +157,7 @@ function extractChapterList(html: string, mangaId: string): SourceChapter[] {
             sourceChapterId: `${mangaId}:${ids.chapterSlug}`,
             title: `Chapter ${number}`,
             url: `${ORIGIN}/${mangaId}/${ids.chapterSlug}`,
-            sortKey: parseFloat(number) || 0,
+            sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
             language: "en"
         })
     }
@@ -294,7 +296,7 @@ export const manganatoAdapter: SourceAdapter = {
             sourceChapterId: `${ids.mangaId}:${ids.chapterSlug}`,
             title: `Chapter ${number}`,
             url: requestUrl.toString(),
-            sortKey: parseFloat(number) || 0,
+            sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
             language: "en"
         }
 

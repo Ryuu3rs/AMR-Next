@@ -1,6 +1,9 @@
 import {
     SourceError,
+    UNNUMBERED_SORT_KEY,
     matchesSourceDomain,
+    parseChapterNumber,
+    sanitizeScrapedText,
     type ListChaptersInput,
     type ResolveChapterInput,
     type ResolveMangaInput,
@@ -106,12 +109,7 @@ function extractGenres(html: string): string[] {
     for (const a of anchors) {
         const href = captureGroup(a, 1) ?? ""
         if (!blockMatch && !/\/genre/i.test(href)) continue
-        const text = (captureGroup(a, 2) ?? "")
-            .replace(/<[^>]+>/g, "")
-            .replace(/&amp;/g, "&")
-            .replace(/&#0*39;|&apos;/g, "'")
-            .replace(/&nbsp;/g, " ")
-            .trim()
+        const text = sanitizeScrapedText(captureGroup(a, 2) ?? "")
         const key = text.toLowerCase()
         if (text.length < 2 || seen.has(key)) continue
         seen.add(key)
@@ -143,7 +141,7 @@ function extractChapterList(html: string, mangaSlug: string): SourceChapter[] {
             sourceChapterId: chapterSlug,
             title: `Chapter ${chapterNumber}`,
             url: `${ORIGIN}/reader/en/${chapterSlug}/`,
-            sortKey: parseFloat(chapterNumber) || 0,
+            sortKey: parseChapterNumber(chapterNumber) ?? UNNUMBERED_SORT_KEY,
             language: "en"
         })
     }
@@ -160,13 +158,7 @@ function extractSearchResults(html: string): SourceSearchResult[] {
         const inner = m[3] ?? ""
         if (!slug || seen.has(slug)) continue
         seen.add(slug)
-        const title = inner
-            .replace(/<[^>]+>/g, " ")
-            .replace(/&amp;/g, "&")
-            .replace(/&#0*39;|&apos;/g, "'")
-            .replace(/&nbsp;/g, " ")
-            .replace(/\s+/g, " ")
-            .trim()
+        const title = sanitizeScrapedText(inner)
         if (title.length < 2) continue
         const imgMatch = inner.match(/\bsrc="(https?:\/\/[^"]+)"/)
         const coverUrl = imgMatch?.[1]
@@ -383,7 +375,7 @@ export const mgekoAdapter: SourceAdapter = {
             sourceChapterId: chapterSlug,
             title: `Chapter ${chapterNumber}`,
             url: input.url.toString(),
-            sortKey: parseFloat(chapterNumber) || 0,
+            sortKey: parseChapterNumber(chapterNumber) ?? UNNUMBERED_SORT_KEY,
             language: "en"
         }
 
