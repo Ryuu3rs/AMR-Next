@@ -247,6 +247,29 @@ describe("reader:resolve bot-block path", () => {
     })
 })
 
+describe("reader:resolve publishes to the live bus", () => {
+    it("publishes the chapters scope for the resolved manga id after persisting the chapter", async () => {
+        const source = { manifest: { id: "mangadex" }, match: vi.fn().mockReturnValue("chapter") }
+        findSourceMock.mockReturnValue(source)
+        resolveChapterUrlMock.mockResolvedValue({
+            manga: {
+                manga: { ...manga, id: "mangadex:manga:resolve-publish" },
+                sourceId: "mangadex",
+                sourceMangaId: "resolve-publish",
+                url: "https://mangadex.org/title/resolve-publish"
+            },
+            chapter: chapter("mangadex:chapter:resolve-publish:1", 1, "https://mangadex.org/chapter/resolve-publish-1")
+        })
+
+        await readerHandlers["reader:resolve"]!(
+            { type: "reader:resolve", url: "https://mangadex.org/chapter/resolve-publish-1" },
+            mkCtx()
+        )
+
+        expect(publishLiveMock).toHaveBeenCalledWith(["chapters"], ["mangadex:manga:resolve-publish"])
+    })
+})
+
 describe("reader:chapters (Webtoons-style getChapterListUrl sources)", () => {
     const SOURCE_ID = "webtoons"
     const SOURCE_MANGA_ID = "42"

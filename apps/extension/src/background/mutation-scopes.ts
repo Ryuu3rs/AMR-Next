@@ -29,6 +29,11 @@ import type { RuntimeRequest } from "../runtime"
 //         background/chapter-cache.ts once its bulkPut commits, and the
 //         standard-fetch fallback (listChaptersBySource) publishes directly
 //         after its own bulkPut in handlers/reader.ts.
+//       - "reader:resolve" self-publishes after its own db.chapters.put (and
+//         optional manga.coverUrl backfill) in handlers/reader.ts. Its
+//         bot-blocked fallback branch also mines sibling episodes via
+//         mineAndCacheEpisodesFromHtml(), which publishes on its own once that
+//         write commits (see background/chapter-cache.ts).
 //       - "chapter:adjacent"'s two stale-cache-refresh branches each publish
 //         directly after their own db.chapters.bulkPut in handlers/library.ts.
 //       - "updates:check" only kicks off checkUpdates() fire-and-forget; the
