@@ -40,13 +40,13 @@ function parseSeriesUrl(url: URL): string | null {
 }
 
 function extractImages(html: string): string[] {
-    // Strategy 1: React Flight (RSC) data — "url":[0,"https://cdn.asurascans.com/asura-images/chapters/..."]
+    // Strategy 1: React Flight (RSC) data - "url":[0,"https://cdn.asurascans.com/asura-images/chapters/..."]
     const flightUrls = [
         ...html.matchAll(/"url":\[0,"(https?:\/\/cdn\.asurascans\.com\/asura-images\/chapters\/[^"]+)"/g)
     ].map(m => m[1]!)
     if (flightUrls.length > 0) return flightUrls
 
-    // Strategy 2: <img data-page-index="N"> — chapter page imgs present in SSR HTML
+    // Strategy 2: <img data-page-index="N"> - chapter page imgs present in SSR HTML
     const pageImgs: string[] = []
     for (const m of html.matchAll(/<img\b([^>]*)>/gi)) {
         const tag = m[1] ?? ""
@@ -56,7 +56,7 @@ function extractImages(html: string): string[] {
     }
     if (pageImgs.length > 0) return pageImgs
 
-    // Strategy 3: CDN chapter URL filter — catch-all for rendered DOM (tab fallback)
+    // Strategy 3: CDN chapter URL filter - catch-all for rendered DOM (tab fallback)
     return [
         ...html.matchAll(
             /<img\b[^>]*\bsrc=["'](https?:\/\/cdn\.asurascans\.com\/asura-images\/chapters\/[^"']+)["'][^>]*>/gi
@@ -192,7 +192,7 @@ export const asuraScansAdapter: SourceAdapter = {
 
     async search(query: string, context: SourceContext): Promise<SourceSearchResult[]> {
         try {
-            const url = new URL(`${ORIGIN}/comics`)
+            const url = new URL(`${ORIGIN}/browse`)
             url.searchParams.set("q", query)
             const html = await context.request.getText(url, { headers: browserHeaders })
             const cardRe =
@@ -231,12 +231,12 @@ export const asuraScansAdapter: SourceAdapter = {
             const isBlocked =
                 /cf_chl|challenge-platform|cf-browser-verification|__cf_chl_captcha|ddos-guard\.net/i.test(html)
             if (isBlocked) {
-                // Real bot-block — signal it so isBotBlocked() triggers the tab-render
+                // Real bot-block - signal it so isBotBlocked() triggers the tab-render
                 // fallback, instead of silently resolving with an empty reader.
                 throw new SourceRequestError("blocked")
             }
             context.logger.warn(
-                `No images found [html:${html.length}b] — returning pages:[] so siblings can be cached`,
+                `No images found [html:${html.length}b] - returning pages:[] so siblings can be cached`,
                 {
                     url: input.url.toString()
                 }
