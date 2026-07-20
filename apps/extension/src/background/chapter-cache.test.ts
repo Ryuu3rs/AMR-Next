@@ -311,6 +311,88 @@ describe("listChaptersWithTabFallback standard (SW-fetch) path", () => {
         expect(updated?.latestChapterId).toBe(`${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:0`)
     })
 
+    // Regression test for the UNNUMBERED_SORT_KEY (Infinity) leak class, site 1
+    // (SEVERE, data loss): a plain `Math.max(...chapters.map(c => c.sortKey))` let a
+    // single unnumbered chapter (sortKey: Infinity) beat every real chapter number and
+    // get persisted as latestChapterNumber - which IndexedDB keeps, backup export
+    // turns into null, and import validation then rejects outright, silently dropping
+    // the title from a restored library.
+    it("advances to the highest NUMBERED chapter, ignoring an unnumbered chapter that would win a plain Math.max", async () => {
+        await db.manga.put({
+            ...manga,
+            latestChapterNumber: 1,
+            latestChapterId: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:1`
+        })
+        const chapters: ChapterRecord[] = [
+            {
+                id: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:1`,
+                mangaId: MANGA_ID,
+                sourceId: SOURCE_ID,
+                title: "Chapter 1",
+                url: `https://${HOSTNAME}/ep-1`,
+                sortKey: 1
+            },
+            {
+                id: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:2`,
+                mangaId: MANGA_ID,
+                sourceId: SOURCE_ID,
+                title: "Chapter 2",
+                url: `https://${HOSTNAME}/ep-2`,
+                sortKey: 2
+            },
+            {
+                id: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:extra`,
+                mangaId: MANGA_ID,
+                sourceId: SOURCE_ID,
+                title: "Extra",
+                url: `https://${HOSTNAME}/ep-extra`,
+                sortKey: Number.POSITIVE_INFINITY
+            }
+        ]
+        listChaptersBySourceMock.mockResolvedValue(chapters)
+
+        const source = fakeSource(() => null)
+        await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+
+        const updated = await db.manga.get(MANGA_ID)
+        expect(updated?.latestChapterNumber).toBe(2)
+        expect(updated?.latestChapterId).toBe(`${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:2`)
+    })
+
+    it("skips the latest-chapter write entirely when every fetched chapter is unnumbered, rather than persisting Infinity or falling back to the first chapter", async () => {
+        await db.manga.put({
+            ...manga,
+            latestChapterNumber: 5,
+            latestChapterId: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:5`
+        })
+        const chapters: ChapterRecord[] = [
+            {
+                id: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:oneshot-a`,
+                mangaId: MANGA_ID,
+                sourceId: SOURCE_ID,
+                title: "Extra A",
+                url: `https://${HOSTNAME}/ep-a`,
+                sortKey: Number.POSITIVE_INFINITY
+            },
+            {
+                id: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:oneshot-b`,
+                mangaId: MANGA_ID,
+                sourceId: SOURCE_ID,
+                title: "Extra B",
+                url: `https://${HOSTNAME}/ep-b`,
+                sortKey: Number.POSITIVE_INFINITY
+            }
+        ]
+        listChaptersBySourceMock.mockResolvedValue(chapters)
+
+        const source = fakeSource(() => null)
+        await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+
+        const updated = await db.manga.get(MANGA_ID)
+        expect(updated?.latestChapterNumber).toBe(5)
+        expect(updated?.latestChapterId).toBe(`${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:5`)
+    })
+
     it("purges stale MangaHub junk rows after a fresh bulkPut, but leaves other sources untouched", async () => {
         const MANGAHUB_MANGA_ID = "mangahub:manga:some-series"
         const mangahubManga: LibraryManga = {
