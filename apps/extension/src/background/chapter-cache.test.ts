@@ -88,6 +88,28 @@ describe("mineAndCacheEpisodesFromHtml", () => {
         expect(publishLiveMock).toHaveBeenCalledWith(["chapters"], [MANGA_ID])
     })
 
+    it("does not publish a live event when a re-mine changes nothing (reader loop guard)", async () => {
+        await db.manga.put(manga)
+        const html = `
+            <div>
+                ${link(SOURCE_MANGA_ID, 1)}
+                ${link(SOURCE_MANGA_ID, 2)}
+                ${link(SOURCE_MANGA_ID, 3)}
+            </div>
+        `
+
+        await mineAndCacheEpisodesFromHtml(MANGA_ID, SOURCE_ID, SOURCE_MANGA_ID, HOSTNAME, html)
+        expect(publishLiveMock).toHaveBeenCalledTimes(1)
+
+        // Second identical mine is a pure no-op upsert. A live event here would make the
+        // reader's loadSiblings subscriber re-crawl and re-publish forever - the endless
+        // background-tab reopen the Webtoons reader hit on Next.
+        publishLiveMock.mockClear()
+        const storedAgain = await mineAndCacheEpisodesFromHtml(MANGA_ID, SOURCE_ID, SOURCE_MANGA_ID, HOSTNAME, html)
+        expect(storedAgain).toBe(3)
+        expect(publishLiveMock).not.toHaveBeenCalled()
+    })
+
     it("self-heals by deleting stale chapter rows embedding a different sourceMangaId", async () => {
         await db.manga.put(manga)
         // Pre-seed a stale row simulating pre-fix pollution: stored under MANGA_ID but
