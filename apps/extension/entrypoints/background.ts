@@ -79,7 +79,7 @@ export default defineBackground(() => {
                 console.warn("[AMR] Automatic chapter capture failed", error)
             })
         }
-        if (changeInfo.status === "complete" && tab.url) {
+        if (changeInfo.status === "complete" && tab.url && !isInternalTab(tabId)) {
             let parsedUrl: URL
             try {
                 parsedUrl = new URL(tab.url)

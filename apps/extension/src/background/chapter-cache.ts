@@ -156,14 +156,17 @@ export async function mineAndCacheEpisodesFromHtml(
     // latest-chapter update must land together - otherwise a mid-sequence restart
     // leaves stale cross-series chapter rows undeleted and/or manga.latestChapterNumber/
     // latestChapterId stuck pointing at a stale episode.
+    let changed = false
     await db.transaction("rw", db.chapters, db.manga, async () => {
+        const validIdPrefix = `${sourceId}:chapter:${sourceMangaId}:`
+        const existingIds = new Set((await db.chapters.where("mangaId").equals(mangaId).primaryKeys()) as string[])
         await db.chapters.bulkPut(dbChapters)
+        const addedNew = dbChapters.some(c => !existingIds.has(c.id))
 
         // Self-heal: delete any chapter rows under this mangaId left over from before the
         // title_no filter above existed - those were mined from "Recommended for you"
         // links and have an id embedding a DIFFERENT sourceMangaId, so this prefix check
         // reliably identifies them without re-parsing every stored URL.
-        const validIdPrefix = `${sourceId}:chapter:${sourceMangaId}:`
         const stale = await db.chapters
             .where("mangaId")
             .equals(mangaId)
@@ -173,14 +176,21 @@ export async function mineAndCacheEpisodesFromHtml(
 
         const maxEpNo = Math.max(...epLinks.map(e => e.epNo))
         const existing = await db.manga.get(mangaId)
+        let latestChanged = false
         if (existing && maxEpNo > (existing.latestChapterNumber ?? -1)) {
             await db.manga.update(mangaId, {
                 latestChapterNumber: maxEpNo,
                 latestChapterId: `${sourceId}:chapter:${sourceMangaId}:${maxEpNo}`
             })
+            latestChanged = true
         }
+        changed = addedNew || stale.length > 0 || latestChanged
     })
-    publishLive(["chapters"], [mangaId])
+    // Only announce a real change. A no-op re-mine of an already-cached list must not
+    // emit a live event: the reader re-runs loadSiblings on every ["chapters"] event,
+    // and an unconditional publish here fed a tab-crawl -> publish -> loadSiblings loop
+    // that reopened a background source tab endlessly (Webtoons' tab-list path).
+    if (changed) publishLive(["chapters"], [mangaId])
 
     return epLinks.length
 }
@@ -231,10 +241,18 @@ export async function listChaptersWithTabFallback(
     // Same bulkPut + stale-purge + latest-count write sequence as checkUpdates in
     // updates-sources.ts - wrapped in one transaction there for the same SW-restart
     // reason, so this sibling call site needs it too.
+    let changed = false
     await db.transaction("rw", db.chapters, db.manga, async () => {
+        const existingIds = new Set((await db.chapters.where("mangaId").equals(mangaId).primaryKeys()) as string[])
         await db.chapters.bulkPut(chapters)
+        let addedNew = chapters.some(c => !existingIds.has(c.id))
         if (source!.manifest.id === "mangahub") {
+            const before = existingIds.size
             await purgeStaleMangahubChapterRows(mangaId, new Set(chapters.map(c => c.id)))
+            if (!addedNew) {
+                const after = await db.chapters.where("mangaId").equals(mangaId).count()
+                addedNew = after !== before
+            }
         }
         // latestNumberedChapter filters to a finite sortKey before comparing - a plain
         // Math.max over every fetched sortKey let a single unnumbered chapter
@@ -245,12 +263,17 @@ export async function listChaptersWithTabFallback(
         // back to an unnumbered chapter.
         const latestChapter = latestNumberedChapter(chapters)
         const existing = await db.manga.get(mangaId)
+        let latestChanged = false
         if (existing && latestChapter && latestChapter.sortKey > (existing.latestChapterNumber ?? -1)) {
             await db.manga.update(mangaId, {
                 latestChapterNumber: latestChapter.sortKey,
                 latestChapterId: latestChapter.id
             })
+            latestChanged = true
         }
+        changed = addedNew || latestChanged
     })
-    publishLive(["chapters"], [mangaId])
+    // See mineAndCacheEpisodesFromHtml: a no-op re-fetch must not emit a live event,
+    // or the reader's loadSiblings subscriber re-drives this crawl in a loop.
+    if (changed) publishLive(["chapters"], [mangaId])
 }
