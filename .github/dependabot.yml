@@ -1,0 +1,16 @@
+version: 2
+
+updates:
+    # Keeps GitHub Actions current so we never again ship workflows pinned to a
+    # deprecated runtime. Grouped into one PR so a runtime bump is a single
+    # review, not six.
+    - package-ecosystem: github-actions
+      directory: "/"
+      schedule:
+          interval: weekly
+      groups:
+          actions:
+              patterns:
+                  - "*"
+      commit-message:
+          prefix: ci
