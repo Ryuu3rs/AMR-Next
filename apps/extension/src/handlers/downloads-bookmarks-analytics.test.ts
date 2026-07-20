@@ -77,7 +77,7 @@ describe("fetchPageBlob (via chapter:download)", () => {
         vi.unstubAllGlobals()
     })
 
-    it("does not retry on a 404/410 — fast-fails immediately", async () => {
+    it("does not retry on a 404/410 - fast-fails immediately", async () => {
         vi.mocked(resolveChapterUrl).mockResolvedValue(makeResolved(["https://cdn.example/p1.jpg"]))
 
         const fetchMock = vi.fn(async () => ({ ok: false, status: 404 }) as Response)
@@ -90,7 +90,7 @@ describe("fetchPageBlob (via chapter:download)", () => {
 
         // Only 1 attempt at the fetchPageBlob level for this URL, plus the automatic
         // expired-re-resolve loop calls resolveChapterUrl again with the same single
-        // page — since reResolved flips true after the first 404, the second 404 on
+        // page - since reResolved flips true after the first 404, the second 404 on
         // the retried page throws immediately without further fetch attempts.
         expect(fetchMock).toHaveBeenCalledTimes(2)
 
@@ -99,7 +99,7 @@ describe("fetchPageBlob (via chapter:download)", () => {
 })
 
 describe("chapter:download expired-URL re-resolve", () => {
-    it("re-resolves exactly once on a 410 and resumes from the correct page index", async () => {
+    it("re-resolves exactly once on a 410 and restarts the download from the fresh page list", async () => {
         const staleResolved = makeResolved(["https://cdn.example/p0.jpg", "https://cdn.example/stale-p1.jpg"])
         const freshResolved = makeResolved(["https://cdn.example/p0.jpg", "https://cdn.example/fresh-p1.jpg"])
 
@@ -121,8 +121,54 @@ describe("chapter:download expired-URL re-resolve", () => {
 
         expect(resolveChapterUrl).toHaveBeenCalledTimes(2)
         expect(result.pageCount).toBe(2)
-        // p0 fetched once, stale-p1 attempted once (410, no retry), fresh-p1 fetched once = 3 calls
-        expect(fetchMock).toHaveBeenCalledTimes(3)
+        // The blob from the stale list is discarded and the whole chapter is re-fetched
+        // from the fresh list: p0(stale), stale-p1(410), then restart p0(fresh), fresh-p1.
+        expect(fetchMock).toHaveBeenCalledTimes(4)
+        const fetched = fetchMock.mock.calls.map(c => c[0])
+        expect(fetched.filter(u => u === "https://cdn.example/stale-p1.jpg")).toHaveLength(1)
+        expect(fetched).toContain("https://cdn.example/fresh-p1.jpg")
+
+        vi.unstubAllGlobals()
+    })
+
+    it("keeps saved pages consistent when the refreshed list has a different page count", async () => {
+        // Reconciliation bug: the stale resolution had 3 pages and one blob was already
+        // fetched; the refreshed resolution has only 2, different URLs. Interleaving the
+        // stale blob with the fresh list would misalign pages, so the saved download must
+        // contain exactly the fresh list, fetched fresh.
+        const staleResolved = makeResolved([
+            "https://cdn.example/s0.jpg",
+            "https://cdn.example/s1.jpg",
+            "https://cdn.example/s2.jpg"
+        ])
+        const freshResolved = makeResolved(["https://cdn.example/f0.jpg", "https://cdn.example/f1.jpg"])
+
+        vi.mocked(resolveChapterUrl).mockResolvedValueOnce(staleResolved).mockResolvedValueOnce(freshResolved)
+
+        const fetchMock = vi.fn(async (url: string) => {
+            if (url === "https://cdn.example/s1.jpg") {
+                return { ok: false, status: 404 } as Response
+            }
+            return { ok: true, status: 200, blob: async () => jsonBlob() } as unknown as Response
+        })
+        vi.stubGlobal("fetch", fetchMock)
+
+        const handler = downloadsBookmarksAnalyticsHandlers["chapter:download"]!
+        const result = (await handler({ type: "chapter:download", url: "https://mangadex.org/chapter/1" }, ctx)) as {
+            chapterId: string
+            pageCount: number
+        }
+
+        expect(result.pageCount).toBe(2)
+        const fetched = fetchMock.mock.calls.map(c => c[0])
+        // No stale-list URL survives into the completed download.
+        expect(fetched).toContain("https://cdn.example/f0.jpg")
+        expect(fetched).toContain("https://cdn.example/f1.jpg")
+        const getHandler = downloadsBookmarksAnalyticsHandlers["chapter:download:get"]!
+        const stored = (await getHandler({ type: "chapter:download:get", chapterId: result.chapterId }, ctx)) as {
+            pageCount: number
+        } | null
+        expect(stored?.pageCount).toBe(2)
 
         vi.unstubAllGlobals()
     })
@@ -208,7 +254,7 @@ describe("analytics:record", () => {
 
         // Gate db.analyticsEvents.add() so it stays pending until we release it.
         // If the handler awaited recordAnalyticsEvent, `handler(...)` below would
-        // hang until releaseWrite() is called — it doesn't, proving fire-and-forget.
+        // hang until releaseWrite() is called - it doesn't, proving fire-and-forget.
         let releaseWrite: () => void = () => {}
         const gate = new Promise<void>(resolve => {
             releaseWrite = resolve

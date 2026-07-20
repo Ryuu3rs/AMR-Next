@@ -10,6 +10,7 @@ import {
     db,
     exportDatabase,
     fixupDanglingChapterIds,
+    getActivityCalendar,
     getCachedCovers,
     getLocalStats,
     importDatabase,
@@ -293,6 +294,27 @@ describe("getLocalStats", () => {
         const stats = await getLocalStats()
         expect(stats.readingDays).toBe(3)
         expect(stats.longestStreak).toBe(3)
+    })
+
+    it("buckets reading days on the same local-day boundary as the activity calendar", async () => {
+        // getLocalStats and getActivityCalendar must agree on which day an event
+        // falls in; the streak stats previously used UTC days while the heatmap uses
+        // local days, so a non-UTC user saw the two disagree near midnight. Assert the
+        // invariant directly: the number of distinct reading days equals the number of
+        // calendar days with any activity, for the same event set.
+        const localMidday = (y: number, m: number, d: number) => new Date(y, m - 1, d, 12, 0, 0).getTime()
+        await db.historyEvents.bulkAdd([
+            { mangaId: manga.id, chapterId: "c1", type: "completed", occurredAt: localMidday(2026, 6, 10) },
+            { mangaId: manga.id, chapterId: "c2", type: "completed", occurredAt: localMidday(2026, 6, 10) },
+            { mangaId: manga.id, chapterId: "c3", type: "completed", occurredAt: localMidday(2026, 6, 11) }
+        ])
+
+        const stats = await getLocalStats()
+        const calendar = await getActivityCalendar(365)
+        const activeDays = calendar.filter(entry => entry.count > 0).length
+
+        expect(stats.readingDays).toBe(activeDays)
+        expect(stats.readingDays).toBe(2)
     })
 })
 
