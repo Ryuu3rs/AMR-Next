@@ -1,5 +1,5 @@
 import { sourceRegistry } from "@amr/sources"
-import { matchesSourceDomain } from "@amr/source-sdk"
+import { isNumberedChapter, latestNumberedChapter, matchesSourceDomain } from "@amr/source-sdk"
 import { applyUpdateCheckResult, db, repairMangahubChapters, updateManga, type LibraryManga } from "../database"
 import {
     checkSourcePermission,
@@ -112,10 +112,19 @@ export async function checkUpdates(sourceId?: string) {
                 await writeProgress(item.title)
                 try {
                     const chapters = await listMangaChapters(item, link, language)
-                    const latest = chapters.reduce(
-                        (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
-                        chapters[0]
-                    )
+                    // Prefer the highest NUMBERED chapter - an unguarded reduce over every
+                    // sortKey lets a single unnumbered chapter (Infinity) win the "latest"
+                    // contest and become latestChapterId/sourceUrl, pointing the manga at a
+                    // chapter with no real number. Only fall back to picking among whatever
+                    // was fetched (the old reduce) when NOTHING fetched is numbered - that
+                    // keeps applyUpdateCheckResult's documented "non-finite means advanced"
+                    // id-change self-heal working for a manga with no numbered chapters at all.
+                    const latest =
+                        latestNumberedChapter(chapters) ??
+                        chapters.reduce(
+                            (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
+                            chapters[0]
+                        )
                     // Always re-point on an id change - this is the self-heal path merges
                     // and relinks rely on (a carried/dangling latestChapterId gets
                     // replaced by the source's real latest row, and a merge-inflated
@@ -243,10 +252,15 @@ export async function repairMangahubChapterNumbers(): Promise<void> {
                 const chapters = await listChaptersForSource(manga, "mangahub", sourceMangaId, mangaUrl)
                 if (chapters.length === 0) continue
 
-                const latest = chapters.reduce(
-                    (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
-                    chapters[0]
-                )
+                // Same unnumbered-chapter guard as checkUpdates above: pick the highest
+                // NUMBERED chapter first, only falling back to the unfiltered reduce when
+                // nothing fetched is numbered.
+                const latest =
+                    latestNumberedChapter(chapters) ??
+                    chapters.reduce(
+                        (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
+                        chapters[0]
+                    )
 
                 // Guard against writing back to a manga a concurrent remove/merge
                 // deleted while the chapter-list fetch above was in flight - the
@@ -339,7 +353,9 @@ async function newChaptersFor(mangaId: string) {
     if (!manga) return []
     const all = await db.chapters.where("mangaId").equals(mangaId).sortBy("sortKey")
     const sinceKey = manga.lastReadChapterNumber ?? -1
-    const fresh = all.filter(c => c.sortKey > sinceKey)
+    // isNumberedChapter first - Infinity > sinceKey is always true, so an unguarded
+    // filter reports every unnumbered chapter as "new" on every single check, forever.
+    const fresh = all.filter(c => isNumberedChapter(c.sortKey) && c.sortKey > sinceKey)
     return (fresh.length > 0 ? fresh : all.slice(-3)).map(c => ({
         id: c.id,
         title: c.title,

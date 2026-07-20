@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { UNNUMBERED_SORT_KEY, assignListSortKeys, parseChapterNumber } from "./chapter-numbering"
+import {
+    UNNUMBERED_SORT_KEY,
+    assignListSortKeys,
+    isNumberedChapter,
+    latestNumberedChapter,
+    parseChapterNumber
+} from "./chapter-numbering"
 
 describe("UNNUMBERED_SORT_KEY", () => {
     it("is +Infinity so an unnumbered chapter sorts last, never before Chapter 1", () => {
@@ -109,5 +115,51 @@ describe("assignListSortKeys", () => {
         expect(keys[6]).toBeGreaterThan(4)
         expect(keys[6]).toBeLessThan(5)
         expect(keys.map(Math.floor)).toEqual([1, 2, 3, 3, 3, 4, 4, 5])
+    })
+})
+
+describe("isNumberedChapter", () => {
+    it("is true for finite numbers, including 0 (a genuine Chapter 0)", () => {
+        expect(isNumberedChapter(0)).toBe(true)
+        expect(isNumberedChapter(1)).toBe(true)
+        expect(isNumberedChapter(1.5)).toBe(true)
+    })
+
+    it("is false for the UNNUMBERED_SORT_KEY sentinel and any other non-finite value", () => {
+        expect(isNumberedChapter(UNNUMBERED_SORT_KEY)).toBe(false)
+        expect(isNumberedChapter(Number.POSITIVE_INFINITY)).toBe(false)
+        expect(isNumberedChapter(Number.NEGATIVE_INFINITY)).toBe(false)
+        expect(isNumberedChapter(Number.NaN)).toBe(false)
+    })
+
+    it("is false for null/undefined", () => {
+        expect(isNumberedChapter(null)).toBe(false)
+        expect(isNumberedChapter(undefined)).toBe(false)
+    })
+})
+
+describe("latestNumberedChapter", () => {
+    it("returns the chapter with the highest finite sortKey", () => {
+        const chapters = [{ sortKey: 1 }, { sortKey: 3 }, { sortKey: 2 }]
+        expect(latestNumberedChapter(chapters)).toEqual({ sortKey: 3 })
+    })
+
+    it("ignores an unnumbered (Infinity) chapter even when it would otherwise win", () => {
+        const chapters = [{ sortKey: 1 }, { sortKey: 2 }, { sortKey: UNNUMBERED_SORT_KEY }]
+        expect(latestNumberedChapter(chapters)).toEqual({ sortKey: 2 })
+    })
+
+    it("returns undefined when nothing is numbered - not the first chapter or the unnumbered one", () => {
+        const chapters = [{ sortKey: UNNUMBERED_SORT_KEY }, { sortKey: UNNUMBERED_SORT_KEY }]
+        expect(latestNumberedChapter(chapters)).toBeUndefined()
+    })
+
+    it("returns undefined for an empty list", () => {
+        expect(latestNumberedChapter([])).toBeUndefined()
+    })
+
+    it("returns a genuine Chapter 0 rather than treating it as falsy/absent", () => {
+        const chapters = [{ sortKey: UNNUMBERED_SORT_KEY }, { sortKey: 0 }]
+        expect(latestNumberedChapter(chapters)).toEqual({ sortKey: 0 })
     })
 })

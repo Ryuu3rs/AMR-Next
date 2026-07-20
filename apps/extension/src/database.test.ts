@@ -861,6 +861,61 @@ describe("remapExternalChapterProgress", () => {
 
         expect(await db.progress.get(`${loserId}:ext:ch-99`)).toBeDefined()
     })
+
+    it("falls through to the pathname match for an unnumbered (Infinity sortKey) ext chapter instead of matching the first unnumbered canonical chapter (Infinity === Infinity bug)", async () => {
+        const loserId = "mangafreak:manga:read1-unnumbered"
+        await db.manga.put({
+            ...manga,
+            id: loserId,
+            sourceId: "mangafreak",
+            sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_extra"
+        })
+        await db.chapters.put({
+            id: `${loserId}:ext:extra`,
+            mangaId: loserId,
+            sourceId: "mangafreak",
+            title: "Extra",
+            url: "https://ww2.mangafreak.me/Read1_Foo_extra",
+            sortKey: Number.POSITIVE_INFINITY
+        })
+        await db.progress.put({
+            mangaId: loserId,
+            chapterId: `${loserId}:ext:extra`,
+            pageIndex: 0,
+            pageCount: 1,
+            completed: true,
+            updatedAt: 1
+        })
+
+        const unnumberedCanonicalChapters: ChapterRecord[] = [
+            // Listed FIRST on purpose - an unguarded `extChapter.sortKey > 0` /
+            // `c.sortKey === extChapter.sortKey` match would land on this UNRELATED
+            // chapter (Infinity === Infinity), transplanting progress onto the wrong row.
+            {
+                id: "mangafreak:chapter:Foo:unrelated-extra",
+                mangaId: "mangafreak:manga:Foo",
+                sourceId: "mangafreak",
+                title: "Unrelated Extra",
+                url: "https://ww2.mangafreak.me/Read1_Foo_unrelated",
+                sortKey: Number.POSITIVE_INFINITY
+            },
+            {
+                id: "mangafreak:chapter:Foo:extra",
+                mangaId: "mangafreak:manga:Foo",
+                sourceId: "mangafreak",
+                title: "Extra",
+                url: "https://ww2.mangafreak.me/Read1_Foo_extra",
+                sortKey: Number.POSITIVE_INFINITY
+            }
+        ]
+
+        const translated = await remapExternalChapterProgress(loserId, unnumberedCanonicalChapters)
+
+        expect(translated.map(c => c.id)).toEqual(["mangafreak:chapter:Foo:extra"])
+        const remapped = await db.progress.get("mangafreak:chapter:Foo:extra")
+        expect(remapped?.completed).toBe(true)
+        expect(await db.progress.get("mangafreak:chapter:Foo:unrelated-extra")).toBeUndefined()
+    })
 })
 
 describe("fixupDanglingChapterIds", () => {
@@ -1106,6 +1161,47 @@ describe("exportDatabase reads via one snapshot transaction (Fix 6)", () => {
         expect(tables).toHaveLength(6)
 
         transactionSpy.mockRestore()
+    })
+})
+
+// Last line of defense for the UNNUMBERED_SORT_KEY (Infinity) leak class: the db.manga
+// hook tripwire already refuses to WRITE a non-finite latestChapterNumber through the
+// app's own Dexie instance, and the v9 migration heals already-corrupt rows on open -
+// but exportDatabase() must never emit one anyway, since JSON.stringify turns Infinity
+// into null and schema.ts's z.number().finite() then rejects the whole record on
+// restore.
+describe("exportDatabase strips a non-finite latestChapterNumber defensively", () => {
+    it("omits latestChapterNumber entirely for a manga record that is somehow non-finite, without touching other fields", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+
+        // Simulate a record reaching this state some other way (a gap in the repair
+        // migration, or a future write path that bypasses the app's own hooks) by
+        // writing directly to the physical IndexedDB through a second, hook-free
+        // Dexie connection at the same schema version - the same technique the
+        // version 8/9 migration tests above use to seed a pre-fix physical database.
+        const bypass = new Dexie("all-mangas-reader")
+        bypass.version(9).stores({
+            manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+            sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+            chapters: "id, mangaId, sourceId, sortKey, url",
+            progress: "chapterId, mangaId, updatedAt, completed",
+            historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+            downloads: "chapterId, mangaId, downloadedAt",
+            covers: "mangaId",
+            pageBookmarks: "id, mangaId, chapterId, addedAt",
+            analyticsEvents: "++id, event, ts, sourceId",
+            backups: "++id, createdAt, reason"
+        })
+        await bypass.open()
+        await bypass.table("manga").update(manga.id, { latestChapterNumber: Number.POSITIVE_INFINITY })
+        bypass.close()
+
+        const envelope = await exportDatabase()
+
+        const exportedManga = envelope.data.manga.find(m => m.id === manga.id)
+        expect(exportedManga).toBeDefined()
+        expect("latestChapterNumber" in (exportedManga as Record<string, unknown>)).toBe(false)
+        expect(exportedManga?.title).toBe(manga.title)
     })
 })
 
@@ -2310,6 +2406,176 @@ describe("database version 8 migration (cover blob extraction)", () => {
         const malformedAfter = await db.manga.get("malformed-data-uri-manga")
         expect(malformedAfter?.coverUrl).toBe("data:image/jpeg;base64,not-valid-base64!!!")
         expect(await db.covers.get("malformed-data-uri-manga")).toBeUndefined()
+    })
+})
+
+// Repair migration for the UNNUMBERED_SORT_KEY (Infinity) leak class: profiles
+// poisoned by pre-fix aggregation bugs (chapter-cache.ts, updates-sources.ts) already
+// carry a non-finite latestChapterNumber in IndexedDB (structured clone keeps
+// Infinity), and their backups already fail to restore (JSON.stringify turns it into
+// null, then schema.ts's z.number().finite() rejects the whole record). Seeds a
+// physical v8 database directly (bypassing the app's own hooks, simulating an
+// already-corrupted pre-fix install) then reopens the real singleton so Dexie runs
+// the declared v9 .upgrade() for real.
+describe("database version 9 migration (Infinity latestChapterNumber repair)", () => {
+    it("deletes a non-finite latestChapterNumber field, leaves finite values (including a genuine Chapter 0) and absent fields untouched", async () => {
+        db.close()
+        await Dexie.delete("all-mangas-reader")
+
+        const v8Manga = [
+            {
+                id: "poisoned-manga",
+                title: "Poisoned Manga",
+                normalizedTitle: "poisoned manga",
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/1",
+                addedAt: 1,
+                updatedAt: 1,
+                latestChapterNumber: Number.POSITIVE_INFINITY
+            },
+            {
+                id: "nan-manga",
+                title: "NaN Manga",
+                normalizedTitle: "nan manga",
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/2",
+                addedAt: 2,
+                updatedAt: 2,
+                latestChapterNumber: Number.NaN
+            },
+            {
+                id: "healthy-manga",
+                title: "Healthy Manga",
+                normalizedTitle: "healthy manga",
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/3",
+                addedAt: 3,
+                updatedAt: 3,
+                latestChapterNumber: 12
+            },
+            {
+                id: "chapter-zero-manga",
+                title: "Chapter Zero Manga",
+                normalizedTitle: "chapter zero manga",
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/4",
+                addedAt: 4,
+                updatedAt: 4,
+                latestChapterNumber: 0
+            },
+            {
+                id: "no-number-manga",
+                title: "No Number Manga",
+                normalizedTitle: "no number manga",
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/5",
+                addedAt: 5,
+                updatedAt: 5
+            }
+        ]
+
+        const legacy = new Dexie("all-mangas-reader")
+        legacy.version(8).stores({
+            manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+            sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+            chapters: "id, mangaId, sourceId, sortKey, url",
+            progress: "chapterId, mangaId, updatedAt, completed",
+            historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+            downloads: "chapterId, mangaId, downloadedAt",
+            covers: "mangaId",
+            pageBookmarks: "id, mangaId, chapterId, addedAt",
+            analyticsEvents: "++id, event, ts, sourceId",
+            backups: "++id, createdAt, reason"
+        })
+        await legacy.open()
+        await legacy.table("manga").bulkAdd(v8Manga)
+        legacy.close()
+
+        // Reopening the real singleton re-runs Dexie's declared version chain against
+        // the physical v8 database just seeded above, executing the real v9 .upgrade().
+        await db.open()
+
+        const poisoned = await db.manga.get("poisoned-manga")
+        expect(poisoned).toBeDefined()
+        expect("latestChapterNumber" in (poisoned as Record<string, unknown>)).toBe(false)
+
+        const nanManga = await db.manga.get("nan-manga")
+        expect("latestChapterNumber" in (nanManga as Record<string, unknown>)).toBe(false)
+
+        const healthy = await db.manga.get("healthy-manga")
+        expect(healthy?.latestChapterNumber).toBe(12)
+
+        const chapterZero = await db.manga.get("chapter-zero-manga")
+        expect(chapterZero?.latestChapterNumber).toBe(0)
+
+        const noNumber = await db.manga.get("no-number-manga")
+        expect(noNumber?.latestChapterNumber).toBeUndefined()
+    })
+})
+
+// Choke-point tripwire: a Dexie creating/updating hook on db.manga that throws when
+// latestChapterNumber is present and non-finite, so a future unguarded aggregation
+// site fails loudly in tests instead of silently corrupting backups. Deleting the
+// field (the migration above and the mangahub repair sweep's pattern) must stay legal.
+describe("db.manga hook tripwire (non-finite latestChapterNumber)", () => {
+    const tripwireManga = (id: string, latestChapterNumber: number): LibraryManga => ({
+        ...manga,
+        id,
+        sourceId: "mangadex",
+        sourceUrl: "https://mangadex.org/chapter/1",
+        latestChapterNumber
+    })
+
+    it("throws when a new manga record is created with a non-finite latestChapterNumber", async () => {
+        await expect(db.manga.put(tripwireManga("tripwire-creating", Number.POSITIVE_INFINITY))).rejects.toThrow(
+            /non-finite latestChapterNumber/
+        )
+        expect(await db.manga.get("tripwire-creating")).toBeUndefined()
+    })
+
+    it("throws when an existing manga record is updated to a non-finite latestChapterNumber", async () => {
+        await db.manga.put(tripwireManga("tripwire-updating", 3))
+
+        await expect(
+            db.manga.update("tripwire-updating", { latestChapterNumber: Number.POSITIVE_INFINITY })
+        ).rejects.toThrow(/non-finite latestChapterNumber/)
+
+        const stillHealthy = await db.manga.get("tripwire-updating")
+        expect(stillHealthy?.latestChapterNumber).toBe(3)
+    })
+
+    it("throws for NaN as well as Infinity", async () => {
+        await expect(db.manga.put(tripwireManga("tripwire-nan", Number.NaN))).rejects.toThrow(
+            /non-finite latestChapterNumber/
+        )
+    })
+
+    it("allows clearing the field (setting it to undefined) - the repair paths must still work", async () => {
+        await db.manga.put(tripwireManga("tripwire-clear", 3))
+
+        // Same idiom the version 8/9 migrations use (tx.table(...) instead of the
+        // strongly-typed db.manga) to delete an optional field via update() -
+        // exactOptionalPropertyTypes forbids `{ latestChapterNumber: undefined }`
+        // against LibraryManga's own optional-but-not-undefined field type.
+        await expect(db.table("manga").update("tripwire-clear", { latestChapterNumber: undefined })).resolves.toBe(1)
+
+        const cleared = await db.manga.get("tripwire-clear")
+        expect(cleared?.latestChapterNumber).toBeUndefined()
+    })
+
+    it("allows a normal finite write through unaffected", async () => {
+        await expect(db.manga.put(tripwireManga("tripwire-finite", 7))).resolves.toBe("tripwire-finite")
+        expect((await db.manga.get("tripwire-finite"))?.latestChapterNumber).toBe(7)
     })
 })
 

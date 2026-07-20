@@ -403,6 +403,47 @@ describe("checkUpdates latestChapterNumber advance gate", () => {
     })
 })
 
+// Regression test for the UNNUMBERED_SORT_KEY (Infinity) leak class, site 4 (wrong
+// latest pointer): the reduce that picks `latest` used to key purely on `>`, so a
+// single unnumbered chapter (sortKey: Infinity) always won and became
+// latestChapterId/sourceUrl - pointing the manga at a chapter with no real number, even
+// though a genuinely numbered, higher chapter was fetched in the same batch.
+describe("checkUpdates unnumbered-chapter guard (Infinity leak class, site 4)", () => {
+    it("points latestChapterId/sourceUrl at the highest NUMBERED chapter, ignoring an unnumbered one fetched alongside it", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-1", latestChapterId: "old", latestChapterNumber: 5 })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id))
+        const chapters: ChapterRecord[] = [
+            {
+                id: "ch-6",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Chapter 6",
+                url: "https://mangadex.org/chapter/6",
+                sortKey: 6
+            },
+            {
+                id: "ch-extra",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Extra",
+                url: "https://mangadex.org/chapter/extra",
+                sortKey: Number.POSITIVE_INFINITY
+            }
+        ]
+        listMangaChaptersMock.mockResolvedValue(chapters)
+
+        await checkUpdates()
+
+        const updated = await db.manga.get(manga.id)
+        expect(updated?.latestChapterId).toBe("ch-6")
+        expect(updated?.sourceUrl).toBe("https://mangadex.org/chapter/6")
+        expect(updated?.latestChapterNumber).toBe(6)
+    })
+})
+
 describe("checkUpdates MangaHub junk-row purge wiring", () => {
     it("calls the shared purge helper for a mangahub title after a successful chapter-list fetch", async () => {
         const { checkUpdates } = await import("./updates-sources")
@@ -611,6 +652,50 @@ describe("repairMangahubChapterNumbers one-shot poisoned-library sweep", () => {
         // The sweep still completes and sets the flag - a race on one title doesn't
         // abort the rest of the (empty, in this case) loop.
         expect(storageLocal.store.get("mangahubChapterRepairDone")).toBe(true)
+    })
+})
+
+// Same unnumbered-chapter guard as checkUpdates (Infinity leak class, site 4) - this
+// reduce is a separate copy of the identical bug, not the one called out by line
+// number in the spec, but it's the exact same pattern in the same file.
+describe("repairMangahubChapterNumbers unnumbered-chapter guard (Infinity leak class, site 4)", () => {
+    it("repairs latestChapterId to the highest NUMBERED chapter, ignoring an unnumbered one fetched alongside it", async () => {
+        const { repairMangahubChapterNumbers } = await import("./updates-sources")
+
+        const poisoned = makeManga({
+            id: "mangahub:manga:some-series",
+            sourceId: "mangahub",
+            sourceMangaId: "some-series",
+            mangaUrl: "https://mangahub.io/manga/some-series",
+            latestChapterNumber: 2650711,
+            latestChapterId: "mangahub:chapter:some-series:2650711"
+        })
+        await db.manga.put(poisoned)
+        const freshChapters: ChapterRecord[] = [
+            {
+                id: "mangahub:chapter:some-series:1",
+                mangaId: poisoned.id,
+                sourceId: "mangahub",
+                title: "Chapter 1",
+                url: "https://mangahub.io/chapter/some-series/chapter-1",
+                sortKey: 1
+            },
+            {
+                id: "mangahub:chapter:some-series:extra",
+                mangaId: poisoned.id,
+                sourceId: "mangahub",
+                title: "Extra",
+                url: "https://mangahub.io/chapter/some-series/chapter-extra",
+                sortKey: Number.POSITIVE_INFINITY
+            }
+        ]
+        listChaptersForSourceMock.mockResolvedValue(freshChapters)
+
+        await repairMangahubChapterNumbers()
+
+        const updated = await db.manga.get(poisoned.id)
+        expect(updated?.latestChapterId).toBe("mangahub:chapter:some-series:1")
+        expect(updated?.latestChapterNumber).toBe(1)
     })
 })
 
@@ -907,6 +992,61 @@ describe("updates:new-chapters handler", () => {
         }>
 
         expect(result.map(c => c.sortKey)).toEqual([3, 4, 5])
+    })
+
+    // Regression test for the UNNUMBERED_SORT_KEY (Infinity) leak class, site 3
+    // (permanent phantom updates): `sortKey > sinceKey` is always true for an
+    // unnumbered chapter (Infinity > sinceKey), so it used to be reported as a "new"
+    // chapter on every single update check, forever.
+    it("never reports an unnumbered (Infinity sortKey) chapter as newer-than-lastRead, even though Infinity beats any real chapter number", async () => {
+        const { updatesSourcesHandlers } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-3", lastReadChapterNumber: 1 })
+        await db.manga.put(manga)
+
+        const chapters: ChapterRecord[] = [
+            {
+                id: "ch3-1",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Chapter 1",
+                url: "https://mangadex.org/chapter/1",
+                sortKey: 1
+            },
+            {
+                id: "ch3-2",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Chapter 2",
+                url: "https://mangadex.org/chapter/2",
+                sortKey: 2
+            },
+            {
+                id: "ch3-3",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Chapter 3",
+                url: "https://mangadex.org/chapter/3",
+                sortKey: 3
+            },
+            {
+                id: "ch3-extra",
+                mangaId: manga.id,
+                sourceId: "mangadex",
+                title: "Extra",
+                url: "https://mangadex.org/chapter/extra",
+                sortKey: Number.POSITIVE_INFINITY
+            }
+        ]
+        await db.chapters.bulkPut(chapters)
+
+        const handler = updatesSourcesHandlers["updates:new-chapters"]
+        if (!handler) throw new Error("handler missing")
+        const result = (await handler({ type: "updates:new-chapters", mangaId: manga.id }, { sender: {} })) as Array<{
+            id: string
+        }>
+
+        expect(result.map(c => c.id)).toEqual(["ch3-2", "ch3-3"])
     })
 })
 

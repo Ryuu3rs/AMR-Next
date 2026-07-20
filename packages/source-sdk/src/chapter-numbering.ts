@@ -72,3 +72,29 @@ export function assignListSortKeys<T>(
     }
     return sortKeys
 }
+
+// True when a sortKey is a genuinely parsed chapter number rather than the
+// UNNUMBERED_SORT_KEY sentinel (or a stray null/undefined/NaN). Ordering is exempt
+// from this check - unnumbered chapters sorting last via Infinity is correct - but
+// every AGGREGATION or COMPARISON over sortKey ("which chapter is latest", "is this
+// newer than X") must filter to finite first, or Infinity (the maximum of the numeric
+// domain) makes "unknown" win the contest.
+export const isNumberedChapter = (sortKey: number | null | undefined): sortKey is number =>
+    typeof sortKey === "number" && Number.isFinite(sortKey)
+
+// Highest finite sortKey among `chapters`, ignoring unnumbered ones entirely - the
+// finite-filtering counterpart to a plain `Math.max(...chapters.map(c => c.sortKey))`
+// or a `reduce` keyed on `>`, either of which lets a single UNNUMBERED_SORT_KEY chapter
+// win the aggregation.
+//
+// Returns undefined when nothing in `chapters` is numbered - a meaningful result, not
+// an error. Callers must SKIP the latest-chapter write they were about to make rather
+// than falling back to the first chapter or to the unnumbered one.
+export function latestNumberedChapter<T extends { sortKey: number }>(chapters: readonly T[]): T | undefined {
+    let best: T | undefined
+    for (const chapter of chapters) {
+        if (!isNumberedChapter(chapter.sortKey)) continue
+        if (best === undefined || chapter.sortKey > best.sortKey) best = chapter
+    }
+    return best
+}

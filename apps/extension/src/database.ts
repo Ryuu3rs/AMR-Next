@@ -1,5 +1,6 @@
 import { readingProgressSchema, sourceLinkRecordSchema } from "@amr/contracts"
 import type { ChapterRecord, MangaRecord, ReadingProgress, SourceLinkRecord } from "@amr/contracts"
+import { isNumberedChapter } from "@amr/source-sdk"
 import Dexie, { type EntityTable, type Table } from "dexie"
 import { z } from "zod"
 import {
@@ -242,6 +243,56 @@ export class AmrDatabase extends Dexie {
                     }
                 }
             })
+        // Repair migration for the UNNUMBERED_SORT_KEY (Infinity) leak class: pre-fix
+        // aggregation bugs (a plain Math.max/reduce over sortKey with no finite filter)
+        // could persist a non-finite latestChapterNumber. IndexedDB keeps Infinity
+        // (structured clone), but JSON.stringify turns it into null on backup export,
+        // and schema.ts's `z.number().finite()` then rejects the whole record on
+        // restore - the title silently vanishes from a restored library. Delete the
+        // poisoned field entirely (never zero it - 0 is a genuine Chapter 0) so it
+        // self-heals via the next real update check instead of staying corrupt forever.
+        this.version(9)
+            .stores({
+                manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+                sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+                chapters: "id, mangaId, sourceId, sortKey, url",
+                progress: "chapterId, mangaId, updatedAt, completed",
+                historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+                downloads: "chapterId, mangaId, downloadedAt",
+                covers: "mangaId",
+                pageBookmarks: "id, mangaId, chapterId, addedAt",
+                analyticsEvents: "++id, event, ts, sourceId",
+                backups: "++id, createdAt, reason"
+            })
+            .upgrade(async tx => {
+                await tx
+                    .table("manga")
+                    .toCollection()
+                    .modify(m => {
+                        if (m.latestChapterNumber !== undefined && !Number.isFinite(m.latestChapterNumber)) {
+                            delete m.latestChapterNumber
+                        }
+                    })
+            })
+        // Choke-point tripwire for the same leak class: a future unguarded aggregation
+        // site now fails loudly (throws, so a unit test catches it) instead of silently
+        // persisting a sentinel that corrupts backups. Deleting the field (undefined)
+        // to heal a record - as the migration above and the repair sweep do - is still
+        // allowed; only a genuinely non-finite VALUE is rejected.
+        this.manga.hook("creating", (_primKey, obj) => {
+            assertFiniteLatestChapterNumber(obj)
+        })
+        this.manga.hook("updating", modifications => {
+            assertFiniteLatestChapterNumber(modifications as Partial<LibraryManga>)
+        })
+    }
+}
+
+function assertFiniteLatestChapterNumber(candidate: Partial<LibraryManga>): void {
+    if (candidate.latestChapterNumber !== undefined && !Number.isFinite(candidate.latestChapterNumber)) {
+        throw new Error(
+            `[AMR] Refusing to persist a non-finite latestChapterNumber (${candidate.latestChapterNumber}) on db.manga - filter to a finite chapter (isNumberedChapter/latestNumberedChapter) before writing.`
+        )
     }
 }
 
@@ -597,8 +648,16 @@ export async function remapExternalChapterProgress(
     const loserChapters = await db.chapters.where("mangaId").equals(loserId).toArray()
     for (const extChapter of loserChapters) {
         const extPathname = pathnameOf(extChapter.url)
+        // isNumberedChapter (not a bare `> 0`) - Infinity > 0 is true, and
+        // Infinity === Infinity is true, so an unguarded comparison here matches an
+        // unnumbered loser chapter to the FIRST unnumbered canonical chapter -
+        // unrelated chapters get their read progress/history transplanted onto them.
+        // Unnumbered rows fall through to the pathname match below instead, which is
+        // the correct identity check for them.
         const canonical =
-            (extChapter.sortKey > 0 ? canonicalChapters.find(c => c.sortKey === extChapter.sortKey) : undefined) ??
+            (isNumberedChapter(extChapter.sortKey)
+                ? canonicalChapters.find(c => c.sortKey === extChapter.sortKey)
+                : undefined) ??
             (extPathname ? canonicalChapters.find(c => pathnameOf(c.url) === extPathname) : undefined)
         // No canonical match for this specific ext chapter - leave its progress/history
         // alone. mergeMangaRecords's own by-mangaId re-point still runs afterwards, so
@@ -1265,8 +1324,27 @@ export async function exportDatabase(): Promise<LibraryExportEnvelope> {
         format: "all-mangas-reader",
         version: 1,
         exportedAt,
-        data: { manga, sourceLinks, chapters, progress, historyEvents, pageBookmarks }
+        data: {
+            manga: manga.map(stripNonFiniteLatestChapterNumber),
+            sourceLinks,
+            chapters,
+            progress,
+            historyEvents,
+            pageBookmarks
+        }
     } as const
+}
+
+// The tripwire hook keeps a non-finite latestChapterNumber from ever being written to
+// db.manga going forward, and the version(9) migration heals already-corrupt rows on
+// open - but this is a last line of defense on the export path itself: a sentinel that
+// somehow survives to here must never round-trip through JSON.stringify (which turns
+// Infinity into null) into a backup file, where schema.ts's `z.number().finite()` would
+// then reject the whole record on restore.
+function stripNonFiniteLatestChapterNumber(m: LibraryManga): LibraryManga {
+    if (m.latestChapterNumber === undefined || Number.isFinite(m.latestChapterNumber)) return m
+    const { latestChapterNumber: _drop, ...rest } = m
+    return rest
 }
 
 export type ImportResolution = "overwrite" | "skip" | "merge"

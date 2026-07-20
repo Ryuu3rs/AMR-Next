@@ -1,4 +1,5 @@
 import type { ChapterRecord } from "@amr/contracts"
+import { latestNumberedChapter } from "@amr/source-sdk"
 import { db } from "../database"
 import { findSource, listChaptersBySource } from "../sources"
 import { fetchChapterHtmlViaTab } from "./tab-fetch"
@@ -235,13 +236,19 @@ export async function listChaptersWithTabFallback(
         if (source!.manifest.id === "mangahub") {
             await purgeStaleMangahubChapterRows(mangaId, new Set(chapters.map(c => c.id)))
         }
-        const maxSortKey = Math.max(...chapters.map(c => c.sortKey))
-        const latestChapter = chapters.find(c => c.sortKey === maxSortKey)
+        // latestNumberedChapter filters to a finite sortKey before comparing - a plain
+        // Math.max over every fetched sortKey let a single unnumbered chapter
+        // (sortKey: UNNUMBERED_SORT_KEY / Infinity) beat any real chapter number and
+        // get persisted as latestChapterNumber, which IndexedDB keeps but backup
+        // export turns into null and import validation then rejects outright. When
+        // nothing fetched is numbered, skip the write entirely rather than falling
+        // back to an unnumbered chapter.
+        const latestChapter = latestNumberedChapter(chapters)
         const existing = await db.manga.get(mangaId)
-        if (existing && maxSortKey > (existing.latestChapterNumber ?? -1)) {
+        if (existing && latestChapter && latestChapter.sortKey > (existing.latestChapterNumber ?? -1)) {
             await db.manga.update(mangaId, {
-                latestChapterNumber: maxSortKey,
-                ...(latestChapter?.id ? { latestChapterId: latestChapter.id } : {})
+                latestChapterNumber: latestChapter.sortKey,
+                latestChapterId: latestChapter.id
             })
         }
     })
