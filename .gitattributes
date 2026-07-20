@@ -1,0 +1,16 @@
+# Normalize all text files to LF in the repository and on checkout.
+# Without this, Windows clones commit CRLF blobs and Prettier's endOfLine: "lf"
+# check fails in CI.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.xpi binary
+*.crx binary

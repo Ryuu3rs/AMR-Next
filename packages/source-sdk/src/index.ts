@@ -19,4 +19,3 @@ export function matchesSourceDomain(hostname: string, domains: readonly string[]
         return normalizedHostname === normalizedDomain
     })
 }
-
