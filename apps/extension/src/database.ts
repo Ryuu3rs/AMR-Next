@@ -219,29 +219,36 @@ export class AmrDatabase extends Dexie {
                 backups: "++id, createdAt, reason"
             })
             .upgrade(async tx => {
-                // Manual loop instead of toCollection().modify() - the latter can't
-                // reliably run async work (Blob construction, base64 decode) per record
-                // in older Dexie upgrade patterns.
+                // Decode every cover BEFORE touching IndexedDB again. Firefox auto-commits
+                // (inactivates) a versionchange transaction the moment the microtask queue
+                // drains with no pending IDB request, so doing non-IDB async work - atob,
+                // Blob construction - between two awaited IDB writes let the transaction
+                // close mid-migration and the whole upgrade abort, leaving the DB stuck at
+                // the old version and the library unreadable. Read once, transform
+                // synchronously, then write in one uninterrupted batch so the only awaits
+                // in this callback are back-to-back IDB requests.
+                const now = Date.now()
                 const allManga = await tx.table("manga").toArray()
+                const coverRows: Array<{ mangaId: string; blob: Blob; cachedAt: number }> = []
+                const clearedIds: string[] = []
                 for (const m of allManga) {
-                    if (typeof m.coverUrl === "string" && m.coverUrl.startsWith("data:")) {
-                        try {
-                            const match = /^data:([^;]+);base64,(.+)$/.exec(m.coverUrl)
-                            const mime = match?.[1]
-                            const b64 = match?.[2]
-                            if (!mime || !b64) continue
-                            const binary = atob(b64)
-                            const bytes = new Uint8Array(binary.length)
-                            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-                            const blob = new Blob([bytes], { type: mime })
-                            await tx.table("covers").put({ mangaId: m.id, blob, cachedAt: Date.now() })
-                            await tx.table("manga").update(m.id, { coverUrl: undefined })
-                        } catch {
-                            // Malformed data: URI - skip this record, don't abort the
-                            // whole migration.
-                        }
+                    if (typeof m.coverUrl !== "string" || !m.coverUrl.startsWith("data:")) continue
+                    const match = /^data:([^;]+);base64,(.+)$/.exec(m.coverUrl)
+                    const mime = match?.[1]
+                    const b64 = match?.[2]
+                    if (!mime || !b64) continue
+                    try {
+                        const binary = atob(b64)
+                        const bytes = new Uint8Array(binary.length)
+                        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+                        coverRows.push({ mangaId: m.id, blob: new Blob([bytes], { type: mime }), cachedAt: now })
+                        clearedIds.push(m.id)
+                    } catch {
+                        // Malformed data: URI - skip this record, don't abort the migration.
                     }
                 }
+                if (coverRows.length > 0) await tx.table("covers").bulkPut(coverRows)
+                for (const id of clearedIds) await tx.table("manga").update(id, { coverUrl: undefined })
             })
         // Repair migration for the UNNUMBERED_SORT_KEY (Infinity) leak class: pre-fix
         // aggregation bugs (a plain Math.max/reduce over sortKey with no finite filter)
