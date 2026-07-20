@@ -2128,7 +2128,7 @@ export async function getLocalStats() {
             m.lastReadChapterNumber !== undefined &&
             m.lastReadChapterNumber >= m.latestChapterNumber
     ).length
-    const dayKeys = [...new Set(history.map(event => new Date(event.occurredAt).toISOString().slice(0, 10)))].sort()
+    const dayKeys = [...new Set(history.map(event => localDayKey(new Date(event.occurredAt))))].sort()
     const readingDays = dayKeys.length
 
     const dayMs = 86_400_000
@@ -2144,7 +2144,7 @@ export async function getLocalStats() {
     }
     // Current streak: consecutive days ending today or yesterday.
     let currentStreak = 0
-    const todayKey = new Date().toISOString().slice(0, 10)
+    const todayKey = localDayKey(new Date())
     let cursor = asDay(todayKey)
     const daySet = new Set(dayKeys.map(asDay))
     if (!daySet.has(cursor) && daySet.has(cursor - dayMs)) cursor -= dayMs
@@ -2155,7 +2155,7 @@ export async function getLocalStats() {
     const weekAgo = Date.now() - 7 * dayMs
     const chaptersThisWeek = history.filter(e => e.type === "completed" && e.occurredAt >= weekAgo).length
     const chaptersToday = history.filter(
-        e => e.type === "completed" && new Date(e.occurredAt).toISOString().slice(0, 10) === todayKey
+        e => e.type === "completed" && localDayKey(new Date(e.occurredAt)) === todayKey
     ).length
 
     const ACHIEVEMENT_DEFS: Array<{

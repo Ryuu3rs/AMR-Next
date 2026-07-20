@@ -67,7 +67,12 @@ export const downloadsBookmarksAnalyticsHandlers: HandlerMap = {
                     reResolved = true
                     const refreshed = await resolveChapterUrl(request.url)
                     pages = refreshed.pages.slice(0, 200)
-                    index -= 1
+                    // The refreshed resolution can differ in page count or order, so
+                    // blobs already fetched from the stale list cannot be interleaved
+                    // with it - discard them and re-download the whole chapter from the
+                    // fresh list to keep the saved pages consistent.
+                    pageBlobs.length = 0
+                    index = -1
                     continue
                 }
                 throw error
