@@ -33,30 +33,39 @@ export const mangaHtml = `<!DOCTYPE html>
 </body>
 </html>`
 
-export const SEARCH_PATH = "/"
+export const SEARCH_PATH = "/search/"
 export const SEARCH_QUERY = "barbarian"
 
+// Live markup shape (verified against https://www.mgeko.cc/search/?search=barbarian):
+// <li class="novel-item"> cards, clean title on the anchor's title attribute (its
+// inner text mixes in author/chapter/summary text), lazy-loaded cover with a shared
+// loading.gif placeholder in src and the real relative path in data-src.
 export const searchHtml = `<!DOCTYPE html>
 <html>
-<head><title>Search results for "barbarian" - Mgeko</title></head>
+<head><title>Search Manga</title></head>
 <body>
-<div class="manga-list">
-  <div class="manga-item">
-    <a href="/manga/barbarians-adventure-in-a-fantasy-world/">
-      <img src="${COVER_URL}" alt="cover" />
-      <span class="manga-title">Barbarian's Adventure in a Fantasy World</span>
-    </a>
-  </div>
-  <div class="manga-item">
-    <a href="/manga/barbarian-quest/">
-      <img src="https://www.mgeko.cc/uploads/cover-bq.jpg" alt="cover" />
-      <span class="manga-title">Barbarian Quest</span>
-    </a>
-  </div>
-  <div class="manga-item">
-    <a href="/manga/"><!-- junk: no slug --></a>
-  </div>
-</div>
+<ul class="novel-list grid col col2">
+<li class="novel-item">
+<a href="/manga/barbarians-adventure-in-a-fantasy-world/" title="Barbarian's Adventure in a Fantasy World">
+<div class="cover-wrap"><figure class="novel-cover">
+<img class="lazy" src="/static/img/loading.gif" data-src="/media/manga_covers/qYZJ01-m.jpg" alt="Barbarian's Adventure in a Fantasy World">
+</figure></div>
+<h4 class="novel-title text2row">Barbarian's Adventure in a Fantasy World</h4>
+<h6 class="text1row">Author(S): Updating</h6>
+<div class="novel-stats"><strong> Chapters 64-eng-li</strong></div>
+</a>
+</li>
+<li class="novel-item">
+<a href="/manga/barbarian-quest/" title="Barbarian Quest">
+<div class="cover-wrap"><figure class="novel-cover">
+<img class="lazy" src="/static/img/loading.gif" data-src="/media/manga_covers/bq-cover.jpg" alt="Barbarian Quest">
+</figure></div>
+<h4 class="novel-title text2row">Barbarian Quest</h4>
+<h6 class="text1row">Author(S): Updating</h6>
+<div class="novel-stats"><strong> Chapters 100-eng-li</strong></div>
+</a>
+</li>
+</ul>
 </body>
 </html>`
 

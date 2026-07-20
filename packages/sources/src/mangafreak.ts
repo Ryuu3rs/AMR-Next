@@ -66,9 +66,9 @@ function hostOrigin(url?: URL): string {
 
 function extractTitle(html: string): string | undefined {
     for (const p of [
+        /<h1[^>]*>([^<]+)<\/h1>/i,
         /property="og:title"\s+content="([^"]+)"/i,
-        /content="([^"]+)"\s+property="og:title"/i,
-        /<h1[^>]*>([^<]+)<\/h1>/i
+        /content="([^"]+)"\s+property="og:title"/i
     ]) {
         const m = html.match(p)
         if (m) {

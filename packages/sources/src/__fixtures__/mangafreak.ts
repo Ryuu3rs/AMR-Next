@@ -61,6 +61,24 @@ export const mangaHtmlNoCoverMeta = `<!DOCTYPE html>
 </body>
 </html>`
 
+// Live markup shape (verified against https://ww2.mangafreak.me/Manga/One_Piece): og:title
+// carries a "<Title> Manga Chapter List - MangaFreak" boilerplate suffix, while <h1> holds
+// the clean title. Title extraction must prefer the h1 over this og:title.
+export const mangaHtmlBoilerplateOgTitle = `<!DOCTYPE html>
+<html>
+<head>
+<title>One Piece Manga Chapter List - MangaFreak</title>
+<meta property="og:title" content="One Piece Manga Chapter List - MangaFreak" />
+<meta property="og:image" content="${REAL_COVER_URL}" />
+</head>
+<body>
+<h1>One Piece</h1>
+<div class="manga_series_list">
+  <a href="/Read1_${MANGA_SLUG}_1092">Read One Piece Chapter 1092</a>
+</div>
+</body>
+</html>`
+
 export const chapterHtml = `<!DOCTYPE html>
 <html>
 <head><title>One Piece Chapter 1092</title></head>

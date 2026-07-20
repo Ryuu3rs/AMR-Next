@@ -274,6 +274,48 @@ describe("createMadaraAdapter", () => {
         expect(bonus?.sortKey).toBeLessThan(3)
     })
 
+    it("detects an oldest-first (ascending) document order per-site instead of assuming newest-first", async () => {
+        // Some Madara sites list Chapter 1 first, counting up to the latest chapter last -
+        // the opposite of the more common newest-first layout covered above. A bonus entry
+        // with no parseable number only lands in the right place (between Chapter 2 and
+        // Chapter 3) if the adapter detects THIS document walks oldest -> newest instead of
+        // assuming newest-first for every site. Under the old hardcoded assumption the walk
+        // runs backwards and the bonus entry sorts after Chapter 3 instead of before it.
+        const mangaHtml = `<html><body>
+<div id="manga-chapters-holder" data-id="555">
+<ul class="main version-chap">
+  <li class="wp-manga-chapter"><a href="https://test-madara.example/series/cool-manga/ch-1/">Chapter 1</a></li>
+  <li class="wp-manga-chapter"><a href="https://test-madara.example/series/cool-manga/ch-2/">Chapter 2</a></li>
+  <li class="wp-manga-chapter"><a href="https://test-madara.example/series/cool-manga/bonus-story/">Bonus Story</a></li>
+  <li class="wp-manga-chapter"><a href="https://test-madara.example/series/cool-manga/ch-3/">Chapter 3</a></li>
+</ul></div></body></html>`
+        const context = createContext({ "/series/cool-manga/": mangaHtml })
+        const manga = {
+            manga: {
+                id: "testmadara:manga:cool-manga",
+                title: "Cool Manga",
+                normalizedTitle: "cool manga",
+                authors: [],
+                status: "unknown" as const,
+                addedAt: 0,
+                updatedAt: 0
+            },
+            sourceId: "testmadara",
+            sourceMangaId: "cool-manga",
+            url: "https://test-madara.example/series/cool-manga/"
+        }
+        const chapters = await adapter.listChapters({ manga }, context)
+        expect(chapters.map(c => c.sourceChapterId)).toEqual([
+            "cool-manga:ch-1",
+            "cool-manga:ch-2",
+            "cool-manga:bonus-story",
+            "cool-manga:ch-3"
+        ])
+        const bonus = chapters.find(c => c.sourceChapterId === "cool-manga:bonus-story")
+        expect(bonus?.sortKey).toBeGreaterThan(2)
+        expect(bonus?.sortKey).toBeLessThan(3)
+    })
+
     it("falls back to the modern {mangaPath}/{slug}/ajax/chapters/ endpoint when the manga page has no embedded list", async () => {
         // Realistic modern-theme manga page: the chapters-holder div exists (with a post
         // id, still useful for the legacy fallback) but renders empty - the real list is

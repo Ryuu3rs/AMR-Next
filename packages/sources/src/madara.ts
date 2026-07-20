@@ -368,9 +368,14 @@ function extractChapterList(
         entries.push({ chapterSlug, absolute, label, number: parseChapterNumber(numberStr) })
     }
 
-    // Madara chapter lists render newest-first (descending). Unnumbered bonus
-    // entries interpolate between the real chapters they sit next to.
-    const sortKeys = assignListSortKeys(entries, e => e.number, "newest-first")
+    // Most Madara sites list newest-first (descending), but some list oldest-first
+    // (ascending) - detect this document's order from its own first/last parsed
+    // chapter numbers rather than assuming one direction for every site. Unnumbered
+    // bonus entries then interpolate between the real chapters they sit next to.
+    const firstParsed = entries.find(e => e.number !== undefined)?.number
+    const lastParsed = [...entries].reverse().find(e => e.number !== undefined)?.number
+    const descending = firstParsed !== undefined && lastParsed !== undefined && firstParsed > lastParsed
+    const sortKeys = assignListSortKeys(entries, e => e.number, descending ? "newest-first" : "oldest-first")
     return entries.map((entry, i) => ({
         id: `${config.id}:chapter:${slug}:${entry.chapterSlug}`,
         mangaId,
