@@ -18,10 +18,10 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
 
             - name: Setup Node.js
-              uses: actions/setup-node@v4
+              uses: actions/setup-node@v7
               with:
                   node-version: 22
                   cache: npm
@@ -54,7 +54,7 @@ jobs:
               run: npm run test:coverage
 
             - name: Upload coverage report
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: coverage-report
                   path: coverage/
@@ -65,7 +65,7 @@ jobs:
               run: npm run zip:firefox
 
             - name: Upload builds
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: extension-builds
                   path: apps/extension/.output/
@@ -79,10 +79,10 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
 
             - name: Setup Node.js
-              uses: actions/setup-node@v4
+              uses: actions/setup-node@v7
               with:
                   node-version: 22
                   cache: npm
@@ -92,7 +92,7 @@ jobs:
               run: npm install -g npm@11
 
             - name: Download extension builds
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v8
               with:
                   name: extension-builds
                   path: apps/extension/.output/
@@ -116,7 +116,7 @@ jobs:
 
             - name: Upload browser test artifacts
               if: always()
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: browser-test-artifacts
                   path: tooling/browser-tests/artifacts/

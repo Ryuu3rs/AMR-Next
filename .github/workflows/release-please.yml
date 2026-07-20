@@ -37,7 +37,7 @@ jobs:
         steps:
             - name: Run release-please
               id: release
-              uses: googleapis/release-please-action@v4
+              uses: googleapis/release-please-action@v5
               with:
                   token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
                   config-file: release-please-config.json
@@ -45,7 +45,7 @@ jobs:
 
             - name: Checkout
               if: ${{ steps.release.outputs.release_created }}
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
               with:
                   ref: ${{ steps.release.outputs.tag_name }}
 
@@ -69,7 +69,7 @@ jobs:
 
             - name: Setup Node.js
               if: ${{ steps.release.outputs.release_created }}
-              uses: actions/setup-node@v4
+              uses: actions/setup-node@v7
               with:
                   node-version: 22
                   cache: npm
@@ -117,7 +117,7 @@ jobs:
 
             - name: Upload Firefox build for AMO submission
               if: ${{ steps.release.outputs.release_created }}
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: firefox-dist
                   path: apps/extension/.output/firefox-mv3
@@ -131,13 +131,13 @@ jobs:
         environment: amo
         steps:
             - name: Download Firefox build
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v8
               with:
                   name: firefox-dist
                   path: firefox-mv3
 
             - name: Setup Node.js
-              uses: actions/setup-node@v4
+              uses: actions/setup-node@v7
               with:
                   node-version: 22
 
