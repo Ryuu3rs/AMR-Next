@@ -1,4 +1,5 @@
 node_modules
+.claude
 .output
 .wxt
 coverage

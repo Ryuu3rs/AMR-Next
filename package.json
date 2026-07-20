@@ -28,17 +28,23 @@
         "lint": "eslint .",
         "test": "npm run test --workspaces --if-present",
         "test:coverage": "vitest run --config=vitest.coverage.config.ts --coverage.enabled=true --coverage.provider=v8 --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=lcov --passWithNoTests",
-        "check": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run build:firefox && npm run test"
+        "check": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run build:firefox && npm run test",
+        "prepare": "husky"
+    },
+    "lint-staged": {
+        "*": "prettier --write --ignore-unknown"
     },
     "devDependencies": {
         "@vitest/coverage-v8": "^4.1.8",
-        "vitest": "^4.1.8",
         "eslint": "^9.39.4",
         "eslint-plugin-svelte": "^3.19.0",
         "globals": "^17.6.0",
+        "husky": "^9.1.7",
+        "lint-staged": "^16.4.0",
         "prettier": "^3.8.3",
         "prettier-plugin-svelte": "^3.4.1",
-        "typescript-eslint": "^8.61.1"
+        "typescript-eslint": "^8.61.1",
+        "vitest": "^4.1.8"
     },
     "packageManager": "npm@11.6.2"
 }
