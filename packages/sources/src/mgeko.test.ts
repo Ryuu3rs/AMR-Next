@@ -98,7 +98,7 @@ describe("mgekoAdapter.listChapters", () => {
 })
 
 describe("mgekoAdapter.search", () => {
-    it("returns results parsed from search page, skipping junk slugs", async () => {
+    it("hits the real /search/?search= endpoint and parses results, skipping junk slugs", async () => {
         const requests: string[] = []
         const context = createContext({ [SEARCH_PATH]: searchHtml }, requests)
 
@@ -107,9 +107,9 @@ describe("mgekoAdapter.search", () => {
         expect(results).toHaveLength(2)
         expect(results[0]!.sourceMangaId).toBe(MANGA_SLUG)
         expect(results[0]!.title).toBe("Barbarian's Adventure in a Fantasy World")
-        expect(results[0]!.coverUrl).toBe(COVER_URL)
+        expect(results[0]!.coverUrl).toBe("https://www.mgeko.cc/media/manga_covers/qYZJ01-m.jpg")
         expect(results[1]!.sourceMangaId).toBe("barbarian-quest")
-        expect(requests[0]!).toContain("?s=barbarian")
+        expect(requests[0]!).toContain("/search/?search=barbarian")
     })
 
     it("returns empty array for blank query", async () => {

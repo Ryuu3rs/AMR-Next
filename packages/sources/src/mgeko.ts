@@ -149,24 +149,32 @@ function extractChapterList(html: string, mangaSlug: string): SourceChapter[] {
     return chapters.sort((a, b) => b.sortKey - a.sortKey)
 }
 
+// Search results render as <li class="novel-item"> cards; the anchor's title
+// attribute carries the clean manga title (its inner text mixes in author,
+// chapter, and summary text). The cover is lazy-loaded: data-src holds the
+// real (relative) image path, src holds a shared "loading.gif" placeholder.
 function extractSearchResults(html: string): SourceSearchResult[] {
     const out: SourceSearchResult[] = []
     const seen = new Set<string>()
-    for (const m of html.matchAll(/<a\b[^>]*\bhref="(\/manga\/([^/"]+)\/)"[^>]*>([\s\S]*?)<\/a>/gi)) {
-        const href = m[1]
-        const slug = m[2]
-        const inner = m[3] ?? ""
-        if (!slug || seen.has(slug)) continue
+    for (const item of html.matchAll(/<li[^>]*\bnovel-item\b[^>]*>([\s\S]*?)<\/li>/gi)) {
+        const block = item[1] ?? ""
+        const anchorMatch = block.match(/<a\s+href="(\/manga\/([^"/]+)\/?)"[^>]*\btitle="([^"]*)"/i)
+        if (!anchorMatch) continue
+        const href = captureGroup(anchorMatch, 1)
+        const slug = captureGroup(anchorMatch, 2)
+        if (!href || !slug || seen.has(slug)) continue
         seen.add(slug)
-        const title = sanitizeScrapedText(inner)
+        const title = sanitizeScrapedText(captureGroup(anchorMatch, 3) ?? "")
         if (title.length < 2) continue
-        const imgMatch = inner.match(/\bsrc="(https?:\/\/[^"]+)"/)
-        const coverUrl = imgMatch?.[1]
+        const imgTag = block.match(/<img\b[^>]*>/i)?.[0]
+        const coverPath = imgTag?.match(/\bdata-src="([^"]+)"/i)?.[1] ?? imgTag?.match(/\bsrc="([^"]+)"/i)?.[1]
+        const coverUrl =
+            coverPath && !/loading\.gif$/i.test(coverPath) ? new URL(coverPath, ORIGIN).toString() : undefined
         out.push({
             sourceId: SOURCE_ID,
             sourceMangaId: slug,
             title,
-            url: `${ORIGIN}${href}`,
+            url: new URL(href, ORIGIN).toString(),
             ...(coverUrl ? { coverUrl } : {})
         })
     }
@@ -325,8 +333,8 @@ export const mgekoAdapter: SourceAdapter = {
     async search(query: string, context: SourceContext): Promise<SourceSearchResult[]> {
         if (!query.trim()) return []
         try {
-            const url = new URL(ORIGIN)
-            url.searchParams.set("s", query)
+            const url = new URL(`${ORIGIN}/search/`)
+            url.searchParams.set("search", query)
             const html = await context.request.getText(url, { headers: BROWSER_HEADERS })
             return extractSearchResults(html)
         } catch {

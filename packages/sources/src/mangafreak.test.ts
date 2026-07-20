@@ -10,6 +10,7 @@ import {
     MANGA_SLUG,
     MANGA_URL,
     mangaHtml,
+    mangaHtmlBoilerplateOgTitle,
     mangaHtmlNoCoverMeta,
     ORIGIN,
     PAGE_URLS,
@@ -80,6 +81,15 @@ describe("mangafreakAdapter.resolveManga", () => {
         const result = await mangafreakAdapter.resolveManga({ sourceMangaId: MANGA_SLUG }, context)
 
         expect(result.manga.coverUrl).toBe(BLIND_GUESS_COVER_URL)
+    })
+
+    it("prefers the clean h1 title over an og:title that carries site boilerplate", async () => {
+        const requests: string[] = []
+        const context = createContext({ [MANGA_PATH]: mangaHtmlBoilerplateOgTitle }, requests)
+
+        const result = await mangafreakAdapter.resolveManga({ sourceMangaId: MANGA_SLUG }, context)
+
+        expect(result.manga.title).toBe("One Piece")
     })
 })
 
