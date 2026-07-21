@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.13.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.12.0...v0.13.0) (2026-07-21)
+
+
+### Features
+
+* automated source-health tool (npm run health:sources) ([7a253d8](https://github.com/Ryuu3rs/AMR-Next/commit/7a253d81ca67738752879b401565a78436d5e4d9))
+* repair fallback-tracked library entries, add backup-restore UI ([e7afcec](https://github.com/Ryuu3rs/AMR-Next/commit/e7afcec5b61ef5caaef52f59ae6b25cd570367cd))
+
+
+### Bug Fixes
+
+* 3 live-verified weebcentral bugs (chapters, series link, search) ([cd66dc3](https://github.com/Ryuu3rs/AMR-Next/commit/cd66dc34b60131fb847d16ad6d48136610662a90))
+* 3 missing publishLive calls left open tabs silently stale ([8c7be92](https://github.com/Ryuu3rs/AMR-Next/commit/8c7be9283b106f6a76fae26729ebb4e40fb75ec0))
+* 5 UI state bugs in the cleanup/backup Data-section tools ([4061883](https://github.com/Ryuu3rs/AMR-Next/commit/4061883711a0b3af4c5c0b3d2808b58d799aad32))
+* align reading stats to local days and reconcile re-resolved downloads ([124c7ab](https://github.com/Ryuu3rs/AMR-Next/commit/124c7ab897c22531cd0ca8188c2d2f956ec53d9b))
+* asurascans search endpoint dropped by /comics 301 to /browse ([255a345](https://github.com/Ryuu3rs/AMR-Next/commit/255a345e66f2827bbe1caf30ab9845525ec29b68))
+* bulkRemove/bulkManual left stale UI state on partial failure ([8bb55b8](https://github.com/Ryuu3rs/AMR-Next/commit/8bb55b8edc1ee177693926ba5ce88ab95af55c76))
+* chapter-cache latestChapterNumber gate missed genuine Chapter 0 ([3d09ea1](https://github.com/Ryuu3rs/AMR-Next/commit/3d09ea1866b55c0ba7d157dfa5920f8fcd79ebd1))
+* correct mgeko search, mangafreak title, madara chapter order ([224e8eb](https://github.com/Ryuu3rs/AMR-Next/commit/224e8eb641c84d2687ab38f3b71f17755b7774be))
+* kagane manual-switch tab fallback, admit unknown-count exact matches ([dc496d9](https://github.com/Ryuu3rs/AMR-Next/commit/dc496d9f0909362416d3ff7fbfc255243d6a373b))
+* kagane stub-chapter sortKey no longer sorts before Chapter 1 ([62142a8](https://github.com/Ryuu3rs/AMR-Next/commit/62142a8faac5f17c6b79428c875670eef5540683))
+* madara chapter list sortKey-0 fallback for unparseable titles ([e4cd399](https://github.com/Ryuu3rs/AMR-Next/commit/e4cd399e3b445cdbffa8a7a4d39806bc2322b471))
+* madara title-split regex, dynasty-scans bonus-chapter sort order ([74d2a9a](https://github.com/Ryuu3rs/AMR-Next/commit/74d2a9a3e7140e42f52d3ff6a85c56d9910e71c9))
+* make the v8 cover migration Firefox-safe against upgrade data loss ([6c662a9](https://github.com/Ryuu3rs/AMR-Next/commit/6c662a9f3795a8db92c57d1842f03f242371003d))
+* malformed [--|] title-split regex in mangabuddy and mangastream ([5e6e466](https://github.com/Ryuu3rs/AMR-Next/commit/5e6e4664bab0c15945593b0d9f8595daa3342e59))
+* mangafreak search endpoint and result-parsing bug ([568805b](https://github.com/Ryuu3rs/AMR-Next/commit/568805bdd41b29b0c2b16ed9a613f95fbce3a210))
+* mangahub badge showing millions of unread chapters ([4f09c76](https://github.com/Ryuu3rs/AMR-Next/commit/4f09c7601559f8bc92afc7c604e2945a792e067a))
+* mgeko.cc URL scheme migration from /comic/ to /manga/ ([3fba0e2](https://github.com/Ryuu3rs/AMR-Next/commit/3fba0e21d3f3c5ee03bb30ee1ee0e5f27b526002))
+* olympustaff search dead due to relative-only href regex ([e17452b](https://github.com/Ryuu3rs/AMR-Next/commit/e17452b72365e78f73c386b50b469cfc0fa8077e))
+* reader:resolve missing publishLive, last of the sibling handlers ([a6af691](https://github.com/Ryuu3rs/AMR-Next/commit/a6af69173bf4469528513e69d1f48d5261831957))
+* retire 6 dead source domains; fix fanfox chapter list + age gate ([7c189a6](https://github.com/Ryuu3rs/AMR-Next/commit/7c189a60350d5f823fc7d7881c6c5f8b05ac2b7c))
+* retire dead asuracomic adapter, harden mangahub slug matching ([3b71b20](https://github.com/Ryuu3rs/AMR-Next/commit/3b71b2079b789f5c84d31c7568a6d48fb272d468))
+* retire dead likemanga adapter, duplicate of mgread ([abaddf6](https://github.com/Ryuu3rs/AMR-Next/commit/abaddf67fe9c107ffe78cda75ea2a48f13517e07))
+* stale cleanup Undo banner surviving a manual backup restore ([639effe](https://github.com/Ryuu3rs/AMR-Next/commit/639effe24b3db670c23bc5787e9516c1d7f03a41))
+* stop UNNUMBERED_SORT_KEY sentinel leaking into chapter selection ([8877b0d](https://github.com/Ryuu3rs/AMR-Next/commit/8877b0d3edc9b3a223cddd93b9b4aa34cf295a86))
+* stop Webtoons reader Next reopening a background tab endlessly ([3d241ab](https://github.com/Ryuu3rs/AMR-Next/commit/3d241abc1d05dab207cecaa5e91a2aa3ade1a289))
+* trackExternalChapter sortKey-0 fallback clobbered reading progress ([f5c9bf3](https://github.com/Ryuu3rs/AMR-Next/commit/f5c9bf3b2a05685d79b0c61182314982619dcee5))
+* weebcentral chapter title leaking style/time markup ([2101ee9](https://github.com/Ryuu3rs/AMR-Next/commit/2101ee96bb239080403ad9f6d22065bae3b79830))
+* weebcentral search titles contaminated with "Official" ribbon text ([a663f06](https://github.com/Ryuu3rs/AMR-Next/commit/a663f062347a54c081e689d532b39ed630d0b43d))
+* wrap 5 multi-step Dexie writes in transactions, close 2 resurrection races ([0e690c2](https://github.com/Ryuu3rs/AMR-Next/commit/0e690c208128395faddd9fb12d8cbc481e6ff7d5))
+* wrap chapter-cache.ts multi-step writes in transactions ([ab23fb1](https://github.com/Ryuu3rs/AMR-Next/commit/ab23fb1640079a8826c30e58e387bf4060869659))
+
 ## [0.12.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.11.0...v0.12.0) (2026-07-17)
 
 
