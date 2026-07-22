@@ -27,7 +27,12 @@ import {
     configureSyncAlarm,
     configureCommunityAlarm
 } from "../src/background/alarms"
-import { checkUpdates, checkExtensionUpdate, backfillMangaGenres } from "../src/handlers/updates-sources"
+import {
+    checkUpdates,
+    checkExtensionUpdate,
+    backfillMangaGenres,
+    clearStaleUpdateProgress
+} from "../src/handlers/updates-sources"
 import { runCommunitySync } from "../src/handlers/community"
 import { autoPush } from "../src/handlers/data-sync-settings"
 import { handlers } from "../src/background/dispatch"
@@ -36,6 +41,7 @@ import { publishLive } from "../src/live"
 
 export default defineBackground(() => {
     browser.runtime.onInstalled.addListener(() => {
+        void clearStaleUpdateProgress()
         void configureUpdateAlarm()
         void configureSyncAlarm()
         void configureCommunityAlarm()
@@ -52,6 +58,7 @@ export default defineBackground(() => {
     // on install/update, so without this, a lost alarm silently breaks until the
     // next extension update.
     browser.runtime.onStartup.addListener(() => {
+        void clearStaleUpdateProgress()
         void configureUpdateAlarm()
         void configureSyncAlarm()
         void configureCommunityAlarm()

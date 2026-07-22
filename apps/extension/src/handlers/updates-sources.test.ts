@@ -910,6 +910,37 @@ describe("updates:check handler stale-progress self-healing", () => {
     })
 })
 
+describe("clearStaleUpdateProgress (startup/install proactive recovery)", () => {
+    it("flips a persisted running: true to false, regardless of age", async () => {
+        const { clearStaleUpdateProgress } = await import("./updates-sources")
+        // Even a RECENT running record is stale at startup: the in-memory guard is
+        // false in a fresh worker, so nothing is actually running to belong to it. A
+        // check that crashed the extension mid-update bricked the UI on exactly this.
+        await storageLocal.set({
+            updateProgress: { running: true, done: 3, total: 10, startedAt: Date.now() - 5000 }
+        })
+
+        await clearStaleUpdateProgress()
+
+        const progress = storageLocal.store.get("updateProgress") as { running: boolean; done: number; total: number }
+        expect(progress.running).toBe(false)
+        // Display fields are preserved so the UI can still show the last known counts.
+        expect(progress.done).toBe(3)
+        expect(progress.total).toBe(10)
+    })
+
+    it("is a no-op when there is no progress record or it is already not running", async () => {
+        const { clearStaleUpdateProgress } = await import("./updates-sources")
+        await clearStaleUpdateProgress()
+        expect(storageLocal.store.get("updateProgress")).toBeUndefined()
+
+        await storageLocal.set({ updateProgress: { running: false, done: 1, total: 1, startedAt: 1 } })
+        storageLocal.set.mockClear()
+        await clearStaleUpdateProgress()
+        expect(storageLocal.set).not.toHaveBeenCalled()
+    })
+})
+
 describe("checkUpdates concurrency guard", () => {
     it("a second concurrent call returns immediately instead of running the loop twice", async () => {
         const { checkUpdates } = await import("./updates-sources")
