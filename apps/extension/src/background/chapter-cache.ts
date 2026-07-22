@@ -58,8 +58,14 @@ export function _resetRefreshCooldownForTests(): void {
 // Start (or join) a chapter-list refresh, returning a promise that resolves once the
 // cache reflects the result (success or failure - this never rejects). Use this
 // instead of calling listChaptersWithTabFallback directly - it dedupes concurrent
-// calls for the same manga, and lets a caller that needs the data (unlike
-// scheduleChapterListRefresh's fire-and-forget callers) wait for it.
+// calls for the same manga, joins an in-flight one, and (like
+// scheduleChapterListRefresh) skips starting a fresh crawl if one already ran within
+// REFRESH_COOLDOWN_MS. The cooldown gate matters because reader:chapters calls this on
+// a cache miss, and the reader re-runs that on every ["chapters"] live event: without
+// the gate, a Webtoons title whose crawl mined nothing cacheable would reopen the
+// up-to-20-tab tab-crawl on every event (mark-as-read, open-in-reader, a background
+// update check). The first-ever open still crawls (no prior timestamp); only repeats
+// inside the window are skipped, leaving siblings from whatever the last crawl cached.
 export function ensureChapterListRefreshed(
     source: ReturnType<typeof findSource>,
     sourceMangaId: string,
@@ -70,10 +76,11 @@ export function ensureChapterListRefreshed(
     const mangaKey = `${source.manifest.id}:${sourceMangaId}`
     const existing = inFlightRefreshes.get(mangaKey)
     if (existing) return existing
+    const last = lastRefreshStartedAt.get(mangaKey)
+    if (last !== undefined && Date.now() - last < REFRESH_COOLDOWN_MS) return Promise.resolve()
     // Record the attempt start (not completion) so a slow or failed crawl still
-    // resets scheduleChapterListRefresh's cooldown clock for this manga - this
-    // callback needs a real refresh, so a schedule() call moments later shouldn't
-    // redundantly re-crawl.
+    // resets the cooldown clock for this manga - a schedule()/ensure() call moments
+    // later shouldn't redundantly re-crawl.
     lastRefreshStartedAt.set(mangaKey, Date.now())
     const promise = listChaptersWithTabFallback(source, sourceMangaId, mangaUrl, mangaId)
         .catch(() => {})

@@ -541,6 +541,10 @@ describe("purgeStaleMangahubChapterRows", () => {
 describe("ensureChapterListRefreshed", () => {
     beforeEach(() => {
         fetchChapterHtmlViaTabMock.mockReset()
+        // Each test simulates a fresh first-open: ensureChapterListRefreshed now skips
+        // a crawl when one ran within the cooldown, so a timestamp left by a prior test
+        // would otherwise gate the crawl this test expects to run.
+        _resetRefreshCooldownForTests()
     })
 
     it("joins an in-flight refresh instead of starting a second one for the same manga", async () => {
@@ -574,6 +578,25 @@ describe("ensureChapterListRefreshed", () => {
 
         const chapters = await db.chapters.where("mangaId").equals(MANGA_ID).toArray()
         expect(chapters).toHaveLength(3)
+    })
+
+    it("skips a second crawl within the cooldown window (reader tab-storm guard)", async () => {
+        await db.manga.put(manga)
+        fetchChapterHtmlViaTabMock.mockResolvedValue(pageHtml([3, 2, 1], null))
+
+        const source = fakeSource(() => LIST_URL)
+        await ensureChapterListRefreshed(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(1)
+
+        // A second call moments later - as the reader's ["chapters"] subscriber would
+        // drive on every live event - must NOT reopen the tab crawl.
+        await ensureChapterListRefreshed(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(1)
+
+        // ...until the cooldown is cleared (a genuinely new opportunity to refresh).
+        _resetRefreshCooldownForTests()
+        await ensureChapterListRefreshed(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(2)
     })
 
     it("never rejects, even when the underlying fetch throws", async () => {
