@@ -747,9 +747,24 @@
         return manga.addedAt > Date.now() - DAY_MS
     }
 
+    // True when the title has chapters newer than the last-read position, by chapter
+    // NUMBER. Every unread indicator (poster badge, Updates list, Updated chip) must use
+    // this rather than comparing latestChapterId to lastReadChapterId: after an import or
+    // migration the two ids legitimately differ - the backup's read id points at the old
+    // source's chapter, the latest id at the re-fetched one - even when the numbers match,
+    // which left a stale "Unread" badge on a fully caught-up title that the number-based
+    // unread filter correctly hid. Unknown latest count -> not asserted unread.
+    function hasNewerChapters(manga: LibraryManga): boolean {
+        return (
+            manga.latestChapterNumber !== undefined &&
+            manga.lastReadChapterNumber !== undefined &&
+            manga.latestChapterNumber > manga.lastReadChapterNumber
+        )
+    }
+
     function isRecentlyUpdated(manga: LibraryManga): boolean {
         if (manga.updatedAt <= Date.now() - DAY_MS) return false
-        return !!(manga.latestChapterId && manga.latestChapterId !== manga.lastReadChapterId)
+        return hasNewerChapters(manga)
     }
 
     // When a dashboard tab that's already open regains focus (e.g. the reader's
@@ -2095,8 +2110,10 @@
         library.filter(
             m =>
                 !isSeedData(m) &&
-                ((m.latestChapterId && m.latestChapterId !== m.lastReadChapterId) ||
-                    (m.latestChapterId && !m.lastReadChapterId))
+                // Newer chapters by number, or a known-count title never read yet - the
+                // same import-safe rule as hasNewerChapters, kept inline so the Updates
+                // list still surfaces never-opened titles (which hasNewerChapters omits).
+                (hasNewerChapters(m) || (m.latestChapterNumber !== undefined && m.lastReadChapterNumber === undefined))
         )
     )
     const pagedUpdates = $derived(updatedManga.slice(0, updatesLimit))
@@ -2755,7 +2772,7 @@
                                     {#if isSeedData(manga)}<span class="sample-chip">Sample</span>{/if}
                                     <div class="poster-badges">
                                         {#if manga.manualTracking}<span class="manual-chip">Manual</span>{/if}
-                                        {#if !isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId}
+                                        {#if !isSeedData(manga) && hasNewerChapters(manga)}
                                             <span class="new-chip">Unread</span>
                                         {/if}
                                         {#if isRecentlyAdded(manga)}<span class="added-chip">New</span>{/if}
@@ -2853,9 +2870,9 @@
                                     {#if manga.manualTracking}· manual{/if}
                                     {#if manga.notes}· 📝{/if}
                                 </p>
-                                {#if (!isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId) || isRecentlyAdded(manga) || isRecentlyUpdated(manga)}
+                                {#if (!isSeedData(manga) && hasNewerChapters(manga)) || isRecentlyAdded(manga) || isRecentlyUpdated(manga)}
                                     <div class="list-badges">
-                                        {#if !isSeedData(manga) && manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId}
+                                        {#if !isSeedData(manga) && hasNewerChapters(manga)}
                                             <span class="list-badge badge-unread">Unread</span>
                                         {/if}
                                         {#if isRecentlyAdded(manga)}<span class="list-badge badge-added">New</span>{/if}
