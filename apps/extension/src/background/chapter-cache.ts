@@ -25,6 +25,11 @@ const inFlightRefreshes = new Map<string, Promise<void>>()
 // call for no real benefit. ensureChapterListRefreshed callers are NOT gated (they
 // explicitly need the refresh to run and await it).
 const REFRESH_COOLDOWN_MS = 10 * 60 * 1000
+// A crawl that cached nothing (tab-load timeout, challenge interstitial, unminable
+// list) holds only this much cooldown instead of the full window, so the reader's
+// next open can retry rather than showing no prev/next nav for 10 minutes - while a
+// rapid burst of triggers is still gated enough to prevent the tab storm.
+const FAILED_REFRESH_RETRY_MS = 60 * 1000
 const lastRefreshStartedAt = new Map<string, number>()
 
 // Site-wide sequential id floor for MangaHub's "alternate version" id-slug chapter
@@ -84,6 +89,19 @@ export function ensureChapterListRefreshed(
     lastRefreshStartedAt.set(mangaKey, Date.now())
     const promise = listChaptersWithTabFallback(source, sourceMangaId, mangaUrl, mangaId)
         .catch(() => {})
+        .then(async () => {
+            // If the crawl cached nothing, roll the cooldown back to a short retry
+            // window so a flaky first open isn't locked out of nav for the full
+            // cooldown (a crawl that DID cache keeps the full window).
+            const cached = await db.chapters
+                .where("mangaId")
+                .equals(mangaId)
+                .count()
+                .catch(() => 1)
+            if (cached === 0) {
+                lastRefreshStartedAt.set(mangaKey, Date.now() - (REFRESH_COOLDOWN_MS - FAILED_REFRESH_RETRY_MS))
+            }
+        })
         .finally(() => inFlightRefreshes.delete(mangaKey))
     inFlightRefreshes.set(mangaKey, promise)
     return promise

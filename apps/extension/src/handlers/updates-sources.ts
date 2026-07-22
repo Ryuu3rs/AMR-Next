@@ -63,7 +63,13 @@ type UpdateProgress = {
 // updates:check handler. Leaves done/total/startedAt intact for display.
 export async function clearStaleUpdateProgress(): Promise<void> {
     const stored = (await browser.storage.local.get("updateProgress"))["updateProgress"] as UpdateProgress | undefined
-    if (stored?.running) {
+    // Re-check the in-memory guard AFTER the async get: onStartup fires this unawaited
+    // while an overdue alarm can start a real check in the same fresh worker moments
+    // later. If that check is now running, its progress record is live - clearing it
+    // would flip the UI to "not running" mid-check until the next per-title write. The
+    // guard is same-worker-accurate, so this reliably distinguishes a dead record from
+    // a freshly-started one.
+    if (stored?.running && !updateCheckRunning) {
         await browser.storage.local.set({
             updateProgress: { ...stored, running: false } satisfies UpdateProgress
         })
@@ -231,7 +237,10 @@ export async function checkUpdates(sourceId?: string) {
         // Only a full, all-sources check represents the library-wide status the Updates
         // page displays - a single-source "refresh this source" run would otherwise
         // clobber that global status with counts computed from just one source's manga.
-        if (!sourceId) finalWrite["updateStatus"] = status
+        // An aborted check (extension update pending) also must not publish its partial
+        // counts as a completed library-wide status: 3/500 titles checked would show on
+        // the Updates page as a fresh, finished check. Leave the previous status intact.
+        if (!sourceId && !updateCheckAborted) finalWrite["updateStatus"] = status
         await browser.storage.local.set(finalWrite)
         return status
     } finally {
