@@ -42,6 +42,24 @@ type UpdateProgress = {
     startedAt: number
 }
 
+// Proactively clear a stale "running" progress record left by a check whose
+// service worker was killed mid-loop (browser closed, SW evicted, or - the case
+// that bricked installs - an extension update landing while a check ran). Called
+// from the background's onStartup/onInstalled: the in-memory updateCheckRunning
+// guard is definitionally false in a freshly-started worker, so any persisted
+// running: true at that point belongs to a dead check and nothing else will ever
+// flip it back. Without this the check UI showed "running" forever until the next
+// user-triggered check happened to hit the reactive stale-recovery in the
+// updates:check handler. Leaves done/total/startedAt intact for display.
+export async function clearStaleUpdateProgress(): Promise<void> {
+    const stored = (await browser.storage.local.get("updateProgress"))["updateProgress"] as UpdateProgress | undefined
+    if (stored?.running) {
+        await browser.storage.local.set({
+            updateProgress: { ...stored, running: false } satisfies UpdateProgress
+        })
+    }
+}
+
 export async function checkUpdates(sourceId?: string) {
     if (updateCheckRunning) return
     updateCheckRunning = true
