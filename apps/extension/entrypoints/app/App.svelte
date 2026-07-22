@@ -747,24 +747,41 @@
         return manga.addedAt > Date.now() - DAY_MS
     }
 
-    // True when the title has chapters newer than the last-read position, by chapter
-    // NUMBER. Every unread indicator (poster badge, Updates list, Updated chip) must use
-    // this rather than comparing latestChapterId to lastReadChapterId: after an import or
-    // migration the two ids legitimately differ - the backup's read id points at the old
-    // source's chapter, the latest id at the re-fetched one - even when the numbers match,
-    // which left a stale "Unread" badge on a fully caught-up title that the number-based
-    // unread filter correctly hid. Unknown latest count -> not asserted unread.
+    // A title the user has never opened at all (no read id AND no read number).
+    function neverRead(manga: LibraryManga): boolean {
+        return manga.lastReadChapterId === undefined && manga.lastReadChapterNumber === undefined
+    }
+
+    // True when the title has chapters newer than the last-read position. Prefer a
+    // chapter-NUMBER comparison: after an import or migration latestChapterId and
+    // lastReadChapterId legitimately differ - the backup's read id points at the old
+    // source's chapter, the latest id at the re-fetched one - even when the numbers
+    // match, which left a stale "Unread" badge on a fully caught-up title. Only when a
+    // number is genuinely unavailable (an unnumbered-only title, or the last chapter
+    // read was an unnumbered special) fall back to id inequality - there are no numbers
+    // to have desynced there, so the id signal is the correct one. Drives the poster
+    // "Unread" badge, which - like before - never fires for a never-read title (that
+    // surfaces through the number-based unread filter instead).
     function hasNewerChapters(manga: LibraryManga): boolean {
+        if (manga.latestChapterNumber !== undefined && manga.lastReadChapterNumber !== undefined) {
+            return manga.latestChapterNumber > manga.lastReadChapterNumber
+        }
+        return !!(manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId)
+    }
+
+    // Updates-list / "Updated"-chip membership: newer chapters, OR a never-opened title
+    // that has any chapter to read. Kept distinct from hasNewerChapters so the badge and
+    // the Updates list can disagree on the never-read case exactly as they did before.
+    function hasUpdates(manga: LibraryManga): boolean {
         return (
-            manga.latestChapterNumber !== undefined &&
-            manga.lastReadChapterNumber !== undefined &&
-            manga.latestChapterNumber > manga.lastReadChapterNumber
+            hasNewerChapters(manga) ||
+            (neverRead(manga) && (manga.latestChapterId !== undefined || manga.latestChapterNumber !== undefined))
         )
     }
 
     function isRecentlyUpdated(manga: LibraryManga): boolean {
         if (manga.updatedAt <= Date.now() - DAY_MS) return false
-        return hasNewerChapters(manga)
+        return hasUpdates(manga)
     }
 
     // When a dashboard tab that's already open regains focus (e.g. the reader's
@@ -2106,16 +2123,7 @@
 
     const UPDATES_INITIAL = 50
     let updatesLimit = $state(UPDATES_INITIAL)
-    const updatedManga = $derived(
-        library.filter(
-            m =>
-                !isSeedData(m) &&
-                // Newer chapters by number, or a known-count title never read yet - the
-                // same import-safe rule as hasNewerChapters, kept inline so the Updates
-                // list still surfaces never-opened titles (which hasNewerChapters omits).
-                (hasNewerChapters(m) || (m.latestChapterNumber !== undefined && m.lastReadChapterNumber === undefined))
-        )
-    )
+    const updatedManga = $derived(library.filter(m => !isSeedData(m) && hasUpdates(m)))
     const pagedUpdates = $derived(updatedManga.slice(0, updatesLimit))
     let expandedUpdates = $state(new Set<string>())
     let updatesNewChapters = $state<Record<string, Array<{ id: string; title: string; sortKey: number; url: string }>>>(

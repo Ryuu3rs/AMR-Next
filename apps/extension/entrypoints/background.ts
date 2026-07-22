@@ -43,14 +43,16 @@ import { publishLive } from "../src/live"
 export default defineBackground(() => {
     // When an extension update is downloaded and waiting, the browser holds it back
     // until the worker goes idle. A long rate-limited update check keeps the worker
-    // busy for minutes, deferring the update - and a user who force-updated mid-check
-    // could wedge the install until a full restart. Abort the running check so the
-    // worker can idle, then reload to apply the pending update immediately. In-flight
-    // Dexie writes are atomic, so an interrupted title rolls back cleanly and the next
-    // scheduled check picks it up; onStartup's clearStaleUpdateProgress resets the UI.
+    // busy for minutes, deferring the update - and force-updating mid-check could wedge
+    // the install until a full restart. Aborting the check lets the worker idle so the
+    // browser applies the pending update on its own, at a safe point. We deliberately do
+    // NOT call runtime.reload() here: a forced reload would abort an in-flight import,
+    // restore, or sync-pull (silently rolling the whole transaction back) and tear down
+    // any open reader/dashboard tabs mid-use. Letting the browser's own hold-until-idle
+    // apply the update avoids yanking active work; onStartup's clearStaleUpdateProgress
+    // then resets any progress record the killed check left behind.
     browser.runtime.onUpdateAvailable.addListener(() => {
         abortCheckUpdates()
-        browser.runtime.reload()
     })
 
     browser.runtime.onInstalled.addListener(() => {

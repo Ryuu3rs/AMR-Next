@@ -995,6 +995,33 @@ describe("checkUpdates concurrency guard", () => {
         const progress = storageLocal.store.get("updateProgress") as { running: boolean }
         expect(progress.running).toBe(false)
     })
+
+    it("an aborted check does not publish its partial counts as the library-wide status", async () => {
+        const { checkUpdates, abortCheckUpdates } = await import("./updates-sources")
+
+        for (let i = 0; i < 4; i++) {
+            const manga = makeManga({ id: `m-${i}` })
+            await db.manga.put(manga)
+            await db.sourceLinks.put(makeLink(manga.id))
+        }
+        // A previous completed check's status must survive an abort untouched, rather
+        // than being overwritten with a 1-of-4 partial run shown as freshly finished.
+        await storageLocal.set({
+            updateStatus: { checked: 4, updated: 0, failed: 0, checkedAt: 111, errors: [] }
+        })
+
+        listMangaChaptersMock.mockImplementation(async () => {
+            abortCheckUpdates()
+            return []
+        })
+        await checkUpdates()
+
+        const status = storageLocal.store.get("updateStatus") as { checked: number; checkedAt: number }
+        expect(status.checked).toBe(4)
+        expect(status.checkedAt).toBe(111)
+        const progress = storageLocal.store.get("updateProgress") as { running: boolean }
+        expect(progress.running).toBe(false)
+    })
 })
 
 describe("updates:new-chapters handler", () => {
