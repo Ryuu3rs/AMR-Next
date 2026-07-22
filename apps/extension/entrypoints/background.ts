@@ -31,7 +31,8 @@ import {
     checkUpdates,
     checkExtensionUpdate,
     backfillMangaGenres,
-    clearStaleUpdateProgress
+    clearStaleUpdateProgress,
+    abortCheckUpdates
 } from "../src/handlers/updates-sources"
 import { runCommunitySync } from "../src/handlers/community"
 import { autoPush } from "../src/handlers/data-sync-settings"
@@ -40,6 +41,18 @@ import { MUTATION_SCOPES } from "../src/background/mutation-scopes"
 import { publishLive } from "../src/live"
 
 export default defineBackground(() => {
+    // When an extension update is downloaded and waiting, the browser holds it back
+    // until the worker goes idle. A long rate-limited update check keeps the worker
+    // busy for minutes, deferring the update - and a user who force-updated mid-check
+    // could wedge the install until a full restart. Abort the running check so the
+    // worker can idle, then reload to apply the pending update immediately. In-flight
+    // Dexie writes are atomic, so an interrupted title rolls back cleanly and the next
+    // scheduled check picks it up; onStartup's clearStaleUpdateProgress resets the UI.
+    browser.runtime.onUpdateAvailable.addListener(() => {
+        abortCheckUpdates()
+        browser.runtime.reload()
+    })
+
     browser.runtime.onInstalled.addListener(() => {
         void clearStaleUpdateProgress()
         void configureUpdateAlarm()

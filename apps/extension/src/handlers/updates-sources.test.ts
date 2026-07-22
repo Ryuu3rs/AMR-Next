@@ -972,6 +972,29 @@ describe("checkUpdates concurrency guard", () => {
         resolveFirst?.()
         await first
     })
+
+    it("abortCheckUpdates stops the loop at the next title instead of finishing the library", async () => {
+        const { checkUpdates, abortCheckUpdates } = await import("./updates-sources")
+
+        for (let i = 0; i < 4; i++) {
+            const manga = makeManga({ id: `m-${i}` })
+            await db.manga.put(manga)
+            await db.sourceLinks.put(makeLink(manga.id))
+        }
+
+        // Abort as soon as the first title is being processed - the loop must break
+        // before reaching the remaining three, never running the whole library.
+        listMangaChaptersMock.mockImplementation(async () => {
+            abortCheckUpdates()
+            return []
+        })
+
+        await checkUpdates()
+
+        expect(listMangaChaptersMock).toHaveBeenCalledTimes(1)
+        const progress = storageLocal.store.get("updateProgress") as { running: boolean }
+        expect(progress.running).toBe(false)
+    })
 })
 
 describe("updates:new-chapters handler", () => {
