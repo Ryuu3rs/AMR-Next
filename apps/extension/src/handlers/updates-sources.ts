@@ -18,7 +18,17 @@ import { delay, type HandlerMap } from "../background/handler-types"
 import { publishLive } from "../live"
 
 let updateCheckRunning = false
+let updateCheckAborted = false
 let genreBackfillRunning = false
+
+// Signal a running checkUpdates loop to stop at the next between-titles boundary.
+// Used when an extension update is waiting to be applied: a long rate-limited check
+// keeps the service worker busy, which defers the update indefinitely (the case that
+// wedged installs). Aborting lets the worker go idle so runtime.reload() can swap the
+// new version in cleanly. No-op if no check is running.
+export function abortCheckUpdates(): void {
+    if (updateCheckRunning) updateCheckAborted = true
+}
 
 // A crashed check (service worker killed mid-loop - browser closed, SW
 // terminated/evicted) leaves updateProgress.running: true in storage forever:
@@ -63,6 +73,7 @@ export async function clearStaleUpdateProgress(): Promise<void> {
 export async function checkUpdates(sourceId?: string) {
     if (updateCheckRunning) return
     updateCheckRunning = true
+    updateCheckAborted = false
     const startedAt = Date.now()
     try {
         let manga: LibraryManga[]
@@ -125,6 +136,10 @@ export async function checkUpdates(sourceId?: string) {
         await writeProgress()
 
         for (const item of manga) {
+            // Between-titles abort point: an extension update is waiting and needs the
+            // worker idle. Stop cleanly here (never mid-transaction) and let the finally
+            // below mark progress not-running so the UI doesn't show a wedged check.
+            if (updateCheckAborted) break
             const link = await db.sourceLinks.get(item.id)
             if (link) {
                 await writeProgress(item.title)
@@ -221,6 +236,7 @@ export async function checkUpdates(sourceId?: string) {
         return status
     } finally {
         updateCheckRunning = false
+        updateCheckAborted = false
     }
 }
 
