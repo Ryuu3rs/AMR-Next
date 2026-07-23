@@ -87,21 +87,23 @@ export function ensureChapterListRefreshed(
     // resets the cooldown clock for this manga - a schedule()/ensure() call moments
     // later shouldn't redundantly re-crawl.
     lastRefreshStartedAt.set(mangaKey, Date.now())
+    // Roll the cooldown back to a short retry window when the crawl cached nothing, so a
+    // flaky first open isn't locked out of prev/next nav for the full cooldown. A crawl
+    // that DID cache keeps the full window. Uses the crawl's own returned count (not a
+    // post-hoc db read), and treats a thrown crawl the same as "cached nothing" so a
+    // failure fails toward allowing a retry, never toward the full lockout.
+    const shortenCooldownForRetry = (): void => {
+        lastRefreshStartedAt.set(mangaKey, Date.now() - (REFRESH_COOLDOWN_MS - FAILED_REFRESH_RETRY_MS))
+    }
     const promise = listChaptersWithTabFallback(source, sourceMangaId, mangaUrl, mangaId)
-        .catch(() => {})
-        .then(async () => {
-            // If the crawl cached nothing, roll the cooldown back to a short retry
-            // window so a flaky first open isn't locked out of nav for the full
-            // cooldown (a crawl that DID cache keeps the full window).
-            const cached = await db.chapters
-                .where("mangaId")
-                .equals(mangaId)
-                .count()
-                .catch(() => 1)
-            if (cached === 0) {
-                lastRefreshStartedAt.set(mangaKey, Date.now() - (REFRESH_COOLDOWN_MS - FAILED_REFRESH_RETRY_MS))
+        .then(
+            cachedCount => {
+                if (cachedCount === 0) shortenCooldownForRetry()
+            },
+            () => {
+                shortenCooldownForRetry()
             }
-        })
+        )
         .finally(() => inFlightRefreshes.delete(mangaKey))
     inFlightRefreshes.set(mangaKey, promise)
     return promise
@@ -224,15 +226,20 @@ export async function mineAndCacheEpisodesFromHtml(
 // If the source provides getChapterListUrl (signals JS-rendered list page), tab-inject
 // that URL directly - SW fetch would return a partial/empty list.
 // Otherwise use the standard SW-fetch path and update the stored chapter count.
+// Returns how many chapters this crawl mined/cached (0 when it produced nothing) so
+// the caller can decide the cooldown without a post-hoc db.chapters count() - that
+// re-count was unscoped and raced concurrent writers/deleters (remove/merge/relink)
+// of the same mangaId, and could read the wrong result either direction.
 export async function listChaptersWithTabFallback(
     source: ReturnType<typeof findSource>,
     sourceMangaId: string,
     mangaUrl: string,
     mangaId: string
-): Promise<void> {
+): Promise<number> {
     const listUrl = source?.getChapterListUrl?.(sourceMangaId, mangaUrl) ?? null
 
     if (listUrl) {
+        let totalCached = 0
         // Tab injection: gets the fully-rendered DOM so we can mine all episode links.
         // The standalone list page paginates (Webtoons: &page=N, newest page first) -
         // page 1 alone badly undercounts long-running series (100+ episodes: page 1
@@ -253,16 +260,17 @@ export async function listChaptersWithTabFallback(
                 html
             )
             if (added === 0) break
+            totalCached += added
             // Webtoons uses &amp; in href attributes, so check for the raw number only.
             const hasNext = new RegExp(`page=${page + 1}(?:\\D|$)`).test(html)
             if (!hasNext) break
         }
-        return
+        return totalCached
     }
 
     // Standard path: SW-fetch the chapter list then persist + update latest count.
     const chapters = await listChaptersBySource(source!.manifest.id, sourceMangaId, mangaUrl)
-    if (chapters.length === 0) return
+    if (chapters.length === 0) return 0
     // Same bulkPut + stale-purge + latest-count write sequence as checkUpdates in
     // updates-sources.ts - wrapped in one transaction there for the same SW-restart
     // reason, so this sibling call site needs it too.
@@ -301,4 +309,5 @@ export async function listChaptersWithTabFallback(
     // See mineAndCacheEpisodesFromHtml: a no-op re-fetch must not emit a live event,
     // or the reader's loadSiblings subscriber re-drives this crawl in a loop.
     if (changed) publishLive(["chapters"], [mangaId])
+    return chapters.length
 }

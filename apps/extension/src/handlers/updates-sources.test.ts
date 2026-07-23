@@ -939,6 +939,54 @@ describe("clearStaleUpdateProgress (startup/install proactive recovery)", () => 
         await clearStaleUpdateProgress()
         expect(storageLocal.set).not.toHaveBeenCalled()
     })
+
+    it("does not resurrect a stale snapshot over a check that completed during its read (TOCTOU)", async () => {
+        const { checkUpdates, clearStaleUpdateProgress } = await import("./updates-sources")
+
+        // Genuinely stale record from a crashed prior check.
+        await storageLocal.set({ updateProgress: { running: true, done: 3, total: 10, startedAt: 111 } })
+
+        // Gate the FIRST get() so a whole checkUpdates cycle runs to completion before
+        // clearStaleUpdateProgress proceeds past its await - the real race is the read
+        // being issued before a fresh check starts but resolving after it finishes.
+        const originalGet = storageLocal.get.getMockImplementation()!
+        let release!: () => void
+        const gate = new Promise<void>(r => (release = r))
+        storageLocal.get.mockImplementationOnce(async (...args: unknown[]) => {
+            await gate
+            return originalGet(...(args as [string]))
+        })
+
+        const clearPromise = clearStaleUpdateProgress()
+        await checkUpdates() // empty library -> writes a fresh {running:false, done:0, total:0, startedAt:T1}
+        release()
+        await clearPromise
+
+        const progress = storageLocal.store.get("updateProgress") as { done: number; total: number; startedAt: number }
+        // Must reflect the fresh check, not the stale done:3/total:10/startedAt:111 snapshot.
+        expect(progress.done).toBe(0)
+        expect(progress.total).toBe(0)
+        expect(progress.startedAt).not.toBe(111)
+    })
+})
+
+describe("abortLongRunningTasks covers backfillMangaGenres", () => {
+    it("stops the genre backfill loop at the next title", async () => {
+        const { backfillMangaGenres, abortLongRunningTasks } = await import("./updates-sources")
+
+        for (let i = 0; i < 4; i++) {
+            await db.manga.put(makeManga({ id: `g-${i}`, mangaUrl: `https://example.test/${i}`, genres: [] }))
+        }
+        // Abort while the first title is resolving - the loop must break before the rest.
+        resolveGenresForMock.mockImplementation(async () => {
+            abortLongRunningTasks()
+            return []
+        })
+
+        await backfillMangaGenres()
+
+        expect(resolveGenresForMock).toHaveBeenCalledTimes(1)
+    })
 })
 
 describe("checkUpdates concurrency guard", () => {
@@ -973,8 +1021,8 @@ describe("checkUpdates concurrency guard", () => {
         await first
     })
 
-    it("abortCheckUpdates stops the loop at the next title instead of finishing the library", async () => {
-        const { checkUpdates, abortCheckUpdates } = await import("./updates-sources")
+    it("abortLongRunningTasks stops the loop at the next title instead of finishing the library", async () => {
+        const { checkUpdates, abortLongRunningTasks } = await import("./updates-sources")
 
         for (let i = 0; i < 4; i++) {
             const manga = makeManga({ id: `m-${i}` })
@@ -985,7 +1033,7 @@ describe("checkUpdates concurrency guard", () => {
         // Abort as soon as the first title is being processed - the loop must break
         // before reaching the remaining three, never running the whole library.
         listMangaChaptersMock.mockImplementation(async () => {
-            abortCheckUpdates()
+            abortLongRunningTasks()
             return []
         })
 
@@ -997,7 +1045,7 @@ describe("checkUpdates concurrency guard", () => {
     })
 
     it("an aborted check does not publish its partial counts as the library-wide status", async () => {
-        const { checkUpdates, abortCheckUpdates } = await import("./updates-sources")
+        const { checkUpdates, abortLongRunningTasks } = await import("./updates-sources")
 
         for (let i = 0; i < 4; i++) {
             const manga = makeManga({ id: `m-${i}` })
@@ -1011,7 +1059,7 @@ describe("checkUpdates concurrency guard", () => {
         })
 
         listMangaChaptersMock.mockImplementation(async () => {
-            abortCheckUpdates()
+            abortLongRunningTasks()
             return []
         })
         await checkUpdates()

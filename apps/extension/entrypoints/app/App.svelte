@@ -1773,12 +1773,14 @@
     }
 
     type LibraryStatus = "unread" | "reading" | "completed"
+    // Reuses the same caught-up signal as the badge (hasNewerChapters) so the library
+    // filter, the unread pool, and the poster badge agree. A number-only statusOf could
+    // never mark an unnumbered-only title (latestChapterNumber always undefined)
+    // "completed", so such a title stayed perpetually "unread" in the filter and the
+    // Surprise-Me pool even when the user had read the latest chapter.
     function statusOf(m: LibraryManga): LibraryStatus {
-        const read = m.lastReadChapterNumber
-        const latest = m.latestChapterNumber
-        if (read === undefined) return "unread"
-        if (latest !== undefined && read >= latest) return "completed"
-        return "reading"
+        if (neverRead(m)) return "unread"
+        return hasNewerChapters(m) ? "reading" : "completed"
     }
     function matchesFilter(m: LibraryManga): boolean {
         if (sourceFilter && m.sourceId !== sourceFilter) return false
