@@ -695,6 +695,23 @@ button:disabled {
     flex-wrap: wrap;
 }
 
+/* Irreversible action - read as destructive before it's clicked, and unmistakable once
+   armed and awaiting the confirming second click. */
+.confirm-remove-btn {
+    border-color: #7f3535;
+    color: #ffb4b4;
+}
+
+.confirm-remove-btn:hover:not(:disabled) {
+    background: rgba(160, 50, 50, 0.25);
+}
+
+.confirm-remove-btn.armed {
+    background: #b03636;
+    border-color: #d15656;
+    color: #fff;
+}
+
 .update-progress-wrap {
     border: 1px solid var(--border, #29313b);
     background: var(--panel, #11161d);

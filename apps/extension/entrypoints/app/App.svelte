@@ -68,12 +68,14 @@
         if (next.has(id)) next.delete(id)
         else next.add(id)
         selectedIds = next
+        disarmBulkRemove()
     }
 
     function clearSelection() {
         selectedIds = new Set()
         selectMode = false
         bulkMessage = ""
+        disarmBulkRemove()
     }
 
     // Select (or, if they're all already selected, deselect) every title matching the
@@ -87,6 +89,35 @@
             else next.add(m.id)
         }
         selectedIds = next
+        disarmBulkRemove()
+    }
+
+    // Remove is irreversible and acts on a whole selection, so it takes two clicks: the
+    // first arms it (showing exactly how many titles are about to go), the second runs
+    // it. Arming lapses on a timer, on Cancel, and whenever the selection or the visible
+    // set changes underneath it - so a count the user read can never be the count that
+    // actually gets deleted.
+    let bulkRemoveArmed = $state(false)
+    let bulkRemoveArmTimer: ReturnType<typeof setTimeout> | undefined
+    const BULK_REMOVE_ARM_MS = 5000
+
+    function disarmBulkRemove() {
+        bulkRemoveArmed = false
+        if (bulkRemoveArmTimer) clearTimeout(bulkRemoveArmTimer)
+        bulkRemoveArmTimer = undefined
+    }
+
+    function requestBulkRemove() {
+        if (bulkWorking) return
+        if (!bulkRemoveArmed) {
+            if (selectedVisibleIds().length === 0) return
+            bulkRemoveArmed = true
+            if (bulkRemoveArmTimer) clearTimeout(bulkRemoveArmTimer)
+            bulkRemoveArmTimer = setTimeout(disarmBulkRemove, BULK_REMOVE_ARM_MS)
+            return
+        }
+        disarmBulkRemove()
+        void bulkRemove()
     }
 
     // Bulk actions act only on titles the user can currently see. The view-change effect
@@ -935,6 +966,7 @@
         unsubscribeLive?.()
         componentAlive = false
         if (updateLogCopyTimer) clearTimeout(updateLogCopyTimer)
+        if (bulkRemoveArmTimer) clearTimeout(bulkRemoveArmTimer)
         // Full revoke-everything sweep so nothing leaks when the tab closes -
         // loadCachedCovers only revokes URLs for ids that drop out of the library
         // between refreshes, not the ones still current when the component unmounts.
@@ -1949,6 +1981,7 @@
             )
             if (pruned.size !== selectedIds.size) selectedIds = pruned
         }
+        disarmBulkRemove()
     })
 
     // Per-row chapter navigation (resolved on demand from the source).
@@ -2838,8 +2871,17 @@
                     <button
                         type="button"
                         class="btn-sm confirm-remove-btn"
+                        class:armed={bulkRemoveArmed}
                         disabled={selectedIds.size === 0 || bulkWorking}
-                        onclick={() => void bulkRemove()}>{bulkWorking ? "Working…" : "Remove"}</button>
+                        onclick={requestBulkRemove}
+                        >{bulkWorking
+                            ? "Working…"
+                            : bulkRemoveArmed
+                              ? `Confirm remove ${selectedIds.size}`
+                              : "Remove"}</button>
+                    {#if bulkRemoveArmed && !bulkWorking}
+                        <button type="button" class="btn-sm" onclick={disarmBulkRemove}>Cancel</button>
+                    {/if}
                     {#if bulkMessage}<p class="notice" role="status" aria-live="polite">{bulkMessage}</p>{/if}
                 </div>
             {/if}
