@@ -41,4 +41,33 @@ describe("formatUpdateFailureLog", () => {
         expect(log).toContain("- (untitled): (no message)")
         expect(log).not.toContain("[]")
     })
+
+    it("strips control, bidi, and zero-width characters (anti terminal-forge)", () => {
+        const esc = String.fromCharCode(0x1b) // ESC - terminal escape
+        const rlo = String.fromCharCode(0x202e) // right-to-left override
+        const zwsp = String.fromCharCode(0x200b) // zero-width space
+        const log = formatUpdateFailureLog([{ mangaId: "s:x", title: `A${esc}[2A${rlo}B${zwsp}`, message: "m" }], meta)
+        for (const code of [0x1b, 0x202e, 0x200b]) {
+            expect(log).not.toContain(String.fromCharCode(code))
+        }
+        expect(log).toContain("- A[2AB [s:x]: m")
+    })
+
+    it("tolerates a null entry or a non-array without throwing", () => {
+        expect(() => formatUpdateFailureLog([null as never], meta)).not.toThrow()
+        const log = formatUpdateFailureLog([null as never, { mangaId: "s:y", title: "Kept", message: "m" }], meta)
+        expect(log).toContain("- Kept [s:y]: m")
+        expect(() => formatUpdateFailureLog("nope" as never, meta)).not.toThrow()
+    })
+
+    it("prints ? for non-finite meta counts instead of 'undefined'", () => {
+        const log = formatUpdateFailureLog([], {
+            version: "1",
+            checkedAt: 0,
+            checked: undefined as never,
+            updated: Number.NaN,
+            failed: 2
+        })
+        expect(log).toContain("checked: ? | updated: ? | failed: 2")
+    })
 })
