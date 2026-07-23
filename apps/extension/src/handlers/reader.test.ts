@@ -205,6 +205,28 @@ describe("doCaptureChapter scrape-failure fallback", () => {
     })
 })
 
+describe("chapter:track (mark-read) does not spawn a chapter-list crawl", () => {
+    it("tracks the chapter but never calls scheduleChapterListRefresh", async () => {
+        const { scheduleChapterListRefresh } = await import("../background/chapter-cache")
+        const source = {
+            manifest: { id: "mangadex" },
+            match: vi.fn().mockReturnValue("chapter"),
+            parseMangaUrl: vi.fn().mockReturnValue({ sourceMangaId: "abc", mangaUrl: "https://mangadex.org/title/abc" })
+        }
+        findSourceMock.mockReturnValue(source)
+        vi.mocked(scheduleChapterListRefresh).mockClear()
+
+        const handler = readerHandlers["chapter:track"]!
+        const res = (await handler({ type: "chapter:track", url: "https://mangadex.org/chapter/track-1" }, {
+            sender: {}
+        } as never)) as { supported: boolean }
+
+        expect(res.supported).toBe(true)
+        // Marking read must not open a tab crawl - the Webtoons "many closing tabs" report.
+        expect(scheduleChapterListRefresh).not.toHaveBeenCalled()
+    })
+})
+
 describe("reader:resolve bot-block path", () => {
     it("falls back to fetchChapterHtmlViaTab when resolveChapterUrl throws a bot-block SourceRequestError", async () => {
         const source = { manifest: { id: "mangadex" }, match: vi.fn().mockReturnValue("chapter") }

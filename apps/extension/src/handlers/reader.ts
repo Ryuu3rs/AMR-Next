@@ -195,9 +195,12 @@ export const readerHandlers: HandlerMap = {
             sourceId: source.manifest.id,
             ...(mangaInfo ? { mangaInfo } : {})
         })
-        if (mangaInfo) {
-            scheduleChapterListRefresh(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
-        }
+        // Deliberately NO chapter-list refresh here. Marking a chapter read must never
+        // open a tab crawl: on a getChapterListUrl source (Webtoons) that crawl opens up
+        // to 20 background tabs, and "Mark read" was doing it on every click. The list is
+        // populated by the page's own auto-capture (the user is on, or just opened, the
+        // chapter page) and, if the reader is open, by its loadSiblings subscriber
+        // reacting to this handler's ["chapters"] live event - both cooldown-gated.
         return { supported: true as const, ...tracked }
     },
 
