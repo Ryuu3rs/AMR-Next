@@ -594,6 +594,7 @@ button:disabled {
 
 .page-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 20px;
@@ -606,8 +607,14 @@ button:disabled {
 
 .library-controls {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 10px;
     align-items: center;
+    /* Never run off the page: the controls share the row with the title and wrap onto
+       a new line when they don't fit, instead of overflowing to the right. */
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .sync-token,
