@@ -205,15 +205,54 @@ describe("doCaptureChapter scrape-failure fallback", () => {
     })
 })
 
-describe("chapter:track (mark-read) does not spawn a chapter-list crawl", () => {
-    it("tracks the chapter but never calls scheduleChapterListRefresh", async () => {
-        const { scheduleChapterListRefresh } = await import("../background/chapter-cache")
+describe("chapter:track (mark-read) chapter-list population", () => {
+    function trackSource() {
         const source = {
             manifest: { id: "mangadex" },
             match: vi.fn().mockReturnValue("chapter"),
             parseMangaUrl: vi.fn().mockReturnValue({ sourceMangaId: "abc", mangaUrl: "https://mangadex.org/title/abc" })
         }
         findSourceMock.mockReturnValue(source)
+        return source
+    }
+
+    it("does not spawn a crawl when the title already has a cached chapter list", async () => {
+        const { scheduleChapterListRefresh } = await import("../background/chapter-cache")
+        trackSource()
+        const handler = readerHandlers["chapter:track"]!
+
+        // First track creates the manga and its single chapter row.
+        const first = (await handler({ type: "chapter:track", url: "https://mangadex.org/chapter/track-1" }, {
+            sender: {}
+        } as never)) as { supported: boolean; mangaId: string }
+        expect(first.supported).toBe(true)
+
+        // Give it a real cached list, as auto-capture or the reader would.
+        await db.chapters.bulkPut(
+            [2, 3, 4].map(
+                n =>
+                    ({
+                        id: `mangadex:chapter:abc:${n}`,
+                        mangaId: first.mangaId,
+                        sourceId: "mangadex",
+                        title: `Chapter ${n}`,
+                        url: `https://mangadex.org/chapter/track-${n}`,
+                        sortKey: n
+                    }) as ChapterRecord
+            )
+        )
+        vi.mocked(scheduleChapterListRefresh).mockClear()
+
+        await handler({ type: "chapter:track", url: "https://mangadex.org/chapter/track-1" }, { sender: {} } as never)
+
+        // Marking read on a populated title must not open a tab crawl - the Webtoons
+        // "many quickly closing tabs" report.
+        expect(scheduleChapterListRefresh).not.toHaveBeenCalled()
+    })
+
+    it("populates the list on a first track, the only path left when auto-add is off", async () => {
+        const { scheduleChapterListRefresh } = await import("../background/chapter-cache")
+        trackSource()
         vi.mocked(scheduleChapterListRefresh).mockClear()
 
         const handler = readerHandlers["chapter:track"]!
@@ -222,8 +261,10 @@ describe("chapter:track (mark-read) does not spawn a chapter-list crawl", () => 
         } as never)) as { supported: boolean }
 
         expect(res.supported).toBe(true)
-        // Marking read must not open a tab crawl - the Webtoons "many closing tabs" report.
-        expect(scheduleChapterListRefresh).not.toHaveBeenCalled()
+        // With auto-add off, auto-capture bails before scheduling anything and the on-page
+        // panel's prev/next is a plain DB read - without this the title would keep exactly
+        // one chapter row forever and never show navigation.
+        expect(scheduleChapterListRefresh).toHaveBeenCalled()
     })
 })
 

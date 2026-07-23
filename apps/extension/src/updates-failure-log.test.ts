@@ -60,6 +60,50 @@ describe("formatUpdateFailureLog", () => {
         expect(() => formatUpdateFailureLog("nope" as never, meta)).not.toThrow()
     })
 
+    it("preserves ZWJ emoji sequences instead of shattering them into separate glyphs", () => {
+        const family = String.fromCodePoint(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467)
+        const log = formatUpdateFailureLog([{ mangaId: "s:z", title: family, message: "m" }], meta)
+        expect(log).toContain(`- ${family} [s:z]: m`)
+    })
+
+    it("does not let an invisible-but-non-empty title defeat the (untitled) fallback", () => {
+        const wordJoiner = String.fromCodePoint(0x2060)
+        const log = formatUpdateFailureLog([{ mangaId: "s:w", title: wordJoiner, message: "m" }], meta)
+        expect(log).toContain("- (untitled) [s:w]: m")
+    })
+
+    it("treats a title of only joiners as blank", () => {
+        const onlyZwj = String.fromCodePoint(0x200d, 0x200d)
+        const log = formatUpdateFailureLog([{ mangaId: "s:j", title: onlyZwj, message: "m" }], meta)
+        expect(log).toContain("- (untitled) [s:j]: m")
+    })
+
+    it("strips the Arabic Letter Mark like the other bidi marks", () => {
+        const alm = String.fromCodePoint(0x061c)
+        const log = formatUpdateFailureLog([{ mangaId: "s:alm", title: `A${alm}B`, message: "m" }], meta)
+        expect(log).not.toContain(alm)
+        expect(log).toContain("- AB [s:alm]: m")
+    })
+
+    it("removes lone surrogates so the log is valid UTF-16 for the clipboard", () => {
+        const lone = String.fromCharCode(0xd800)
+        const log = formatUpdateFailureLog([{ mangaId: "s:lone", title: `Title${lone}End`, message: "m" }], meta)
+        expect(/[\ud800-\udfff]/.test(log)).toBe(false)
+        expect(log).toContain("- TitleEnd [s:lone]: m")
+    })
+
+    it("keeps valid astral characters intact", () => {
+        const astral = String.fromCodePoint(0x1f600) + String.fromCodePoint(0x20000)
+        const log = formatUpdateFailureLog([{ mangaId: "s:a", title: astral, message: "m" }], meta)
+        expect(log).toContain(`- ${astral} [s:a]: m`)
+    })
+
+    it("does not glue words together when removing a C1 control that acts as a line break", () => {
+        const nel = String.fromCharCode(0x85)
+        const log = formatUpdateFailureLog([{ mangaId: "s:nel", title: `Vol.1${nel}Ch.2`, message: "m" }], meta)
+        expect(log).toContain("- Vol.1 Ch.2 [s:nel]: m")
+    })
+
     it("prints ? for non-finite meta counts instead of 'undefined'", () => {
         const log = formatUpdateFailureLog([], {
             version: "1",
