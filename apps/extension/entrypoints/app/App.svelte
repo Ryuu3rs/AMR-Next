@@ -78,9 +78,10 @@
         disarmBulkRemove()
     }
 
-    // Select (or, if they're all already selected, deselect) every title matching the
-    // current filter/search - not just the current page - so a bulk action can target a
-    // whole filtered set without clicking each poster.
+    // Select (or, if they're all already selected, deselect) every title on the current
+    // page - the rows actually rendered (pagedLibrary), not the whole filtered set. Bulk
+    // actions must never reach a title the user can't see, so a selection can only ever
+    // contain rendered rows; use "Load more" to bring more into range, then select again.
     function toggleSelectAllVisible() {
         const allSelected = pagedLibrary.length > 0 && pagedLibrary.every(m => selectedIds.has(m.id))
         const next = new Set(selectedIds)
@@ -99,19 +100,37 @@
     // actually gets deleted.
     let bulkRemoveArmed = $state(false)
     let bulkRemoveArmTimer: ReturnType<typeof setTimeout> | undefined
+    // The exact id set the confirm was armed against. The second click only deletes if
+    // the current on-screen selection still equals this - so ANY change between arm and
+    // confirm (a filter change, a partial-failure re-selection from another bulk action,
+    // a background refresh) forces a fresh arm instead of deleting a set the user never
+    // confirmed. This content check is the authoritative guard; the explicit disarm calls
+    // elsewhere are just for immediate visual feedback.
+    let bulkRemoveArmedKey = ""
     const BULK_REMOVE_ARM_MS = 5000
+
+    function selectionKey(ids: string[]): string {
+        return [...ids].sort().join("\n")
+    }
 
     function disarmBulkRemove() {
         bulkRemoveArmed = false
+        bulkRemoveArmedKey = ""
         if (bulkRemoveArmTimer) clearTimeout(bulkRemoveArmTimer)
         bulkRemoveArmTimer = undefined
     }
 
     function requestBulkRemove() {
         if (bulkWorking) return
-        if (!bulkRemoveArmed) {
-            if (selectedVisibleIds().length === 0) return
+        const current = selectedVisibleIds()
+        if (!bulkRemoveArmed || selectionKey(current) !== bulkRemoveArmedKey) {
+            // First click, or the selection changed under an existing arm: (re-)arm.
+            if (current.length === 0) {
+                disarmBulkRemove()
+                return
+            }
             bulkRemoveArmed = true
+            bulkRemoveArmedKey = selectionKey(current)
             if (bulkRemoveArmTimer) clearTimeout(bulkRemoveArmTimer)
             bulkRemoveArmTimer = setTimeout(disarmBulkRemove, BULK_REMOVE_ARM_MS)
             return
@@ -167,23 +186,35 @@
             .map(s => s.trim())
             .filter(Boolean)
         if (tags.length === 0 || bulkWorking) return
+        const ids = selectedVisibleIds()
+        bulkMessage = ""
         // Hold bulkWorking like bulkRemove/bulkManual so a concurrent Remove can't run
-        // against the same selection while this loop is mid-flight (the Remove button and
-        // requestBulkRemove both gate on bulkWorking).
+        // against the same selection while this loop is mid-flight, and use runSettled so
+        // one failing id neither throws out of the loop (aborting the rest) nor claims the
+        // tag was applied when the write never landed - only succeeded ids are patched
+        // locally and cleared from the selection.
         bulkWorking = true
+        const pending = new Map(
+            ids.map(id => [id, [...new Set([...(library.find(x => x.id === id)?.categories ?? []), ...tags])]])
+        )
+        let succeeded: string[] = []
+        let failed: string[] = []
         try {
-            for (const id of selectedVisibleIds()) {
-                const m = library.find(x => x.id === id)
-                if (!m) continue
-                const categories = [...new Set([...(m.categories ?? []), ...tags])]
-                await sendRuntimeMessage({ type: "library:categories", mangaId: id, categories })
-                library = library.map(x => applyCategories(x, id, categories))
-            }
+            ;({ succeeded, failed } = await runSettled(ids, async id => {
+                await sendRuntimeMessage({ type: "library:categories", mangaId: id, categories: pending.get(id)! })
+            }))
         } finally {
             bulkWorking = false
         }
-        bulkCategory = ""
-        clearSelection()
+        const done = new Set(succeeded)
+        library = library.map(x => (done.has(x.id) ? applyCategories(x, x.id, pending.get(x.id)!) : x))
+        if (failed.length > 0) {
+            selectedIds = new Set([...selectedIds].filter(id => !done.has(id)))
+            bulkMessage = `Tagged ${done.size} of ${ids.length}. ${failed.length} failed - still selected, try again.`
+        } else {
+            bulkCategory = ""
+            clearSelection()
+        }
     }
 
     // Same per-id success/failure tracking as bulkRemove: only the ids that
@@ -1968,7 +1999,9 @@
     const pagedLibrary = $derived(visibleLibrary.slice(0, libraryLimit))
     const allVisibleSelected = $derived(pagedLibrary.length > 0 && pagedLibrary.every(m => selectedIds.has(m.id)))
     $effect(() => {
-        // Reset paging whenever the filtered view changes.
+        // Reset paging whenever the FILTERED VIEW changes. Deliberately depends only on
+        // the filter/search/sort inputs - not selectedIds - so selecting a title doesn't
+        // collapse a "Load more" back to the first page.
         void query
         void categoryFilter
         void genreFilter
@@ -1978,7 +2011,10 @@
         void ratingFilter
         void updatedSinceFilter
         libraryLimit = libraryPageSize
-        // Drop any selected id the new view no longer renders. Without this, selecting
+    })
+
+    $effect(() => {
+        // Drop any selected id the current page no longer renders. Without this, selecting
         // under one filter and then changing it left off-screen ids armed, and Remove
         // deleted titles that were nowhere on screen. Disarm the remove confirm ONLY when
         // this actually changed the selection - the view-derived reads here recompute a
