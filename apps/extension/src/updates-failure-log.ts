@@ -18,13 +18,37 @@ export type UpdateFailureMeta = {
     failed: number
 }
 
-function flatten(s: string): string {
-    return String(s).replace(/\s+/g, " ").trim()
+// Code-point ranges of control/format characters stripped before whitespace collapse.
+// Tab/newline/CR are deliberately excluded - the \s+ pass collapses them to a single
+// space, preserving word boundaries. Everything here could otherwise corrupt a paste:
+// C0 controls (incl. ESC 0x1b), DEL + C1 (0x7f-0x9f), zero-width chars, and bidi
+// marks/overrides/isolates that can reorder a rendered line. Expressed as hex ranges
+// rather than a regex with literal control chars so the source stays plain ASCII.
+const UNSAFE_CODEPOINT_RANGES: ReadonlyArray<readonly [number, number]> = [
+    [0x0, 0x8],
+    [0xe, 0x1f],
+    [0x7f, 0x9f],
+    [0x200b, 0x200f],
+    [0x202a, 0x202e],
+    [0x2066, 0x2069]
+]
+
+function isUnsafeFormatChar(code: number): boolean {
+    return UNSAFE_CODEPOINT_RANGES.some(([lo, hi]) => code >= lo && code <= hi)
+}
+
+function flatten(s: unknown): string {
+    let out = ""
+    for (const ch of String(s)) {
+        if (!isUnsafeFormatChar(ch.codePointAt(0) ?? 0)) out += ch
+    }
+    return out.replace(/\s+/g, " ").trim()
 }
 
 function isoOrUnknown(ts: number): string {
     // new Date(NaN).toISOString() throws, and checkedAt can be missing/NaN before the
-    // first check completes - never let formatting the log throw.
+    // first check completes - never let formatting the log throw. A finite-but-out-of-
+    // range timestamp (e.g. 9e15) also throws RangeError, which the try/catch covers.
     if (!Number.isFinite(ts)) return "unknown"
     try {
         return new Date(ts).toISOString()
@@ -33,17 +57,24 @@ function isoOrUnknown(ts: number): string {
     }
 }
 
+function num(n: unknown): string {
+    return typeof n === "number" && Number.isFinite(n) ? String(n) : "?"
+}
+
 export function formatUpdateFailureLog(errors: readonly UpdateFailureEntry[], meta: UpdateFailureMeta): string {
     const header = [
         "AMR update-failure log",
-        `checked at: ${isoOrUnknown(meta.checkedAt)}`,
-        `extension version: ${flatten(meta.version)}`,
-        `checked: ${meta.checked} | updated: ${meta.updated} | failed: ${meta.failed}`
+        `checked at: ${isoOrUnknown(meta?.checkedAt)}`,
+        `extension version: ${flatten(meta?.version)}`,
+        `checked: ${num(meta?.checked)} | updated: ${num(meta?.updated)} | failed: ${num(meta?.failed)}`
     ].join("\n")
 
+    // Tolerate a null/undefined entry or a non-array (corrupt storage / a future producer
+    // change) rather than throwing - the whole point is a resilient bug-report artifact.
+    const rows = (Array.isArray(errors) ? errors : []).filter((e): e is UpdateFailureEntry => e != null)
     const body =
-        errors.length > 0
-            ? errors
+        rows.length > 0
+            ? rows
                   .map(e => {
                       const id = flatten(e.mangaId)
                       const idPart = id ? ` [${id}]` : ""

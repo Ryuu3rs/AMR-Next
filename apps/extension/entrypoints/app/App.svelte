@@ -75,6 +75,19 @@
         bulkMessage = ""
     }
 
+    // Select (or, if they're all already selected, deselect) every title matching the
+    // current filter/search - not just the current page - so a bulk action can target a
+    // whole filtered set without clicking each poster.
+    function toggleSelectAllVisible() {
+        const allSelected = visibleLibrary.length > 0 && visibleLibrary.every(m => selectedIds.has(m.id))
+        const next = new Set(selectedIds)
+        for (const m of visibleLibrary) {
+            if (allSelected) next.delete(m.id)
+            else next.add(m.id)
+        }
+        selectedIds = next
+    }
+
     // Each id is removed independently - a mid-loop failure (SW restart, transient
     // error, one bad id) must not leave the local library out of sync with what was
     // actually deleted. Only the ids that actually succeeded are dropped from
@@ -443,7 +456,7 @@
     // rather than a real one still in flight.
     const UPDATE_PROGRESS_STALE_MS = 15 * 60 * 1000
 
-    let updateLogCopied = $state(false)
+    let updateLogCopyState = $state<"idle" | "ok" | "fail">("idle")
     let updateLogCopyTimer: ReturnType<typeof setTimeout> | undefined
     async function copyUpdateFailureLog() {
         if (!updateStatus?.errors || updateStatus.errors.length === 0) return
@@ -456,13 +469,15 @@
         })
         try {
             await navigator.clipboard.writeText(text)
+            updateLogCopyState = "ok"
         } catch {
-            return // clipboard access denied/unavailable - nothing more we can do
+            // Surface the failure rather than silently no-op: a user who sees nothing
+            // happen might paste stale clipboard contents into a bug report as "the log".
+            updateLogCopyState = "fail"
         }
-        updateLogCopied = true
         if (updateLogCopyTimer) clearTimeout(updateLogCopyTimer)
         updateLogCopyTimer = setTimeout(() => {
-            updateLogCopied = false
+            updateLogCopyState = "idle"
         }, 1500)
     }
     let sourcesList = $state<
@@ -891,6 +906,7 @@
     onDestroy(() => {
         document.removeEventListener("visibilitychange", onVisibilityChange)
         unsubscribeLive?.()
+        if (updateLogCopyTimer) clearTimeout(updateLogCopyTimer)
         // Full revoke-everything sweep so nothing leaks when the tab closes -
         // loadCachedCovers only revokes URLs for ids that drop out of the library
         // between refreshes, not the ones still current when the component unmounts.
@@ -1882,6 +1898,7 @@
     let libraryPageSize = $state(50)
     let libraryLimit = $state(50)
     const pagedLibrary = $derived(visibleLibrary.slice(0, libraryLimit))
+    const allVisibleSelected = $derived(visibleLibrary.length > 0 && visibleLibrary.every(m => selectedIds.has(m.id)))
     $effect(() => {
         // Reset paging whenever the filtered view changes.
         void query
@@ -2756,6 +2773,13 @@
             {#if selectMode}
                 <div class="bulk-bar">
                     <span>{selectedIds.size} selected</span>
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        disabled={visibleLibrary.length === 0}
+                        onclick={toggleSelectAllVisible}>
+                        {allVisibleSelected ? "Deselect all" : "Select all"}
+                    </button>
                     <input bind:value={bulkCategory} placeholder="Tags (comma-separated)…" aria-label="Bulk tags" />
                     <button
                         type="button"
@@ -3086,7 +3110,11 @@
                     <div class="error-panel-head">
                         <p class="row-label">Titles that failed to update</p>
                         <button type="button" class="btn-sm" onclick={() => void copyUpdateFailureLog()}>
-                            {updateLogCopied ? "Copied ✓" : "Copy failure log"}
+                            {updateLogCopyState === "ok"
+                                ? "Copied ✓"
+                                : updateLogCopyState === "fail"
+                                  ? "Copy failed"
+                                  : "Copy failure log"}
                         </button>
                     </div>
                     {#each updateStatus.errors as err}
