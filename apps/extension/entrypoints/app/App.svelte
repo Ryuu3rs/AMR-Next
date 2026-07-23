@@ -9,6 +9,7 @@
     import { getCachedCovers } from "../../src/database"
     import { repairMangahubChapterNumbers } from "../../src/handlers/updates-sources"
     import { formatUpdateFailureLog } from "../../src/updates-failure-log"
+    import { pruneSelectionToVisible } from "../../src/library-selection"
     import { subscribeLive } from "../../src/live"
     import ActivityHeatmap from "./ActivityHeatmap.svelte"
     import ImportReconcile from "./ImportReconcile.svelte"
@@ -88,13 +89,26 @@
         selectedIds = next
     }
 
+    // Bulk actions act only on titles the user can currently see. The view-change effect
+    // further down already prunes the selection, so this is the hard guard at the moment
+    // of action - Remove is destructive and has no confirmation step, so it must never be
+    // able to reach an id that isn't on screen.
+    function selectedVisibleIds(): string[] {
+        return [
+            ...pruneSelectionToVisible(
+                selectedIds,
+                visibleLibrary.map(m => m.id)
+            )
+        ]
+    }
+
     // Each id is removed independently - a mid-loop failure (SW restart, transient
     // error, one bad id) must not leave the local library out of sync with what was
     // actually deleted. Only the ids that actually succeeded are dropped from
     // `library` and cleared from the selection; failed ids stay selected so the
     // user can see what didn't go through and retry just those.
     async function bulkRemove() {
-        const ids = [...selectedIds]
+        const ids = selectedVisibleIds()
         bulkMessage = ""
         bulkWorking = true
         let succeeded: string[] = []
@@ -122,7 +136,7 @@
             .map(s => s.trim())
             .filter(Boolean)
         if (tags.length === 0) return
-        for (const id of [...selectedIds]) {
+        for (const id of selectedVisibleIds()) {
             const m = library.find(x => x.id === id)
             if (!m) continue
             const categories = [...new Set([...(m.categories ?? []), ...tags])]
@@ -138,7 +152,7 @@
     // from the selection, so a mid-loop failure can't make the dashboard claim a
     // manga is manual (or not) when the write never landed.
     async function bulkManual(on: boolean) {
-        const ids = [...selectedIds]
+        const ids = selectedVisibleIds()
         bulkMessage = ""
         bulkWorking = true
         let succeeded: string[] = []
@@ -458,7 +472,13 @@
 
     let updateLogCopyState = $state<"idle" | "ok" | "fail">("idle")
     let updateLogCopyTimer: ReturnType<typeof setTimeout> | undefined
+    // Two clipboard writes started moments apart settle in no guaranteed order, so
+    // without this guard an earlier click could land last and silently overwrite the
+    // clipboard with a stale log (and flip the status text) after a later one.
+    let updateLogCopying = false
+    let componentAlive = true
     async function copyUpdateFailureLog() {
+        if (updateLogCopying) return
         if (!updateStatus?.errors || updateStatus.errors.length === 0) return
         const text = formatUpdateFailureLog(updateStatus.errors, {
             version: browser.runtime.getManifest().version,
@@ -467,14 +487,21 @@
             updated: updateStatus.updated,
             failed: updateStatus.failed
         })
+        updateLogCopying = true
+        let outcome: "ok" | "fail"
         try {
             await navigator.clipboard.writeText(text)
-            updateLogCopyState = "ok"
+            outcome = "ok"
         } catch {
             // Surface the failure rather than silently no-op: a user who sees nothing
             // happen might paste stale clipboard contents into a bug report as "the log".
-            updateLogCopyState = "fail"
+            outcome = "fail"
+        } finally {
+            updateLogCopying = false
         }
+        // Torn down mid-copy: don't write state or arm a timer onDestroy can't clear.
+        if (!componentAlive) return
+        updateLogCopyState = outcome
         if (updateLogCopyTimer) clearTimeout(updateLogCopyTimer)
         updateLogCopyTimer = setTimeout(() => {
             updateLogCopyState = "idle"
@@ -906,6 +933,7 @@
     onDestroy(() => {
         document.removeEventListener("visibilitychange", onVisibilityChange)
         unsubscribeLive?.()
+        componentAlive = false
         if (updateLogCopyTimer) clearTimeout(updateLogCopyTimer)
         // Full revoke-everything sweep so nothing leaks when the tab closes -
         // loadCachedCovers only revokes URLs for ids that drop out of the library
@@ -1910,6 +1938,17 @@
         void ratingFilter
         void updatedSinceFilter
         libraryLimit = libraryPageSize
+        // Drop any selected id that the new view no longer shows. Without this, selecting
+        // under one filter and then changing it left off-screen ids armed, and Remove -
+        // which has no confirmation step - deleted titles that were nowhere on screen.
+        // "Select all" made that a one-click way to arm an entire library.
+        if (selectedIds.size > 0) {
+            const pruned = pruneSelectionToVisible(
+                selectedIds,
+                visibleLibrary.map(m => m.id)
+            )
+            if (pruned.size !== selectedIds.size) selectedIds = pruned
+        }
     })
 
     // Per-row chapter navigation (resolved on demand from the source).

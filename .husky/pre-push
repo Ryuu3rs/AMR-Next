@@ -1,0 +1,12 @@
+gate="npm run check"
+echo "verify-gate: running '$gate' before push"
+echo "  (format:check + lint + typecheck + build chrome + build firefox + test - the same gate CI runs)"
+if ! $gate; then
+  echo ""
+  echo "=================================================================="
+  echo " PUSH BLOCKED - verify-gate failed. See the output above."
+  echo " Fix the root cause. Do NOT bypass with --no-verify."
+  echo "=================================================================="
+  exit 1
+fi
+echo "verify-gate: all green - push allowed."

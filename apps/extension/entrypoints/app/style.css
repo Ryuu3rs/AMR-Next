@@ -2203,6 +2203,10 @@ button:disabled {
     .library-controls {
         flex-wrap: wrap;
         width: 100%;
+        /* The base rule right-aligns the controls next to the title. At this width they
+           take the full row under the title, where left alignment is what they had
+           before flex-end was introduced - reset it so wrapped button rows don't flip. */
+        justify-content: flex-start;
     }
 
     .library-controls select,
