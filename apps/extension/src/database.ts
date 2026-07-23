@@ -1103,7 +1103,7 @@ export async function trackExternalChapter(input: {
     // here so we use a stable, correct ID and series prefix URL instead of deriveSlug/deriveMangaUrl.
     // Important for sites like Webtoons where the path alone carries no per-title slug.
     mangaInfo?: { sourceMangaId: string; mangaUrl: string }
-}): Promise<{ tracked: boolean; title: string; chapterNumber: number | null; mangaId: string }> {
+}): Promise<{ tracked: boolean; title: string; chapterNumber: number | null; mangaId: string; created: boolean }> {
     return db.transaction("rw", [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents], async () => {
         const now = Date.now()
         const u = new URL(input.url)
@@ -1145,6 +1145,7 @@ export async function trackExternalChapter(input: {
             }
         }
 
+        const created = !manga
         if (!manga) {
             const slug = deriveSlug(u)
             const title = humanizeSlug(slug ?? "") || u.hostname
@@ -1211,7 +1212,7 @@ export async function trackExternalChapter(input: {
             completed: input.completed ?? true,
             updatedAt: now
         })
-        return { tracked: true, title: manga.title, chapterNumber: number ?? null, mangaId: manga.id }
+        return { tracked: true, title: manga.title, chapterNumber: number ?? null, mangaId: manga.id, created }
     })
 }
 

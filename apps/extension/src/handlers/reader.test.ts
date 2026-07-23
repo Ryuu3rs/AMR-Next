@@ -250,6 +250,21 @@ describe("chapter:track (mark-read) chapter-list population", () => {
         expect(scheduleChapterListRefresh).not.toHaveBeenCalled()
     })
 
+    it("does not re-crawl a genuine oneshot (one chapter) on a later re-track", async () => {
+        const { scheduleChapterListRefresh } = await import("../background/chapter-cache")
+        trackSource()
+        const handler = readerHandlers["chapter:track"]!
+
+        // First track creates the manga and schedules the one populate.
+        await handler({ type: "chapter:track", url: "https://mangadex.org/chapter/oneshot-1" }, { sender: {} } as never)
+        vi.mocked(scheduleChapterListRefresh).mockClear()
+
+        // Re-tracking the same single-chapter title (a real oneshot stays at one row) must
+        // never reschedule the crawl - a count<=1 heuristic used to, on every revisit.
+        await handler({ type: "chapter:track", url: "https://mangadex.org/chapter/oneshot-1" }, { sender: {} } as never)
+        expect(scheduleChapterListRefresh).not.toHaveBeenCalled()
+    })
+
     it("populates the list on a first track, the only path left when auto-add is off", async () => {
         const { scheduleChapterListRefresh } = await import("../background/chapter-cache")
         trackSource()

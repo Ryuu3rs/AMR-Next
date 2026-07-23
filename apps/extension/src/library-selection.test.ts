@@ -32,6 +32,23 @@ describe("bulk-selection data-loss guard", () => {
     const ALL = [{ id: "A" }, { id: "B" }, { id: "C" }, { id: "D" }, { id: "E" }]
     const COMPLETED = [{ id: "C" }, { id: "D" }]
 
+    it("select-all over the rendered page never selects an unrendered title", () => {
+        // The library filters to 120 titles but only 50 are rendered (paged). Select-all
+        // must select the rendered page, so Remove can never reach an unrendered title.
+        const filtered = Array.from({ length: 120 }, (_, i) => ({ id: `id${i}` }))
+        const rendered = filtered.slice(0, 50)
+        const selected = toggleSelectAllVisible(new Set<string>(), rendered)
+        expect(selected.size).toBe(50)
+        // Every selected id is one of the rendered rows - none of the other 70.
+        expect(
+            pruneSelectionToVisible(
+                selected,
+                rendered.map(m => m.id)
+            ).size
+        ).toBe(50)
+        expect([...selected].every(id => rendered.some(m => m.id === id))).toBe(true)
+    })
+
     it("a filter change after select-all cannot leave off-screen titles armed for Remove", () => {
         // Select every title under filter=all.
         const selected = toggleSelectAllVisible(new Set<string>(), ALL)

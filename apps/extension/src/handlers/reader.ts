@@ -202,16 +202,15 @@ export const readerHandlers: HandlerMap = {
         // auto-capture and, if the reader is open, by its loadSiblings subscriber - both
         // cooldown-gated.
         //
-        // But a title being tracked for the FIRST time has exactly one chapter row (the
-        // URL just clicked) and may have no other populate path at all: auto-capture bails
-        // before scheduling anything when the user has auto-add switched off, and the
-        // on-page panel's prev/next comes from a plain DB read that never triggers a
-        // crawl. Populate once, only when the cache is genuinely empty of siblings.
-        if (mangaInfo) {
-            const cachedCount = await db.chapters.where("mangaId").equals(tracked.mangaId).count()
-            if (cachedCount <= 1) {
-                scheduleChapterListRefresh(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
-            }
+        // But a title being tracked for the FIRST time may have no other populate path at
+        // all: auto-capture bails before scheduling anything when the user has auto-add
+        // off, and the on-page panel's prev/next comes from a plain DB read that never
+        // triggers a crawl. Schedule the populate exactly once - when THIS track created
+        // the manga record. A count-based heuristic can't tell "not yet populated" from "a
+        // real oneshot with one chapter", so it re-crawled a oneshot on every revisit; the
+        // creation flag is unambiguous and fires only on the genuine first track.
+        if (mangaInfo && tracked.created) {
+            scheduleChapterListRefresh(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
         }
         return { supported: true as const, ...tracked }
     },

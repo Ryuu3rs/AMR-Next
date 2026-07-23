@@ -18,61 +18,55 @@ export type UpdateFailureMeta = {
     failed: number
 }
 
-// Zero-width joiner. Deliberately NOT stripped: it joins emoji sequences (a family
-// emoji is MAN+ZWJ+WOMAN+ZWJ+GIRL) and, unlike the bidi controls below, it cannot
-// reorder text or emit terminal escapes - stripping it only shatters legitimate titles.
 const ZWJ = 0x200d
-// Next line: a C1 control that behaves like a line break but is NOT matched by JS \s,
-// so it's mapped to a space rather than deleted, preserving the word boundary.
-const NEL = 0x85
+// C1 controls that move to a new line but aren't matched by JS \s: NEL, IND, RI. Mapped
+// to a space so a title using them as a separator doesn't get its words glued together.
+const LINE_MOVE_C1 = new Set([0x84, 0x85, 0x8d])
 
-// Code points deleted outright before whitespace collapse. Tab/LF/VT/FF/CR are excluded
-// because the \s+ pass collapses them to a single space, keeping word boundaries.
-// Everything here could otherwise corrupt a pasted log: C0/C1 controls (incl. ESC 0x1b),
-// invisible/zero-width characters that can defeat the "(untitled)" fallback, the bidi
-// marks/overrides/isolates that reorder a rendered line, and lone surrogates (a valid
-// astral character iterates as a single code point >= 0x10000, so only UNPAIRED
-// surrogates land in this range - they'd otherwise reach the clipboard as invalid UTF-16).
-const UNSAFE_CODEPOINT_RANGES: ReadonlyArray<readonly [number, number]> = [
-    [0x0, 0x8],
-    [0xe, 0x1f],
-    [0x7f, 0x84],
-    [0x86, 0x9f],
-    [0xad, 0xad],
-    [0x61c, 0x61c],
-    [0x180e, 0x180e],
-    [0x200b, 0x200c],
-    [0x200e, 0x200f],
-    [0x202a, 0x202e],
-    [0x2060, 0x2064],
-    [0x2066, 0x2069],
-    [0xd800, 0xdfff],
-    [0xfff9, 0xfffb]
-]
-
-function isUnsafeFormatChar(code: number): boolean {
-    return UNSAFE_CODEPOINT_RANGES.some(([lo, hi]) => code >= lo && code <= hi)
-}
+// Strip whole Unicode categories rather than hand-picked ranges, so sibling characters
+// in the same class can't slip through the way earlier range-by-range attempts kept
+// missing (ZWJ vs other zero-widths, one C1 control vs its siblings, one bidi mark vs
+// the tag block). Cc = controls (ESC and friends - terminal forgery), Cf = format
+// (bidi overrides that reorder text, invisible tag characters that smuggle hidden
+// payloads, zero-width spaces), Cs = lone surrogates (invalid UTF-16 that corrupts the
+// clipboard). ZWJ is the one Cf kept: it joins emoji sequences and can't forge or hide
+// the log's structural markers. Emoji variation selectors (Mn) and skin-tone modifiers
+// (So) are outside these categories and survive untouched.
+const STRIP_CATEGORY = /\p{Cc}|\p{Cf}|\p{Cs}/u
+// Characters that render with no visible advance width, used to decide the "(untitled)"
+// fallback: whitespace, format/ignorable characters (Hangul fillers, remaining joiners),
+// and ZWJ. A field made only of these shows blank and must get the placeholder.
+const INVISIBLE = /\p{White_Space}|\p{Default_Ignorable_Code_Point}/u
 
 function flatten(s: unknown): string {
     let out = ""
     for (const ch of String(s)) {
         const code = ch.codePointAt(0) ?? 0
-        if (code === NEL) {
+        if (LINE_MOVE_C1.has(code)) {
             out += " "
             continue
         }
-        if (isUnsafeFormatChar(code)) continue
+        // Whitespace (incl. tab/newline/CR and exotic spaces) is kept for the \s+ collapse
+        // below, which turns it into a single ordinary space - preserving word boundaries.
+        if (/\s/u.test(ch)) {
+            out += ch
+            continue
+        }
+        if (code === ZWJ) {
+            out += ch
+            continue
+        }
+        if (STRIP_CATEGORY.test(ch)) continue
         out += ch
     }
     return out.replace(/\s+/g, " ").trim()
 }
 
-// True for "" and for a value made only of joiners - ZWJ survives flatten, so a title of
-// nothing but ZWJ would otherwise render as a blank field instead of the placeholder.
 function isVisuallyEmpty(s: string): boolean {
     for (const ch of s) {
-        if ((ch.codePointAt(0) ?? 0) !== ZWJ) return false
+        if ((ch.codePointAt(0) ?? 0) === ZWJ) continue
+        if (INVISIBLE.test(ch)) continue
+        return false
     }
     return true
 }
