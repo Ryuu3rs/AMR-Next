@@ -599,6 +599,47 @@ describe("ensureChapterListRefreshed", () => {
         expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(2)
     })
 
+    it("a successful crawl holds the full cooldown even if the cache is emptied afterwards", async () => {
+        // Uses the crawl's returned count, not a post-hoc db.chapters count() that would
+        // race a concurrent delete (library remove/merge/relink) and wrongly shorten the
+        // cooldown - reopening the tab storm on the next trigger.
+        let now = Date.now()
+        const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now)
+        _resetRefreshCooldownForTests()
+        await db.manga.put(manga)
+        fetchChapterHtmlViaTabMock.mockResolvedValue(pageHtml([3, 2, 1], null))
+        const source = fakeSource(() => LIST_URL)
+
+        await ensureChapterListRefreshed(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(1)
+
+        // Something unrelated wipes the cache right after the successful crawl.
+        await db.chapters.where("mangaId").equals(MANGA_ID).delete()
+
+        // Past the 60s short-retry window but well inside the 10-minute full cooldown.
+        now += 61_000
+        await ensureChapterListRefreshed(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(1)
+        nowSpy.mockRestore()
+    })
+
+    it("a crawl that caches nothing retries after the short window", async () => {
+        let now = Date.now()
+        const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now)
+        _resetRefreshCooldownForTests()
+        await db.manga.put(manga)
+        fetchChapterHtmlViaTabMock.mockResolvedValue(pageHtml([], null)) // mines nothing
+        const source = fakeSource(() => LIST_URL)
+
+        await ensureChapterListRefreshed(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(1)
+
+        now += 61_000
+        await ensureChapterListRefreshed(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(2)
+        nowSpy.mockRestore()
+    })
+
     it("never rejects, even when the underlying fetch throws", async () => {
         fetchChapterHtmlViaTabMock.mockRejectedValueOnce(new Error("tab load timed out"))
         const source = fakeSource(() => LIST_URL)

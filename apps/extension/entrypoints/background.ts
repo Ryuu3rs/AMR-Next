@@ -32,7 +32,7 @@ import {
     checkExtensionUpdate,
     backfillMangaGenres,
     clearStaleUpdateProgress,
-    abortCheckUpdates
+    abortLongRunningTasks
 } from "../src/handlers/updates-sources"
 import { runCommunitySync } from "../src/handlers/community"
 import { autoPush } from "../src/handlers/data-sync-settings"
@@ -52,7 +52,7 @@ export default defineBackground(() => {
     // apply the update avoids yanking active work; onStartup's clearStaleUpdateProgress
     // then resets any progress record the killed check left behind.
     browser.runtime.onUpdateAvailable.addListener(() => {
-        abortCheckUpdates()
+        abortLongRunningTasks()
     })
 
     browser.runtime.onInstalled.addListener(() => {

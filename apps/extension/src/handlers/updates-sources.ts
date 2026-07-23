@@ -20,14 +20,18 @@ import { publishLive } from "../live"
 let updateCheckRunning = false
 let updateCheckAborted = false
 let genreBackfillRunning = false
+let genreBackfillAborted = false
 
-// Signal a running checkUpdates loop to stop at the next between-titles boundary.
-// Used when an extension update is waiting to be applied: a long rate-limited check
-// keeps the service worker busy, which defers the update indefinitely (the case that
-// wedged installs). Aborting lets the worker go idle so runtime.reload() can swap the
-// new version in cleanly. No-op if no check is running.
-export function abortCheckUpdates(): void {
+// Signal any running long, rate-limited background loop to stop at its next
+// between-items boundary. Used when an extension update is waiting to be applied: a
+// multi-minute loop keeps the service worker busy, which defers the update (the case
+// that wedged installs). Both the update check AND the genre backfill are per-item
+// loops with a ~350ms delay each, so both must yield. Aborting lets the worker go idle
+// so the browser applies the pending update on its own - we intentionally do NOT force
+// runtime.reload() (see the onUpdateAvailable listener in background.ts for why).
+export function abortLongRunningTasks(): void {
     if (updateCheckRunning) updateCheckAborted = true
+    if (genreBackfillRunning) genreBackfillAborted = true
 }
 
 // A crashed check (service worker killed mid-loop - browser closed, SW
@@ -69,9 +73,16 @@ export async function clearStaleUpdateProgress(): Promise<void> {
     // would flip the UI to "not running" mid-check until the next per-title write. The
     // guard is same-worker-accurate, so this reliably distinguishes a dead record from
     // a freshly-started one.
-    if (stored?.running && !updateCheckRunning) {
+    if (!stored?.running || updateCheckRunning) return
+    // Re-read immediately before writing: a full check can start AND finish between the
+    // first get() above and here (an overdue alarm firing checkUpdates in the same fresh
+    // worker), writing its own fresh progress. Writing {...stored} would then resurrect
+    // the dead run's done/total over the real one. Only clear if the record is still the
+    // exact stale one we read - same startedAt, still running.
+    const current = (await browser.storage.local.get("updateProgress"))["updateProgress"] as UpdateProgress | undefined
+    if (current?.running && current.startedAt === stored.startedAt && !updateCheckRunning) {
         await browser.storage.local.set({
-            updateProgress: { ...stored, running: false } satisfies UpdateProgress
+            updateProgress: { ...current, running: false } satisfies UpdateProgress
         })
     }
 }
@@ -359,6 +370,7 @@ export async function checkExtensionUpdate(force = false): Promise<void> {
 export async function backfillMangaGenres(): Promise<void> {
     if (genreBackfillRunning) return
     genreBackfillRunning = true
+    genreBackfillAborted = false
     try {
         // Only process titles with a manga URL or source ID - sourceUrl is a chapter URL
         // and genre resolvers expect a series page, so passing it silently fails.
@@ -367,6 +379,8 @@ export async function backfillMangaGenres(): Promise<void> {
             .toArray()
         if (toFetch.length === 0) return
         for (const manga of toFetch) {
+            // Yield to a pending extension update - same between-items abort as checkUpdates.
+            if (genreBackfillAborted) break
             try {
                 const genres = await resolveGenresFor({
                     sourceId: manga.sourceId,
@@ -385,6 +399,7 @@ export async function backfillMangaGenres(): Promise<void> {
         publishLive(["library"])
     } finally {
         genreBackfillRunning = false
+        genreBackfillAborted = false
     }
 }
 
