@@ -189,6 +189,20 @@
             "priority": "community",
             "cmsGuess": "madara",
             "note": "fetch failed; harimanga.me already has a supported adapter"
+        },
+        {
+            "url": "https://theshepherdwizard.online/",
+            "name": "The Shepherd Wizard",
+            "priority": "community",
+            "cmsGuess": "madara",
+            "note": "user request 2026-07-23. Chapter URL shape /manga/<slug>-chapter-<n>/ is Madara-style - probe to confirm a config row vs bespoke. Example: /manga/the-shepherd-wizard-chapter-15/"
+        },
+        {
+            "url": "https://vortexscans.org/",
+            "name": "Vortex Scans",
+            "priority": "community",
+            "cmsGuess": "bespoke",
+            "note": "user request 2026-07-23 (site alive again, series URL /series/<slug>/chapter-<n>). RETIRED 2026-07-19: migrated off Madara to an Astro SPA (see madara-sites.ts) - re-adding needs a BESPOKE adapter, NOT a config row. Recon the Astro/_vcomics JSON endpoints before building."
         }
     ]
 }
