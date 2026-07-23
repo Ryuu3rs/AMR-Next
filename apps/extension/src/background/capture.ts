@@ -62,10 +62,11 @@ async function doCaptureChapter(url: string) {
         console.debug("[AMR] Captured chapter without scraping", { url, error })
         // Best-effort: prime the chapter list so the on-page panel can show prev/next.
         // Uses tab injection for JS-rendered list pages (e.g. Webtoons) to get the
-        // full episode count, not just what SW-fetch returns.
-        // Use tracked.mangaId (the actual DB entry) not a computed ID - the existing
-        // manga record may have a different ID if it was created before the fix.
-        if (mangaInfo) {
+        // full episode count, not just what SW-fetch returns. Gate on tracked.created
+        // like reader.ts's chapter:track: without it, a fully-populated title (e.g. a
+        // oneshot) whose images can't be scraped re-opened the up-to-20-tab crawl on
+        // every cooldown-apart revisit. Use tracked.mangaId (the actual DB entry).
+        if (mangaInfo && tracked.created) {
             scheduleChapterListRefresh(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
         }
         publishLive(["library", "chapters"], [tracked.mangaId])
