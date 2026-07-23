@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.14.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.13.0...v0.14.0) (2026-07-23)
+
+
+### Features
+
+* confirm step before bulk-removing titles ([61632c2](https://github.com/Ryuu3rs/AMR-Next/commit/61632c2e2b5aec89ed63c953bb80a16184d95028))
+* copy-paste failure log on the updates page ([936c5ee](https://github.com/Ryuu3rs/AMR-Next/commit/936c5ee104a8daca68979e6ec8cad738d768a4e5))
+* select-all in bulk mode; harden the update failure log ([76aa8ec](https://github.com/Ryuu3rs/AMR-Next/commit/76aa8ec6b6335083c39af9a21dfe41a2eb466031))
+
+
+### Bug Fixes
+
+* address bug-hunt findings in the update/crawl/status code ([451de8b](https://github.com/Ryuu3rs/AMR-Next/commit/451de8b3055011fcdbcf39c1fd709bec0cfa7662))
+* apply a waiting extension update instead of wedging on a long check ([fc717b1](https://github.com/Ryuu3rs/AMR-Next/commit/fc717b149b1c58cb18a9fec8b332043352eb4c00))
+* bug-hunt findings - bulk-select data loss, first-track list, log input ([f2e738e](https://github.com/Ryuu3rs/AMR-Next/commit/f2e738e2689ecdfccfccd861e8b550982f5222e8))
+* converge-hunt findings - armed-remove snapshot, capture re-crawl, bulk tag ([dfd740f](https://github.com/Ryuu3rs/AMR-Next/commit/dfd740f72acf31542c0b42065a00ce9d728c6a56))
+* drive unread indicators by chapter number, not chapter id ([5a1820e](https://github.com/Ryuu3rs/AMR-Next/commit/5a1820ef908fba799c0b6f245d3b0263266bebf9))
+* harden the update-safety and unread-indicator fixes per red-team ([50a967e](https://github.com/Ryuu3rs/AMR-Next/commit/50a967efb15a7c452c7dbdefd33e69d3e38544bb))
+* library toolbar wraps instead of running off the page ([619111e](https://github.com/Ryuu3rs/AMR-Next/commit/619111e182d302fab7f22157ed3efa95f4fe7b0a))
+* marking a chapter read no longer opens a Webtoons tab crawl ([49d7a58](https://github.com/Ryuu3rs/AMR-Next/commit/49d7a58addb68fab003559698b3d63e786779bff))
+* proactively clear stale update-progress on startup and install ([aaa7c06](https://github.com/Ryuu3rs/AMR-Next/commit/aaa7c06155958039c09dafd531f3a95f0e5c6ff9))
+* round-3 bug-hunt - oneshot re-crawl, select-all delete scope, unicode ([024d866](https://github.com/Ryuu3rs/AMR-Next/commit/024d866f987a651b4726ff40b08dee4c707fd026))
+* stop the Webtoons reader tab-crawl reopening on every live event ([e480209](https://github.com/Ryuu3rs/AMR-Next/commit/e480209aaa206839944e50d898cd99b78b075c7e))
+
 ## [0.13.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.12.0...v0.13.0) (2026-07-21)
 
 
