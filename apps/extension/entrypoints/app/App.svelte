@@ -8,6 +8,7 @@
     import { migrateLegacyImport } from "../../src/legacy-import"
     import { getCachedCovers } from "../../src/database"
     import { repairMangahubChapterNumbers } from "../../src/handlers/updates-sources"
+    import { formatUpdateFailureLog } from "../../src/updates-failure-log"
     import { subscribeLive } from "../../src/live"
     import ActivityHeatmap from "./ActivityHeatmap.svelte"
     import ImportReconcile from "./ImportReconcile.svelte"
@@ -441,6 +442,29 @@
     // running=true progress record older than this is treated as a crashed check
     // rather than a real one still in flight.
     const UPDATE_PROGRESS_STALE_MS = 15 * 60 * 1000
+
+    let updateLogCopied = $state(false)
+    let updateLogCopyTimer: ReturnType<typeof setTimeout> | undefined
+    async function copyUpdateFailureLog() {
+        if (!updateStatus?.errors || updateStatus.errors.length === 0) return
+        const text = formatUpdateFailureLog(updateStatus.errors, {
+            version: browser.runtime.getManifest().version,
+            checkedAt: updateStatus.checkedAt,
+            checked: updateStatus.checked,
+            updated: updateStatus.updated,
+            failed: updateStatus.failed
+        })
+        try {
+            await navigator.clipboard.writeText(text)
+        } catch {
+            return // clipboard access denied/unavailable - nothing more we can do
+        }
+        updateLogCopied = true
+        if (updateLogCopyTimer) clearTimeout(updateLogCopyTimer)
+        updateLogCopyTimer = setTimeout(() => {
+            updateLogCopied = false
+        }, 1500)
+    }
     let sourcesList = $state<
         Array<{
             id: string
@@ -3059,7 +3083,12 @@
             </p>
             {#if updateStatus?.errors && updateStatus.errors.length > 0}
                 <div class="error-panel">
-                    <p class="row-label">Titles that failed to update</p>
+                    <div class="error-panel-head">
+                        <p class="row-label">Titles that failed to update</p>
+                        <button type="button" class="btn-sm" onclick={() => void copyUpdateFailureLog()}>
+                            {updateLogCopied ? "Copied ✓" : "Copy failure log"}
+                        </button>
+                    </div>
                     {#each updateStatus.errors as err}
                         <div class="error-row">
                             <span class="error-title">{err.title}</span>

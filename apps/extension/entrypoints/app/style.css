@@ -680,6 +680,14 @@ button:disabled {
     gap: 6px;
 }
 
+.error-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
 .update-progress-wrap {
     border: 1px solid var(--border, #29313b);
     background: var(--panel, #11161d);
