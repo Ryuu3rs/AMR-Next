@@ -104,6 +104,44 @@ describe("formatUpdateFailureLog", () => {
         expect(log).toContain("- Vol.1 Ch.2 [s:nel]: m")
     })
 
+    it("does not let a Hangul-filler-only title defeat the (untitled) fallback", () => {
+        const log = formatUpdateFailureLog(
+            [{ mangaId: "s:hf", title: String.fromCodePoint(0x3164), message: "m" }],
+            meta
+        )
+        expect(log).toContain("- (untitled) [s:hf]: m")
+    })
+
+    it("strips invisible Unicode tag characters so no hidden payload rides along", () => {
+        const tagEncode = (ascii: string) =>
+            String.fromCodePoint(0xe0001) +
+            [...ascii].map(c => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join("") +
+            String.fromCodePoint(0xe007f)
+        const log = formatUpdateFailureLog(
+            [{ mangaId: "s:tag", title: `Visible${tagEncode("payload")}Title`, message: "m" }],
+            meta
+        )
+        expect(/[\u{E0000}-\u{E007F}]/u.test(log)).toBe(false)
+        expect(log).toContain("- VisibleTitle [s:tag]: m")
+    })
+
+    it("maps IND and RI (C1 line controls) to a space, not deletion", () => {
+        for (const code of [0x84, 0x8d]) {
+            const log = formatUpdateFailureLog(
+                [{ mangaId: "s:c1", title: `Vol.1${String.fromCharCode(code)}Ch.2`, message: "m" }],
+                meta
+            )
+            expect(log).toContain("- Vol.1 Ch.2 [s:c1]: m")
+        }
+    })
+
+    it("keeps emoji variation-selector and skin-tone sequences intact", () => {
+        const heart = "❤️"
+        const thumb = String.fromCodePoint(0x1f44d) + String.fromCodePoint(0x1f3fb)
+        const log = formatUpdateFailureLog([{ mangaId: "s:e", title: `${heart}${thumb}`, message: "m" }], meta)
+        expect(log).toContain(`- ${heart}${thumb} [s:e]: m`)
+    })
+
     it("prints ? for non-finite meta counts instead of 'undefined'", () => {
         const log = formatUpdateFailureLog([], {
             version: "1",

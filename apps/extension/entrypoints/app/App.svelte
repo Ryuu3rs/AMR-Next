@@ -82,9 +82,9 @@
     // current filter/search - not just the current page - so a bulk action can target a
     // whole filtered set without clicking each poster.
     function toggleSelectAllVisible() {
-        const allSelected = visibleLibrary.length > 0 && visibleLibrary.every(m => selectedIds.has(m.id))
+        const allSelected = pagedLibrary.length > 0 && pagedLibrary.every(m => selectedIds.has(m.id))
         const next = new Set(selectedIds)
-        for (const m of visibleLibrary) {
+        for (const m of pagedLibrary) {
             if (allSelected) next.delete(m.id)
             else next.add(m.id)
         }
@@ -128,7 +128,7 @@
         return [
             ...pruneSelectionToVisible(
                 selectedIds,
-                visibleLibrary.map(m => m.id)
+                pagedLibrary.map(m => m.id)
             )
         ]
     }
@@ -166,13 +166,21 @@
             .split(",")
             .map(s => s.trim())
             .filter(Boolean)
-        if (tags.length === 0) return
-        for (const id of selectedVisibleIds()) {
-            const m = library.find(x => x.id === id)
-            if (!m) continue
-            const categories = [...new Set([...(m.categories ?? []), ...tags])]
-            await sendRuntimeMessage({ type: "library:categories", mangaId: id, categories })
-            library = library.map(x => applyCategories(x, id, categories))
+        if (tags.length === 0 || bulkWorking) return
+        // Hold bulkWorking like bulkRemove/bulkManual so a concurrent Remove can't run
+        // against the same selection while this loop is mid-flight (the Remove button and
+        // requestBulkRemove both gate on bulkWorking).
+        bulkWorking = true
+        try {
+            for (const id of selectedVisibleIds()) {
+                const m = library.find(x => x.id === id)
+                if (!m) continue
+                const categories = [...new Set([...(m.categories ?? []), ...tags])]
+                await sendRuntimeMessage({ type: "library:categories", mangaId: id, categories })
+                library = library.map(x => applyCategories(x, id, categories))
+            }
+        } finally {
+            bulkWorking = false
         }
         bulkCategory = ""
         clearSelection()
@@ -1958,7 +1966,7 @@
     let libraryPageSize = $state(50)
     let libraryLimit = $state(50)
     const pagedLibrary = $derived(visibleLibrary.slice(0, libraryLimit))
-    const allVisibleSelected = $derived(visibleLibrary.length > 0 && visibleLibrary.every(m => selectedIds.has(m.id)))
+    const allVisibleSelected = $derived(pagedLibrary.length > 0 && pagedLibrary.every(m => selectedIds.has(m.id)))
     $effect(() => {
         // Reset paging whenever the filtered view changes.
         void query
@@ -1970,18 +1978,23 @@
         void ratingFilter
         void updatedSinceFilter
         libraryLimit = libraryPageSize
-        // Drop any selected id that the new view no longer shows. Without this, selecting
-        // under one filter and then changing it left off-screen ids armed, and Remove -
-        // which has no confirmation step - deleted titles that were nowhere on screen.
-        // "Select all" made that a one-click way to arm an entire library.
+        // Drop any selected id the new view no longer renders. Without this, selecting
+        // under one filter and then changing it left off-screen ids armed, and Remove
+        // deleted titles that were nowhere on screen. Disarm the remove confirm ONLY when
+        // this actually changed the selection - the view-derived reads here recompute a
+        // fresh array on any unrelated background refresh (a capture/update elsewhere), so
+        // disarming unconditionally would silently cancel an active confirm mid-window.
+        // pruneSelectionToVisible returns a subset, so a size match means an exact match.
         if (selectedIds.size > 0) {
             const pruned = pruneSelectionToVisible(
                 selectedIds,
-                visibleLibrary.map(m => m.id)
+                pagedLibrary.map(m => m.id)
             )
-            if (pruned.size !== selectedIds.size) selectedIds = pruned
+            if (pruned.size !== selectedIds.size) {
+                selectedIds = pruned
+                disarmBulkRemove()
+            }
         }
-        disarmBulkRemove()
     })
 
     // Per-row chapter navigation (resolved on demand from the source).
