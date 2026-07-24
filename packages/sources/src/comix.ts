@@ -28,6 +28,13 @@ const BROWSER_HEADERS = {
 
 // /title/{hid-slug}                              → manga page
 // /title/{hid-slug}/{chapterId}-chapter-{num}    → chapter page
+// A chapter id that will never match a real chapter, so the site falls back to resolving
+// by the -chapter-{n} suffix and redirects to the canonical URL.
+const PLACEHOLDER_CHAPTER_ID = "0"
+// Upper bound on the synthesised chapter range, so a malformed latestChapter can't
+// generate an unbounded list.
+const MAX_SYNTHESISED_CHAPTERS = 2000
+
 const MANGA_RE = /^\/title\/([a-z0-9][a-z0-9-]+)\/?$/
 const CHAPTER_RE = /^\/title\/([a-z0-9][a-z0-9-]+)\/(\d+)-chapter-(\d+(?:\.\d+)?)\/?$/
 
@@ -174,14 +181,20 @@ export const comixAdapter: SourceAdapter = {
     },
 
     async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
-        // The full chapter feed is client-side only (React Query, no public API found),
-        // but the manga page's SSR "detail" data carries the first and latest chapter
-        // URLs/number directly - enough to keep latestChapterNumber from going stale.
-        // The on-page sidebar mines the rest as the user reads (mineAndCacheEpisodesFromHtml).
+        // The chapter feed itself is client-side only and its API responses are encrypted
+        // ({"e":"<blob>"}), with the per-manga list endpoint token-gated - so the list
+        // cannot be fetched directly. It doesn't need to be: a chapter URL is
+        // /title/{slug}/{chapterId}-chapter-{n}, and when the {chapterId} does NOT match a
+        // real chapter the site resolves by the NUMBER instead and redirects to the
+        // canonical URL (verified live: /0-chapter-57 -> /6220912-chapter-57). A number
+        // past the end lands on the title page rather than a chapter. So the whole list is
+        // addressable from the one piece of data the un-encrypted SSR does expose -
+        // latestChapter - by emitting a placeholder id and letting the site canonicalise.
         const slug = input.manga.sourceMangaId
         const { latestChapter, latestChapterUrl, firstChapterUrl } = await fetchMangaData(slug, context)
         const mangaId = input.manga.manga.id
-        const out: SourceChapter[] = []
+
+        const known = new Map<number, string>()
         for (const [href, fallbackNum] of [
             [firstChapterUrl, 1],
             [latestChapterUrl, latestChapter]
@@ -189,25 +202,34 @@ export const comixAdapter: SourceAdapter = {
             if (!href) continue
             const parts = matchChapterParts(new URL(href, ORIGIN))
             if (!parts) continue
-            const chapterNum = parts.chapterNum
-            // A genuine "0" must survive as sortKey 0 (Chapter 0), not fall through
-            // to the fallback - parseChapterNumber("0") returns 0, only unparseable
-            // input returns undefined and defers to fallbackNum.
-            const sortKey = parseChapterNumber(chapterNum) ?? fallbackNum ?? UNNUMBERED_SORT_KEY
-            const id = `${SOURCE_ID}:chapter:${slug}:${chapterNum}`
-            if (out.some(c => c.id === id)) continue
+            // A genuine "0" must survive as sortKey 0 (Chapter 0), not fall through to the
+            // fallback - parseChapterNumber("0") returns 0, only unparseable input returns
+            // undefined and defers to fallbackNum.
+            const num = parseChapterNumber(parts.chapterNum) ?? fallbackNum
+            if (num === undefined || !Number.isFinite(num)) continue
+            known.set(num, new URL(href, ORIGIN).toString())
+        }
+
+        // Cap the synthesised range so a bogus latestChapter can't spin out a huge list.
+        const highest = Math.max(latestChapter ?? 0, ...known.keys(), 0)
+        const total = Math.min(Math.floor(highest), MAX_SYNTHESISED_CHAPTERS)
+        const out: SourceChapter[] = []
+        for (let n = 1; n <= total; n++) {
+            // Prefer a real URL when the SSR gave us one; otherwise the placeholder form,
+            // which the site redirects to the canonical chapter.
+            const url = known.get(n) ?? `${ORIGIN}/title/${slug}/${PLACEHOLDER_CHAPTER_ID}-chapter-${n}`
             out.push({
-                id,
+                id: `${SOURCE_ID}:chapter:${slug}:${n}`,
                 mangaId,
                 sourceId: SOURCE_ID,
-                sourceChapterId: chapterNum,
-                title: `Ch.${chapterNum}`,
-                url: new URL(href, ORIGIN).toString(),
-                sortKey,
+                sourceChapterId: String(n),
+                title: `Ch.${n}`,
+                url,
+                sortKey: n,
                 language: "en"
             })
         }
-        return out.sort((a, b) => a.sortKey - b.sortKey)
+        return out
     },
 
     async resolveCover(

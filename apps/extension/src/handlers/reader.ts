@@ -18,6 +18,35 @@ import { captureChapter, isBotBlocked } from "../background/capture"
 import { publishLive } from "../live"
 import type { HandlerMap } from "../background/handler-types"
 
+// Fallback for chapter:siblings when no cached row has the exact page URL. A stored URL
+// can legitimately differ from the one the user is on: Comix, for example, addresses
+// chapters by an opaque id that only its encrypted API knows, so the cached list uses a
+// placeholder-id URL the site redirects to the canonical one. Without this the on-page
+// panel's prev/next stayed dead even with a fully cached list. Matches on the manga the
+// URL belongs to plus the chapter number in the path, so it only ever resolves to a
+// chapter of that same title.
+const CHAPTER_NUM_IN_PATH = /(?:^|\/|-)chapter[-_/]?(\d+(?:\.\d+)?)(?:\/|$|[-_?#])/i
+
+async function findChapterByNumberInUrl(rawUrl: string) {
+    let parsed: URL
+    try {
+        parsed = new URL(rawUrl)
+    } catch {
+        return undefined
+    }
+    const source = findSource(parsed)
+    const mangaInfo = source?.parseMangaUrl?.(parsed)
+    if (!source || !mangaInfo) return undefined
+    const num = Number.parseFloat(parsed.pathname.match(CHAPTER_NUM_IN_PATH)?.[1] ?? "")
+    if (!Number.isFinite(num)) return undefined
+    const mangaId = `${source.manifest.id}:manga:${mangaInfo.sourceMangaId}`
+    return await db.chapters
+        .where("mangaId")
+        .equals(mangaId)
+        .filter(c => c.sortKey === num)
+        .first()
+}
+
 export const readerHandlers: HandlerMap = {
     "page:current": async (_request, ctx) => {
         const tab = ctx.sender.tab ?? (await browser.tabs.query({ active: true, currentWindow: true }))[0]
@@ -94,12 +123,13 @@ export const readerHandlers: HandlerMap = {
     "chapter:siblings": async request => {
         // Look up cached chapters from DB - no network call needed.
         // auto-capture already stored chapters when the user first visited.
-        const chRecord = await db.chapters.where("url").equals(request.url).first()
+        let chRecord = await db.chapters.where("url").equals(request.url).first()
+        if (!chRecord) chRecord = await findChapterByNumberInUrl(request.url)
         if (!chRecord) return { prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null }
         const manga = await db.manga.get(chRecord.mangaId)
         if (!manga) return { prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null }
         const siblings = await db.chapters.where("mangaId").equals(chRecord.mangaId).sortBy("sortKey")
-        const idx = siblings.findIndex(c => c.url === request.url)
+        const idx = siblings.findIndex(c => c.id === chRecord.id)
         const prev = idx > 0 ? siblings[idx - 1] : null
         const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null
         return {

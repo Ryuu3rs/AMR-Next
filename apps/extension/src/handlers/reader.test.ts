@@ -205,6 +205,61 @@ describe("doCaptureChapter scrape-failure fallback", () => {
     })
 })
 
+describe("chapter:siblings URL fallback", () => {
+    it("finds the current chapter by number when the cached URL differs from the page URL", async () => {
+        // Comix addresses chapters by an opaque id only its encrypted API knows, so the
+        // cached list uses a placeholder-id URL the site redirects to the canonical one.
+        // The user is on the canonical URL, so an exact-URL match misses and the on-page
+        // panel's Next used to stay dead despite a fully cached list.
+        const source = {
+            manifest: { id: "comix" },
+            match: vi.fn().mockReturnValue("chapter"),
+            parseMangaUrl: vi
+                .fn()
+                .mockReturnValue({ sourceMangaId: "nk830-lord", mangaUrl: "https://comix.to/title/nk830-lord" })
+        }
+        findSourceMock.mockReturnValue(source)
+
+        const mangaId = "comix:manga:nk830-lord"
+        await db.manga.put({
+            id: mangaId,
+            title: "Lord of Goblins",
+            normalizedTitle: "lord of goblins",
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "comix",
+            sourceUrl: "https://comix.to/title/nk830-lord/0-chapter-1"
+        } satisfies LibraryManga)
+        await db.chapters.bulkPut(
+            [1, 2, 3].map(
+                n =>
+                    ({
+                        id: `comix:chapter:nk830-lord:${n}`,
+                        mangaId,
+                        sourceId: "comix",
+                        title: `Ch.${n}`,
+                        // placeholder-id URLs, deliberately NOT the canonical ones
+                        url: `https://comix.to/title/nk830-lord/0-chapter-${n}`,
+                        sortKey: n
+                    }) as ChapterRecord
+            )
+        )
+
+        const handler = readerHandlers["chapter:siblings"]!
+        const res = (await handler(
+            // the canonical URL the user is actually on - no cached row has this exact URL
+            { type: "chapter:siblings", url: "https://comix.to/title/nk830-lord/6219279-chapter-2" },
+            { sender: {} } as never
+        )) as { prevUrl: string | null; nextUrl: string | null; chapterTitle: string | null }
+
+        expect(res.chapterTitle).toBe("Ch.2")
+        expect(res.prevUrl).toBe("https://comix.to/title/nk830-lord/0-chapter-1")
+        expect(res.nextUrl).toBe("https://comix.to/title/nk830-lord/0-chapter-3")
+    })
+})
+
 describe("chapter:track (mark-read) chapter-list population", () => {
     function trackSource() {
         const source = {
