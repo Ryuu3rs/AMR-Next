@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.14.1...v0.15.0) (2026-07-31)
+
+
+### Features
+
+* add MangaKatana source ([d4958d7](https://github.com/Ryuu3rs/AMR-Next/commit/d4958d785460bab54f7d31aa72a5699f426c365f))
+
+
+### Bug Fixes
+
+* add parseMangaUrl to comix/asurascans/madara/mangastream ([eaffcb9](https://github.com/Ryuu3rs/AMR-Next/commit/eaffcb9918fc9d821476e03a2b58b5de66c32193))
+* heal external-track metadata for URL-added titles ([702a03c](https://github.com/Ryuu3rs/AMR-Next/commit/702a03c7e747d517a3cfeccd1c53245e45c25ce6))
+
 ## [0.14.1](https://github.com/Ryuu3rs/AMR-Next/compare/v0.14.0...v0.14.1) (2026-07-31)
 
 
