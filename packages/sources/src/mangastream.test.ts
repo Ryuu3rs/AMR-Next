@@ -50,6 +50,30 @@ function createContext(fixtures: Readonly<Record<string, string>>): SourceContex
 }
 
 describe("createMangaStreamAdapter", () => {
+    it("parseMangaUrl resolves a series URL, and returns null for a flat chapter URL (slug not in the URL)", () => {
+        expect(adapter.parseMangaUrl!(new URL("https://test-stream.example/manga/cool-manga/"))).toEqual({
+            sourceMangaId: "cool-manga",
+            mangaUrl: "https://test-stream.example/manga/cool-manga/"
+        })
+        // Flat chapter URL: the manga slug genuinely isn't in the path, so don't guess.
+        expect(adapter.parseMangaUrl!(new URL(CHAPTER_URL))).toBeNull()
+        expect(adapter.parseMangaUrl!(new URL("https://other.example/manga/x/"))).toBeNull()
+    })
+
+    it("parseMangaUrl resolves the manga slug from a hierarchical chapter URL", () => {
+        const hierAdapter = createMangaStreamAdapter({
+            id: "teststream-h",
+            name: "Test Stream H",
+            origin: "https://test-stream.example",
+            domains: ["test-stream.example"],
+            chapterFormat: "hierarchical"
+        })
+        expect(hierAdapter.parseMangaUrl!(new URL("https://test-stream.example/manga/cool-manga/12/"))).toEqual({
+            sourceMangaId: "cool-manga",
+            mangaUrl: "https://test-stream.example/manga/cool-manga/"
+        })
+    })
+
     it("classifies chapter (root slug) and manga URLs", () => {
         expect(adapter.match(new URL(CHAPTER_URL))).toBe("chapter")
         expect(adapter.match(new URL("https://test-stream.example/manga/cool-manga/"))).toBe("manga")

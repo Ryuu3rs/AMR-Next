@@ -482,6 +482,17 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             ...(config.imageOrigins ? { imageOrigins: config.imageOrigins } : {})
         },
 
+        // Resolve the manga from a chapter or series URL. Needed so mark-read tracks the
+        // right title when a CF-gated resolveChapter is blocked on the paste path (else
+        // the slug is derived from the raw path and a Madara chapter URL's leading
+        // segment - "manga" - becomes the slug), and so chapter:siblings can resolve the
+        // manga for its number fallback. Reuses the same parsers match() uses.
+        parseMangaUrl(url: URL): { sourceMangaId: string; mangaUrl: string } | null {
+            const slug = extractChapterSlugs(url)?.mangaSlug ?? extractMangaSlug(url)
+            if (!slug) return null
+            return { sourceMangaId: slug, mangaUrl: `${config.origin}/${mangaPath}/${slug}/` }
+        },
+
         match(url: URL): SourcePageMatch {
             if (extractChapterSlugs(url)) return "chapter"
             if (extractMangaSlug(url)) return "manga"

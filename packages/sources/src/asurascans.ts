@@ -138,6 +138,16 @@ export const asuraScansAdapter: SourceAdapter = {
         homepage: ORIGIN
     },
 
+    // Resolve the manga from a chapter or series URL - needed so mark-read tracks the
+    // right title when the CF-gated resolveChapter is blocked (paste path), and so
+    // chapter:siblings can resolve the manga for its number fallback. Reuses the same
+    // parsers match() uses, so the slug is always consistent.
+    parseMangaUrl(url: URL): { sourceMangaId: string; mangaUrl: string } | null {
+        const slug = parseChapterUrl(url)?.slug ?? parseSeriesUrl(url)
+        if (!slug) return null
+        return { sourceMangaId: slug, mangaUrl: `${ORIGIN}/comics/${slug}/` }
+    },
+
     match(url: URL): SourcePageMatch {
         if (parseChapterUrl(url)) return "chapter"
         if (parseSeriesUrl(url)) return "manga"
