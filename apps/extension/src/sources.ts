@@ -1,6 +1,7 @@
 import type { MangaRecord, SourceLinkRecord } from "@amr/contracts"
 import {
     createBoundedRequestClient,
+    type ResolveMangaInput,
     type SourceContext,
     type SourceManga,
     type SourceSearchResult
@@ -113,6 +114,43 @@ export async function resolveCoverFor(manga: {
     }
     if (input.sourceMangaId === undefined && input.url === undefined) return undefined
     return source.resolveCover(input, createSourceContext(source.manifest.id, source.manifest.requestRateLimit))
+}
+
+// Fetch series-level metadata (title, cover) from the manga page. Used by the external-
+// track path: when resolveChapter was blocked (CF gate / anti-scrape), the title falls
+// back to a humanized slug with no cover. The manga page itself is often reachable even
+// when the chapter page is not, so a best-effort resolveManga recovers the real
+// title/cover. Genres are left to backfillMangaGenres. Returns undefined on any failure -
+// callers keep the slug title.
+export async function resolveMangaMetadata(manga: {
+    sourceId: string
+    sourceMangaId?: string
+    mangaUrl?: string
+}): Promise<{ title?: string; coverUrl?: string } | undefined> {
+    const source = sourceRegistry.get(manga.sourceId)
+    if (!source) return undefined
+    const input: ResolveMangaInput = {}
+    if (manga.sourceMangaId) input.sourceMangaId = manga.sourceMangaId
+    if (manga.mangaUrl) {
+        try {
+            input.url = new URL(manga.mangaUrl)
+        } catch {
+            // ignore malformed stored URL
+        }
+    }
+    if (input.sourceMangaId === undefined && input.url === undefined) return undefined
+    try {
+        const resolved = await source.resolveManga(
+            input,
+            createSourceContext(source.manifest.id, source.manifest.requestRateLimit)
+        )
+        return {
+            ...(resolved.manga.title ? { title: resolved.manga.title } : {}),
+            ...(resolved.manga.coverUrl ? { coverUrl: resolved.manga.coverUrl } : {})
+        }
+    } catch {
+        return undefined
+    }
 }
 
 export async function resolveGenresFor(manga: {
@@ -447,11 +485,23 @@ export async function listChaptersBySource(sourceId: string, sourceMangaId: stri
 
 export async function listMangaChapters(manga: LibraryManga, link: SourceLinkRecord, language = "en") {
     const source = sourceRegistry.get(link.sourceId)
-    if (!source || !link.sourceMangaId) throw new Error("The source link cannot be refreshed")
+    if (!source) throw new Error("The source link cannot be refreshed")
+    // Links created by the external-track path before sourceMangaId was persisted (or by
+    // any path that only stored the manga URL) can still be refreshed as long as the
+    // adapter can parse the id back out of that URL - do that here rather than giving up.
+    let sourceMangaId = link.sourceMangaId
+    if (!sourceMangaId) {
+        try {
+            sourceMangaId = source.parseMangaUrl?.(new URL(link.url))?.sourceMangaId ?? undefined
+        } catch {
+            sourceMangaId = undefined
+        }
+    }
+    if (!sourceMangaId) throw new Error("The source link cannot be refreshed")
     const sourceManga: SourceManga = {
         manga,
         sourceId: link.sourceId,
-        sourceMangaId: link.sourceMangaId,
+        sourceMangaId,
         url: link.url
     }
     return source.listChapters(

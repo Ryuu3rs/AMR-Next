@@ -1,14 +1,23 @@
 import { sourceRegistry } from "@amr/sources"
 import { isNumberedChapter, latestNumberedChapter, matchesSourceDomain } from "@amr/source-sdk"
-import { applyUpdateCheckResult, db, repairMangahubChapters, updateManga, type LibraryManga } from "../database"
+import {
+    applyUpdateCheckResult,
+    cacheCover,
+    db,
+    repairMangahubChapters,
+    updateManga,
+    type LibraryManga
+} from "../database"
 import {
     checkSourcePermission,
     getMangaChapters,
     listChaptersForSource,
     listMangaChapters,
+    resolveCoverFor,
     resolveGenresFor,
     searchManga
 } from "../sources"
+import { fetchCoverBlob } from "../background/covers"
 import { getSettings } from "../settings"
 import { isNewerVersion } from "../update-check"
 import { EXTENSION_UPDATE_INTERVAL_HOURS, GITHUB_RELEASES_URL } from "../background/alarms"
@@ -372,26 +381,52 @@ export async function backfillMangaGenres(): Promise<void> {
     genreBackfillRunning = true
     genreBackfillAborted = false
     try {
-        // Only process titles with a manga URL or source ID - sourceUrl is a chapter URL
-        // and genre resolvers expect a series page, so passing it silently fails.
+        // Process titles missing genres OR a cover - sourceUrl is a chapter URL and the
+        // resolvers expect a series page, so a title needs a mangaUrl or sourceMangaId to
+        // be fetchable. A missing cover is common on titles first added from an on-site
+        // chapter whose one-shot cover fetch failed (e.g. dynasty-scans) - nothing else
+        // re-fetches it, so heal it here in the same rate-limited pass as genres.
         const toFetch = await db.manga
-            .filter(m => (!m.genres || m.genres.length === 0) && (!!m.mangaUrl || !!m.sourceMangaId))
+            .filter(m => (!m.genres || m.genres.length === 0 || !m.coverUrl) && (!!m.mangaUrl || !!m.sourceMangaId))
             .toArray()
         if (toFetch.length === 0) return
         for (const manga of toFetch) {
             // Yield to a pending extension update - same between-items abort as checkUpdates.
             if (genreBackfillAborted) break
-            try {
-                const genres = await resolveGenresFor({
-                    sourceId: manga.sourceId,
-                    ...(manga.sourceMangaId ? { sourceMangaId: manga.sourceMangaId } : {}),
-                    ...(manga.mangaUrl ? { mangaUrl: manga.mangaUrl } : {})
-                })
-                if (genres.length > 0) {
-                    await updateManga(manga.id, { genres } as Partial<LibraryManga>)
+            const source = {
+                sourceId: manga.sourceId,
+                ...(manga.sourceMangaId ? { sourceMangaId: manga.sourceMangaId } : {}),
+                ...(manga.mangaUrl ? { mangaUrl: manga.mangaUrl } : {})
+            }
+            if (!manga.genres || manga.genres.length === 0) {
+                try {
+                    const genres = await resolveGenresFor(source)
+                    if (genres.length > 0) {
+                        await updateManga(manga.id, { genres } as Partial<LibraryManga>)
+                    }
+                } catch {
+                    // Skip - source may not support genres or fetch failed transiently
                 }
-            } catch {
-                // Skip - source may not support genres or fetch failed transiently
+            }
+            // Re-check the abort between the two network branches: a pending extension
+            // update flipped mid-genre-fetch must not still cost this title a full cover
+            // fetch + 350ms delay before the loop-top break yields.
+            if (genreBackfillAborted) break
+            if (!manga.coverUrl) {
+                try {
+                    const coverUrl = await resolveCoverFor(source)
+                    if (coverUrl) {
+                        await updateManga(manga.id, { coverUrl } as Partial<LibraryManga>)
+                        try {
+                            const blob = await fetchCoverBlob(coverUrl)
+                            if (blob) await cacheCover(manga.id, blob)
+                        } catch {
+                            // Non-fatal - the remote coverUrl still renders via hotlink
+                        }
+                    }
+                } catch {
+                    // Skip - source may not support covers or fetch failed transiently
+                }
             }
             // Respect the source rate limit (3 req/s) between requests.
             await new Promise<void>(r => setTimeout(r, 350))

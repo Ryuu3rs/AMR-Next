@@ -9,12 +9,14 @@ const {
     listMangaChaptersMock,
     listChaptersForSourceMock,
     resolveGenresForMock,
+    resolveCoverForMock,
     publishLiveMock,
     purgeStaleMangahubChapterRowsMock
 } = vi.hoisted(() => ({
     listMangaChaptersMock: vi.fn(),
     listChaptersForSourceMock: vi.fn(),
     resolveGenresForMock: vi.fn(),
+    resolveCoverForMock: vi.fn(),
     publishLiveMock: vi.fn(),
     purgeStaleMangahubChapterRowsMock: vi.fn()
 }))
@@ -25,7 +27,12 @@ vi.mock("../sources", () => ({
     checkSourcePermission: vi.fn(),
     getMangaChapters: vi.fn(),
     resolveGenresFor: resolveGenresForMock,
+    resolveCoverFor: resolveCoverForMock,
     searchManga: vi.fn()
+}))
+
+vi.mock("../background/covers", () => ({
+    fetchCoverBlob: vi.fn(async () => undefined)
 }))
 
 vi.mock("../live", () => ({
@@ -79,6 +86,7 @@ beforeEach(async () => {
     listMangaChaptersMock.mockReset()
     listChaptersForSourceMock.mockReset()
     resolveGenresForMock.mockReset()
+    resolveCoverForMock.mockReset()
     publishLiveMock.mockReset()
     purgeStaleMangahubChapterRowsMock.mockReset()
 })
@@ -986,6 +994,23 @@ describe("abortLongRunningTasks covers backfillMangaGenres", () => {
         await backfillMangaGenres()
 
         expect(resolveGenresForMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not run the cover fetch for a title whose genre fetch triggered the abort", async () => {
+        const { backfillMangaGenres, abortLongRunningTasks } = await import("./updates-sources")
+
+        // Missing BOTH genres and cover, so both branches would otherwise run for this title.
+        await db.manga.put(makeManga({ id: "g-both", mangaUrl: "https://example.test/x", genres: [] }))
+        resolveGenresForMock.mockImplementation(async () => {
+            abortLongRunningTasks()
+            return []
+        })
+        resolveCoverForMock.mockResolvedValue("https://example.test/cover.jpg")
+
+        await backfillMangaGenres()
+
+        expect(resolveGenresForMock).toHaveBeenCalledTimes(1)
+        expect(resolveCoverForMock).not.toHaveBeenCalled()
     })
 })
 

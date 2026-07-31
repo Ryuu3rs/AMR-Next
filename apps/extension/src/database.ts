@@ -319,7 +319,14 @@ function maxDefined(a: number | undefined, b: number | undefined): number | unde
 }
 
 export async function cacheCover(mangaId: string, blob: Blob): Promise<void> {
-    await db.covers.put({ mangaId, blob, cachedAt: Date.now() })
+    // Guard against orphaning a covers row for a manga removed between the (often
+    // fire-and-forget, network-bound) cover fetch and this write - by now the title may
+    // be gone. A bare put() would create a row keyed by a non-existent manga that nothing
+    // reconciles, wasting space and able to resurface as a stale image if the id is reused.
+    await db.transaction("rw", [db.manga, db.covers], async () => {
+        if (!(await db.manga.get(mangaId))) return
+        await db.covers.put({ mangaId, blob, cachedAt: Date.now() })
+    })
 }
 
 export async function getCachedCover(mangaId: string): Promise<Blob | undefined> {
@@ -1160,20 +1167,41 @@ export async function trackExternalChapter(input: {
                 sourceId: input.sourceId,
                 sourceUrl: input.url,
                 mangaUrl,
+                ...(input.mangaInfo ? { sourceMangaId: input.mangaInfo.sourceMangaId } : {}),
                 authors: [],
                 status: "unknown",
                 addedAt: now,
                 updatedAt: now
             }
             await db.manga.put(manga)
+            // Persist sourceMangaId on the link too - listMangaChapters (sources.ts)
+            // refuses to refresh a link without it ("The source link cannot be
+            // refreshed"), so an external-tracked title added while scraping was blocked
+            // could never pick up new chapters through the background update check.
             await db.sourceLinks.put({
                 mangaId: manga.id,
                 sourceId: input.sourceId,
                 url: mangaUrl,
+                ...(input.mangaInfo ? { sourceMangaId: input.mangaInfo.sourceMangaId } : {}),
                 title: manga.title,
                 addedAt: now,
                 updatedAt: now
             })
+        } else if (input.mangaInfo && !manga.sourceMangaId) {
+            // Manga located via the slug-matching fallback (not the direct id lookup) and
+            // it predates sourceMangaId being stored - a legacy/fallback-created record.
+            // Now that a correct, verified sourceMangaId is in hand, backfill it onto both
+            // the manga and its link so the record stops reading as fallback-created and
+            // the genre/cover resolvers' sourceMangaId fast-path starts working. Only the
+            // created branch used to do this, so such a record never self-healed even when
+            // the right id passed through on a later capture.
+            const sourceMangaId = input.mangaInfo.sourceMangaId
+            await db.manga.update(manga.id, { sourceMangaId, updatedAt: now })
+            manga.sourceMangaId = sourceMangaId
+            const link = await db.sourceLinks.get(manga.id)
+            if (link && !link.sourceMangaId) {
+                await db.sourceLinks.put({ ...link, sourceMangaId, updatedAt: now })
+            }
         }
 
         const lastSegment = u.pathname.split("/").filter(Boolean).pop() ?? "ext"

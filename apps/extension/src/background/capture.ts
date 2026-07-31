@@ -1,6 +1,6 @@
 import { SourceRequestError } from "@amr/source-sdk"
-import { cacheCover, recordAnalyticsEvent, saveResolvedChapter, trackExternalChapter } from "../database"
-import { findSource, resolveChapterUrl } from "../sources"
+import { cacheCover, recordAnalyticsEvent, saveResolvedChapter, trackExternalChapter, updateManga } from "../database"
+import { findSource, resolveChapterUrl, resolveMangaMetadata } from "../sources"
 import { getSettings } from "../settings"
 import { scheduleChapterListRefresh } from "./chapter-cache"
 import { fetchCoverBlob } from "./covers"
@@ -68,6 +68,10 @@ async function doCaptureChapter(url: string) {
         // every cooldown-apart revisit. Use tracked.mangaId (the actual DB entry).
         if (mangaInfo && tracked.created) {
             scheduleChapterListRefresh(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
+            // The external-track path only has a humanized-slug title and no cover
+            // (resolveChapter was blocked). Best-effort pull the real title/cover from the
+            // manga page, which is often reachable even when the chapter page is gated.
+            void refreshExternalMangaMetadata(source.manifest.id, mangaInfo, tracked.mangaId)
         }
         publishLive(["library", "chapters"], [tracked.mangaId])
         await flashAddedBadge()
@@ -111,6 +115,55 @@ async function doCaptureChapter(url: string) {
 
     await flashAddedBadge()
     return { supported: true as const, added: true as const, manga: resolved.manga.manga }
+}
+
+// Best-effort metadata recovery for an externally-tracked title (added while the chapter
+// page was bot-blocked, so it has only a slug title and no cover). New titles only - the
+// caller gates on tracked.created - so this never clobbers a title the user renamed. A
+// failure here is expected on fully-gated sources and leaves the slug title untouched.
+// A raw URL slug ("solo-leveling-season-2"): word separators and no whitespace. Real
+// display titles have spaces or are a single word with no separators, so this cleanly
+// distinguishes an adapter's slug fallback from a genuinely resolved title.
+export function isSlugLikeTitle(title: string): boolean {
+    return /[-_]/.test(title) && !/\s/.test(title)
+}
+
+async function refreshExternalMangaMetadata(
+    sourceId: string,
+    mangaInfo: { sourceMangaId: string; mangaUrl: string },
+    mangaId: string
+): Promise<void> {
+    try {
+        const meta = await resolveMangaMetadata({
+            sourceId,
+            sourceMangaId: mangaInfo.sourceMangaId,
+            mangaUrl: mangaInfo.mangaUrl
+        })
+        if (!meta) return
+        const patch: Parameters<typeof updateManga>[1] = {}
+        // Only replace the title trackExternalChapter already humanized (dashes/underscores
+        // -> spaced, title-cased) when resolveManga returned a REAL title, not an adapter's
+        // raw-slug fallback (e.g. comix returns "solo-leveling-season-2" on a parse miss).
+        // A slug-shaped string - separators and no spaces - is a downgrade, so keep ours.
+        if (meta.title && !isSlugLikeTitle(meta.title)) {
+            patch.title = meta.title
+            patch.normalizedTitle = meta.title.toLocaleLowerCase("en").replace(/\s+/g, " ")
+        }
+        if (meta.coverUrl) patch.coverUrl = meta.coverUrl
+        if (Object.keys(patch).length === 0) return
+        await updateManga(mangaId, patch)
+        if (meta.coverUrl) {
+            try {
+                const blob = await fetchCoverBlob(meta.coverUrl)
+                if (blob) await cacheCover(mangaId, blob)
+            } catch (error) {
+                console.warn("[AMR] Failed to cache external cover", { url: meta.coverUrl, error })
+            }
+        }
+        publishLive(["library"], [mangaId])
+    } catch (error) {
+        console.debug("[AMR] External metadata refresh failed", { mangaId, error })
+    }
 }
 
 export async function flashAddedBadge() {
