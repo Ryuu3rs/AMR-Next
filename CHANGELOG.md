@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/Ryuu3rs/AMR-Next/compare/v0.14.0...v0.14.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* mangahub title added by URL no longer becomes "Chapter" ([eab4dec](https://github.com/Ryuu3rs/AMR-Next/commit/eab4dec941b473baecefbfa3f5c9ca30724aa9f5))
+
 ## [0.14.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.13.0...v0.14.0) (2026-07-24)
 
 
