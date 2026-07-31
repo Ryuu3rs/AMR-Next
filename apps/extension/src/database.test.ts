@@ -1836,6 +1836,31 @@ describe("import merge - progress and history", () => {
     })
 })
 
+describe("cacheCover orphan guard", () => {
+    it("skips writing a covers row for a manga that no longer exists", async () => {
+        const blob = new Blob(["x"], { type: "image/jpeg" })
+        await cacheCover("nonexistent:manga:gone", blob)
+        expect(await db.covers.get("nonexistent:manga:gone")).toBeUndefined()
+    })
+
+    it("still caches the cover when the manga exists", async () => {
+        const manga: LibraryManga = {
+            id: "src:manga:live",
+            title: "Live",
+            normalizedTitle: "live",
+            authors: [],
+            status: "unknown",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "src",
+            sourceUrl: "https://example.test/c1"
+        }
+        await db.manga.put(manga)
+        await cacheCover(manga.id, new Blob(["y"], { type: "image/jpeg" }))
+        expect(await db.covers.get(manga.id)).toBeDefined()
+    })
+})
+
 describe("trackExternalChapter", () => {
     it("derives distinct chapter records from episode_no query params, not just the word 'chapter'", async () => {
         const first = await trackExternalChapter({
@@ -1856,6 +1881,67 @@ describe("trackExternalChapter", () => {
         const chapters = await db.chapters.where("mangaId").equals(first.mangaId).toArray()
         expect(chapters).toHaveLength(2)
         expect(new Set(chapters.map(c => c.id)).size).toBe(2)
+    })
+
+    it("persists sourceMangaId on the created manga AND source link so future refreshes can run", async () => {
+        // Without sourceMangaId on the link, listMangaChapters throws "The source link
+        // cannot be refreshed" on every background update - the external-tracked title
+        // would show a chapter count once (from the add-time list prime) and never again.
+        const result = await trackExternalChapter({
+            url: "https://mangahub.io/chapter/solo-leveling/chapter-105",
+            sourceId: "mangahub",
+            mangaInfo: { sourceMangaId: "solo-leveling", mangaUrl: "https://mangahub.io/manga/solo-leveling" }
+        })
+
+        expect(result.created).toBe(true)
+        const manga = await db.manga.get(result.mangaId)
+        expect(manga?.sourceMangaId).toBe("solo-leveling")
+        const link = await db.sourceLinks.get(result.mangaId)
+        expect(link?.sourceMangaId).toBe("solo-leveling")
+    })
+
+    it("backfills sourceMangaId onto a fallback-matched legacy record (manga + link) when mangaInfo is now available", async () => {
+        // Legacy fallback-created record: id derived from a bare slug, and NO sourceMangaId
+        // on either the manga or its link. A later capture that DOES carry mangaInfo (the
+        // correct id) matches this via the slug fallback (not the direct id lookup) and
+        // must heal both records - previously only the created branch stored the id, so
+        // this stayed broken forever.
+        const legacy: LibraryManga = {
+            id: "mangakatana:manga:the-archmages-restaurant",
+            title: "The Archmages Restaurant",
+            normalizedTitle: "the archmages restaurant",
+            authors: [],
+            status: "unknown",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "mangakatana",
+            sourceUrl: "https://mangakatana.com/manga/the-archmages-restaurant.27314/c100",
+            mangaUrl: "https://mangakatana.com/manga/the-archmages-restaurant.27314"
+        }
+        await db.manga.put(legacy)
+        await db.sourceLinks.put({
+            mangaId: legacy.id,
+            sourceId: "mangakatana",
+            url: legacy.mangaUrl!,
+            title: legacy.title,
+            addedAt: 1,
+            updatedAt: 1
+        })
+
+        const result = await trackExternalChapter({
+            url: "https://mangakatana.com/manga/the-archmages-restaurant.27314/c143",
+            sourceId: "mangakatana",
+            mangaInfo: {
+                sourceMangaId: "the-archmages-restaurant.27314",
+                mangaUrl: "https://mangakatana.com/manga/the-archmages-restaurant.27314"
+            }
+        })
+
+        expect(result.created).toBe(false)
+        expect(result.mangaId).toBe(legacy.id)
+        expect(await db.manga.count()).toBe(1)
+        expect((await db.manga.get(legacy.id))?.sourceMangaId).toBe("the-archmages-restaurant.27314")
+        expect((await db.sourceLinks.get(legacy.id))?.sourceMangaId).toBe("the-archmages-restaurant.27314")
     })
 
     it("matches an existing manga by sourceId:manga:sourceMangaId instead of creating a duplicate", async () => {
@@ -2654,6 +2740,19 @@ describe("getCachedCovers", () => {
         // fake-indexeddb's internal scheduling relies on real timers, so the clock
         // is controlled by mocking Date.now directly instead of vi.useFakeTimers(),
         // which would also fake setTimeout and can deadlock an await db.covers.put(...).
+        // cacheCover now no-ops for a manga that doesn't exist, so the row must have a
+        // backing manga record for this overwrite test to exercise the write path.
+        await db.manga.put({
+            id: "a",
+            title: "A",
+            normalizedTitle: "a",
+            authors: [],
+            status: "unknown",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "src",
+            sourceUrl: "https://example.test/c1"
+        })
         const nowSpy = vi.spyOn(Date, "now")
         try {
             nowSpy.mockReturnValue(1000)

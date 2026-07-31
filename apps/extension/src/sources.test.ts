@@ -453,6 +453,74 @@ describe("searchMangaStreaming result filtering", () => {
     })
 })
 
+// Regression: an external-tracked title (added while the chapter page was bot-blocked)
+// used to get a source link with NO sourceMangaId, and listMangaChapters threw "The
+// source link cannot be refreshed" on every background update forever. It now recovers
+// the id from the link URL via the adapter's parseMangaUrl before giving up.
+describe("listMangaChapters sourceMangaId heal", () => {
+    it("derives sourceMangaId from the link URL via parseMangaUrl when the link lacks it", async () => {
+        let seenSourceMangaId: string | undefined
+        const adapter = {
+            manifest: manifest("healme"),
+            match: () => "none" as const,
+            resolveManga: vi.fn(),
+            resolveChapter: vi.fn(),
+            parseMangaUrl: (url: URL) => ({
+                sourceMangaId: url.pathname.split("/").filter(Boolean)[1] ?? "",
+                mangaUrl: url.toString()
+            }),
+            listChapters: vi.fn(async (input: { manga: { sourceMangaId: string } }) => {
+                seenSourceMangaId = input.manga.sourceMangaId
+                return []
+            })
+        }
+        const { sourceRegistry } = await import("@amr/sources")
+        vi.mocked(sourceRegistry.get).mockReturnValue(adapter as never)
+
+        const { listMangaChapters } = await import("./sources")
+        await listMangaChapters(
+            { id: "healme:manga:solo", title: "Solo", sourceId: "healme" } as never,
+            {
+                mangaId: "healme:manga:solo",
+                sourceId: "healme",
+                url: "https://healme.example/manga/solo",
+                addedAt: 0,
+                updatedAt: 0
+            } as never
+        )
+
+        expect(seenSourceMangaId).toBe("solo")
+        expect(adapter.listChapters).toHaveBeenCalledTimes(1)
+    })
+
+    it("still throws when the link lacks sourceMangaId and parseMangaUrl can't recover one", async () => {
+        const adapter = {
+            manifest: manifest("nope"),
+            match: () => "none" as const,
+            resolveManga: vi.fn(),
+            resolveChapter: vi.fn(),
+            listChapters: vi.fn()
+        }
+        const { sourceRegistry } = await import("@amr/sources")
+        vi.mocked(sourceRegistry.get).mockReturnValue(adapter as never)
+
+        const { listMangaChapters } = await import("./sources")
+        await expect(
+            listMangaChapters(
+                { id: "nope:manga:x", title: "X", sourceId: "nope" } as never,
+                {
+                    mangaId: "nope:manga:x",
+                    sourceId: "nope",
+                    url: "https://nope.example/manga/x",
+                    addedAt: 0,
+                    updatedAt: 0
+                } as never
+            )
+        ).rejects.toThrow("The source link cannot be refreshed")
+        expect(adapter.listChapters).not.toHaveBeenCalled()
+    })
+})
+
 // Regression test for the bug where createSourceContext stripped every wildcard-scheme
 // SOURCE_ORIGINS entry before handing allowedOrigins to createBoundedRequestClient
 // ("*://*.mangaread.org/*", "*://*.mangafreak.me/*"). Since mangaread and mangafreak's
