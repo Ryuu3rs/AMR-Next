@@ -81,6 +81,29 @@ function createContext(fixtures: Readonly<Record<string, string>>, requests: str
     }
 }
 
+describe("mangahubAdapter.parseMangaUrl", () => {
+    it("maps a chapter URL to the manga slug instead of the literal 'chapter' path segment", () => {
+        const r = mangahubAdapter.parseMangaUrl!(new URL("https://mangahub.io/chapter/solo-leveling_105/chapter-42"))
+        // Must NOT be "chapter" (the first path segment) - that produced mangahub:manga:chapter.
+        expect(r).toEqual({ sourceMangaId: "solo-leveling", mangaUrl: "https://mangahub.io/manga/solo-leveling" })
+    })
+
+    it("keeps a chapter slug with no _<n> suffix as-is", () => {
+        const r = mangahubAdapter.parseMangaUrl!(new URL("https://mangahub.io/chapter/one-piece/chapter-1100"))
+        expect(r).toEqual({ sourceMangaId: "one-piece", mangaUrl: "https://mangahub.io/manga/one-piece" })
+    })
+
+    it("maps a manga URL directly", () => {
+        const r = mangahubAdapter.parseMangaUrl!(new URL("https://mangahub.io/manga/berserk"))
+        expect(r).toEqual({ sourceMangaId: "berserk", mangaUrl: "https://mangahub.io/manga/berserk" })
+    })
+
+    it("returns null for a non-mangahub or unrecognised URL", () => {
+        expect(mangahubAdapter.parseMangaUrl!(new URL("https://example.com/chapter/x/chapter-1"))).toBeNull()
+        expect(mangahubAdapter.parseMangaUrl!(new URL("https://mangahub.io/search/page/1"))).toBeNull()
+    })
+})
+
 describe("mangahubAdapter.search", () => {
     it("fetches pages in order, dedupes across pages, and stops once a page is empty", async () => {
         const requests: string[] = []
