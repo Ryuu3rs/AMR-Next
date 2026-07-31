@@ -308,6 +308,23 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
             ...(config.imageOrigins ? { imageOrigins: config.imageOrigins } : {})
         },
 
+        // Resolve the manga from a URL so mark-read tracks the right title when a
+        // CF-gated resolveChapter is blocked on the paste path, and so chapter:siblings
+        // can resolve the manga for its number fallback. A series URL always yields the
+        // slug; a hierarchical chapter URL (/mangaPath/slug/num) carries it too. A FLAT
+        // chapter URL (a root slug containing "chapter") does NOT contain the manga slug,
+        // so return null there rather than guessing a wrong one - resolveChapter reads it
+        // from the page in that case.
+        parseMangaUrl(url: URL): { sourceMangaId: string; mangaUrl: string } | null {
+            const series = mangaSlug(url)
+            if (series) return { sourceMangaId: series, mangaUrl: `${config.origin}/${mangaPath}/${series}/` }
+            if (isHierarchical) {
+                const slug = url.pathname.match(chapterRe)?.[1]
+                if (slug) return { sourceMangaId: slug, mangaUrl: `${config.origin}/${mangaPath}/${slug}/` }
+            }
+            return null
+        },
+
         match(url: URL): SourcePageMatch {
             if (chapterSlug(url)) return "chapter"
             if (mangaSlug(url)) return "manga"

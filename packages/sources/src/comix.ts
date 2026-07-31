@@ -152,6 +152,15 @@ export const comixAdapter: SourceAdapter = {
         homepage: ORIGIN
     },
 
+    // Needed for chapter:siblings' number-fallback and for correct mark-read tracking:
+    // both resolve the manga from the chapter URL. A chapter URL is
+    // /title/{slug}/{id}-chapter-{n}, so the slug is the same segment either way.
+    parseMangaUrl(url: URL): { sourceMangaId: string; mangaUrl: string } | null {
+        const slug = matchChapterParts(url)?.slug ?? matchMangaSlug(url)
+        if (!slug) return null
+        return { sourceMangaId: slug, mangaUrl: `${ORIGIN}/title/${slug}` }
+    },
+
     match(url: URL): SourcePageMatch {
         if (matchChapterParts(url)) return "chapter"
         if (matchMangaSlug(url)) return "manga"

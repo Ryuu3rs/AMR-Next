@@ -128,6 +128,18 @@ function createCapturingContext(fixtures: Readonly<Record<string, string>>): {
 }
 
 describe("createMadaraAdapter", () => {
+    it("parseMangaUrl resolves the manga slug from a chapter or series URL (not the 'series' path segment)", () => {
+        expect(adapter.parseMangaUrl!(new URL(CHAPTER_URL))).toEqual({
+            sourceMangaId: "cool-manga",
+            mangaUrl: "https://test-madara.example/series/cool-manga/"
+        })
+        expect(adapter.parseMangaUrl!(new URL("https://test-madara.example/series/cool-manga/"))).toEqual({
+            sourceMangaId: "cool-manga",
+            mangaUrl: "https://test-madara.example/series/cool-manga/"
+        })
+        expect(adapter.parseMangaUrl!(new URL("https://other.example/series/x/ch-1/"))).toBeNull()
+    })
+
     it("matches configured manga/series and chapter URLs", () => {
         expect(adapter.match(new URL(CHAPTER_URL))).toBe("chapter")
         expect(adapter.match(new URL("https://test-madara.example/series/cool-manga/"))).toBe("manga")

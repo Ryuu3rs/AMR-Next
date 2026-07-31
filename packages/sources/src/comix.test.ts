@@ -48,6 +48,20 @@ function listInput() {
     } as never
 }
 
+describe("comix parseMangaUrl", () => {
+    it("resolves the slug from a chapter URL so siblings/mark-read can find the manga", () => {
+        expect(comixAdapter.parseMangaUrl!(new URL(`${ORIGIN}/title/${SLUG}/6219258-chapter-1`))).toEqual({
+            sourceMangaId: SLUG,
+            mangaUrl: `${ORIGIN}/title/${SLUG}`
+        })
+        expect(comixAdapter.parseMangaUrl!(new URL(`${ORIGIN}/title/${SLUG}`))).toEqual({
+            sourceMangaId: SLUG,
+            mangaUrl: `${ORIGIN}/title/${SLUG}`
+        })
+        expect(comixAdapter.parseMangaUrl!(new URL("https://comix.to/browse"))).toBeNull()
+    })
+})
+
 describe("comix listChapters", () => {
     it("synthesises the full chapter range from latestChapter so prev/next has somewhere to go", async () => {
         const requests: string[] = []
