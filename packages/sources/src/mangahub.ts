@@ -325,6 +325,23 @@ export const mangahubAdapter: SourceAdapter = {
         return "none"
     },
 
+    // Map a manga OR chapter URL to the manga slug. Without this, a chapter URL added by
+    // paste (where the CF-gated resolveChapter can be blocked and the add falls back to
+    // generic tracking) had its slug derived from the path, which is /chapter/{chSlug}/...
+    // - so the first segment "chapter" became the slug, producing mangahub:manga:chapter
+    // titled "Chapter" that could never refresh. chSlug carries an optional _<n> suffix
+    // that differs from the manga slug (solo-leveling_105 vs solo-leveling); strip it,
+    // matching resolveChapter's own derivation.
+    parseMangaUrl(url: URL): { sourceMangaId: string; mangaUrl: string } | null {
+        if (url.hostname !== DOMAIN && url.hostname !== `www.${DOMAIN}`) return null
+        const parts = url.pathname.split("/").filter(Boolean)
+        let slug: string | undefined
+        if (parts[0] === "manga") slug = parts[1]
+        else if (parts[0] === "chapter" && parts[1]) slug = parts[1].replace(/_\d+$/, "") || parts[1]
+        if (!slug) return null
+        return { sourceMangaId: slug, mangaUrl: `${ORIGIN}/manga/${slug}` }
+    },
+
     async resolveManga(input: ResolveMangaInput, ctx: SourceContext): Promise<SourceManga> {
         const slug = input.sourceMangaId ?? input.url?.pathname.split("/").filter(Boolean)[1]
         if (!slug) throw new SourceError("invalid-input", "No manga slug")
