@@ -18,6 +18,7 @@ import { fanfoxFamilyAdapters } from "./fanfox-sites"
 import { olympusstaffAdapter } from "./olympustaff"
 import { mangafreakAdapter } from "./mangafreak"
 import { comixAdapter } from "./comix"
+import { mangakatanaAdapter } from "./mangakatana"
 
 export { kaganeAdapter } from "./kagane"
 export { mangadexAdapter } from "./mangadex"
@@ -42,6 +43,7 @@ export { fanfoxFamilyAdapters, fanfoxFamilyOrigins } from "./fanfox-sites"
 export { olympusstaffAdapter } from "./olympustaff"
 export { mangafreakAdapter } from "./mangafreak"
 export { comixAdapter } from "./comix"
+export { mangakatanaAdapter } from "./mangakatana"
 
 export const sourceAdapters: readonly SourceAdapter[] = [
     kaganeAdapter,
@@ -62,6 +64,7 @@ export const sourceAdapters: readonly SourceAdapter[] = [
     ...fanfoxFamilyAdapters,
     olympusstaffAdapter,
     mangafreakAdapter,
-    comixAdapter
+    comixAdapter,
+    mangakatanaAdapter
 ]
 export const sourceRegistry = new SourceRegistry(sourceAdapters)

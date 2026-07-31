@@ -73,6 +73,11 @@ const BASE_SOURCE_ORIGINS = [
     "https://comix.to/*",
     "https://www.comix.to/*",
     "*://*.static.comix.to/*",
+    // MangaKatana - manga/chapter pages on the apex; covers on mangakatana.com/imgs,
+    // page images on the token-gated i1/i2/... CDN subdomains (i*.mangakatana.com)
+    "https://mangakatana.com/*",
+    "https://www.mangakatana.com/*",
+    "*://*.mangakatana.com/*",
     // LikeManga - retired 2026-07-19: likemanga.io permanently redirects to mgread.io
     // (a different, already-registered Madara adapter - see madara-sites.ts) - no
     // active adapter targets this domain, so the permission is removed rather than
