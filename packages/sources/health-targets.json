@@ -156,5 +156,10 @@
         "seriesUrl": "https://www.mangahere.cc/manga/one_piece/",
         "expectTitle": "One Piece",
         "note": "best-guess slug"
+    },
+    "mangakatana": {
+        "seriesUrl": "https://mangakatana.com/manga/the-archmages-restaurant.27314",
+        "expectTitle": "The Archmage's Restaurant",
+        "note": "sourceMangaId is the whole {slug}.{numericId} token"
     }
 }
