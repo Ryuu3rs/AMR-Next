@@ -35,6 +35,7 @@ import { isBotBlocked } from "../background/capture"
 import { scheduleChapterListRefresh } from "../background/chapter-cache"
 import { fetchCoverBlob } from "../background/covers"
 import { fetchChapterHtmlViaTab } from "../background/tab-fetch"
+import { matchReadChapterId, matchReadChapterByUrl } from "../reconcile-match"
 import type { HandlerMap } from "../background/handler-types"
 import { publishLive } from "../live"
 
@@ -886,6 +887,23 @@ export const libraryHandlers: HandlerMap = {
             request.sourceId === "mangahub" &&
             existing.sourceId !== "mangahub" &&
             existing.lastReadChapterNumber !== undefined
+        // The old lastReadChapterId points at a chapter row that switchMangaSource is
+        // about to delete. Re-point it at the equivalent chapter in the new mirror by
+        // the source-independent read number, so a caught-up title stays caught up
+        // instead of resetting to unread. Skipped when the numbering may not be
+        // comparable across the two mirrors (mangahub).
+        const remappedReadChapterId = numberingMayMismatch
+            ? undefined
+            : matchReadChapterId(chapters, existing.lastReadChapterNumber)
+        // When the read number was never known (a numberless import that preserved only
+        // the last-read chapter URL), recover position by matching that URL against the
+        // new mirror's chapters - the trailing chapter id (uuid/ulid/numeric) is stable
+        // across a same-source re-fetch. Recovers both the id and, when the matched
+        // chapter is numbered, the read number itself.
+        const recoveredReadChapter =
+            !remappedReadChapterId && existing.lastReadChapterNumber === undefined && existing.lastReadChapterId
+                ? matchReadChapterByUrl(chapters, (await db.chapters.get(existing.lastReadChapterId))?.url)
+                : undefined
         // Old mirror's chapters are stale by definition after switching source -
         // switchMangaSource drops them (any row whose sourceId isn't the new one)
         // before writing the new mirror's, so chapter:siblings never interleaves
@@ -898,6 +916,15 @@ export const libraryHandlers: HandlerMap = {
                 sourceId: request.sourceId,
                 sourceMangaId: request.sourceMangaId,
                 mangaUrl: request.mangaUrl,
+                ...(remappedReadChapterId ? { lastReadChapterId: remappedReadChapterId } : {}),
+                ...(recoveredReadChapter
+                    ? {
+                          lastReadChapterId: recoveredReadChapter.id,
+                          ...(Number.isFinite(recoveredReadChapter.sortKey)
+                              ? { lastReadChapterNumber: recoveredReadChapter.sortKey }
+                              : {})
+                      }
+                    : {}),
                 ...(latest
                     ? {
                           sourceUrl: latest.url,

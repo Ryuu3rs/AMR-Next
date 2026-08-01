@@ -227,6 +227,149 @@ describe("library:switch", () => {
         expect(stored?.chapterNumberingUnreliable).toBeUndefined()
     })
 
+    it("re-points lastReadChapterId to the equivalent chapter in the new mirror by read number", async () => {
+        const libraryManga: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: sourceLink.url,
+            sourceMangaId: "abc",
+            mangaUrl: "https://mangadex.org/title/abc",
+            lastReadChapterNumber: 50,
+            lastReadChapterId: "mangadex:chapter:old-50"
+        }
+        await db.manga.put(libraryManga)
+        await db.sourceLinks.put(sourceLink)
+
+        const newChapters: ChapterRecord[] = [49, 50, 51].map(n => ({
+            id: `othermirror:chapter:c${n}`,
+            mangaId: manga.id,
+            sourceId: "othermirror",
+            title: `Chapter ${n}`,
+            url: `https://othermirror.example/c${n}`,
+            sortKey: n
+        }))
+        vi.mocked(listChaptersForSource).mockResolvedValue(newChapters as never)
+
+        const handler = libraryHandlers["library:switch"]!
+        await handler(
+            {
+                type: "library:switch",
+                mangaId: manga.id,
+                sourceId: "othermirror",
+                sourceMangaId: "new-src-id",
+                mangaUrl: "https://othermirror.example/title/new-src-id"
+            } as never,
+            ctx
+        )
+
+        const stored = await db.manga.get(manga.id)
+        // The dangling old-source read id is re-pointed at the new mirror's chapter 50,
+        // so the title stays caught up instead of resetting to unread.
+        expect(stored?.lastReadChapterId).toBe("othermirror:chapter:c50")
+        expect(stored?.lastReadChapterNumber).toBe(50)
+    })
+
+    it("recovers read position by URL when the number is unknown (numberless import)", async () => {
+        // A numberless import: lastReadChapterId points at a preserved chapter carrying
+        // only the last-read URL, with no lastReadChapterNumber.
+        const oldReadChapter: ChapterRecord = {
+            id: "weebcentral:manga:x:ext:lastread",
+            mangaId: manga.id,
+            sourceId: "weebcentral",
+            title: "Last read",
+            url: "https://weebcentral.com/chapters/01J76XZ7N4Y3C0X29Y0TZ4QC3Y",
+            sortKey: Number.POSITIVE_INFINITY
+        }
+        await db.chapters.put(oldReadChapter)
+        const libraryManga: LibraryManga = {
+            ...manga,
+            sourceId: "weebcentral",
+            sourceUrl: sourceLink.url,
+            sourceMangaId: "x",
+            mangaUrl: "https://weebcentral.com/series/x",
+            lastReadChapterId: oldReadChapter.id
+        }
+        await db.manga.put(libraryManga)
+        await db.sourceLinks.put(sourceLink)
+
+        // The re-fetched list has the same ulid chapter, now with a real number.
+        const newChapters: ChapterRecord[] = [
+            {
+                id: "weebcentral:chapter:new-184",
+                mangaId: manga.id,
+                sourceId: "weebcentral",
+                title: "Episode 184",
+                url: "https://weebcentral.com/chapters/AAAA1111BBBB2222CCCC3333",
+                sortKey: 184
+            },
+            {
+                id: "weebcentral:chapter:new-185",
+                mangaId: manga.id,
+                sourceId: "weebcentral",
+                title: "Episode 185",
+                url: "https://weebcentral.com/chapters/01J76XZ7N4Y3C0X29Y0TZ4QC3Y",
+                sortKey: 185
+            }
+        ]
+        vi.mocked(listChaptersForSource).mockResolvedValue(newChapters as never)
+
+        const handler = libraryHandlers["library:switch"]!
+        await handler(
+            {
+                type: "library:switch",
+                mangaId: manga.id,
+                sourceId: "weebcentral",
+                sourceMangaId: "x",
+                mangaUrl: "https://weebcentral.com/series/x"
+            } as never,
+            ctx
+        )
+
+        const stored = await db.manga.get(manga.id)
+        // The ulid matched, recovering both the id and the previously-unknown number.
+        expect(stored?.lastReadChapterId).toBe("weebcentral:chapter:new-185")
+        expect(stored?.lastReadChapterNumber).toBe(185)
+    })
+
+    it("does not re-point lastReadChapterId when switching to mangahub (numbering not comparable)", async () => {
+        const libraryManga: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: sourceLink.url,
+            sourceMangaId: "abc",
+            mangaUrl: "https://mangadex.org/title/abc",
+            lastReadChapterNumber: 50,
+            lastReadChapterId: "mangadex:chapter:old-50"
+        }
+        await db.manga.put(libraryManga)
+        await db.sourceLinks.put(sourceLink)
+
+        const newChapter: ChapterRecord = {
+            id: "mangahub:chapter:c50",
+            mangaId: manga.id,
+            sourceId: "mangahub",
+            title: "Chapter 50",
+            url: "https://mangahub.io/chapter/new-src-id/chapter-50",
+            sortKey: 50
+        }
+        vi.mocked(listChaptersForSource).mockResolvedValue([newChapter] as never)
+
+        const handler = libraryHandlers["library:switch"]!
+        await handler(
+            {
+                type: "library:switch",
+                mangaId: manga.id,
+                sourceId: "mangahub",
+                sourceMangaId: "new-src-id",
+                mangaUrl: "https://mangahub.io/manga/new-src-id"
+            } as never,
+            ctx
+        )
+
+        const stored = await db.manga.get(manga.id)
+        expect(stored?.lastReadChapterId).toBe("mangadex:chapter:old-50")
+    })
+
     it("threads a bounded timeoutMs/maxRetries override into listChaptersForSource, not the ~46s default", async () => {
         const libraryManga: LibraryManga = {
             ...manga,

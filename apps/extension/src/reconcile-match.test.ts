@@ -3,10 +3,85 @@ import {
     cleanQuery,
     filterEligibleCandidates,
     formatReconcileLog,
+    matchReadChapterByUrl,
+    matchReadChapterId,
     rankCandidates,
     type RankableCandidate,
     type TitleLogEntry
 } from "./reconcile-match"
+
+describe("matchReadChapterByUrl", () => {
+    it("matches on exact URL", () => {
+        const chapters = [
+            { id: "a", url: "https://x.com/chapter/1", sortKey: 1 },
+            { id: "b", url: "https://x.com/chapter/2", sortKey: 2 }
+        ]
+        expect(matchReadChapterByUrl(chapters, "https://x.com/chapter/2")?.id).toBe("b")
+    })
+
+    it("matches a Weeb Central ulid across a domain/path change via the id token", () => {
+        const chapters = [
+            { id: "wc-185", url: "https://weebcentral.com/chapters/01K4BM51JDZBYKK5QGDN7XF7WD", sortKey: 185 }
+        ]
+        // Stored URL had a trailing slash and www; still matches on the ulid token.
+        const found = matchReadChapterByUrl(
+            chapters,
+            "https://www.weebcentral.com/chapters/01K4BM51JDZBYKK5QGDN7XF7WD/"
+        )
+        expect(found?.id).toBe("wc-185")
+        expect(found?.sortKey).toBe(185)
+    })
+
+    it("matches a MangaDex uuid ignoring a query string", () => {
+        const chapters = [
+            { id: "md", url: "https://mangadex.org/chapter/d6b0f743-0993-43ff-82a3-f85b6bf0b470", sortKey: 85 }
+        ]
+        expect(
+            matchReadChapterByUrl(chapters, "https://mangadex.org/chapter/d6b0f743-0993-43ff-82a3-f85b6bf0b470?lang=en")
+                ?.id
+        ).toBe("md")
+    })
+
+    it("returns undefined for no url or no match", () => {
+        const chapters = [{ id: "a", url: "https://x.com/chapter/1", sortKey: 1 }]
+        expect(matchReadChapterByUrl(chapters, undefined)).toBeUndefined()
+        expect(matchReadChapterByUrl(chapters, "https://x.com/chapter/999")).toBeUndefined()
+    })
+})
+
+describe("matchReadChapterId", () => {
+    const chapters = [
+        { id: "c1", sortKey: 1 },
+        { id: "c101", sortKey: 101 },
+        { id: "c102", sortKey: 102 }
+    ]
+
+    it("returns the exact chapter for a matching read number", () => {
+        expect(matchReadChapterId(chapters, 101)).toBe("c101")
+    })
+
+    it("returns the furthest chapter at or below a coarser read number", () => {
+        // Read 101.5 but the new mirror only has whole chapters - never over-claim.
+        expect(matchReadChapterId(chapters, 101.5)).toBe("c101")
+    })
+
+    it("returns undefined when no read number is known", () => {
+        expect(matchReadChapterId(chapters, undefined)).toBeUndefined()
+        expect(matchReadChapterId(chapters, null)).toBeUndefined()
+    })
+
+    it("returns undefined when every chapter is beyond the read position", () => {
+        expect(matchReadChapterId([{ id: "c5", sortKey: 5 }], 1)).toBeUndefined()
+    })
+
+    it("ignores unnumbered (non-finite sortKey) chapters", () => {
+        const withOneshot = [
+            { id: "one", sortKey: Number.POSITIVE_INFINITY },
+            { id: "c3", sortKey: 3 }
+        ]
+        expect(matchReadChapterId(withOneshot, 3)).toBe("c3")
+    })
+})
 
 describe("cleanQuery", () => {
     it("strips a trailing (Official) marker", () => {

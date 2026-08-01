@@ -6,6 +6,51 @@ export function cleanQuery(title: string): string {
     return title.replace(/\s*[(\[«][^)\]»]*\bofficial\b[^)\]»]*[)\]»]/gi, "").trim()
 }
 
+// After a source switch the old lastReadChapterId points at a now-deleted chapter
+// row from the previous mirror. Re-point it at the equivalent chapter in the new
+// mirror by the source-independent read NUMBER: the chapter with the greatest
+// finite sortKey at or below the read position. That's an exact match when the new
+// mirror has that chapter, and the furthest definitely-read chapter when its
+// numbering is coarser (e.g. read 101.5, mirror only has 101) - so it never
+// over-claims progress. Returns undefined when there's no read number or nothing
+// qualifies, leaving the caller to skip the remap rather than dangle the old id.
+export function matchReadChapterId(
+    chapters: ReadonlyArray<{ id: string; sortKey: number }>,
+    readNumber: number | null | undefined
+): string | undefined {
+    if (readNumber == null) return undefined
+    let best: { id: string; sortKey: number } | undefined
+    for (const chapter of chapters) {
+        if (!Number.isFinite(chapter.sortKey) || chapter.sortKey > readNumber) continue
+        if (!best || chapter.sortKey > best.sortKey) best = chapter
+    }
+    return best?.id
+}
+
+// Fallback for when the read NUMBER is unknown (a numberless import that only
+// preserved the last-read chapter URL). Finds the fetched chapter that is the same
+// physical chapter by URL: exact URL first, then the trailing stable id token - the
+// last path segment, which for a same-source re-fetch is the chapter's uuid
+// (MangaDex), ulid (Weeb Central) or numeric id (bato), stable across domain/path
+// changes. Returns the whole chapter so the caller can also recover its number from
+// sortKey. Requires a token of >= 4 chars to avoid matching on a short/empty segment.
+function chapterIdToken(url: string): string | undefined {
+    const segment = url.split(/[?#]/)[0].replace(/\/+$/, "").split("/").pop()
+    return segment && segment.length >= 4 ? segment.toLowerCase() : undefined
+}
+
+export function matchReadChapterByUrl<T extends { url: string }>(
+    chapters: ReadonlyArray<T>,
+    url: string | undefined
+): T | undefined {
+    if (!url) return undefined
+    const exact = chapters.find(c => c.url === url)
+    if (exact) return exact
+    const token = chapterIdToken(url)
+    if (!token) return undefined
+    return chapters.find(c => chapterIdToken(c.url) === token)
+}
+
 export type RankableCandidate = {
     sourceId: string
     latestChapter?: string // may be "?" or a numeric string
