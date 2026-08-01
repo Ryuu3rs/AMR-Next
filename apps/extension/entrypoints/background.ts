@@ -21,11 +21,13 @@ import {
     updateAlarmName,
     communityAlarmName,
     syncAlarmName,
+    anilistAlarmName,
     extensionUpdateAlarmName,
     EXTENSION_UPDATE_INTERVAL_HOURS,
     configureUpdateAlarm,
     configureSyncAlarm,
-    configureCommunityAlarm
+    configureCommunityAlarm,
+    configureAniListAlarm
 } from "../src/background/alarms"
 import {
     checkUpdates,
@@ -35,6 +37,7 @@ import {
     abortLongRunningTasks
 } from "../src/handlers/updates-sources"
 import { runCommunitySync } from "../src/handlers/community"
+import { runAniListSync, abortAniListSync } from "../src/handlers/anilist"
 import { autoPush } from "../src/handlers/data-sync-settings"
 import { handlers } from "../src/background/dispatch"
 import { MUTATION_SCOPES } from "../src/background/mutation-scopes"
@@ -53,6 +56,7 @@ export default defineBackground(() => {
     // then resets any progress record the killed check left behind.
     browser.runtime.onUpdateAvailable.addListener(() => {
         abortLongRunningTasks()
+        abortAniListSync()
     })
 
     browser.runtime.onInstalled.addListener(() => {
@@ -60,6 +64,7 @@ export default defineBackground(() => {
         void configureUpdateAlarm()
         void configureSyncAlarm()
         void configureCommunityAlarm()
+        void configureAniListAlarm()
         void browser.alarms.create(extensionUpdateAlarmName, {
             periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
         })
@@ -77,6 +82,7 @@ export default defineBackground(() => {
         void configureUpdateAlarm()
         void configureSyncAlarm()
         void configureCommunityAlarm()
+        void configureAniListAlarm()
         void browser.alarms.create(extensionUpdateAlarmName, {
             periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
         })
@@ -88,6 +94,7 @@ export default defineBackground(() => {
         if (alarm.name === updateAlarmName) void checkUpdates()
         if (alarm.name === communityAlarmName) void runCommunitySync()
         if (alarm.name === syncAlarmName) void autoPush()
+        if (alarm.name === anilistAlarmName) void runAniListSync()
         if (alarm.name === extensionUpdateAlarmName) void checkExtensionUpdate()
     })
 

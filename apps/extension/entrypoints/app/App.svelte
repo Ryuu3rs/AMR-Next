@@ -23,6 +23,13 @@
         lastPulledAt?: number
     }
 
+    type AniListStatus = {
+        hasToken: boolean
+        autoSync: boolean
+        lastSyncAt?: number
+        viewerName?: string
+    }
+
     const sections = [
         "Home",
         "Library",
@@ -301,6 +308,11 @@
     let syncMessage = $state("")
     let syncing = $state(false)
     let restoreBannerDismissed = $state(false)
+
+    let anilistStatus = $state<AniListStatus | undefined>()
+    let anilistToken = $state("")
+    let anilistMessage = $state("")
+    let anilistSyncing = $state(false)
 
     function coverFailed(id: string) {
         const next = new Set(failedCovers)
@@ -929,6 +941,7 @@
             onboardingDismissed = false
         }
         await loadSyncStatus()
+        await loadAniListStatus()
         try {
             sourcesList = await sendRuntimeMessage<typeof sourcesList>({ type: "sources:list" })
         } catch {
@@ -1100,6 +1113,50 @@
             syncMessage = cause instanceof Error ? cause.message : "Pull failed."
         } finally {
             syncing = false
+        }
+    }
+
+    async function loadAniListStatus() {
+        try {
+            anilistStatus = await sendRuntimeMessage<AniListStatus>({ type: "anilist:status" })
+        } catch {
+            // AniList sync optional
+        }
+    }
+
+    async function saveAniListToken() {
+        const token = anilistToken.trim()
+        if (!token) return
+        anilistMessage = ""
+        try {
+            // graphql.anilist.co is a required host permission, so no runtime grant needed.
+            anilistStatus = await sendRuntimeMessage<AniListStatus>({ type: "anilist:config", config: { token } })
+            anilistToken = ""
+            anilistMessage = anilistStatus.viewerName ? `Connected as ${anilistStatus.viewerName}.` : "Token saved."
+        } catch (cause) {
+            anilistMessage = cause instanceof Error ? cause.message : "That token was not accepted."
+        }
+    }
+
+    async function disconnectAniList() {
+        anilistStatus = await sendRuntimeMessage<AniListStatus>({ type: "anilist:config", config: { token: "" } })
+        anilistMessage = "Disconnected."
+    }
+
+    async function toggleAniListAutoSync(on: boolean) {
+        anilistStatus = await sendRuntimeMessage<AniListStatus>({ type: "anilist:config", config: { autoSync: on } })
+    }
+
+    async function syncAniListNow() {
+        anilistSyncing = true
+        anilistMessage = ""
+        try {
+            await sendRuntimeMessage<{ started: boolean }>({ type: "anilist:sync" })
+            anilistMessage = "Sync started - chapter progress is pushed in the background."
+        } catch (cause) {
+            anilistMessage = cause instanceof Error ? cause.message : "Sync failed."
+        } finally {
+            anilistSyncing = false
         }
     }
 
@@ -4036,6 +4093,71 @@
                 </div>
             </div>
             {#if syncMessage}<p class="notice">{syncMessage}</p>{/if}
+
+            <h1 style="margin-top:32px">AniList sync</h1>
+            <div class="data-list">
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Account</p>
+                        <p class="muted">
+                            Paste an AniList access token (create one at
+                            <code>anilist.co/settings/developer</code>). Stored locally on this device only.
+                            {anilistStatus?.viewerName
+                                ? ` Connected as ${anilistStatus.viewerName}.`
+                                : anilistStatus?.hasToken
+                                  ? " Connected."
+                                  : ""}
+                        </p>
+                    </div>
+                    <div class="sync-token">
+                        {#if anilistStatus?.hasToken}
+                            <button type="button" class="btn-outline" onclick={() => void disconnectAniList()}>
+                                Disconnect
+                            </button>
+                        {:else}
+                            <input type="password" placeholder="AniList token" bind:value={anilistToken} />
+                            <button
+                                type="button"
+                                onclick={() => void saveAniListToken()}
+                                disabled={!anilistToken.trim()}>
+                                Connect
+                            </button>
+                        {/if}
+                    </div>
+                </div>
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Auto-sync</p>
+                        <p class="muted">Push read progress to AniList every few hours when enabled.</p>
+                    </div>
+                    <label class="toggle">
+                        <input
+                            type="checkbox"
+                            checked={anilistStatus?.autoSync ?? false}
+                            disabled={!anilistStatus?.hasToken}
+                            onchange={e => void toggleAniListAutoSync(e.currentTarget.checked)} />
+                        <span class="track"></span>
+                    </label>
+                </div>
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Sync now</p>
+                        <p class="muted">
+                            Pushes each title's chapter progress (whole numbers). Never lowers your AniList progress.
+                            {anilistStatus?.lastSyncAt
+                                ? `Last synced ${new Date(anilistStatus.lastSyncAt).toLocaleString()}.`
+                                : ""}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onclick={() => void syncAniListNow()}
+                        disabled={!anilistStatus?.hasToken || anilistSyncing}>
+                        {anilistSyncing ? "Syncing…" : "Sync now"}
+                    </button>
+                </div>
+            </div>
+            {#if anilistMessage}<p class="notice">{anilistMessage}</p>{/if}
         {:else}
             <h1>Settings</h1>
             <div class="settings-list">
