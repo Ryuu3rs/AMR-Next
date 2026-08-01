@@ -1,0 +1,22 @@
+services:
+    api:
+        build: .
+        restart: unless-stopped
+        volumes:
+            - /opt/amr-metadata/data:/data
+        environment:
+            PORT: "3000"
+            DATA_DIR: /data
+        networks:
+            - coolify
+        labels:
+            - traefik.enable=true
+            - traefik.http.routers.amr-metadata.rule=Host(`amr-meta.weeb.ltd`)
+            - traefik.http.routers.amr-metadata.entrypoints=https
+            - traefik.http.routers.amr-metadata.tls=true
+            - traefik.http.routers.amr-metadata.tls.certresolver=letsencrypt
+            - traefik.http.services.amr-metadata.loadbalancer.server.port=3000
+
+networks:
+    coolify:
+        external: true

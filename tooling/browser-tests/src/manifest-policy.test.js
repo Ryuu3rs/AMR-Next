@@ -4,27 +4,30 @@ import path from "node:path"
 import test from "node:test"
 import { chromiumExtension, firefoxExtension, repositoryRoot } from "./paths.js"
 
-async function readCommunityApiOrigin() {
-    // The release pipeline bakes this in as a build-time env var (no .env file involved -
-    // see .github/workflows/release-please.yml), while local dev sets it via apps/extension/.env.
-    // Check both sources so the manifest built either way excludes it from the policy check.
-    if (process.env.VITE_COMMUNITY_API_ORIGIN) return process.env.VITE_COMMUNITY_API_ORIGIN.trim()
+// Reads a build-time origin env var that may be baked in by the release pipeline
+// (no .env file - see .github/workflows/release-please.yml) or set locally via
+// apps/extension/.env. Both community and metadata origins are optional and must be
+// excluded from the policy check whichever way the manifest was built.
+async function readEnvOrigin(name) {
+    if (process.env[name]) return process.env[name].trim()
     try {
         const content = await readFile(path.join(repositoryRoot, "apps", "extension", ".env"), "utf8")
-        const match = /^VITE_COMMUNITY_API_ORIGIN=(.+)$/m.exec(content)
+        const match = new RegExp(`^${name}=(.+)$`, "m").exec(content)
         return match?.[1]?.trim()
     } catch {
         return undefined
     }
 }
 
-const communityApiOrigin = await readCommunityApiOrigin()
+const communityApiOrigin = await readEnvOrigin("VITE_COMMUNITY_API_ORIGIN")
+const metadataApiOrigin = await readEnvOrigin("VITE_METADATA_API_ORIGIN")
 
 const allowedPermissions = ["alarms", "declarativeNetRequest", "downloads", "scripting", "storage", "tabs"]
 
 // All source origins + GitHub API are required (granted at install, no per-source grant step).
-// VITE_COMMUNITY_API_ORIGIN is intentionally excluded - it comes from a local .env and must not be
-// part of the policy check (CI has no .env, local builds may have it set).
+// VITE_COMMUNITY_API_ORIGIN and VITE_METADATA_API_ORIGIN are intentionally excluded - they come
+// from a local .env and must not be part of the policy check (CI has no .env, local builds may
+// have them set).
 const allowedRequiredHosts = [
     "*://*.asurascans.com/*",
     "*://*.compsci88.com/*",
@@ -126,7 +129,9 @@ for (const [browserName, extensionDirectory] of [
 
         assert.equal(manifest.manifest_version, 3)
         assert.deepEqual([...manifest.permissions].sort(), allowedPermissions)
-        const actualHosts = [...manifest.host_permissions].filter(h => h !== communityApiOrigin).sort()
+        const actualHosts = [...manifest.host_permissions]
+            .filter(h => h !== communityApiOrigin && h !== metadataApiOrigin)
+            .sort()
         assert.deepEqual(actualHosts, allowedRequiredHosts)
         assert.equal(manifest.optional_host_permissions, undefined)
         assert.equal(manifest.content_scripts, undefined)

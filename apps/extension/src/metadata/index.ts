@@ -1,4 +1,5 @@
 import { anilistProvider } from "./anilist"
+import { vpsProvider } from "./vps"
 import type { MetadataProvider, MetadataQuery, MetadataResult } from "./provider"
 
 export * from "./provider"
@@ -7,7 +8,9 @@ export * from "./provider"
 // deployed and origin configured (it caches AniList lookups across all users);
 // AniList direct is the fallback and, until the VPS exists, the only provider. First
 // non-null result wins.
-const providers: MetadataProvider[] = [anilistProvider]
+const providers: MetadataProvider[] = import.meta.env.VITE_METADATA_API_ORIGIN
+    ? [vpsProvider, anilistProvider]
+    : [anilistProvider]
 
 export async function resolveMetadata(query: MetadataQuery): Promise<MetadataResult | null> {
     const title = query.title?.trim()
