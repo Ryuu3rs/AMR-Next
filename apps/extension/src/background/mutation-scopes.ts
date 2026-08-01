@@ -100,6 +100,12 @@ export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<Runt
     "sync:status",
     "sync:config",
     "sync:push",
+    "anilist:status",
+    "anilist:config",
+    // anilist:sync is fire-and-forget and publishes ["library"] itself once the
+    // background push finishes, so it belongs here rather than in MUTATION_SCOPES
+    // (same pattern as updates:check).
+    "anilist:sync",
     "manga:search",
     "manga:chapters",
     "manga:genres",

@@ -1,3 +1,4 @@
+import { getAniListConfig } from "../anilist"
 import { getCommunityProfile } from "../community"
 import { getSettings } from "../settings"
 import { getSyncConfig } from "../sync"
@@ -5,6 +6,7 @@ import { getSyncConfig } from "../sync"
 export const updateAlarmName = "check-manga-updates"
 export const communityAlarmName = "community-sync"
 export const syncAlarmName = "sync-push"
+export const anilistAlarmName = "anilist-sync"
 export const extensionUpdateAlarmName = "check-extension-update"
 
 export const EXTENSION_UPDATE_INTERVAL_HOURS = 24
@@ -25,6 +27,14 @@ export async function configureSyncAlarm(): Promise<void> {
     await browser.alarms.clear(syncAlarmName)
     if (config.autoSync && config.token) {
         await browser.alarms.create(syncAlarmName, { periodInMinutes: 60 })
+    }
+}
+
+export async function configureAniListAlarm(): Promise<void> {
+    const config = await getAniListConfig()
+    await browser.alarms.clear(anilistAlarmName)
+    if (config.autoSync && config.token) {
+        await browser.alarms.create(anilistAlarmName, { periodInMinutes: 180 })
     }
 }
 
