@@ -10,6 +10,7 @@ const {
     listChaptersForSourceMock,
     resolveGenresForMock,
     resolveCoverForMock,
+    resolveMetadataMock,
     publishLiveMock,
     purgeStaleMangahubChapterRowsMock
 } = vi.hoisted(() => ({
@@ -17,8 +18,13 @@ const {
     listChaptersForSourceMock: vi.fn(),
     resolveGenresForMock: vi.fn(),
     resolveCoverForMock: vi.fn(),
+    resolveMetadataMock: vi.fn(),
     publishLiveMock: vi.fn(),
     purgeStaleMangahubChapterRowsMock: vi.fn()
+}))
+
+vi.mock("../metadata", () => ({
+    resolveMetadata: resolveMetadataMock
 }))
 
 vi.mock("../sources", () => ({
@@ -87,6 +93,8 @@ beforeEach(async () => {
     listChaptersForSourceMock.mockReset()
     resolveGenresForMock.mockReset()
     resolveCoverForMock.mockReset()
+    resolveMetadataMock.mockReset()
+    resolveMetadataMock.mockResolvedValue(null)
     publishLiveMock.mockReset()
     purgeStaleMangahubChapterRowsMock.mockReset()
 })
@@ -776,6 +784,43 @@ describe("backfillMangaGenres live-bus publishing", () => {
         await backfillMangaGenres()
 
         expect(publishLiveMock).not.toHaveBeenCalled()
+    })
+
+    it("fills an unknown publication status from the metadata provider", async () => {
+        const { backfillMangaGenres } = await import("./updates-sources")
+
+        // A non-MangaDex title with genres + cover already present, only status unknown.
+        const m = makeManga({
+            id: "m-status",
+            title: "Solo Leveling",
+            sourceId: "mangakatana",
+            status: "unknown",
+            genres: ["Action"],
+            coverUrl: "https://cdn/cover.jpg"
+        })
+        await db.manga.put(m)
+        resolveMetadataMock.mockResolvedValue({ anilistId: 105398, status: "completed" })
+
+        await backfillMangaGenres()
+
+        const stored = await db.manga.get("m-status")
+        expect(stored?.status).toBe("completed")
+        expect(stored?.anilistId).toBe(105398)
+        expect(stored?.metadataUpdatedAt).toBeGreaterThan(0)
+    })
+
+    it("stamps metadataUpdatedAt on a no-match so it is not re-queried next run", async () => {
+        const { backfillMangaGenres } = await import("./updates-sources")
+
+        const m = makeManga({ id: "m-nomatch", status: "unknown", genres: ["Action"], coverUrl: "https://cdn/c.jpg" })
+        await db.manga.put(m)
+        resolveMetadataMock.mockResolvedValue(null)
+
+        await backfillMangaGenres()
+
+        const stored = await db.manga.get("m-nomatch")
+        expect(stored?.status).toBe("unknown")
+        expect(stored?.metadataUpdatedAt).toBeGreaterThan(0)
     })
 })
 

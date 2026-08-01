@@ -18,6 +18,7 @@ import {
     searchManga
 } from "../sources"
 import { fetchCoverBlob } from "../background/covers"
+import { resolveMetadata } from "../metadata"
 import { getSettings } from "../settings"
 import { isNewerVersion } from "../update-check"
 import { EXTENSION_UPDATE_INTERVAL_HOURS, GITHUB_RELEASES_URL } from "../background/alarms"
@@ -30,6 +31,10 @@ let updateCheckRunning = false
 let updateCheckAborted = false
 let genreBackfillRunning = false
 let genreBackfillAborted = false
+
+// How long to wait before the metadata pass re-tries a title it already checked, so a
+// permanent no-match (or a source with no genres) isn't re-queried every startup.
+const META_RETRY_MS = 7 * 24 * 60 * 60 * 1000
 
 // Signal any running long, rate-limited background loop to stop at its next
 // between-items boundary. Used when an extension update is waiting to be applied: a
@@ -381,13 +386,22 @@ export async function backfillMangaGenres(): Promise<void> {
     genreBackfillRunning = true
     genreBackfillAborted = false
     try {
-        // Process titles missing genres OR a cover - sourceUrl is a chapter URL and the
-        // resolvers expect a series page, so a title needs a mangaUrl or sourceMangaId to
-        // be fetchable. A missing cover is common on titles first added from an on-site
-        // chapter whose one-shot cover fetch failed (e.g. dynasty-scans) - nothing else
-        // re-fetches it, so heal it here in the same rate-limited pass as genres.
+        // Process titles missing genres, a cover, OR a publication status. The
+        // source-based genre/cover resolvers expect a series page (need mangaUrl or
+        // sourceMangaId) and self-guard below; the metadata provider needs only the
+        // title, so a title with no series URL is still eligible for status/cover from
+        // the catalog. A missing cover is common on titles first added from an on-site
+        // chapter whose one-shot cover fetch failed (e.g. dynasty-scans); status is
+        // "unknown" for every mirror except MangaDex/Kagane - both healed here in one
+        // rate-limited pass. metadataUpdatedAt gates the re-try window so a permanent
+        // no-match isn't queried every startup.
+        const now = Date.now()
         const toFetch = await db.manga
-            .filter(m => (!m.genres || m.genres.length === 0 || !m.coverUrl) && (!!m.mangaUrl || !!m.sourceMangaId))
+            .filter(m => {
+                const missing = !m.genres || m.genres.length === 0 || !m.coverUrl || m.status === "unknown"
+                if (!missing) return false
+                return m.metadataUpdatedAt === undefined || now - m.metadataUpdatedAt >= META_RETRY_MS
+            })
             .toArray()
         if (toFetch.length === 0) return
         for (const manga of toFetch) {
@@ -426,6 +440,46 @@ export async function backfillMangaGenres(): Promise<void> {
                     }
                 } catch {
                     // Skip - source may not support covers or fetch failed transiently
+                }
+            }
+            // Metadata catalog: fill the publication status (and any genres/cover the
+            // mirror still didn't provide) from the provider chain (AniList). This is the
+            // robust fix for the ~18 adapters that never expose a status - one title
+            // lookup instead of scraping each site. Re-read the record so a cover/genres
+            // just written above isn't re-fetched. metadataUpdatedAt is stamped either
+            // way so a no-match falls into the retry window rather than re-querying.
+            if (genreBackfillAborted) break
+            const fresh = await db.manga.get(manga.id)
+            if (fresh && (fresh.status === "unknown" || !fresh.genres?.length || !fresh.coverUrl)) {
+                const patch: Partial<LibraryManga> = { metadataUpdatedAt: Date.now() }
+                try {
+                    const meta = await resolveMetadata({
+                        title: fresh.title,
+                        sourceId: fresh.sourceId,
+                        ...(fresh.sourceMangaId ? { sourceMangaId: fresh.sourceMangaId } : {})
+                    })
+                    if (meta) {
+                        if (fresh.status === "unknown" && meta.status && meta.status !== "unknown") {
+                            patch.status = meta.status
+                        }
+                        if ((!fresh.genres || fresh.genres.length === 0) && meta.genres?.length) {
+                            patch.genres = meta.genres
+                        }
+                        if (meta.anilistId) patch.anilistId = meta.anilistId
+                        if (!fresh.coverUrl && meta.coverUrl) patch.coverUrl = meta.coverUrl
+                    }
+                } catch {
+                    // Provider unavailable - keep the stamped metadataUpdatedAt so the
+                    // title retries after the window instead of every run.
+                }
+                await updateManga(manga.id, patch)
+                if (patch.coverUrl) {
+                    try {
+                        const blob = await fetchCoverBlob(patch.coverUrl)
+                        if (blob) await cacheCover(manga.id, blob)
+                    } catch {
+                        // Non-fatal - the remote coverUrl still renders via hotlink
+                    }
                 }
             }
             // Respect the source rate limit (3 req/s) between requests.
