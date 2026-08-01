@@ -22,6 +22,8 @@ export const libraryMangaSchema = mangaRecordSchema.extend({
     nsfw: z.boolean().optional(),
     notes: z.string().optional(),
     genres: z.array(z.string()).optional(),
+    anilistId: z.number().int().positive().optional(),
+    metadataUpdatedAt: z.number().int().nonnegative().optional(),
     noGapContinuous: z.boolean().optional(),
     onHold: z.boolean().optional(),
     readingDirection: z.enum(["ltr", "rtl", "vertical"]).optional(),

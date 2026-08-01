@@ -51,6 +51,7 @@ const allowedRequiredHosts = [
     "https://eahentai.com/*",
     "https://en-thunderscans.com/*",
     "https://fanfox.net/*",
+    "https://graphql.anilist.co/*",
     "https://hentai20.io/*",
     "https://hentairead.com/*",
     "https://hentalk.pw/*",

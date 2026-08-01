@@ -46,6 +46,13 @@ export type LibraryManga = MangaRecord & {
     notes?: string
     // Genres fetched from the source (cached to avoid repeat network calls).
     genres?: string[]
+    // Metadata-catalog cross-id (AniList media id), resolved once and reused for
+    // status/cover/genre enrichment and personal-list sync. Not indexed - read off a
+    // manga already fetched by id.
+    anilistId?: number
+    // When the metadata-enrichment pass last resolved this title, so it can skip
+    // recently-checked titles and re-try stale/no-match ones.
+    metadataUpdatedAt?: number
     // Per-series reading overrides - when set, the reader uses these instead of
     // the global reading settings for chapters of this title.
     readingDirection?: "ltr" | "rtl" | "vertical"

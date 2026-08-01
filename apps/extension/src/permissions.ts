@@ -111,6 +111,11 @@ export const SOURCE_ORIGINS: readonly string[] = [
 // is NOT repeated in optional_host_permissions to avoid manifest conflicts.
 export const GITHUB_API_ORIGIN = "https://api.github.com/*" as const
 
+// AniList GraphQL is a required host permission for the metadata-enrichment pass
+// (status/cover/genres) and, later, personal-list sync. Public reads need no auth.
+// Added to host_permissions in wxt.config.ts, so NOT repeated in optional origins.
+export const ANILIST_API_ORIGIN = "https://graphql.anilist.co/*" as const
+
 // Gist sync origins - still requested optionally in the UI so the user knows
 // they are authorising Gist access (the network-level permission is already
 // granted via host_permissions; this optional grant is for the UI prompt only).
