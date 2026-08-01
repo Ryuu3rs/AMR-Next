@@ -35,7 +35,8 @@ export function matchReadChapterId(
 // changes. Returns the whole chapter so the caller can also recover its number from
 // sortKey. Requires a token of >= 4 chars to avoid matching on a short/empty segment.
 function chapterIdToken(url: string): string | undefined {
-    const segment = url.split(/[?#]/)[0].replace(/\/+$/, "").split("/").pop()
+    const path = url.split(/[?#]/)[0] ?? url
+    const segment = path.replace(/\/+$/, "").split("/").pop()
     return segment && segment.length >= 4 ? segment.toLowerCase() : undefined
 }
 
