@@ -110,6 +110,19 @@ export type AnalyticsEvent = {
     detail?: string // JSON blob for event-specific fields
 }
 
+// A diagnostic log entry for the user-exportable log (see recordLog + the log:export
+// handler). Bounded ring buffer (count-trimmed to LOG_MAX). detail is a JSON blob,
+// redacted at export time (formatDiagnosticLog) - never carries a token.
+export type LogEntry = {
+    id?: number
+    ts: number
+    level: "debug" | "info" | "warn" | "error"
+    scope: string
+    message: string
+    detail?: string
+    sourceId?: string
+}
+
 // Full export envelope, snapshotted automatically before any import/sync-pull
 // mutation so a bad import can be undone. See createBackup/listBackups/restoreBackup
 // below and the data:backup:list / data:backup:restore handlers in
@@ -138,6 +151,7 @@ export class AmrDatabase extends Dexie {
     pageBookmarks!: EntityTable<PageBookmark, "id">
     analyticsEvents!: EntityTable<AnalyticsEvent, "id">
     backups!: EntityTable<LibraryBackup, "id">
+    logs!: EntityTable<LogEntry, "id">
 
     constructor() {
         super("all-mangas-reader")
@@ -288,6 +302,21 @@ export class AmrDatabase extends Dexie {
                         }
                     })
             })
+        // v10: diagnostic log ring buffer (bounded, count-trimmed by recordLog) backing
+        // the user-exportable diagnostic log. New table only - no data migration.
+        this.version(10).stores({
+            manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+            sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+            chapters: "id, mangaId, sourceId, sortKey, url",
+            progress: "chapterId, mangaId, updatedAt, completed",
+            historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+            downloads: "chapterId, mangaId, downloadedAt",
+            covers: "mangaId",
+            pageBookmarks: "id, mangaId, chapterId, addedAt",
+            analyticsEvents: "++id, event, ts, sourceId",
+            backups: "++id, createdAt, reason",
+            logs: "++id, ts, level"
+        })
         // Choke-point tripwire for the same leak class: a future unguarded aggregation
         // site now fails loudly (throws, so a unit test catches it) instead of silently
         // persisting a sentinel that corrupts backups. Deleting the field (undefined)
@@ -2551,6 +2580,28 @@ export async function recordAnalyticsEvent(event: Omit<AnalyticsEvent, "id">): P
     // Keep last 90 days only - prune inline to avoid a separate cleanup job.
     const cutoff = Date.now() - 90 * 86_400_000
     void db.analyticsEvents.where("ts").below(cutoff).delete()
+}
+
+// Bounded diagnostic-log ring buffer. Appends then count-trims to the newest LOG_MAX
+// entries (by insertion id) - same append-then-prune shape as recordAnalyticsEvent but
+// count- rather than age-bounded. Backs the user-exportable log (log:export).
+export const LOG_MAX = 500
+
+export async function recordLog(entry: Omit<LogEntry, "id">): Promise<void> {
+    await db.logs.add(entry)
+    const count = await db.logs.count()
+    if (count > LOG_MAX) {
+        const excess = await db.logs
+            .orderBy("id")
+            .limit(count - LOG_MAX)
+            .primaryKeys()
+        if (excess.length > 0) await db.logs.bulkDelete(excess)
+    }
+}
+
+// All log entries, newest-first, for the export.
+export async function getLogs(): Promise<LogEntry[]> {
+    return (await db.logs.orderBy("id").toArray()).reverse()
 }
 
 export async function getAnalyticsSummary(days = 30) {

@@ -19,6 +19,7 @@ import {
 } from "../sources"
 import { fetchCoverBlob } from "../background/covers"
 import { resolveMetadata } from "../metadata"
+import { diag } from "../diag-log"
 import { getSettings } from "../settings"
 import { isNewerVersion } from "../update-check"
 import { EXTENSION_UPDATE_INTERVAL_HOURS, GITHUB_RELEASES_URL } from "../background/alarms"
@@ -230,7 +231,7 @@ export async function checkUpdates(sourceId?: string) {
                         failed += 1
                         const message = error instanceof Error ? error.message : "Update failed"
                         errors.push({ mangaId: item.id, title: item.title, message })
-                        console.warn("[AMR] Update check failed", { mangaId: item.id, error })
+                        diag.warn("update-check", `failed for ${item.sourceId}`, { mangaId: item.id, message })
                     }
                 } finally {
                     // Pause between every iteration (success or failure) so sites don't

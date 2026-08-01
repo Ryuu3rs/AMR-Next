@@ -38,7 +38,7 @@ const STRIP_CATEGORY = /\p{Cc}|\p{Cf}|\p{Cs}/u
 // and ZWJ. A field made only of these shows blank and must get the placeholder.
 const INVISIBLE = /\p{White_Space}|\p{Default_Ignorable_Code_Point}/u
 
-function flatten(s: unknown): string {
+export function flatten(s: unknown): string {
     let out = ""
     for (const ch of String(s)) {
         const code = ch.codePointAt(0) ?? 0

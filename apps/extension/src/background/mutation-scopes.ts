@@ -106,6 +106,7 @@ export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<Runt
     // background push finishes, so it belongs here rather than in MUTATION_SCOPES
     // (same pattern as updates:check).
     "anilist:sync",
+    "log:export",
     "manga:search",
     "manga:chapters",
     "manga:genres",
