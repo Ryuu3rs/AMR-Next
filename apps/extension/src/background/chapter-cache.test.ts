@@ -29,7 +29,8 @@ const {
     scheduleChapterListRefresh,
     purgeStaleMangahubChapterRows,
     MANGAHUB_INTERNAL_ID_MIN,
-    _resetRefreshCooldownForTests
+    _resetRefreshCooldownForTests,
+    _awaitRefreshesForTests
 } = await import("./chapter-cache")
 
 const SOURCE_ID = "webtoons"
@@ -655,13 +656,15 @@ describe("scheduleChapterListRefresh cooldown", () => {
     let currentNow = 0
 
     // Lets the fire-and-forget refresh (including its async IndexedDB writes) fully
-    // settle before the next assertion - several real macrotask ticks, since
-    // fake-indexeddb's transaction completion needs the real event loop, not just
-    // microtask flushing, and can take more than one round trip through it.
+    // settle before the next assertion. Awaits the ACTUAL in-flight refresh promise
+    // rather than guessing a macrotask-tick count - a fixed tick count flaked under
+    // full-suite load when fake-indexeddb's transaction completion needed more ticks
+    // than assumed, leaving the first refresh in-flight so the next schedule deduped.
+    // A trailing tick lets any queued-then-started refresh register before re-awaiting.
     const flush = async () => {
-        for (let i = 0; i < 5; i++) {
-            await new Promise(resolve => setTimeout(resolve, 0))
-        }
+        await _awaitRefreshesForTests()
+        await new Promise(resolve => setTimeout(resolve, 0))
+        await _awaitRefreshesForTests()
     }
 
     beforeEach(() => {
