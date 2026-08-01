@@ -60,6 +60,14 @@ export function _resetRefreshCooldownForTests(): void {
     lastRefreshStartedAt.clear()
 }
 
+// Test-only: await every currently in-flight refresh so a test can deterministically
+// wait for a fire-and-forget scheduleChapterListRefresh() to fully settle (including
+// its async IndexedDB writes) instead of guessing a macrotask-tick count - the latter
+// flaked under full-suite load when fake-indexeddb needed more ticks than assumed.
+export async function _awaitRefreshesForTests(): Promise<void> {
+    await Promise.allSettled([...inFlightRefreshes.values()])
+}
+
 // Start (or join) a chapter-list refresh, returning a promise that resolves once the
 // cache reflects the result (success or failure - this never rejects). Use this
 // instead of calling listChaptersWithTabFallback directly - it dedupes concurrent
