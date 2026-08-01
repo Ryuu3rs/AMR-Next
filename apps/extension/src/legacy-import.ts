@@ -1,5 +1,6 @@
 import type { ChapterRecord, SourceLinkRecord } from "@amr/contracts"
 import { sourceRegistry } from "@amr/sources"
+import { UNNUMBERED_SORT_KEY } from "@amr/source-sdk"
 import type { HistoryEvent, LibraryManga } from "./database"
 
 type LegacyManga = {
@@ -10,6 +11,11 @@ type LegacyManga = {
     ut?: number
     g?: string
     wt?: boolean
+    // Last-read chapter object present in newer old-AMR exports: cn.name carries the
+    // human chapter label ("Chapter 185", "Ch.112", "Episode 185", "85 - Message"),
+    // which yields the read number even for sources whose chapter URL has none
+    // (MangaDex uuid, Weeb Central ulid). Absent in older exports.
+    cn?: { name?: string; url?: string }
 }
 type LegacyExport = { mangas: LegacyManga[]; bookmarks?: unknown[] }
 
@@ -107,12 +113,30 @@ function mangadexId(u: URL, kind: "title" | "chapter"): string | undefined {
 }
 
 function chapterNumberFrom(url: string): number | undefined {
-    const chapter = url.match(/chapter[-_ ]?(\d+(?:\.\d+)?)/i)
-    if (chapter?.[1] !== undefined) return Number(chapter[1])
+    // "chapter-101", "chapter_101", "chapter 101.5", plus the "chapter-101-5" dash
+    // convention meaning 101.5 (lhtranslation/asura) - the dash decimal is normalised.
+    const chapter = url.match(/chapter[-_ ]?(\d+(?:[.-]\d+)?)/i)
+    if (chapter?.[1] !== undefined) return Number(chapter[1].replace("-", "."))
+    // fanfox / mangahere address chapters by a /cNNN/ path segment (e.g. /c112/, /c045/)
+    const cPath = url.match(/\/c(\d+(?:\.\d+)?)(?:\/|$|\?)/i)
+    if (cPath?.[1] !== undefined) return Number(cPath[1])
     // Webtoons uses episode_no=N query param instead of /chapter-N/ path segments
     const episode = url.match(/[?&]episode_no=(\d+)/i)
     if (episode?.[1] !== undefined) return Number(episode[1])
     return undefined
+}
+
+// Reads the chapter number from a human label such as "Chapter 185 - Dark Lord",
+// "Ch.112", "Episode 185", "Chapter 23.7", or "85 - Message". Prefers an explicit
+// chapter/episode marker, then falls back to the first number in the label. This is
+// the only read-position signal for sources whose chapter URL carries no number
+// (MangaDex uuid, Weeb Central ulid), via the legacy `cn.name` field.
+function chapterNumberFromLabel(label: string | undefined): number | undefined {
+    if (!label) return undefined
+    const marked = label.match(/\b(?:chapter|chap|ch|episode|ep)\b\.?\s*#?\s*(\d+(?:\.\d+)?)/i)
+    if (marked?.[1] !== undefined) return Number(marked[1])
+    const first = label.match(/(\d+(?:\.\d+)?)/)
+    return first?.[1] !== undefined ? Number(first[1]) : undefined
 }
 
 function sanitizeKey(u: URL): string {
@@ -151,7 +175,14 @@ function convertEntry(entry: LegacyManga): {
     const id = `${resolvedSourceId}:manga:${idKey}`
     const now = entry.ut ?? Date.now()
     const sourceUrl = (chapterUrlParsed ?? mangaUrlParsed ?? primary).toString()
-    const lastReadNumber = !isMangaDex && entry.l ? chapterNumberFrom(entry.l) : undefined
+    // Prefer the cn.name label (works for uuid/ulid sources), then cn.url, then fall
+    // back to the last-read chapter URL. MangaDex is excluded only from the URL path
+    // (its uuid carries no number and pre-UUID numeric ids must not be misread as one);
+    // its cn.name still yields the number.
+    const lastReadNumber =
+        chapterNumberFromLabel(entry.cn?.name) ??
+        (entry.cn?.url ? chapterNumberFrom(entry.cn.url) : undefined) ??
+        (!isMangaDex && entry.l ? chapterNumberFrom(entry.l) : undefined)
 
     const manga: LibraryManga = {
         id,
@@ -192,13 +223,32 @@ function convertEntry(entry: LegacyManga): {
             id: chapterId,
             mangaId: id,
             sourceId: resolvedSourceId,
-            title: `Chapter ${lastReadNumber}`,
+            title: entry.cn?.name?.trim() || `Chapter ${lastReadNumber}`,
             url: chapterUrlParsed.toString(),
             sortKey: lastReadNumber
         }
         manga.lastReadChapterId = chapterId
         manga.latestChapterId = chapterId
         manga.latestChapterNumber = lastReadNumber
+        manga.lastReadAt = now
+        history = { mangaId: id, chapterId, type: "completed", occurredAt: now }
+    } else if (chapterUrlParsed && known && entry.l) {
+        // Known source with a last-read chapter URL but no derivable number (e.g. a
+        // MangaDex/Weeb Central export with no cn label - the uuid/ulid carries no
+        // number). Preserve the URL so the title reads as "Read" not "Unread",
+        // resume-from-last-read works, and a later same-source relink can recover the
+        // number by matching this URL (see matchReadChapterByUrl). sortKey is
+        // UNNUMBERED; latest is left unset for the first update check to fill in.
+        const chapterId = `${id}:ext:lastread`
+        chapter = {
+            id: chapterId,
+            mangaId: id,
+            sourceId: resolvedSourceId,
+            title: entry.cn?.name?.trim() || "Last read",
+            url: chapterUrlParsed.toString(),
+            sortKey: UNNUMBERED_SORT_KEY
+        }
+        manga.lastReadChapterId = chapterId
         manga.lastReadAt = now
         history = { mangaId: id, chapterId, type: "completed", occurredAt: now }
     }
