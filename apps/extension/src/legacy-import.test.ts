@@ -350,3 +350,64 @@ describe("migrateLegacyImport - read-progress derivation", () => {
         expect(manga.lastReadChapterId).toBe(chapters[0].id)
     })
 })
+
+// ---------------------------------------------------------------------------
+// migrateLegacyImport - bookmarks (real shape from user's export)
+// ---------------------------------------------------------------------------
+describe("migrateLegacyImport - bookmarks", () => {
+    const sampleBookmark = {
+        m: "MangaDex V5",
+        n: "Wolf-chan wa Sumashitai",
+        u: "https://mangadex.org/title/b24d2c22-5b28-44d4-a77f-0e920cd960a6",
+        c: "https://mangadex.org/chapter/304d2896-9895-4d0a-b654-b3e5db7ddc27",
+        h: "47 - Costume and Extinction",
+        o: "",
+        t: "scan",
+        s: "https://cmdxd98sb0x3yprd.mangadex.network/data/97d9/3-abc.jpg",
+        a: "3"
+    }
+
+    it("converts a legacy page bookmark into a pageBookmark", () => {
+        const result = migrateLegacyImport({ mangas: [], bookmarks: [sampleBookmark] })
+        const bookmarks = (result.envelope as any).data.pageBookmarks
+        expect(bookmarks).toHaveLength(1)
+        const bm = bookmarks[0]
+        expect(bm.mangaId).toBe("mangadex:manga:b24d2c22-5b28-44d4-a77f-0e920cd960a6")
+        expect(bm.chapterUrl).toBe("https://mangadex.org/chapter/304d2896-9895-4d0a-b654-b3e5db7ddc27")
+        expect(bm.mangaTitle).toBe("Wolf-chan wa Sumashitai")
+        expect(bm.chapterTitle).toBe("47 - Costume and Extinction")
+        // a="3" is 1-based; reader pageIndex is 0-based.
+        expect(bm.pageIndex).toBe(2)
+        expect(bm.id).toBe(`${bm.chapterId}:2`)
+    })
+
+    it("attaches the bookmark to the same manga id the entry import creates", () => {
+        const result = migrateLegacyImport({
+            mangas: [{ n: "Wolf-chan wa Sumashitai", u: sampleBookmark.u }],
+            bookmarks: [sampleBookmark]
+        })
+        const data = (result.envelope as any).data
+        expect(data.pageBookmarks[0].mangaId).toBe(data.manga[0].id)
+    })
+
+    it("clamps a missing or first-page number to index 0", () => {
+        const result = migrateLegacyImport({
+            mangas: [],
+            bookmarks: [
+                { ...sampleBookmark, a: "1" },
+                {
+                    ...sampleBookmark,
+                    c: "https://mangadex.org/chapter/aaaa1111-2222-3333-4444-555566667777",
+                    a: undefined
+                }
+            ]
+        })
+        const bookmarks = (result.envelope as any).data.pageBookmarks
+        expect(bookmarks.every((b: { pageIndex: number }) => b.pageIndex === 0)).toBe(true)
+    })
+
+    it("emits an empty pageBookmarks array when the export has none", () => {
+        const result = migrateLegacyImport({ mangas: [], bookmarks: [] })
+        expect((result.envelope as any).data.pageBookmarks).toEqual([])
+    })
+})
