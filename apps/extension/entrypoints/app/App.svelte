@@ -1631,6 +1631,23 @@
         dataMessage = "Backup exported."
     }
 
+    async function exportLog() {
+        dataMessage = ""
+        try {
+            const { text } = await sendRuntimeMessage<{ text: string }>({ type: "log:export" })
+            const blob = new Blob([text], { type: "text/plain" })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement("a")
+            a.href = url
+            a.download = `amr-diagnostic-log-${new Date().toISOString().slice(0, 10)}.txt`
+            a.click()
+            URL.revokeObjectURL(url)
+            dataMessage = "Diagnostic log exported."
+        } catch (cause) {
+            dataMessage = cause instanceof Error ? cause.message : "Log export failed."
+        }
+    }
+
     async function importData(file: File) {
         importConflicts = []
         importEnvelope = null
@@ -3768,6 +3785,16 @@
                         <p class="muted">Export manga, chapters, progress, and history as JSON.</p>
                     </div>
                     <button type="button" onclick={exportData}>Export</button>
+                </div>
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Export diagnostic log</p>
+                        <p class="muted">
+                            A redacted text log of recent activity (chapter fetches, update checks, errors) to help
+                            diagnose a problem. Includes your library's titles/sources but no tokens.
+                        </p>
+                    </div>
+                    <button type="button" onclick={() => void exportLog()}>Export log</button>
                 </div>
                 <div class="data-row">
                     <div>

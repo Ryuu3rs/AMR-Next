@@ -3,6 +3,7 @@ import {
     bookmarkedPagesForChapter,
     getAnalyticsSummary,
     getDownload,
+    getLogs,
     listBookmarks,
     listDownloads,
     recordAnalyticsEvent,
@@ -13,6 +14,10 @@ import {
     type AnalyticsEvent
 } from "../database"
 import { resolveChapterUrl } from "../sources"
+import { getAniListConfig } from "../anilist"
+import { getSyncConfig } from "../sync"
+import { getCommunityProfile } from "../community"
+import { formatDiagnosticLog } from "../diagnostic-log"
 import { delay, type HandlerMap } from "../background/handler-types"
 
 async function fetchPageBlob(url: string): Promise<Blob> {
@@ -138,5 +143,24 @@ export const downloadsBookmarksAnalyticsHandlers: HandlerMap = {
 
     "analytics:summary": async request => {
         return getAnalyticsSummary(request.days)
+    },
+    "log:export": async () => {
+        // Gather the known secret values so the formatter can redact them literally
+        // (in addition to its token-pattern backstop) before the log leaves the device.
+        const [logs, anilist, sync, community] = await Promise.all([
+            getLogs(),
+            getAniListConfig(),
+            getSyncConfig(),
+            getCommunityProfile()
+        ])
+        const secrets = [anilist.token, sync.token, sync.gistId, community.userId, community.username].filter(
+            (s): s is string => typeof s === "string" && s.length > 0
+        )
+        const text = formatDiagnosticLog(logs, {
+            version: browser.runtime.getManifest().version,
+            browser: import.meta.env.BROWSER,
+            secrets
+        })
+        return { text }
     }
 }

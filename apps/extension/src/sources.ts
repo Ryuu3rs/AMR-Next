@@ -8,6 +8,7 @@ import {
 } from "@amr/source-sdk"
 import { sourceRegistry } from "@amr/sources"
 import type { LibraryManga } from "./database"
+import { diag } from "./diag-log"
 import { SOURCE_ORIGINS, sourceOrigins } from "./permissions"
 
 export function findSource(url: URL) {
@@ -456,10 +457,12 @@ export async function listChaptersForSource(
     const source = sourceRegistry.get(sourceId)
     if (!source) throw new Error("That source is not supported")
     const sourceManga: SourceManga = { manga, sourceId, sourceMangaId, url: mangaUrl }
-    return source.listChapters(
+    const chapters = await source.listChapters(
         { manga: sourceManga, limit: 500 },
         createSourceContext(source.manifest.id, source.manifest.requestRateLimit, overrides)
     )
+    diag.info("chapters", `listed ${chapters.length} chapters for ${sourceId}`, { sourceMangaId })
+    return chapters
 }
 
 // List chapters for a source/manga that may not be in the library (used by the
@@ -477,10 +480,12 @@ export async function listChaptersBySource(sourceId: string, sourceMangaId: stri
         updatedAt: 0
     }
     const sourceManga: SourceManga = { manga: stub, sourceId, sourceMangaId, url: mangaUrl }
-    return source.listChapters(
+    const chapters = await source.listChapters(
         { manga: sourceManga, limit: 500 },
         createSourceContext(source.manifest.id, source.manifest.requestRateLimit)
     )
+    diag.info("chapters", `listed ${chapters.length} chapters for ${sourceId}`, { sourceMangaId })
+    return chapters
 }
 
 export async function listMangaChapters(manga: LibraryManga, link: SourceLinkRecord, language = "en") {
