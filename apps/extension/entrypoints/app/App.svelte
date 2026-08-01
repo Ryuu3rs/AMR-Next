@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { ImportConflict, ImportResolution, LibraryManga, PageBookmark } from "../../src/database"
+    import { neverRead, hasNewerChapters, statusOf, readChapterLabel } from "../../src/reading-status"
     import type { AppSettings } from "../../src/settings"
     import { onDestroy, onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
@@ -881,28 +882,6 @@
 
     function isRecentlyAdded(manga: LibraryManga): boolean {
         return manga.addedAt > Date.now() - DAY_MS
-    }
-
-    // A title the user has never opened at all (no read id AND no read number).
-    function neverRead(manga: LibraryManga): boolean {
-        return manga.lastReadChapterId === undefined && manga.lastReadChapterNumber === undefined
-    }
-
-    // True when the title has chapters newer than the last-read position. Prefer a
-    // chapter-NUMBER comparison: after an import or migration latestChapterId and
-    // lastReadChapterId legitimately differ - the backup's read id points at the old
-    // source's chapter, the latest id at the re-fetched one - even when the numbers
-    // match, which left a stale "Unread" badge on a fully caught-up title. Only when a
-    // number is genuinely unavailable (an unnumbered-only title, or the last chapter
-    // read was an unnumbered special) fall back to id inequality - there are no numbers
-    // to have desynced there, so the id signal is the correct one. Drives the poster
-    // "Unread" badge, which - like before - never fires for a never-read title (that
-    // surfaces through the number-based unread filter instead).
-    function hasNewerChapters(manga: LibraryManga): boolean {
-        if (manga.latestChapterNumber !== undefined && manga.lastReadChapterNumber !== undefined) {
-            return manga.latestChapterNumber > manga.lastReadChapterNumber
-        }
-        return !!(manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId)
     }
 
     // Updates-list / "Updated"-chip membership: newer chapters, OR a never-opened title
@@ -1911,16 +1890,6 @@
         activeSection = "Library"
     }
 
-    type LibraryStatus = "unread" | "reading" | "completed"
-    // Reuses the same caught-up signal as the badge (hasNewerChapters) so the library
-    // filter, the unread pool, and the poster badge agree. A number-only statusOf could
-    // never mark an unnumbered-only title (latestChapterNumber always undefined)
-    // "completed", so such a title stayed perpetually "unread" in the filter and the
-    // Surprise-Me pool even when the user had read the latest chapter.
-    function statusOf(m: LibraryManga): LibraryStatus {
-        if (neverRead(m)) return "unread"
-        return hasNewerChapters(m) ? "reading" : "completed"
-    }
     function matchesFilter(m: LibraryManga): boolean {
         if (sourceFilter && m.sourceId !== sourceFilter) return false
         if (ratingFilter > 0 && (m.rating ?? 0) < ratingFilter) return false
@@ -2993,11 +2962,10 @@
                                     {sourceMeta.get(manga.sourceId)?.name ?? manga.sourceId}
                                 {/if}
                             </p>
-                            {#if manga.lastReadChapterNumber !== undefined || manga.latestChapterNumber !== undefined}
+                            {#if !neverRead(manga) || manga.latestChapterNumber !== undefined}
                                 <p class="poster-chapter">
-                                    {manga.lastReadChapterNumber !== undefined
-                                        ? `Ch ${manga.lastReadChapterNumber}`
-                                        : "Unread"}{#if manga.latestChapterNumber !== undefined}<span class="muted">
+                                    {readChapterLabel(manga)}{#if manga.latestChapterNumber !== undefined}<span
+                                            class="muted">
                                             / {manga.latestChapterNumber}</span
                                         >{/if}
                                 </p>
@@ -3075,9 +3043,8 @@
                             </div>
                             <span class="list-status status-{status}">{status}</span>
                             <span class="list-progress">
-                                {manga.lastReadChapterNumber !== undefined
-                                    ? `Ch ${manga.lastReadChapterNumber}`
-                                    : "Unread"}{#if manga.latestChapterNumber !== undefined}<span class="muted">
+                                {readChapterLabel(manga)}{#if manga.latestChapterNumber !== undefined}<span
+                                        class="muted">
                                         / {manga.latestChapterNumber}</span
                                     >{/if}
                             </span>
@@ -4432,9 +4399,7 @@
                 <h2>{detailManga.title}</h2>
                 <p class="muted">{detailManga.sourceId} · {detailManga.status}</p>
                 <p class="detail-meta">
-                    {detailManga.lastReadChapterNumber !== undefined
-                        ? `Read ch ${detailManga.lastReadChapterNumber}`
-                        : "Unread"}{#if detailManga.latestChapterNumber !== undefined}
+                    {readChapterLabel(detailManga, "Read ch")}{#if detailManga.latestChapterNumber !== undefined}
                         · latest ch {detailManga.latestChapterNumber}{/if}
                     {#if detailManga.manualTracking}
                         · manual{/if}
