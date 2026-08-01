@@ -40,11 +40,13 @@ export default defineConfig({
         // All source origins are required so reading works immediately after install
         // without any manual "Grant access" step. GitHub API also required for
         // update checks and Gist sync.
-        // VITE_COMMUNITY_API_ORIGIN is loaded from apps/extension/.env (gitignored)
+        // VITE_COMMUNITY_API_ORIGIN and VITE_METADATA_API_ORIGIN are loaded from
+        // apps/extension/.env (gitignored); each is added only when set.
         host_permissions: [
             GITHUB_API_ORIGIN,
             ANILIST_API_ORIGIN,
             ...(process.env.VITE_COMMUNITY_API_ORIGIN ? [process.env.VITE_COMMUNITY_API_ORIGIN] : []),
+            ...(process.env.VITE_METADATA_API_ORIGIN ? [process.env.VITE_METADATA_API_ORIGIN] : []),
             ...ALL_OPTIONAL_ORIGINS
         ],
         icons: {
