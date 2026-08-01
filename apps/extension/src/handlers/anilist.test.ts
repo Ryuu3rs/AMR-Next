@@ -8,6 +8,9 @@ const {
     setAniListConfigMock,
     getViewerProgressMock,
     saveViewerProgressMock,
+    getMediaListEntryIdMock,
+    saveMediaStatusMock,
+    deleteMediaListEntryMock,
     resolveMetadataMock,
     configureAniListAlarmMock
 } = vi.hoisted(() => ({
@@ -15,6 +18,9 @@ const {
     setAniListConfigMock: vi.fn(),
     getViewerProgressMock: vi.fn(),
     saveViewerProgressMock: vi.fn(),
+    getMediaListEntryIdMock: vi.fn(),
+    saveMediaStatusMock: vi.fn(),
+    deleteMediaListEntryMock: vi.fn(),
     resolveMetadataMock: vi.fn(),
     configureAniListAlarmMock: vi.fn()
 }))
@@ -25,7 +31,10 @@ vi.mock("../anilist", () => ({
     getAniListStatus: vi.fn(),
     getViewerName: vi.fn(),
     getViewerProgress: getViewerProgressMock,
-    saveViewerProgress: saveViewerProgressMock
+    saveViewerProgress: saveViewerProgressMock,
+    getMediaListEntryId: getMediaListEntryIdMock,
+    saveMediaStatus: saveMediaStatusMock,
+    deleteMediaListEntry: deleteMediaListEntryMock
 }))
 vi.mock("../metadata", () => ({ resolveMetadata: resolveMetadataMock }))
 vi.mock("../background/alarms", () => ({ configureAniListAlarm: configureAniListAlarmMock }))
@@ -46,10 +55,13 @@ function makeManga(o: Partial<LibraryManga> = {}): LibraryManga {
 
 beforeEach(async () => {
     await db.manga.clear()
-    getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false })
-    setAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false })
+    getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: false })
+    setAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: false })
     getViewerProgressMock.mockReset()
     saveViewerProgressMock.mockReset()
+    getMediaListEntryIdMock.mockReset()
+    saveMediaStatusMock.mockReset()
+    deleteMediaListEntryMock.mockReset()
     resolveMetadataMock.mockReset()
     // Make the inter-title rate-limit delay instant.
     vi.stubGlobal("setTimeout", (fn: () => void) => {
@@ -119,5 +131,50 @@ describe("runAniListSync", () => {
         const { runAniListSync } = await import("./anilist")
         getAniListConfigMock.mockResolvedValue({ autoSync: false })
         await expect(runAniListSync()).rejects.toThrow(/token/i)
+    })
+
+    it("adds an unread cached title as PLANNING only when membership sync is on", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        await db.manga.put(makeManga({ id: "u1", anilistId: 55 })) // unread, cached id
+        getMediaListEntryIdMock.mockResolvedValue(undefined) // not on the list yet
+
+        const result = await runAniListSync()
+
+        expect(saveMediaStatusMock).toHaveBeenCalledWith("t", 55, "PLANNING")
+        expect(result.added).toBe(1)
+    })
+
+    it("does not re-add an unread title that is already on the list", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        await db.manga.put(makeManga({ id: "u1", anilistId: 55 }))
+        getMediaListEntryIdMock.mockResolvedValue(9001) // already has an entry
+
+        const result = await runAniListSync()
+
+        expect(saveMediaStatusMock).not.toHaveBeenCalled()
+        expect(result.added).toBe(0)
+    })
+})
+
+describe("removeFromAniList", () => {
+    it("deletes the list entry when membership sync is on", async () => {
+        const { removeFromAniList } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        getMediaListEntryIdMock.mockResolvedValue(4242)
+
+        await removeFromAniList(55)
+
+        expect(deleteMediaListEntryMock).toHaveBeenCalledWith("t", 4242)
+    })
+
+    it("is a no-op when membership sync is off or the id is unknown", async () => {
+        const { removeFromAniList } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: false })
+        await removeFromAniList(55)
+        await removeFromAniList(undefined)
+        expect(getMediaListEntryIdMock).not.toHaveBeenCalled()
+        expect(deleteMediaListEntryMock).not.toHaveBeenCalled()
     })
 })

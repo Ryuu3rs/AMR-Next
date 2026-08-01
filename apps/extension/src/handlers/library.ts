@@ -36,6 +36,7 @@ import { scheduleChapterListRefresh } from "../background/chapter-cache"
 import { fetchCoverBlob } from "../background/covers"
 import { fetchChapterHtmlViaTab } from "../background/tab-fetch"
 import { matchReadChapterId, matchReadChapterByUrl } from "../reconcile-match"
+import { removeFromAniList } from "./anilist"
 import type { HandlerMap } from "../background/handler-types"
 import { publishLive } from "../live"
 
@@ -259,7 +260,12 @@ export const libraryHandlers: HandlerMap = {
     },
 
     "library:remove": async request => {
+        // Capture the AniList id before the record is gone, then mirror the removal to
+        // AniList (no-op unless membership sync is on). Fire-and-forget so a slow/failed
+        // AniList call never blocks or fails the local removal.
+        const existing = await db.manga.get(request.mangaId)
         await removeManga(request.mangaId)
+        void removeFromAniList(existing?.anilistId)
         return null
     },
 
