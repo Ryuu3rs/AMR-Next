@@ -1,7 +1,7 @@
 import type { ChapterRecord, SourceLinkRecord } from "@amr/contracts"
 import { sourceRegistry } from "@amr/sources"
 import { UNNUMBERED_SORT_KEY } from "@amr/source-sdk"
-import type { HistoryEvent, LibraryManga } from "./database"
+import type { HistoryEvent, LibraryManga, PageBookmark } from "./database"
 
 type LegacyManga = {
     m?: string
@@ -17,7 +17,20 @@ type LegacyManga = {
     // (MangaDex uuid, Weeb Central ulid). Absent in older exports.
     cn?: { name?: string; url?: string }
 }
-type LegacyExport = { mangas: LegacyManga[]; bookmarks?: unknown[] }
+// A legacy page bookmark: a specific page within a chapter. u=manga url, c=chapter
+// url, h=chapter label, a=page number (1-based, as a string), s=page image url.
+type LegacyBookmark = {
+    m?: string
+    n?: string
+    u?: string
+    c?: string
+    h?: string
+    o?: string
+    t?: string
+    s?: string
+    a?: string
+}
+type LegacyExport = { mangas: LegacyManga[]; bookmarks?: LegacyBookmark[] }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MANGA_PATH_MARKERS = ["manga", "comic", "comics", "series", "manhwa", "manhua", "title", "read"]
@@ -143,17 +156,24 @@ function sanitizeKey(u: URL): string {
     return `${u.hostname}${u.pathname}`.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "") || u.hostname
 }
 
-function convertEntry(entry: LegacyManga): {
-    manga: LibraryManga
-    sourceLink?: SourceLinkRecord
-    chapter?: ChapterRecord
-    history?: HistoryEvent
+// Derives the canonical manga id (and source identity) from a manga URL + a chapter
+// URL, exactly as a library entry is keyed. Shared by convertEntry and the bookmark
+// converter so a bookmark attaches to the same manga id the import creates instead of
+// being dropped as an orphan.
+function deriveMangaIdentity(
+    mangaUrl: string | undefined,
+    chapterUrl: string | undefined
+): {
+    id: string
+    resolvedSourceId: string
+    known: boolean
+    sourceMangaId: string | undefined
+    mangaUrlParsed: URL | undefined
+    chapterUrlParsed: URL | undefined
+    primary: URL
 } | null {
-    const title = entry.n?.trim()
-    if (!title) return null
-
-    const mangaUrlParsed = parseUrl(entry.u)
-    const chapterUrlParsed = parseUrl(entry.l)
+    const mangaUrlParsed = parseUrl(mangaUrl)
+    const chapterUrlParsed = parseUrl(chapterUrl)
     const primary = mangaUrlParsed ?? chapterUrlParsed
     if (!primary) return null
 
@@ -173,6 +193,22 @@ function convertEntry(entry: LegacyManga): {
 
     const idKey = sourceMangaId ?? sanitizeKey(mangaUrlParsed ?? primary)
     const id = `${resolvedSourceId}:manga:${idKey}`
+    return { id, resolvedSourceId, known, sourceMangaId, mangaUrlParsed, chapterUrlParsed, primary }
+}
+
+function convertEntry(entry: LegacyManga): {
+    manga: LibraryManga
+    sourceLink?: SourceLinkRecord
+    chapter?: ChapterRecord
+    history?: HistoryEvent
+} | null {
+    const title = entry.n?.trim()
+    if (!title) return null
+
+    const identity = deriveMangaIdentity(entry.u, entry.l)
+    if (!identity) return null
+    const { id, resolvedSourceId, known, sourceMangaId, mangaUrlParsed, chapterUrlParsed, primary } = identity
+    const isMangaDex = resolvedSourceId === "mangadex"
     const now = entry.ut ?? Date.now()
     const sourceUrl = (chapterUrlParsed ?? mangaUrlParsed ?? primary).toString()
     // Prefer the cn.name label (works for uuid/ulid sources), then cn.url, then fall
@@ -261,6 +297,35 @@ function convertEntry(entry: LegacyManga): {
     }
 }
 
+// Converts a legacy page bookmark into a new-format PageBookmark. Keyed to the same
+// manga id convertEntry produces (via deriveMangaIdentity) so it attaches to the
+// imported title. The legacy page number `a` is 1-based (it matches the 1-based page
+// image filename, e.g. "3-<hash>.jpg"); the reader's pageIndex is 0-based, so it maps
+// to a - 1. The primary key follows the app's `${chapterId}:${pageIndex}` convention.
+function convertBookmark(bm: LegacyBookmark): PageBookmark | null {
+    const identity = deriveMangaIdentity(bm.u, bm.c)
+    if (!identity || !identity.chapterUrlParsed) return null
+    const { id: mangaId, chapterUrlParsed } = identity
+
+    const segment = chapterUrlParsed.pathname.split("/").filter(Boolean).pop()
+    const chapterToken = segment && segment.length >= 4 ? segment.toLowerCase() : sanitizeKey(chapterUrlParsed)
+    const chapterId = `${mangaId}:ext:${chapterToken}`
+
+    const pageNumber = Number(bm.a)
+    const pageIndex = Number.isFinite(pageNumber) && pageNumber > 1 ? Math.floor(pageNumber) - 1 : 0
+
+    return {
+        id: `${chapterId}:${pageIndex}`,
+        mangaId,
+        chapterId,
+        pageIndex,
+        mangaTitle: bm.n?.trim() ?? "",
+        chapterTitle: bm.h?.trim() ?? "",
+        chapterUrl: chapterUrlParsed.toString(),
+        addedAt: Date.now()
+    }
+}
+
 export function migrateLegacyImport(raw: unknown): {
     envelope: unknown
     migrated: boolean
@@ -295,12 +360,21 @@ export function migrateLegacyImport(raw: unknown): {
         if (converted.history) historyEvents.push(converted.history)
     }
 
+    const pageBookmarks: PageBookmark[] = []
+    const seenBookmarks = new Set<string>()
+    for (const bm of raw.bookmarks ?? []) {
+        const converted = convertBookmark(bm)
+        if (!converted || seenBookmarks.has(converted.id)) continue
+        seenBookmarks.add(converted.id)
+        pageBookmarks.push(converted)
+    }
+
     return {
         envelope: {
             format: "all-mangas-reader",
             version: 1,
             exportedAt: Date.now(),
-            data: { manga, sourceLinks, chapters, progress: [], historyEvents }
+            data: { manga, sourceLinks, chapters, progress: [], historyEvents, pageBookmarks }
         },
         migrated: true,
         converted: manga.length,
