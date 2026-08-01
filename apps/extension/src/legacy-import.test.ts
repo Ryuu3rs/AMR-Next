@@ -238,3 +238,115 @@ describe("migrateLegacyImport - output shape", () => {
         expect(chapters[0].sortKey).toBe(428)
     })
 })
+
+// ---------------------------------------------------------------------------
+// migrateLegacyImport - read-progress derivation (cn label + broadened URLs)
+// Entry shapes below mirror real old-AMR exports (AMR_2026-06-20 / 06-16).
+// ---------------------------------------------------------------------------
+describe("migrateLegacyImport - read-progress derivation", () => {
+    const readNumberOf = (raw: unknown) =>
+        (migrateLegacyImport(raw).envelope as any).data.manga[0].lastReadChapterNumber
+
+    it("reads the number from cn.name for a MangaDex uuid chapter URL", () => {
+        const raw = {
+            mangas: [
+                {
+                    n: "Some MangaDex Title",
+                    u: "https://mangadex.org/title/01e360bc-22da-4e86-bbb7-3ae1091a223b",
+                    l: "https://mangadex.org/chapter/d6b0f743-0993-43ff-82a3-f85b6bf0b470",
+                    cn: {
+                        name: "85 - Message",
+                        url: "https://mangadex.org/chapter/d6b0f743-0993-43ff-82a3-f85b6bf0b470"
+                    }
+                }
+            ]
+        }
+        expect(readNumberOf(raw)).toBe(85)
+    })
+
+    it("reads the number from cn.name for a Weeb Central ulid chapter URL", () => {
+        const raw = {
+            mangas: [
+                {
+                    n: "Death Is the Only Ending for the Villainess",
+                    u: "https://weebcentral.com/series/01J76XYDMZ059WG12B0QQWRYXS/x",
+                    l: "https://weebcentral.com/chapters/01K4BM51JDZBYKK5QGDN7XF7WD",
+                    cn: { name: "Episode 185", url: "https://weebcentral.com/chapters/01K4BM51JDZBYKK5QGDN7XF7WD" }
+                }
+            ]
+        }
+        expect(readNumberOf(raw)).toBe(185)
+    })
+
+    it("parses the fanfox /cNNN/ chapter URL when no cn is present (older export)", () => {
+        const raw = {
+            mangas: [
+                {
+                    n: "I'm Being Raised by Villains",
+                    u: "https://fanfox.net/manga/i_m_being_raised_by_villains/",
+                    l: "https://fanfox.net/manga/i_m_being_raised_by_villains/c112/"
+                }
+            ]
+        }
+        expect(readNumberOf(raw)).toBe(112)
+    })
+
+    it("parses the mangahere /cNNN/ chapter URL with a leading zero", () => {
+        const raw = {
+            mangas: [{ n: "X", u: "https://www.mangahere.cc/manga/x/", l: "https://www.mangahere.cc/manga/x/c045/" }]
+        }
+        expect(readNumberOf(raw)).toBe(45)
+    })
+
+    it("treats the chapter-N-M dash convention as the decimal N.M", () => {
+        const raw = {
+            mangas: [
+                {
+                    n: "Y",
+                    u: "https://lhtranslation.net/manga/y/",
+                    l: "https://lhtranslation.net/manga/y/chapter-23-7?style=list"
+                }
+            ]
+        }
+        expect(readNumberOf(raw)).toBe(23.7)
+    })
+
+    it("uses the cn.name chapter title on the synthesised chapter record", () => {
+        const raw = {
+            mangas: [
+                {
+                    n: "Z",
+                    u: "https://mangadex.org/title/01e360bc-22da-4e86-bbb7-3ae1091a223b",
+                    l: "https://mangadex.org/chapter/d6b0f743-0993-43ff-82a3-f85b6bf0b470",
+                    cn: { name: "85 - Message" }
+                }
+            ]
+        }
+        const chapters = (migrateLegacyImport(raw).envelope as any).data.chapters
+        expect(chapters[0].title).toBe("85 - Message")
+        expect(chapters[0].sortKey).toBe(85)
+    })
+
+    it("preserves the last-read URL when the number is unrecoverable (ulid, no cn)", () => {
+        const raw = {
+            mangas: [
+                {
+                    n: "Rental Hero",
+                    u: "https://weebcentral.com/series/01J76XYGVA5WQW846803Q1J9DJ/Rental-Hero",
+                    l: "https://weebcentral.com/chapters/01J76XZ7N4Y3C0X29Y0TZ4QC3Y"
+                }
+            ]
+        }
+        const env = migrateLegacyImport(raw).envelope as any
+        const manga = env.data.manga[0]
+        const chapters = env.data.chapters
+        // No number could be derived...
+        expect(manga.lastReadChapterNumber).toBeUndefined()
+        // ...but the last-read chapter is preserved so the title reads as "Read" (not
+        // "Unread"), resume works, and a later relink can recover the number by URL.
+        expect(chapters).toHaveLength(1)
+        expect(chapters[0].url).toBe("https://weebcentral.com/chapters/01J76XZ7N4Y3C0X29Y0TZ4QC3Y")
+        expect(Number.isFinite(chapters[0].sortKey)).toBe(false)
+        expect(manga.lastReadChapterId).toBe(chapters[0].id)
+    })
+})
