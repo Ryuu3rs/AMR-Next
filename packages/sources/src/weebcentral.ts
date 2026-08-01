@@ -308,7 +308,11 @@ export const weebCentralAdapter: SourceAdapter = {
     async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
         const seriesId = input.manga.sourceMangaId
         if (!seriesId) throw new SourceError("invalid-input", "A valid Weeb Central series id is required")
-        const html = await context.request.getText(new URL(`${ORIGIN}/series/${seriesId}`), {
+        // The main series page SSRs only a windowed subset of chapters (first few +
+        // latest few - live-verified: ~9 of 244), which truncated the reader's chapter
+        // list. The full contiguous list lives behind this dedicated htmx endpoint (same
+        // /chapters/{ULID} anchor markup, newest-first), as the legacy adapter used.
+        const html = await context.request.getText(new URL(`${ORIGIN}/series/${seriesId}/full-chapter-list`), {
             headers: BROWSER_HEADERS
         })
         const chapters = extractChapterList(html, seriesId)

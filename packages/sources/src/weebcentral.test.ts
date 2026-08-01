@@ -63,7 +63,7 @@ describe("weebCentralAdapter.resolveManga", () => {
 
 describe("weebCentralAdapter.listChapters", () => {
     it("extracts and sorts chapters ascending by number", async () => {
-        const ctx = makeContext({ [`${ORIGIN}/series/${SERIES_ID}`]: seriesHtml })
+        const ctx = makeContext({ [`${ORIGIN}/series/${SERIES_ID}/full-chapter-list`]: seriesHtml })
         const stubManga = {
             manga: {
                 id: `weebcentral:manga:${SERIES_ID}`,
@@ -90,7 +90,7 @@ describe("weebCentralAdapter.listChapters", () => {
     // throughout, so a non-empty result here already exercises the fix; this test just makes
     // the expectation explicit and future-proofs against a regression back to relative-only.
     it("matches chapter anchors with absolute hrefs", async () => {
-        const ctx = makeContext({ [`${ORIGIN}/series/${SERIES_ID}`]: seriesHtml })
+        const ctx = makeContext({ [`${ORIGIN}/series/${SERIES_ID}/full-chapter-list`]: seriesHtml })
         const stubManga = {
             manga: {
                 id: `weebcentral:manga:${SERIES_ID}`,
@@ -117,7 +117,7 @@ describe("weebCentralAdapter.listChapters", () => {
     // that is a chapter tag, so plain tag-stripping alone would leak it straight into the title
     // (e.g. "Chapter 2 Last Read .st0 { fill: #d3d629; } 2024-09-07T17:04:15.717343Z").
     it("strips embedded style/time/last-read noise from a chapter anchor, keeping only the label", async () => {
-        const ctx = makeContext({ [`${ORIGIN}/series/${SERIES_ID}`]: seriesHtml })
+        const ctx = makeContext({ [`${ORIGIN}/series/${SERIES_ID}/full-chapter-list`]: seriesHtml })
         const stubManga = {
             manga: {
                 id: `weebcentral:manga:${SERIES_ID}`,
@@ -143,7 +143,7 @@ describe("weebCentralAdapter.listChapters", () => {
     // for "Extra", which would sort it before Chapter 1 in the final ascending list - the bonus
     // chapter should instead land strictly between Chapter 3 and Chapter 4.
     it("interpolates a non-numeric bonus chapter's sortKey between its real neighbors, even in a descending document", async () => {
-        const ctx = makeContext({ [`${ORIGIN}/series/${bonusSeriesId}`]: bonusSeriesHtml })
+        const ctx = makeContext({ [`${ORIGIN}/series/${bonusSeriesId}/full-chapter-list`]: bonusSeriesHtml })
         const stubManga = {
             manga: {
                 id: `weebcentral:manga:${bonusSeriesId}`,
