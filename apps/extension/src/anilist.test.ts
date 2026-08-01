@@ -29,7 +29,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe("AniList config store", () => {
     it("defaults to autoSync off and no token", async () => {
-        expect(await getAniListConfig()).toEqual({ autoSync: false })
+        expect(await getAniListConfig()).toEqual({ autoSync: false, syncMembership: false })
     })
 
     it("merges patches and round-trips", async () => {
@@ -42,7 +42,7 @@ describe("AniList config store", () => {
     it("never exposes the token in the status view", async () => {
         await setAniListConfig({ token: "secret", autoSync: true, lastSyncAt: 123 })
         const status = await getAniListStatus()
-        expect(status).toEqual({ hasToken: true, autoSync: true, lastSyncAt: 123 })
+        expect(status).toEqual({ hasToken: true, autoSync: true, syncMembership: false, lastSyncAt: 123 })
         expect(JSON.stringify(status)).not.toContain("secret")
     })
 })

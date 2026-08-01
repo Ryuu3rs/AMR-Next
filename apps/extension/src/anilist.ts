@@ -10,10 +10,14 @@ const GRAPHQL = "https://graphql.anilist.co"
 export type AniListConfig = {
     token?: string
     autoSync: boolean
+    // Mirror library membership to AniList: add titles (read -> progress, unread ->
+    // PLANNING) and delete a title's list entry when it's removed from the library.
+    // Off by default - it mutates the user's AniList list, not just progress.
+    syncMembership: boolean
     lastSyncAt?: number
 }
 
-const defaultConfig: AniListConfig = { autoSync: false }
+const defaultConfig: AniListConfig = { autoSync: false, syncMembership: false }
 
 export async function getAniListConfig(): Promise<AniListConfig> {
     const stored = await browser.storage.local.get(ANILIST_KEY)
@@ -27,11 +31,17 @@ export async function setAniListConfig(patch: Partial<AniListConfig>): Promise<A
 }
 
 // Token-free view for the UI - never ship the token back to the page.
-export async function getAniListStatus(): Promise<{ hasToken: boolean; autoSync: boolean; lastSyncAt?: number }> {
+export async function getAniListStatus(): Promise<{
+    hasToken: boolean
+    autoSync: boolean
+    syncMembership: boolean
+    lastSyncAt?: number
+}> {
     const c = await getAniListConfig()
     return {
         hasToken: Boolean(c.token),
         autoSync: c.autoSync,
+        syncMembership: c.syncMembership,
         ...(c.lastSyncAt ? { lastSyncAt: c.lastSyncAt } : {})
     }
 }
@@ -81,4 +91,37 @@ export async function saveViewerProgress(token: string, mediaId: number, progres
 export async function getViewerName(token: string): Promise<string | undefined> {
     const data = await anilistFetch<{ Viewer: { name: string } | null }>(token, `query { Viewer { name } }`, {})
     return data.Viewer?.name
+}
+
+// The user's list-entry id for a media (needed to delete it), or undefined if the
+// title isn't on their list.
+export async function getMediaListEntryId(token: string, mediaId: number): Promise<number | undefined> {
+    const data = await anilistFetch<{ Media: { mediaListEntry: { id: number } | null } | null }>(
+        token,
+        `query ($mediaId: Int) { Media(id: $mediaId, type: MANGA) { mediaListEntry { id } } }`,
+        { mediaId }
+    )
+    return data.Media?.mediaListEntry?.id ?? undefined
+}
+
+// Adds/ensures the title on the user's list with a status (e.g. PLANNING for an
+// unread library title). Does not touch progress.
+export async function saveMediaStatus(token: string, mediaId: number, status: string): Promise<void> {
+    await anilistFetch(
+        token,
+        `mutation ($mediaId: Int, $status: MediaListStatus) {
+            SaveMediaListEntry(mediaId: $mediaId, status: $status) { id }
+        }`,
+        { mediaId, status }
+    )
+}
+
+// Removes a title from the user's list by its list-entry id.
+export async function deleteMediaListEntry(token: string, entryId: number): Promise<boolean> {
+    const data = await anilistFetch<{ DeleteMediaListEntry: { deleted: boolean } }>(
+        token,
+        `mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }`,
+        { id: entryId }
+    )
+    return data.DeleteMediaListEntry.deleted
 }

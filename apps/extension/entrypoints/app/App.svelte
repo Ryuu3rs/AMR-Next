@@ -26,6 +26,7 @@
     type AniListStatus = {
         hasToken: boolean
         autoSync: boolean
+        syncMembership: boolean
         lastSyncAt?: number
         viewerName?: string
     }
@@ -1145,6 +1146,13 @@
 
     async function toggleAniListAutoSync(on: boolean) {
         anilistStatus = await sendRuntimeMessage<AniListStatus>({ type: "anilist:config", config: { autoSync: on } })
+    }
+
+    async function toggleAniListMembership(on: boolean) {
+        anilistStatus = await sendRuntimeMessage<AniListStatus>({
+            type: "anilist:config",
+            config: { syncMembership: on }
+        })
     }
 
     async function syncAniListNow() {
@@ -4136,6 +4144,23 @@
                             checked={anilistStatus?.autoSync ?? false}
                             disabled={!anilistStatus?.hasToken}
                             onchange={e => void toggleAniListAutoSync(e.currentTarget.checked)} />
+                        <span class="track"></span>
+                    </label>
+                </div>
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Sync library membership</p>
+                        <p class="muted">
+                            Also add titles to your AniList list (unread as Planning) and remove a title's entry when
+                            you remove it here. This changes your AniList list, not just progress.
+                        </p>
+                    </div>
+                    <label class="toggle">
+                        <input
+                            type="checkbox"
+                            checked={anilistStatus?.syncMembership ?? false}
+                            disabled={!anilistStatus?.hasToken}
+                            onchange={e => void toggleAniListMembership(e.currentTarget.checked)} />
                         <span class="track"></span>
                     </label>
                 </div>
