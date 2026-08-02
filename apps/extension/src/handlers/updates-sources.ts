@@ -27,6 +27,7 @@ import { isBotBlocked } from "../background/capture"
 import { MANGAHUB_INTERNAL_ID_MIN, purgeStaleMangahubChapterRows } from "../background/chapter-cache"
 import { delay, type HandlerMap } from "../background/handler-types"
 import { publishLive } from "../live"
+import { notifyNewChapters } from "../notifications"
 
 let updateCheckRunning = false
 let updateCheckAborted = false
@@ -145,6 +146,8 @@ export async function checkUpdates(sourceId?: string) {
         let done = 0
         const total = manga.length
         const errors: Array<{ mangaId: string; title: string; message: string }> = []
+        // Titles that gained a new chapter this run, for the end-of-run notification.
+        const updatedTitles: string[] = []
         // Per-sourceId count of titles skipped this run because the source's own
         // listChapters call threw a bot-block-shaped error (e.g. a Cloudflare 403) -
         // see the per-title catch block below. Kept separate from `failed` since this
@@ -217,6 +220,7 @@ export async function checkUpdates(sourceId?: string) {
                     })
                     if (advanced) {
                         updated += 1
+                        updatedTitles.push(item.title)
                         publishLive(["chapters", "library"], [item.id])
                     }
                     checked += 1
@@ -290,6 +294,10 @@ export async function checkUpdates(sourceId?: string) {
         // the Updates page as a fresh, finished check. Leave the previous status intact.
         if (!sourceId && !updateCheckAborted) finalWrite["updateStatus"] = status
         await browser.storage.local.set(finalWrite)
+        // Notify only on a full, non-aborted check (same gate as the library-wide status)
+        // so a single-source refresh doesn't fire, and only when something actually
+        // advanced. Best-effort - never blocks or throws into the caller.
+        if (!sourceId && !updateCheckAborted) void notifyNewChapters(updatedTitles)
         return status
     } finally {
         updateCheckRunning = false

@@ -22,7 +22,15 @@ async function readEnvOrigin(name) {
 const communityApiOrigin = await readEnvOrigin("VITE_COMMUNITY_API_ORIGIN")
 const metadataApiOrigin = await readEnvOrigin("VITE_METADATA_API_ORIGIN")
 
-const allowedPermissions = ["alarms", "declarativeNetRequest", "downloads", "scripting", "storage", "tabs"]
+const allowedPermissions = [
+    "alarms",
+    "declarativeNetRequest",
+    "downloads",
+    "notifications",
+    "scripting",
+    "storage",
+    "tabs"
+]
 
 // All source origins + GitHub API are required (granted at install, no per-source grant step).
 // VITE_COMMUNITY_API_ORIGIN and VITE_METADATA_API_ORIGIN are intentionally excluded - they come

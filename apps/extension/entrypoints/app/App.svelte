@@ -4648,6 +4648,19 @@
                 </div>
                 <div class="settings-row">
                     <div>
+                        <p class="row-label">New-chapter notifications</p>
+                        <p class="muted">Show a desktop notification when an update check finds new chapters.</p>
+                    </div>
+                    <label class="toggle">
+                        <input
+                            type="checkbox"
+                            checked={settings?.notifyNewChapters ?? true}
+                            onchange={e => void updateSetting({ notifyNewChapters: e.currentTarget.checked })} />
+                        <span class="track"></span>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <div>
                         <p class="row-label">Remove gaps between pages (continuous mode)</p>
                         <p class="muted">Seamless webtoon-style scroll with no vertical gap between page images.</p>
                     </div>
