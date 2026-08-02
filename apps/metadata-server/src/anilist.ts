@@ -94,32 +94,31 @@ async function queryAniList(query: string, variables: Record<string, unknown>): 
                     await new Promise(r => setTimeout(r, retryAfter * 1000))
                     continue
                 }
-                return null
+                // Transient (still rate-limited after a retry) - throw so the caller can
+                // distinguish "AniList unavailable" from "no such title" and NOT poison
+                // the cache with a no-match.
+                throw new Error("AniList rate limited")
             }
 
-            if (!res.ok) return null
+            if (!res.ok) throw new Error(`AniList ${res.status}`)
 
             const body = (await res.json()) as { data?: { Media?: AniListMedia | null } }
+            // A successful response with no Media is a GENUINE no-match -> null.
             return body.data?.Media ?? null
         }
-        return null
+        throw new Error("AniList rate limited")
     })
 }
 
+// Returns mapped metadata, or null for a genuine no-match. THROWS on a transient
+// failure (network error, non-ok, exhausted rate limit) - callers must catch and must
+// not cache a no-match in that case.
 export async function resolveFromAniList(title: string): Promise<MetadataResult | null> {
-    try {
-        const media = await queryAniList(SEARCH_QUERY, { search: title })
-        return media ? mapMedia(media) : null
-    } catch {
-        return null
-    }
+    const media = await queryAniList(SEARCH_QUERY, { search: title })
+    return media ? mapMedia(media) : null
 }
 
 export async function resolveFromAniListById(id: number): Promise<MetadataResult | null> {
-    try {
-        const media = await queryAniList(BY_ID_QUERY, { id })
-        return media ? mapMedia(media) : null
-    } catch {
-        return null
-    }
+    const media = await queryAniList(BY_ID_QUERY, { id })
+    return media ? mapMedia(media) : null
 }

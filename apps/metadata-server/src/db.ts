@@ -130,18 +130,19 @@ export function createDb(path: string = defaultPath()) {
         })
     }
 
+    // A no-match must never destroy an existing good row: insert a fresh no-match only
+    // when nothing is cached, and refresh the timestamp only when the existing row is
+    // ALREADY a no-match. A previously-resolved title (source 'anilist'/'manual') is
+    // left intact - so a genuine "not found" for a title we already know can't wipe it.
+    const noMatch = db.prepare(
+        `INSERT INTO title_metadata (normalized_title, status, genres, tags, source, fetched_at)
+         VALUES (@norm, 'unknown', '[]', '[]', 'none', unixepoch())
+         ON CONFLICT (normalized_title) DO UPDATE SET fetched_at = excluded.fetched_at
+         WHERE title_metadata.source = 'none'`
+    )
+
     function markNoMatch(norm: string): void {
-        upsert.run({
-            normalized_title: norm,
-            anilist_id: null,
-            title: null,
-            status: "unknown",
-            cover_url: null,
-            genres: "[]",
-            tags: "[]",
-            format: null,
-            source: "none"
-        })
+        noMatch.run({ norm })
     }
 
     return { db, getByNormalizedTitle, getByAnilistId, upsertMetadata, markNoMatch }
