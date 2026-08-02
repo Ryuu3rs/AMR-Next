@@ -322,20 +322,23 @@
     const ANILIST_PIN_REDIRECT = "https://anilist.co/api/v2/oauth/pin"
     let anilistClientId = $state("")
     let anilistRedirectCopied = $state(false)
+    let anilistAuthorizeCopied = $state(false)
     const anilistAuthorizeUrl = $derived(
         anilistClientId.trim()
             ? `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(anilistClientId.trim())}&response_type=token`
             : ""
     )
-    async function copyAniListRedirect() {
+    async function copyText(value: string, mark: (copied: boolean) => void) {
         try {
-            await navigator.clipboard.writeText(ANILIST_PIN_REDIRECT)
-            anilistRedirectCopied = true
-            setTimeout(() => (anilistRedirectCopied = false), 1500)
+            await navigator.clipboard.writeText(value)
+            mark(true)
+            setTimeout(() => mark(false), 1500)
         } catch {
             // Clipboard can be denied; the value is visible for manual copy anyway.
         }
     }
+    const copyAniListRedirect = () => copyText(ANILIST_PIN_REDIRECT, v => (anilistRedirectCopied = v))
+    const copyAniListAuthorize = () => copyText(anilistAuthorizeUrl, v => (anilistAuthorizeCopied = v))
 
     function coverFailed(id: string) {
         const next = new Set(failedCovers)
@@ -4431,14 +4434,27 @@
                                 </li>
                                 {#if anilistAuthorizeUrl}
                                     <li>
-                                        <a href={anilistAuthorizeUrl} target="_blank" rel="noopener noreferrer">
-                                            Open your AniList authorize page
-                                        </a>, approve, then copy the token AniList shows you.
+                                        Copy this URL, open it in your browser, and approve. AniList then shows your
+                                        <strong>access token</strong> - copy that.
+                                        <span
+                                            class="copy-field"
+                                            style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">
+                                            <code style="word-break:break-all">{anilistAuthorizeUrl}</code>
+                                            <button
+                                                type="button"
+                                                class="btn-sm"
+                                                onclick={() => void copyAniListAuthorize()}>
+                                                {anilistAuthorizeCopied ? "Copied" : "Copy"}
+                                            </button>
+                                            <a href={anilistAuthorizeUrl} target="_blank" rel="noopener noreferrer">
+                                                Open
+                                            </a>
+                                        </span>
                                     </li>
                                 {:else}
-                                    <li class="muted">Enter your Client ID above to get your authorize link.</li>
+                                    <li class="muted">Enter your Client ID above to get your authorize URL.</li>
                                 {/if}
-                                <li>Paste the token below and click <strong>Connect</strong>.</li>
+                                <li>Paste the token in the box below and click <strong>Connect</strong>.</li>
                             </ol>
                         {/if}
                     </div>
