@@ -156,6 +156,35 @@ export function getRecommendations(userId: string): Array<{ title: string; sourc
         .all(userId, userId, userId) as Array<{ title: string; sourceId: string }>
 }
 
+export function getCoReadRecommendations(userId: string): Array<{ title: string; sourceId: string }> {
+    return db
+        .prepare(
+            `WITH my_titles AS (
+                SELECT DISTINCT manga_title FROM events WHERE user_id = ?
+            ),
+            co_readers AS (
+                SELECT user_id, COUNT(DISTINCT manga_title) AS overlap
+                FROM events
+                WHERE user_id != ?
+                    AND manga_title IN (SELECT manga_title FROM my_titles)
+                GROUP BY user_id
+            ),
+            candidates AS (
+                SELECT e.user_id AS user_id, e.manga_title AS manga_title, e.source_id AS source_id
+                FROM events e
+                JOIN co_readers cr ON e.user_id = cr.user_id
+                WHERE e.manga_title NOT IN (SELECT manga_title FROM my_titles)
+                GROUP BY e.user_id, e.manga_title
+            )
+            SELECT c.manga_title AS title, c.source_id AS sourceId, SUM(cr.overlap) AS score
+            FROM candidates c
+            JOIN co_readers cr ON c.user_id = cr.user_id
+            GROUP BY c.manga_title
+            ORDER BY score DESC, c.manga_title ASC LIMIT 10`
+        )
+        .all(userId, userId) as Array<{ title: string; sourceId: string }>
+}
+
 export function upsertRating(userId: string, mangaTitle: string, rating: number): void {
     db.prepare(
         `INSERT INTO ratings (user_id, manga_title, rating, updated_at) VALUES (?, ?, ?, unixepoch())

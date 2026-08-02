@@ -13,6 +13,7 @@ import {
     storeAchievements,
     getUserRank,
     getRecommendations,
+    getCoReadRecommendations,
     getCommunityStats,
     upsertRating,
     getMangaStats,
@@ -120,6 +121,16 @@ app.post("/rate", async c => {
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) return c.json({ error: "Rating must be 1-5" }, 400)
     upsertRating(body.userId, body.mangaTitle.trim(), rating)
     return c.json({ ok: true })
+})
+
+app.get("/recommendations", c => {
+    if (!withinRateLimit(c.req.header("x-forwarded-for"), "recommendations", 120, 60 * 1000)) {
+        return c.json({ error: "Too many requests" }, 429)
+    }
+    const userId = c.req.query("userId")?.trim()
+    if (!userId) return c.json({ error: "userId required" }, 400)
+    if (!getUserById(userId)) return c.json({ error: "User not found" }, 404)
+    return c.json({ recommendations: getCoReadRecommendations(userId) })
 })
 
 app.get("/manga", c => {
