@@ -4456,23 +4456,24 @@
                                 {/if}
                                 <li>Paste the token in the box below and click <strong>Connect</strong>.</li>
                             </ol>
+                            <div class="sync-token" style="margin-top:10px">
+                                <input type="password" placeholder="AniList token" bind:value={anilistToken} />
+                                <button
+                                    type="button"
+                                    onclick={() => void saveAniListToken()}
+                                    disabled={!anilistToken.trim()}>
+                                    Connect
+                                </button>
+                            </div>
                         {/if}
                     </div>
-                    <div class="sync-token">
-                        {#if anilistStatus?.hasToken}
+                    {#if anilistStatus?.hasToken}
+                        <div class="sync-token">
                             <button type="button" class="btn-outline" onclick={() => void disconnectAniList()}>
                                 Disconnect
                             </button>
-                        {:else}
-                            <input type="password" placeholder="AniList token" bind:value={anilistToken} />
-                            <button
-                                type="button"
-                                onclick={() => void saveAniListToken()}
-                                disabled={!anilistToken.trim()}>
-                                Connect
-                            </button>
-                        {/if}
-                    </div>
+                        </div>
+                    {/if}
                 </div>
                 <div class="data-row">
                     <div>
