@@ -280,3 +280,29 @@ describe("analytics:record", () => {
         })
     })
 })
+
+describe("log:export (bughunt regression)", () => {
+    it("still returns the log when a config/secret read throws", async () => {
+        await db.logs.clear()
+        await db.logs.add({ ts: 1, level: "warn", scope: "chapters", message: "listed 9 chapters" })
+
+        // browser present for the manifest version, but every storage read rejects -
+        // simulating a config read failure. The handler must degrade, not deny the log.
+        // @ts-expect-error test-only shim
+        globalThis.browser = {
+            runtime: { getManifest: () => ({ version: "9.9.9" }) },
+            storage: { local: { get: vi.fn(async () => Promise.reject(new Error("IDB read failed"))) } }
+        }
+        try {
+            const res = (await downloadsBookmarksAnalyticsHandlers["log:export"]!(
+                { type: "log:export" } as never,
+                ctx
+            )) as { text: string }
+            expect(res.text).toContain("listed 9 chapters")
+            expect(res.text).toContain("extension version: 9.9.9")
+        } finally {
+            // @ts-expect-error test-only shim
+            delete globalThis.browser
+        }
+    })
+})

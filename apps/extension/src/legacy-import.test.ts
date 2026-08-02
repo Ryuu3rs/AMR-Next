@@ -410,4 +410,22 @@ describe("migrateLegacyImport - bookmarks", () => {
         const result = migrateLegacyImport({ mangas: [], bookmarks: [] })
         expect((result.envelope as any).data.pageBookmarks).toEqual([])
     })
+
+    // Regression: Webtoons chapter URLs all end in the path segment "viewer" (the
+    // episode is in ?episode_no=N), so keying the bookmark id off the last path segment
+    // collapsed every episode to one id and the dedup dropped all but one.
+    it("keeps bookmarks in different Webtoons episodes distinct", () => {
+        const base = "https://www.webtoons.com/en/action/slug"
+        const result = migrateLegacyImport({
+            mangas: [],
+            bookmarks: [
+                { n: "T", u: `${base}/list?title_no=95`, c: `${base}/ep-1/viewer?title_no=95&episode_no=1`, a: "3" },
+                { n: "T", u: `${base}/list?title_no=95`, c: `${base}/ep-2/viewer?title_no=95&episode_no=2`, a: "3" }
+            ]
+        })
+        const bookmarks = (result.envelope as any).data.pageBookmarks
+        expect(bookmarks).toHaveLength(2)
+        expect(new Set(bookmarks.map((b: { id: string }) => b.id)).size).toBe(2)
+        expect(new Set(bookmarks.map((b: { chapterId: string }) => b.chapterId)).size).toBe(2)
+    })
 })

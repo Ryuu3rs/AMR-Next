@@ -81,7 +81,11 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
                 })
                 if (meta?.anilistId) {
                     anilistId = meta.anilistId
-                    await updateManga(manga.id, { anilistId, metadataUpdatedAt: Date.now() } as Partial<LibraryManga>)
+                    // Cache only the id. Do NOT stamp metadataUpdatedAt here: that field
+                    // means "metadata enrichment (status/cover/genres) was attempted", and
+                    // this sync fetched none of that - stamping it would make the enrichment
+                    // pass skip the title for the full retry window.
+                    await updateManga(manga.id, { anilistId } as Partial<LibraryManga>)
                 }
             }
             if (anilistId === undefined) {
@@ -120,7 +124,10 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
             // AniList allows ~90 requests/min; two calls per title -> ~1.3s spacing.
             await new Promise<void>(r => setTimeout(r, 1300))
         }
-        await setAniListConfig({ lastSyncAt: Date.now() })
+        // Only record a completed sync when the loop actually finished. An aborted run
+        // (pending extension update) processed only part of the library, so stamping
+        // lastSyncAt would mislabel a partial push as a full sync.
+        if (!anilistSyncAborted) await setAniListConfig({ lastSyncAt: Date.now() })
         return { pushed, added, checked, skipped }
     } finally {
         anilistSyncRunning = false
@@ -134,11 +141,20 @@ export const anilistHandlers: HandlerMap = {
     },
     "anilist:config": async request => {
         const patch = Object.fromEntries(Object.entries(request.config).filter(([, v]) => v !== undefined))
-        // Validate a newly-pasted token before storing it, so a bad paste fails fast
-        // (surfaced to the UI) instead of silently no-op-ing on the next sync.
+        // Validate a newly-pasted token. Reject only on a genuine AUTH error (4xx) so a
+        // bad paste fails fast; on a transient error (5xx / network - AniList down) save
+        // the token anyway rather than rejecting a good token during an outage.
         let viewerName: string | undefined
         if (typeof patch.token === "string" && patch.token.length > 0) {
-            viewerName = await getViewerName(patch.token)
+            try {
+                viewerName = await getViewerName(patch.token)
+            } catch (cause) {
+                const status = Number(/AniList API (\d+)/.exec(cause instanceof Error ? cause.message : "")?.[1])
+                if (status >= 400 && status < 500) {
+                    throw new Error("That AniList token was rejected. Check it and try again.")
+                }
+                // transient - fall through and save the (presumably valid) token unverified
+            }
         }
         const next = await setAniListConfig(patch)
         await configureAniListAlarm()

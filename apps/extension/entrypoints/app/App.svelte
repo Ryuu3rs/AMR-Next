@@ -1144,15 +1144,31 @@
         anilistMessage = "Disconnected."
     }
 
+    // On a failed config write, reassign anilistStatus (unchanged values) so Svelte
+    // re-asserts the checkbox to its true state instead of leaving it visually flipped
+    // from the user's click.
     async function toggleAniListAutoSync(on: boolean) {
-        anilistStatus = await sendRuntimeMessage<AniListStatus>({ type: "anilist:config", config: { autoSync: on } })
+        try {
+            anilistStatus = await sendRuntimeMessage<AniListStatus>({
+                type: "anilist:config",
+                config: { autoSync: on }
+            })
+        } catch (cause) {
+            anilistMessage = cause instanceof Error ? cause.message : "Could not update auto-sync."
+            if (anilistStatus) anilistStatus = { ...anilistStatus }
+        }
     }
 
     async function toggleAniListMembership(on: boolean) {
-        anilistStatus = await sendRuntimeMessage<AniListStatus>({
-            type: "anilist:config",
-            config: { syncMembership: on }
-        })
+        try {
+            anilistStatus = await sendRuntimeMessage<AniListStatus>({
+                type: "anilist:config",
+                config: { syncMembership: on }
+            })
+        } catch (cause) {
+            anilistMessage = cause instanceof Error ? cause.message : "Could not update membership sync."
+            if (anilistStatus) anilistStatus = { ...anilistStatus }
+        }
     }
 
     async function syncAniListNow() {

@@ -307,8 +307,13 @@ function convertBookmark(bm: LegacyBookmark): PageBookmark | null {
     if (!identity || !identity.chapterUrlParsed) return null
     const { id: mangaId, chapterUrlParsed } = identity
 
-    const segment = chapterUrlParsed.pathname.split("/").filter(Boolean).pop()
-    const chapterToken = segment && segment.length >= 4 ? segment.toLowerCase() : sanitizeKey(chapterUrlParsed)
+    // Token derived from the full chapter URL path AND query. Using only the last path
+    // segment collapsed every chapter of a query-addressed source to one id (Webtoons
+    // paths all end in "viewer"; the episode lives in ?episode_no=N), so bookmarks in
+    // different episodes shared a primary key and all but one were deduped away.
+    const chapterToken =
+        `${chapterUrlParsed.pathname}${chapterUrlParsed.search}`.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "") ||
+        chapterUrlParsed.hostname
     const chapterId = `${mangaId}:ext:${chapterToken}`
 
     const pageNumber = Number(bm.a)
