@@ -1,11 +1,12 @@
 import { serve } from "@hono/node-server"
+import { pathToFileURL } from "node:url"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { resolveFromAniList, resolveFromAniListById } from "./anilist.js"
 import { getDb, isStale } from "./db.js"
 import { normalizeTitle } from "./normalize.js"
 
-const app = new Hono()
+export const app = new Hono()
 const store = getDb()
 
 app.use("/*", cors({ origin: "*", allowMethods: ["GET", "POST"], allowHeaders: ["Content-Type"] }))
@@ -25,12 +26,24 @@ app.get("/metadata/resolve", async c => {
         return c.json(hit.result)
     }
 
-    const resolved = await resolveFromAniList(title)
+    let resolved: Awaited<ReturnType<typeof resolveFromAniList>>
+    try {
+        resolved = await resolveFromAniList(title)
+    } catch {
+        // Transient AniList failure - never cache a no-match here (that would poison a
+        // real title for the full TTL). Serve a stale-but-good cached row if we have one
+        // (stale-while-error); otherwise report no result WITHOUT a durable write.
+        if (hit && hit.source !== "none") return c.json(hit.result)
+        return c.json({ result: null })
+    }
+
     if (resolved) {
         store.upsertMetadata({ ...resolved, normalizedTitle: norm, source: "anilist" })
         return c.json(resolved)
     }
 
+    // Genuine no-match (AniList responded, no title). markNoMatch keeps any existing
+    // good row intact and only caches an empty no-match when nothing was known.
     store.markNoMatch(norm)
     return c.json({ result: null })
 })
@@ -42,7 +55,14 @@ app.get("/metadata/by-anilist/:id", async c => {
     const hit = store.getByAnilistId(id)
     if (hit && !isStale(hit.fetched_at) && hit.source !== "none") return c.json(hit.result)
 
-    const resolved = await resolveFromAniListById(id)
+    let resolved: Awaited<ReturnType<typeof resolveFromAniListById>>
+    try {
+        resolved = await resolveFromAniListById(id)
+    } catch {
+        // Transient failure - serve a stale-but-good cached row if present, else no result.
+        if (hit && hit.source !== "none") return c.json(hit.result)
+        return c.json({ result: null })
+    }
     if (resolved) {
         const norm = resolved.title ? normalizeTitle(resolved.title) : `anilist:${id}`
         store.upsertMetadata({ ...resolved, normalizedTitle: norm, source: "anilist" })
@@ -60,7 +80,12 @@ app.post("/metadata/link", async c => {
         return c.json({ error: "normalizedTitle and anilistId required" }, 400)
     }
 
-    const resolved = await resolveFromAniListById(anilistId)
+    let resolved: Awaited<ReturnType<typeof resolveFromAniListById>>
+    try {
+        resolved = await resolveFromAniListById(anilistId)
+    } catch {
+        return c.json({ error: "AniList unavailable" }, 502)
+    }
     if (!resolved) return c.json({ result: null })
 
     const norm = normalizeTitle(rawTitle)
@@ -68,7 +93,11 @@ app.post("/metadata/link", async c => {
     return c.json(resolved)
 })
 
-const port = Number(process.env.PORT ?? 3000)
-serve({ fetch: app.fetch, port }, () => {
-    console.log(`[AMR metadata] :${port}`)
-})
+// Only start the HTTP server when run directly (node src/index.ts), not when the app
+// is imported by a test.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+    const port = Number(process.env.PORT ?? 3000)
+    serve({ fetch: app.fetch, port }, () => {
+        console.log(`[AMR metadata] :${port}`)
+    })
+}
