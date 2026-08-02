@@ -1,6 +1,6 @@
 const COMMUNITY_KEY = "community"
 
-// Injected at build time from .env — never hardcoded in source.
+// Injected at build time from .env - never hardcoded in source.
 // Set VITE_COMMUNITY_API_URL in apps/extension/.env (gitignored).
 const COMMUNITY_API_BASE = (import.meta.env.VITE_COMMUNITY_API_URL as string | undefined) ?? ""
 
@@ -41,7 +41,10 @@ export type CommunityProfile = {
 }
 
 const defaultProfile: CommunityProfile = {
-    enabled: true,
+    // Opt-IN: reading activity (titles/genres/dates) must not leave the device until the
+    // user explicitly enables community features. Was opt-out, which auto-registered and
+    // uploaded history with no consent. Existing users keep their stored setting.
+    enabled: false,
     username: "",
     userId: "",
     lastSyncAt: 0,
@@ -70,7 +73,7 @@ export type CommunityEvent = {
     date: string
 }
 
-// Silent auto-registration uses a generic, clearly-anonymous handle — never
+// Silent auto-registration uses a generic, clearly-anonymous handle - never
 // anything that could pass for a real username someone chose deliberately.
 export function generateAnonymousUsername(): string {
     return `Reader${1000 + Math.floor(Math.random() * 9000)}`

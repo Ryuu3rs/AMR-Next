@@ -19,12 +19,11 @@ let autoRegistering = false
 
 const MAX_AUTO_REGISTER_ATTEMPTS = 5
 
-// Silent auto-registration: sync defaults to opt-out (enabled: true), but the
-// community API requires a userId. Rather than making the user manually type a
-// name and click "Join" before sync can ever do anything, we register a generic
-// anonymous handle on their behalf the first time we notice enabled && !userId.
-// Manual registration (community:register) still works for anyone who wants a
-// custom name — this only fires when nothing has been registered yet.
+// Auto-registration once the user has OPTED IN (enabled): the community API requires a
+// userId, so rather than making them also type a name and click "Join", we register a
+// generic anonymous handle the first time we see enabled && !userId. It never fires
+// while enabled is false (the opt-in default), so nothing is registered or uploaded
+// without consent. Manual registration (community:register) still works for a custom name.
 async function ensureRegistered(profile: CommunityProfile): Promise<CommunityProfile> {
     if (!profile.enabled || profile.userId) return profile
     if (autoRegistering) return await getCommunityProfile()
@@ -43,7 +42,7 @@ async function ensureRegistered(profile: CommunityProfile): Promise<CommunityPro
                 return updated
             } catch (error) {
                 // The community server responds 409 with { error: "Username already taken" }
-                // for collisions — retry with a freshly generated name. Any other failure
+                // for collisions - retry with a freshly generated name. Any other failure
                 // (network down, server error, etc.) should fail soft, not spin the retry loop.
                 const isCollision = error instanceof Error && /taken/i.test(error.message)
                 if (!isCollision) {
@@ -72,7 +71,7 @@ export async function runCommunitySync() {
             if (!profile.userId) return
         }
 
-        // Capture the watermark before the read/network calls below, not after — a
+        // Capture the watermark before the read/network calls below, not after - a
         // history event recorded while this sync is in flight has occurredAt before
         // syncStartedAt, so the next sync's "above(lastSyncAt)" query still picks it up.
         // Using Date.now() captured at the END would silently skip it forever.
@@ -128,7 +127,7 @@ export async function runCommunitySync() {
 }
 
 export const communityHandlers: HandlerMap = {
-    // Settings/Achievements load this on every visit — since the alarm-driven sync
+    // Settings/Achievements load this on every visit - since the alarm-driven sync
     // can't run before a userId exists, this doubles as the main opportunistic
     // trigger for silent first-time registration.
     "community:status": async () => {

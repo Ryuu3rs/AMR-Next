@@ -41,6 +41,9 @@ const manga: LibraryManga = {
 beforeEach(async () => {
     fakeBrowser.reset()
     vi.clearAllMocks()
+    // clearAllMocks does NOT drain mockResolvedValueOnce queues; reset apiRegister fully so
+    // a once-value queued by a test that no longer runs can't leak into a later test.
+    apiRegister.mockReset()
     await Promise.all([db.manga.clear(), db.historyEvents.clear()])
     apiSyncEvents.mockResolvedValue({ rank: 5, newAchievements: [], recommendations: [] })
     apiFetchCommunityStats.mockResolvedValue({
@@ -103,7 +106,7 @@ describe("runCommunitySync watermark", () => {
 })
 
 describe("runCommunitySync concurrency", () => {
-    it("only allows one sync in flight — a concurrent call is a no-op", async () => {
+    it("only allows one sync in flight - a concurrent call is a no-op", async () => {
         await updateCommunityProfile({ enabled: true, userId: "user-1", username: "tester", lastSyncAt: 0 })
         await db.manga.put(manga)
         await db.historyEvents.add({
@@ -147,8 +150,8 @@ describe("runCommunitySync with no new events", () => {
 
 describe("runCommunitySync auto-registration", () => {
     it("silently registers a generated anonymous username when enabled but never registered, then proceeds", async () => {
-        // Fresh profile: defaultProfile.enabled is true, userId is empty — this is the
-        // opt-out-by-default state that used to leave sync permanently a no-op.
+        // Opted in (enabled) but never registered (empty userId) - sync auto-registers.
+        await updateCommunityProfile({ enabled: true })
         apiRegister.mockResolvedValueOnce({ userId: "auto-1" })
 
         await runCommunitySync()
@@ -163,6 +166,7 @@ describe("runCommunitySync auto-registration", () => {
     })
 
     it("retries with a freshly generated name on a username collision", async () => {
+        await updateCommunityProfile({ enabled: true })
         apiRegister
             .mockRejectedValueOnce(new Error("Username already taken"))
             .mockResolvedValueOnce({ userId: "auto-2" })
@@ -175,6 +179,7 @@ describe("runCommunitySync auto-registration", () => {
     })
 
     it("gives up after repeated collisions without throwing and leaves sync a no-op", async () => {
+        await updateCommunityProfile({ enabled: true })
         apiRegister.mockRejectedValue(new Error("Username already taken"))
         const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 
@@ -188,6 +193,7 @@ describe("runCommunitySync auto-registration", () => {
     })
 
     it("fails soft (no throw) on a non-collision registration error", async () => {
+        await updateCommunityProfile({ enabled: true })
         apiRegister.mockRejectedValueOnce(new Error("network down"))
         const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 
@@ -210,6 +216,7 @@ describe("runCommunitySync auto-registration", () => {
 
 describe("community:status handler", () => {
     it("auto-registers on status check when enabled but not yet registered, and returns the updated profile", async () => {
+        await updateCommunityProfile({ enabled: true })
         apiRegister.mockResolvedValueOnce({ userId: "auto-status-1" })
 
         const result = await communityHandlers["community:status"]!(
@@ -235,7 +242,7 @@ describe("community:status handler", () => {
 })
 
 describe("community:register handler", () => {
-    it("is idempotent — returns the existing profile without calling apiRegister when userId is already set", async () => {
+    it("is idempotent - returns the existing profile without calling apiRegister when userId is already set", async () => {
         await updateCommunityProfile({ userId: "existing-user", username: "already-here", enabled: true })
 
         const result = await communityHandlers["community:register"]!(
