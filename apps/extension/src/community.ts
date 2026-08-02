@@ -1,8 +1,20 @@
 const COMMUNITY_KEY = "community"
 
-// Injected at build time from .env - never hardcoded in source.
-// Set VITE_COMMUNITY_API_URL in apps/extension/.env (gitignored).
+// Injected at build time from .env locally and from the VITE_COMMUNITY_API_URL repo
+// variable in CI (see .github/workflows/release-please.yml) - never hardcoded in source.
 const COMMUNITY_API_BASE = (import.meta.env.VITE_COMMUNITY_API_URL as string | undefined) ?? ""
+
+// True only when a base URL was baked into this build. When false, every network call
+// would resolve against the extension's own origin and fail with an opaque
+// "NetworkError when attempting to fetch resource"; callers should surface a clear
+// "not configured in this build" state instead of letting the raw fetch throw.
+export const communityConfigured = COMMUNITY_API_BASE.length > 0
+
+function assertCommunityConfigured() {
+    if (!COMMUNITY_API_BASE) {
+        throw new Error("The community server is not configured in this build.")
+    }
+}
 
 export type CommunityRecommendation = {
     title: string
@@ -80,6 +92,7 @@ export function generateAnonymousUsername(): string {
 }
 
 export async function apiRegister(username: string): Promise<{ userId: string }> {
+    assertCommunityConfigured()
     const res = await fetch(`${COMMUNITY_API_BASE}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -100,6 +113,7 @@ export async function apiSyncEvents(
     newAchievements: string[]
     recommendations: CommunityRecommendation[]
 }> {
+    assertCommunityConfigured()
     const res = await fetch(`${COMMUNITY_API_BASE}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -114,12 +128,14 @@ export async function apiSyncEvents(
 }
 
 export async function apiFetchCommunityStats(): Promise<CommunityStats> {
+    assertCommunityConfigured()
     const res = await fetch(`${COMMUNITY_API_BASE}/community`)
     if (!res.ok) throw new Error(`Community stats fetch failed: ${res.status}`)
     return res.json() as Promise<CommunityStats>
 }
 
 export async function apiRate(userId: string, mangaTitle: string, rating: number): Promise<void> {
+    assertCommunityConfigured()
     const res = await fetch(`${COMMUNITY_API_BASE}/rate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -129,6 +145,7 @@ export async function apiRate(userId: string, mangaTitle: string, rating: number
 }
 
 export async function apiFetchMangaStats(mangaTitle: string): Promise<CommunityMangaStats> {
+    assertCommunityConfigured()
     const res = await fetch(`${COMMUNITY_API_BASE}/manga?title=${encodeURIComponent(mangaTitle)}`)
     if (!res.ok) throw new Error(`Manga stats fetch failed: ${res.status}`)
     return res.json() as Promise<CommunityMangaStats>

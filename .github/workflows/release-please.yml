@@ -33,7 +33,12 @@ jobs:
             release_created: ${{ steps.release.outputs.release_created }}
             tag_name: ${{ steps.release.outputs.tag_name }}
         env:
+            # Baked into the release build so the shipped extension can reach the community
+            # server. _ORIGIN adds the host permission (wxt.config), _URL is the fetch base
+            # (community.ts). Without _URL the build shipped an empty base and every request
+            # became a relative fetch -> "NetworkError when attempting to fetch resource".
             VITE_COMMUNITY_API_ORIGIN: ${{ vars.VITE_COMMUNITY_API_ORIGIN }}
+            VITE_COMMUNITY_API_URL: ${{ vars.VITE_COMMUNITY_API_URL }}
         steps:
             - name: Run release-please
               id: release
