@@ -72,7 +72,10 @@ export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
             ownedAnilistIds.add(manga.anilistId)
             if (!ownerTitleById.has(manga.anilistId)) ownerTitleById.set(manga.anilistId, manga.title)
         }
-        ownedTitles.add(manga.normalizedTitle || normalizeTitle(manga.title))
+        // Always recompute the key rather than trusting the stored normalizedTitle: some
+        // add/relink paths store it under a weaker rule (no whitespace-collapse/trim), so
+        // an owned title could otherwise slip past this guard and be recommended back.
+        ownedTitles.add(normalizeTitle(manga.title))
         for (const genre of manga.genres ?? []) {
             const key = genre.toLocaleLowerCase("en")
             genreProfile.set(key, (genreProfile.get(key) ?? 0) + 1)

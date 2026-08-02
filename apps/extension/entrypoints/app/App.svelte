@@ -2382,7 +2382,7 @@
     // arrive folded into the same list with a `community` marker. Empty/unreachable
     // AniList degrades to an empty state, never an error.
     let suggestions = $state<Suggestion[]>([])
-    let suggestionsLoaded = $state(false)
+    let suggestionsRequestedForVisit = $state(false)
     let suggestionsLoading = $state(false)
     let suggestionsFailed = $state(false)
     const communitySuggestions = $derived(suggestions.filter(s => s.community))
@@ -2402,9 +2402,16 @@
         }
     }
     $effect(() => {
-        if (activeSection === "Suggestions" && !suggestionsLoaded) {
-            suggestionsLoaded = true
-            void loadSuggestions(false)
+        // One load attempt per visit to the tab: the flag guards against re-firing while
+        // we stay on the tab, and resets when we leave, so a failed first load retries on
+        // the next visit (and a success revalidates cheaply via the cached handler).
+        if (activeSection === "Suggestions") {
+            if (!suggestionsRequestedForVisit) {
+                suggestionsRequestedForVisit = true
+                void loadSuggestions(false)
+            }
+        } else {
+            suggestionsRequestedForVisit = false
         }
     })
     // Send the user to the global search prefilled with a suggestion's title so they can

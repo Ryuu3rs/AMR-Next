@@ -114,3 +114,13 @@ describe("scoreSuggestions", () => {
         expect(result.map(s => s.anilistId)).toEqual([100, 200, 300])
     })
 })
+
+describe("scoreSuggestions - bughunt regressions", () => {
+    it("excludes an owned title stored with a weaker (non-collapsed) normalizedTitle", () => {
+        const owned = lib({ title: "Solo  Leveling", normalizedTitle: "solo  leveling", sourceId: "s" })
+        const seed = lib({ title: "Attack on Titan", anilistId: 1 })
+        const anilistRecs = new Map([[1, [rec(99, "Solo Leveling")]]])
+        const out = scoreSuggestions({ library: [seed, owned], anilistRecs })
+        expect(out.find(s => s.anilistId === 99)).toBeUndefined()
+    })
+})

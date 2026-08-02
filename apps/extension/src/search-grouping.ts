@@ -30,9 +30,12 @@ export type GroupingOptions = {
 // Canonical grouping key for a title with no AniList id. Deliberately stricter than the
 // stored normalizedTitle: it strips punctuation as well as folding case/whitespace, so
 // "Re:Zero" and "Re Zero" collapse. Unicode letters/numbers are kept so non-Latin titles
-// survive. Merging is exact-equality only (never substring) so distinct works stay apart.
-function titleKey(title: string): string {
-    return normalizeTitle(title.replace(/[^\p{L}\p{N}]+/gu, " "))
+// survive. NFC first so a decomposed accent (e + U+0301) keys the same as its composed
+// form. Tolerates a missing title (a partial scrape) by yielding "" - the caller then
+// gives that row its own key rather than merging every title-less hit together. Merging
+// is exact-equality only (never substring) so distinct works stay apart.
+function titleKey(title: string | undefined): string {
+    return normalizeTitle((title ?? "").normalize("NFC").replace(/[^\p{L}\p{N}]+/gu, " "))
 }
 
 function chapterValue(result: GroupableResult): number {
@@ -55,9 +58,16 @@ export function groupSearchResultsIntoWorks(results: GroupableResult[], opts: Gr
     const order: string[] = []
     const groups = new Map<string, GroupableResult[]>()
 
-    for (const result of results) {
+    results.forEach((result, i) => {
+        const tk = titleKey(result.title)
+        // No id and no usable title (symbol/whitespace-only or missing) -> give this row
+        // its own key so unrelated title-less hits never collapse into one card.
         const key =
-            typeof result.anilistId === "number" ? `anilist:${result.anilistId}` : `title:${titleKey(result.title)}`
+            typeof result.anilistId === "number"
+                ? `anilist:${result.anilistId}`
+                : tk
+                  ? `title:${tk}`
+                  : `untitled:${result.sourceId}:${result.sourceMangaId}:${i}`
         const existing = groups.get(key)
         if (existing) {
             existing.push(result)
@@ -65,14 +75,14 @@ export function groupSearchResultsIntoWorks(results: GroupableResult[], opts: Gr
             groups.set(key, [result])
             order.push(key)
         }
-    }
+    })
 
     return order.map(key => {
         const members = groups.get(key)!
         const anilistId = members.find(m => typeof m.anilistId === "number")?.anilistId
         const meta = typeof anilistId === "number" ? opts.metadataByAnilistId?.get(anilistId) : undefined
         const fallback = bestMember(members)
-        const title = meta?.title ?? fallback.title
+        const title = meta?.title ?? fallback.title ?? ""
         const coverUrl = meta?.coverUrl ?? fallback.coverUrl
         return {
             key,
