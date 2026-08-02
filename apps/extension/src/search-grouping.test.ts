@@ -87,3 +87,30 @@ describe("groupSearchResultsIntoWorks", () => {
         expect(withoutMeta[0]?.coverUrl).toBe("b.jpg")
     })
 })
+
+describe("groupSearchResultsIntoWorks - bughunt regressions", () => {
+    it("does not crash on a result missing a title", () => {
+        const results = [
+            { sourceId: "a", sourceMangaId: "1", url: "u" } as unknown as GroupableResult,
+            res({ sourceId: "b", title: "One Piece" })
+        ]
+        expect(() => groupSearchResultsIntoWorks(results)).not.toThrow()
+        expect(groupSearchResultsIntoWorks(results)).toHaveLength(2)
+    })
+
+    it("keeps punctuation/symbol-only titles as distinct works", () => {
+        const works = groupSearchResultsIntoWorks([
+            res({ sourceId: "a", title: "!!!" }),
+            res({ sourceId: "b", title: "???" })
+        ])
+        expect(works).toHaveLength(2)
+    })
+
+    it("groups the same accented title regardless of unicode normalization form", () => {
+        const works = groupSearchResultsIntoWorks([
+            res({ sourceId: "a", title: "Café" }),
+            res({ sourceId: "b", title: "Café" })
+        ])
+        expect(works).toHaveLength(1)
+    })
+})

@@ -78,19 +78,41 @@ async function computeSuggestions(): Promise<Suggestion[]> {
     })
 }
 
+// Shared across concurrent suggestions:get calls so the AniList fan-out runs once, not
+// once per request (two popup/tab contexts or an alarm + a popup all hit the same SW).
+let inflightCompute: Promise<Suggestion[]> | null = null
+
+async function computeAndCache(prevCache: SuggestionsCache | null): Promise<Suggestion[]> {
+    const suggestions = await computeSuggestions()
+    // A recompute that yields nothing (AniList unreachable, no anilistId titles) must not
+    // overwrite a good cache - fall back to it instead.
+    if (suggestions.length === 0 && prevCache) return prevCache.suggestions
+    try {
+        await setSuggestionsCache({ suggestions, updatedAt: Date.now() })
+    } catch (error) {
+        // A persist failure (quota/IO) must not throw away a good in-hand result.
+        console.warn("[AMR] Suggestions cache write failed", error)
+    }
+    return suggestions
+}
+
 export const suggestionsHandlers: HandlerMap = {
     "suggestions:get": async request => {
-        const cache = await getSuggestionsCache()
-        const fresh = cache !== null && Date.now() - cache.updatedAt < STALE_MS
-        if (fresh && !request.force) return cache.suggestions
-
+        let cache: SuggestionsCache | null = null
         try {
-            const suggestions = await computeSuggestions()
-            // A recompute that yields nothing (AniList unreachable, no anilistId titles)
-            // must not overwrite a good cache - fall back to it instead.
-            if (suggestions.length === 0 && cache) return cache.suggestions
-            await setSuggestionsCache({ suggestions, updatedAt: Date.now() })
-            return suggestions
+            // Inside the try so a cache-read failure degrades to [] like any other failure
+            // instead of rejecting (the never-throw contract this handler advertises).
+            cache = await getSuggestionsCache()
+            if (cache && Date.now() - cache.updatedAt < STALE_MS && !request.force) {
+                return cache.suggestions
+            }
+
+            if (!inflightCompute) {
+                inflightCompute = computeAndCache(cache).finally(() => {
+                    inflightCompute = null
+                })
+            }
+            return await inflightCompute
         } catch (error) {
             console.warn("[AMR] Suggestions computation failed", error)
             return cache?.suggestions ?? []

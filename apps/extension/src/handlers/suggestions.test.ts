@@ -187,3 +187,38 @@ describe("suggestions:get", () => {
         expect(suggestions[0]!.community).toBe(false)
     })
 })
+
+describe("suggestions:get - bughunt regressions", () => {
+    it("shares one AniList fan-out across concurrent cold requests", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100, genres: ["Action"] }))
+        getRecommendations.mockImplementation(
+            () =>
+                new Promise<RecCandidate[]>(resolve =>
+                    setTimeout(() => resolve([{ anilistId: 999, title: "Fresh Pick", genres: ["Action"] }]), 20)
+                )
+        )
+
+        const [a, b] = await Promise.all([getSuggestions(), getSuggestions()])
+
+        expect(a.map(s => s.anilistId)).toEqual([999])
+        expect(b.map(s => s.anilistId)).toEqual([999])
+        expect(getRecommendations).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not reject when the cache read throws (never-throw contract)", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100 }))
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        vi.spyOn(fakeBrowser.storage.local, "get").mockRejectedValueOnce(new Error("storage unavailable"))
+        await expect(getSuggestions()).resolves.toEqual([])
+    })
+
+    it("returns freshly-computed suggestions even when the cache write fails", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100, genres: ["Action"] }))
+        getRecommendations.mockResolvedValueOnce([{ anilistId: 999, title: "Fresh Pick", genres: ["Action"] }])
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        vi.spyOn(fakeBrowser.storage.local, "set").mockRejectedValueOnce(new Error("quota / io error"))
+
+        const result = await getSuggestions()
+        expect(result.map(s => s.anilistId)).toEqual([999])
+    })
+})
