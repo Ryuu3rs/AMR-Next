@@ -1084,7 +1084,11 @@
     }
 
     async function toggleAutoSync(on: boolean) {
-        syncStatus = await sendRuntimeMessage<SyncStatus>({ type: "sync:config", config: { autoSync: on } })
+        try {
+            syncStatus = await sendRuntimeMessage<SyncStatus>({ type: "sync:config", config: { autoSync: on } })
+        } catch {
+            if (syncStatus) syncStatus = { ...syncStatus }
+        }
     }
 
     async function pushSync() {
@@ -1537,74 +1541,115 @@
         }
     }
 
+    // Each of these one-way-bound (checked/value={state}) controls updates state only
+    // after the write resolves. On a failed write, revertControls() reassigns the backing
+    // state to a fresh reference so Svelte snaps the control back to its true value instead
+    // of leaving it showing the user's change for a setting that was never applied.
+    function revertControls() {
+        if (detailManga) detailManga = { ...detailManga }
+        library = [...library]
+    }
+
     async function setNsfw(manga: LibraryManga, nsfw: boolean) {
-        await sendRuntimeMessage({ type: "library:nsfw", mangaId: manga.id, nsfw })
-        library = library.map(m => (m.id === manga.id ? { ...m, nsfw } : m))
-        if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, nsfw }
+        try {
+            await sendRuntimeMessage({ type: "library:nsfw", mangaId: manga.id, nsfw })
+            library = library.map(m => (m.id === manga.id ? { ...m, nsfw } : m))
+            if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, nsfw }
+        } catch {
+            revertControls()
+        }
     }
 
     async function setManual(manga: LibraryManga, manual: boolean) {
-        await sendRuntimeMessage({ type: "library:manual", mangaId: manga.id, manual })
-        library = library.map(m => (m.id === manga.id ? { ...m, manualTracking: manual } : m))
-        if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, manualTracking: manual }
+        try {
+            await sendRuntimeMessage({ type: "library:manual", mangaId: manga.id, manual })
+            library = library.map(m => (m.id === manga.id ? { ...m, manualTracking: manual } : m))
+            if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, manualTracking: manual }
+        } catch {
+            revertControls()
+        }
     }
 
     async function setHold(manga: LibraryManga, onHold: boolean) {
-        await sendRuntimeMessage({ type: "library:hold", mangaId: manga.id, onHold })
-        library = library.map(m => (m.id === manga.id ? { ...m, onHold } : m))
-        if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, onHold }
+        try {
+            await sendRuntimeMessage({ type: "library:hold", mangaId: manga.id, onHold })
+            library = library.map(m => (m.id === manga.id ? { ...m, onHold } : m))
+            if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, onHold }
+        } catch {
+            revertControls()
+        }
     }
 
     async function setNumber(manga: LibraryManga, field: "lastReadChapterNumber" | "latestChapterNumber", raw: string) {
         const trimmed = raw.trim()
         const value = trimmed === "" ? null : Math.max(0, Number(trimmed))
         if (value !== null && !Number.isFinite(value)) return
-        await sendRuntimeMessage({ type: "library:numbers", mangaId: manga.id, [field]: value })
-        const applyNumber = (m: LibraryManga): LibraryManga => {
-            const next = { ...m }
-            if (value === null) delete next[field]
-            else next[field] = value
-            return next
+        try {
+            await sendRuntimeMessage({ type: "library:numbers", mangaId: manga.id, [field]: value })
+            const applyNumber = (m: LibraryManga): LibraryManga => {
+                const next = { ...m }
+                if (value === null) delete next[field]
+                else next[field] = value
+                return next
+            }
+            library = library.map(m => (m.id === manga.id ? applyNumber(m) : m))
+            if (detailManga && detailManga.id === manga.id) detailManga = applyNumber(detailManga)
+        } catch {
+            revertControls()
         }
-        library = library.map(m => (m.id === manga.id ? applyNumber(m) : m))
-        if (detailManga && detailManga.id === manga.id) detailManga = applyNumber(detailManga)
     }
 
     async function setReadingDirection(manga: LibraryManga, raw: string) {
         const value = raw === "" ? null : (raw as "ltr" | "rtl" | "vertical")
-        await sendRuntimeMessage({ type: "library:reading-prefs", mangaId: manga.id, readingDirection: value })
-        const apply = (m: LibraryManga): LibraryManga => {
-            const next = { ...m }
-            if (value === null) delete next.readingDirection
-            else next.readingDirection = value
-            return next
+        try {
+            await sendRuntimeMessage({ type: "library:reading-prefs", mangaId: manga.id, readingDirection: value })
+            const apply = (m: LibraryManga): LibraryManga => {
+                const next = { ...m }
+                if (value === null) delete next.readingDirection
+                else next.readingDirection = value
+                return next
+            }
+            library = library.map(m => (m.id === manga.id ? apply(m) : m))
+            if (detailManga && detailManga.id === manga.id) detailManga = apply(detailManga)
+        } catch {
+            revertControls()
         }
-        library = library.map(m => (m.id === manga.id ? apply(m) : m))
-        if (detailManga && detailManga.id === manga.id) detailManga = apply(detailManga)
     }
 
     async function setReadingPageFit(manga: LibraryManga, raw: string) {
         const value = raw === "" ? null : (raw as "width" | "height" | "contain" | "original")
-        await sendRuntimeMessage({ type: "library:reading-prefs", mangaId: manga.id, pageFit: value })
-        const apply = (m: LibraryManga): LibraryManga => {
-            const next = { ...m }
-            if (value === null) delete next.pageFit
-            else next.pageFit = value
-            return next
+        try {
+            await sendRuntimeMessage({ type: "library:reading-prefs", mangaId: manga.id, pageFit: value })
+            const apply = (m: LibraryManga): LibraryManga => {
+                const next = { ...m }
+                if (value === null) delete next.pageFit
+                else next.pageFit = value
+                return next
+            }
+            library = library.map(m => (m.id === manga.id ? apply(m) : m))
+            if (detailManga && detailManga.id === manga.id) detailManga = apply(detailManga)
+        } catch {
+            revertControls()
         }
-        library = library.map(m => (m.id === manga.id ? apply(m) : m))
-        if (detailManga && detailManga.id === manga.id) detailManga = apply(detailManga)
     }
 
     async function changeAutoAdd(enabled: boolean) {
-        settings = await sendRuntimeMessage<AppSettings>({
-            type: "settings:update",
-            settings: { autoAdd: enabled }
-        })
+        try {
+            settings = await sendRuntimeMessage<AppSettings>({
+                type: "settings:update",
+                settings: { autoAdd: enabled }
+            })
+        } catch {
+            if (settings) settings = { ...settings }
+        }
     }
 
     async function updateSetting(patch: Partial<AppSettings>) {
-        settings = await sendRuntimeMessage<AppSettings>({ type: "settings:update", settings: patch })
+        try {
+            settings = await sendRuntimeMessage<AppSettings>({ type: "settings:update", settings: patch })
+        } catch {
+            if (settings) settings = { ...settings }
+        }
     }
 
     async function addByUrl() {
