@@ -21,6 +21,33 @@ describe("formatUpdateFailureLog", () => {
         expect(log.split("\n").filter(l => l.startsWith("- "))).toHaveLength(2)
     })
 
+    it("renders a failures-by-source tally sorted worst-first", () => {
+        const log = formatUpdateFailureLog([{ mangaId: "asurascans:manga:a", title: "A", message: "404" }], {
+            ...meta,
+            failuresBySource: { aquamanga: 5, asurascans: 8, flamecomics: 1 }
+        })
+        expect(log).toContain("failures by source:")
+        const tally = log
+            .split("\n")
+            .filter(l => /^- \w+: \d+$/.test(l))
+            .map(l => l.replace(/^- /, ""))
+        expect(tally).toEqual(["asurascans: 8", "aquamanga: 5", "flamecomics: 1"])
+    })
+
+    it("omits the by-source section when no map is provided", () => {
+        const log = formatUpdateFailureLog([{ mangaId: "s:x", title: "A", message: "m" }], meta)
+        expect(log).not.toContain("failures by source:")
+    })
+
+    it("tolerates a garbage failuresBySource without throwing", () => {
+        expect(() =>
+            formatUpdateFailureLog([], { ...meta, failuresBySource: { good: 3, bad: Number.NaN } as never })
+        ).not.toThrow()
+        const log = formatUpdateFailureLog([], { ...meta, failuresBySource: { good: 3, bad: Number.NaN } as never })
+        expect(log).toContain("- good: 3")
+        expect(log).not.toContain("bad")
+    })
+
     it("flattens embedded newlines so a title or message can't forge a new log line", () => {
         const log = formatUpdateFailureLog(
             [{ mangaId: "s:manga:x", title: "Evil\n- Fake Title [forged]", message: "line1\nline2\n\nline3" }],

@@ -182,10 +182,14 @@ describe("checkUpdates per-title error handling", () => {
             errors: Array<{ mangaId: string; title: string; message: string }>
         }
         expect(status.failed).toBe(1)
-        expect(status.checked).toBe(1)
+        // Both titles were attempted, so both count toward `checked` (the success and
+        // the hard failure). Only bot-block skips stay out of `checked` - see the
+        // "bot-block suppression" block below.
+        expect(status.checked).toBe(2)
         expect(status.errors).toContainEqual(
             expect.objectContaining({ mangaId: "m-broken", message: "Request failed with status 500" })
         )
+        expect(status).toMatchObject({ failuresBySource: { mangadex: 1 } })
     })
 })
 
