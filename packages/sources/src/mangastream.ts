@@ -212,14 +212,15 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
         return url.pathname.match(mangaRe)?.[1]
     }
 
-    function chapterNumberOf(slug: string): string {
+    // undefined when nothing parses (unnumbered special) - never default to "1", which
+    // collided such chapters with the real Chapter 1 and defeated the UNNUMBERED sentinel.
+    function chapterNumberOf(slug: string): string | undefined {
         if (isHierarchical) {
-            const num = slug.split("/").pop()
-            return num?.replace("-", ".") ?? "1"
+            return slug.split("/").pop()?.replace("-", ".")
         }
         const m = slug.match(/chapter[-_ ]?(\d+(?:[.-]\d+)?)/i)
         const raw = m ? captureGroup(m, 1) : undefined
-        return raw ? raw.replace("-", ".") : "1"
+        return raw ? raw.replace("-", ".") : undefined
     }
 
     // MangaStream/Asura render search hits inside `.listupd`; each card is an
@@ -286,7 +287,7 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
                 mangaId,
                 sourceId: config.id,
                 sourceChapterId: cslug,
-                title: `Chapter ${number}`,
+                title: number ? `Chapter ${number}` : cslug,
                 url: absolute.toString(),
                 sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
                 language
@@ -450,7 +451,7 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
                 mangaId,
                 sourceId: config.id,
                 sourceChapterId: slug,
-                title: `Chapter ${number}`,
+                title: number ? `Chapter ${number}` : slug,
                 url: input.url.toString(),
                 sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
                 language

@@ -70,10 +70,11 @@ function parseMangaUrl(url: URL): { mangaId: string; lang: string; slug: string 
     return { mangaId, lang, slug }
 }
 
-function chapterNumberFromSlug(slug: string): string {
+// undefined when nothing parses (unnumbered special) - never default to "1".
+function chapterNumberFromSlug(slug: string): string | undefined {
     const m = slug.match(/^chapter-(\d+(?:[.-]\d+)?)/)
     const raw = m ? captureGroup(m, 1) : undefined
-    return raw ? raw.replace("-", ".") : "1"
+    return raw ? raw.replace("-", ".") : undefined
 }
 
 function extractCoverUrl(html: string): string | undefined {
@@ -234,7 +235,7 @@ function extractChapterList(html: string, mangaId: string, mangaSlug: string, la
             mangaId: mangaDbId,
             sourceId: SOURCE_ID,
             sourceChapterId: `${mangaId}:${chapterId}`,
-            title: `Chapter ${number}`,
+            title: number ? `Chapter ${number}` : chapterSlug,
             url,
             sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
             language: lang
@@ -399,7 +400,7 @@ export const mangaparkAdapter: SourceAdapter = {
             mangaId: mangaDbId,
             sourceId: SOURCE_ID,
             sourceChapterId: `${slugs.mangaId}:${slugs.chapterId}`,
-            title: `Chapter ${number}`,
+            title: number ? `Chapter ${number}` : slugs.chapterSlug,
             url: input.url.toString(),
             sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
             language: slugs.lang

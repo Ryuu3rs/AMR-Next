@@ -155,6 +155,16 @@ describe("createMadaraAdapter", () => {
         expect(new URL(chapterFetch!).searchParams.get("style")).toBe("list")
     })
 
+    // Regression: an unnumbered chapter slug must map to UNNUMBERED_SORT_KEY (Infinity),
+    // NOT default to 1 (which collided it with the real Chapter 1 and polluted progress).
+    it("assigns an unnumbered chapter slug UNNUMBERED_SORT_KEY, not 1", async () => {
+        const url = "https://test-madara.example/series/cool-manga/ch-extra/"
+        const context = createContext({ "/series/cool-manga/ch-extra/": chapterHtml })
+        const result = await adapter.resolveChapter({ url: new URL(url) }, context)
+        expect(result.chapter.sortKey).toBe(Number.POSITIVE_INFINITY)
+        expect(result.chapter.title).not.toBe("Chapter 1")
+    })
+
     it("resolves a chapter via Strategy 0 (id=image-N, src first)", async () => {
         const context = createContext({ "/series/cool-manga/ch-12/": chapterHtml })
         const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)

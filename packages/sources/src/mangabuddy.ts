@@ -231,10 +231,11 @@ export function createMangaBuddyAdapter(config: MangaBuddyConfig): SourceAdapter
         return bare
     }
 
-    function chapterNumberOf(slug: string): string {
+    // undefined when nothing parses (unnumbered special) - never default to "1".
+    function chapterNumberOf(slug: string): string | undefined {
         const m = slug.match(/chapter[-_ ]?(\d+(?:[.-]\d+)?)/i)
         const raw = m ? captureGroup(m, 1) : undefined
-        return raw ? raw.replace("-", ".") : "1"
+        return raw ? raw.replace("-", ".") : undefined
     }
 
     // Require an explicit `title` attribute on the anchor: MangaBuddy's result
@@ -294,7 +295,7 @@ export function createMangaBuddyAdapter(config: MangaBuddyConfig): SourceAdapter
                 mangaId,
                 sourceId: config.id,
                 sourceChapterId: `${slug}:${cslug}`,
-                title: `Chapter ${number}`,
+                title: number ? `Chapter ${number}` : cslug,
                 url: absolute.toString(),
                 sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
                 language
@@ -443,7 +444,7 @@ export function createMangaBuddyAdapter(config: MangaBuddyConfig): SourceAdapter
                 mangaId,
                 sourceId: config.id,
                 sourceChapterId: `${slugs.mangaSlug}:${slugs.chapterSlug}`,
-                title: `Chapter ${number}`,
+                title: number ? `Chapter ${number}` : slugs.chapterSlug,
                 url: input.url.toString(),
                 sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
                 language

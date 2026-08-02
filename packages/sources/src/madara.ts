@@ -426,9 +426,12 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
         return url.pathname.match(mangaRe)?.[1]
     }
 
-    function extractChapterNumber(chapterSlug: string): string {
+    // Returns undefined when the slug has no parseable number (e.g. "ch-extra",
+    // "oneshot") - do NOT default to "1", which collided unnumbered chapters with the
+    // real Chapter 1 and let the `?? UNNUMBERED_SORT_KEY` sentinel below never fire.
+    function extractChapterNumber(chapterSlug: string): string | undefined {
         const match = chapterSlug.match(chapterNumberRe)
-        return (match ? captureGroup(match, 1) : undefined) ?? "1"
+        return match ? captureGroup(match, 1) : undefined
     }
 
     async function fetchAjaxImages(html: string, context: SourceContext): Promise<{ urls: string[]; debug: string }> {
@@ -687,7 +690,7 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
                     mangaId,
                     sourceId: config.id,
                     sourceChapterId: `${slugs.mangaSlug}:${slugs.chapterSlug}`,
-                    title: `Chapter ${chapterNumber}`,
+                    title: chapterNumber ? `Chapter ${chapterNumber}` : slugs.chapterSlug,
                     url: input.url.toString(),
                     sortKey: parseChapterNumber(chapterNumber) ?? UNNUMBERED_SORT_KEY,
                     language
@@ -749,7 +752,7 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
                 mangaId,
                 sourceId: config.id,
                 sourceChapterId: `${slugs.mangaSlug}:${slugs.chapterSlug}`,
-                title: `Chapter ${chapterNumber}`,
+                title: chapterNumber ? `Chapter ${chapterNumber}` : slugs.chapterSlug,
                 url: input.url.toString(),
                 sortKey: parseChapterNumber(chapterNumber) ?? UNNUMBERED_SORT_KEY,
                 language
