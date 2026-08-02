@@ -14,6 +14,8 @@
     let resolving = $state(false)
     let currentPage = $state(0)
     let mode = $state<"continuous" | "single">("continuous")
+    // Pages shown at once in paged mode: 1 (single) or 2 (side-by-side spread).
+    let spread = $state<1 | 2>(1)
     let direction = $state<ReadingDirection>("ltr")
     let pageFit = $state<PageFit>("width")
     let showPageNumber = $state(true)
@@ -463,6 +465,11 @@
         void setDirection(next)
     }
 
+    async function setSpread(next: 1 | 2) {
+        spread = next
+        if (mangaId) await browser.storage.local.set({ [`readerSpread:${mangaId}`]: next })
+    }
+
     // Per-series "Webtoon view" (no-gap continuous) override - mirrors setDirection's
     // shape, but persists to the library record via library:reading-prefs instead of
     // local storage, since this is a per-manga DB override rather than a device-local one.
@@ -505,6 +512,15 @@
 
     // Vertical (webtoon) direction always scrolls continuously.
     const effectiveMode = $derived(direction === "vertical" ? "continuous" : mode)
+    // Two-page spread only applies to paged (single) LTR/RTL reading, never to scroll.
+    const effectiveSpread = $derived(effectiveMode === "single" && direction !== "vertical" ? spread : 1)
+    // The page indices shown in the current paged view (one, or a pair when 2-up and a
+    // next page exists). RTL ordering is handled in CSS (row-reverse), not here.
+    const spreadIndices = $derived.by(() => {
+        if (effectiveSpread !== 2) return [currentPage]
+        const pageCount = chapter?.pages.length ?? 0
+        return currentPage + 1 < pageCount ? [currentPage, currentPage + 1] : [currentPage]
+    })
     // A5: double-click toggles between the configured fit and original (zoom).
     const effectivePageFit = $derived(fitOverride ?? pageFit)
     const progressPct = $derived(
@@ -617,6 +633,7 @@
             try {
                 const modeKey = `readerMode:${mangaId}`
                 const dirKey = `readerDirection:${mangaId}`
+                const spreadKey = `readerSpread:${mangaId}`
                 const [settings, stored, libraryManga] = await Promise.all([
                     sendRuntimeMessage<{
                         readingMode: "continuous" | "single"
@@ -626,7 +643,9 @@
                         noGapContinuous: boolean
                         preloadPages: number
                     }>({ type: "settings:get" }),
-                    browser.storage.local.get([modeKey, dirKey]).catch(() => ({}) as Record<string, unknown>),
+                    browser.storage.local
+                        .get([modeKey, dirKey, spreadKey])
+                        .catch(() => ({}) as Record<string, unknown>),
                     sendRuntimeMessage<{
                         readingDirection?: ReadingDirection
                         pageFit?: PageFit
@@ -636,6 +655,7 @@
                 const modeOverride = stored[modeKey]
                 const dirOverride = stored[dirKey]
                 mode = modeOverride === "single" || modeOverride === "continuous" ? modeOverride : settings.readingMode
+                spread = stored[spreadKey] === 2 ? 2 : 1
                 // Per-series DB override wins, then the local per-title override, then global.
                 direction =
                     libraryManga?.readingDirection ??
@@ -830,8 +850,9 @@
         }
         if (effectiveMode !== "single") return
         const lastIndex = chapter.pages.length - 1
-        const next = () => recordProgress(Math.min(currentPage + 1, lastIndex))
-        const prev = () => recordProgress(Math.max(currentPage - 1, 0))
+        const step = effectiveSpread
+        const next = () => recordProgress(Math.min(currentPage + step, lastIndex))
+        const prev = () => recordProgress(Math.max(currentPage - step, 0))
         const key = event.key.toLowerCase()
         if (key === "j") next()
         else if (key === "k") prev()
@@ -912,6 +933,16 @@
                 onclick={cycleDirection}>
                 {direction === "ltr" ? "→" : direction === "rtl" ? "←" : "↓"}
             </button>
+            {#if effectiveMode === "single" && direction !== "vertical"}
+                <button
+                    type="button"
+                    class="btn-sm"
+                    class:active={spread === 2}
+                    title="Single or double-page spread"
+                    onclick={() => void setSpread(spread === 2 ? 1 : 2)}>
+                    {spread === 2 ? "2-up" : "1-up"}
+                </button>
+            {/if}
             {#if effectiveMode === "continuous"}
                 <button
                     type="button"
@@ -1127,17 +1158,24 @@
     {:else if !chapter}
         <section class="message"><p>No chapter loaded.</p></section>
     {:else if effectiveMode === "single" && !imagesBroken}
-        <div class="page">
-            <img
-                src={pageSrcs[currentPage]}
-                alt={`Page ${currentPage + 1}`}
-                ondblclick={toggleZoom}
-                onerror={handleImageError}
-                onload={e => {
-                    delete (e.currentTarget as HTMLImageElement).dataset.didFallback
-                    recordProgress(currentPage)
-                }} />
-            {#if showPageNumber}<span class="page-num">{currentPage + 1} / {chapter.pages.length}</span>{/if}
+        <div class="page" class:spread={effectiveSpread === 2 && spreadIndices.length > 1}>
+            {#each spreadIndices as p (p)}
+                <img
+                    src={pageSrcs[p]}
+                    alt={`Page ${p + 1}`}
+                    ondblclick={toggleZoom}
+                    onerror={handleImageError}
+                    onload={e => {
+                        delete (e.currentTarget as HTMLImageElement).dataset.didFallback
+                        recordProgress(currentPage)
+                    }} />
+            {/each}
+            {#if showPageNumber}
+                <span class="page-num">
+                    {spreadIndices.length > 1 ? `${currentPage + 1}-${currentPage + 2}` : `${currentPage + 1}`} / {chapter
+                        .pages.length}
+                </span>
+            {/if}
         </div>
     {:else if !imagesBroken}
         {#each pageSrcs as src, index}
