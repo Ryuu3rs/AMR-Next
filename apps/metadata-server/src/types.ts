@@ -5,6 +5,7 @@ export type MangaStatus = "unknown" | "ongoing" | "completed" | "hiatus" | "canc
 
 export type MetadataResult = {
     anilistId?: number
+    malId?: number
     title?: string
     status?: MangaStatus
     coverUrl?: string

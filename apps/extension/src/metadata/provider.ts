@@ -12,6 +12,8 @@ export type MangaStatus = "unknown" | "ongoing" | "completed" | "hiatus" | "canc
 export type MetadataResult = {
     // AniList media id, cached on the manga for reuse by enrichment and sync.
     anilistId?: number
+    // MAL id (from Jikan fallback or AniList idMal) - the cross-tracker pivot id.
+    malId?: number
     title?: string
     status?: MangaStatus
     coverUrl?: string

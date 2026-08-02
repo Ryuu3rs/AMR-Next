@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { resolveFromAniList, resolveFromAniListById } from "./anilist.js"
+import { resolveFromJikan } from "./jikan.js"
 import { getDb, isStale } from "./db.js"
 import { normalizeTitle } from "./normalize.js"
 
@@ -42,8 +43,23 @@ app.get("/metadata/resolve", async c => {
         return c.json(resolved)
     }
 
-    // Genuine no-match (AniList responded, no title). markNoMatch keeps any existing
-    // good row intact and only caches an empty no-match when nothing was known.
+    // AniList genuinely has no match - fall back to Jikan (free MAL API) so more titles
+    // resolve a cover/status, and we capture the MAL id. Jikan is flaky, so a transient
+    // failure must NOT poison the cache with a no-match: serve stale-but-good if we have
+    // it, else report no result WITHOUT a durable write (retry next time).
+    try {
+        const fromJikan = await resolveFromJikan(title)
+        if (fromJikan) {
+            store.upsertMetadata({ ...fromJikan, normalizedTitle: norm, source: "jikan" })
+            return c.json(fromJikan)
+        }
+    } catch {
+        if (hit && hit.source !== "none") return c.json(hit.result)
+        return c.json({ result: null })
+    }
+
+    // Both AniList and Jikan responded with a genuine no-match. markNoMatch keeps any
+    // existing good row intact and only caches an empty no-match when nothing was known.
     store.markNoMatch(norm)
     return c.json({ result: null })
 })

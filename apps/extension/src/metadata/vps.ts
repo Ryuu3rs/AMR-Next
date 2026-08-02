@@ -22,7 +22,7 @@ function metadataOrigin(): string | undefined {
 function isMetadataResult(body: unknown): body is MetadataResult {
     if (!body || typeof body !== "object") return false
     const b = body as Record<string, unknown>
-    return "anilistId" in b || "status" in b || "coverUrl" in b || "genres" in b
+    return "anilistId" in b || "malId" in b || "status" in b || "coverUrl" in b || "genres" in b
 }
 
 async function getJson(url: string): Promise<unknown | null> {
