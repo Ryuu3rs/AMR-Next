@@ -84,6 +84,12 @@ export const downloadsBookmarksAnalyticsHandlers: HandlerMap = {
             }
             pageBlobs.push(blob)
         }
+        // A soft-failed / anti-scrape resolution can yield zero pages. Don't persist an
+        // empty download - the offline reader would show a "downloaded" chapter with no
+        // pages. Surface it as an error instead.
+        if (pageBlobs.length === 0) {
+            throw new SourceError("invalid-response", "That chapter resolved to no pages - nothing to download")
+        }
         await saveDownload({
             chapterId: resolved.chapter.id,
             mangaId: resolved.manga.manga.id,
