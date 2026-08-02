@@ -68,3 +68,7 @@ docs/planning/
 docs/product/
 docs/future/
 docs/operations/
+
+# Planning / handoff docs - local only, not for the public repo
+PLAN-*.md
+HANDOFF-*.md
