@@ -16,6 +16,7 @@ export const libraryMangaSchema = mangaRecordSchema.extend({
     lastReadChapterId: z.string().optional(),
     latestChapterNumber: z.number().finite().optional(),
     lastReadChapterNumber: z.number().finite().optional(),
+    latestChapterAt: z.number().int().nonnegative().optional(),
     lastReadAt: z.number().int().nonnegative().optional(),
     manualTracking: z.boolean().optional(),
     categories: z.array(z.string().trim().min(1)).optional(),

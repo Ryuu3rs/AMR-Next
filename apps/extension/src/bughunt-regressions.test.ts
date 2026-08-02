@@ -131,3 +131,31 @@ describe("bughunt full-codebase regressions (database)", () => {
         expect(merged.latestChapterId).not.toBe("primary:c5")
     })
 })
+
+describe("recently-updated sort field", () => {
+    it("stamps latestChapterAt on a genuine advance but not on a re-slug", async () => {
+        await db.manga.put(manga({ id: "m1", latestChapterNumber: 5, latestChapterId: "m1:c5" }))
+
+        const c6 = chapter("m1:c6", "m1", 6)
+        await applyUpdateCheckResult({
+            mangaId: "m1",
+            chapters: [c6],
+            latest: c6,
+            previousLatestChapterId: "m1:c5",
+            previousLatestChapterNumber: 5
+        })
+        const stamped = (await db.manga.get("m1"))?.latestChapterAt
+        expect(stamped).toBeGreaterThan(0)
+
+        // Re-slug: new id, same number 6 -> not an advance -> latestChapterAt unchanged.
+        const reslug = chapter("m1:c6-reslug", "m1", 6)
+        await applyUpdateCheckResult({
+            mangaId: "m1",
+            chapters: [reslug],
+            latest: reslug,
+            previousLatestChapterId: "m1:c6",
+            previousLatestChapterNumber: 6
+        })
+        expect((await db.manga.get("m1"))?.latestChapterAt).toBe(stamped)
+    })
+})

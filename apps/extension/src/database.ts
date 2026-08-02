@@ -28,6 +28,10 @@ export type LibraryManga = MangaRecord & {
     // changes that invalidate the URL-derived chapter IDs above.
     latestChapterNumber?: number
     lastReadChapterNumber?: number
+    // When a genuinely new chapter was last detected for this title (for the "recently
+    // updated" sort). Distinct from updatedAt, which also moves on tag/category/relink
+    // edits, and from a bare id re-slug that isn't a real advance.
+    latestChapterAt?: number
     // When the user last read a chapter of this title (for "recently read" sort),
     // distinct from updatedAt which also moves on source update checks.
     lastReadAt?: number
@@ -1042,6 +1046,10 @@ export async function applyUpdateCheckResult(input: {
                 latestChapterId: latest.id,
                 sourceUrl: latest.url,
                 ...(Number.isFinite(latest.sortKey) ? { latestChapterNumber: latest.sortKey } : {}),
+                // Stamp the new-chapter time only on a genuine advance, not on a re-slug
+                // (id change with a same-or-lower number), so "recently updated" reflects
+                // real releases.
+                ...(advanced ? { latestChapterAt: Date.now() } : {}),
                 updatedAt: Date.now()
             })
         }

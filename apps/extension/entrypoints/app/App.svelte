@@ -60,7 +60,9 @@
     let noGapSelectionSavedTimer: ReturnType<typeof setTimeout> | undefined
     let loading = $state(true)
     let query = $state("")
-    let librarySort = $state<"recent-read" | "recent-added" | "title" | "latest-chapter">("recent-read")
+    let librarySort = $state<"recent-read" | "recent-added" | "recently-updated" | "title" | "latest-chapter">(
+        "recent-read"
+    )
     let categoryFilter = $state("")
     let genreFilter = $state("")
     let sourceFilter = $state("")
@@ -2117,6 +2119,11 @@
             case "latest-chapter":
                 sorted.sort((a, b) => (b.latestChapterNumber ?? 0) - (a.latestChapterNumber ?? 0))
                 break
+            case "recently-updated":
+                // Freshest new chapter first; fall back to updatedAt for titles not yet
+                // re-checked since this field was added.
+                sorted.sort((a, b) => (b.latestChapterAt ?? b.updatedAt) - (a.latestChapterAt ?? a.updatedAt))
+                break
         }
         return sorted
     })
@@ -3020,6 +3027,7 @@
                 <div class="library-controls">
                     <select aria-label="Sort library" bind:value={librarySort}>
                         <option value="recent-read">Recently read</option>
+                        <option value="recently-updated">Recently updated</option>
                         <option value="recent-added">Recently added</option>
                         <option value="title">Title (A-Z)</option>
                         <option value="latest-chapter">Latest chapter</option>
