@@ -11,6 +11,7 @@ const {
     getMediaListEntryIdMock,
     saveMediaStatusMock,
     deleteMediaListEntryMock,
+    getViewerNameMock,
     resolveMetadataMock,
     configureAniListAlarmMock
 } = vi.hoisted(() => ({
@@ -21,6 +22,7 @@ const {
     getMediaListEntryIdMock: vi.fn(),
     saveMediaStatusMock: vi.fn(),
     deleteMediaListEntryMock: vi.fn(),
+    getViewerNameMock: vi.fn(),
     resolveMetadataMock: vi.fn(),
     configureAniListAlarmMock: vi.fn()
 }))
@@ -29,7 +31,7 @@ vi.mock("../anilist", () => ({
     getAniListConfig: getAniListConfigMock,
     setAniListConfig: setAniListConfigMock,
     getAniListStatus: vi.fn(),
-    getViewerName: vi.fn(),
+    getViewerName: getViewerNameMock,
     getViewerProgress: getViewerProgressMock,
     saveViewerProgress: saveViewerProgressMock,
     getMediaListEntryId: getMediaListEntryIdMock,
@@ -55,13 +57,16 @@ function makeManga(o: Partial<LibraryManga> = {}): LibraryManga {
 
 beforeEach(async () => {
     await db.manga.clear()
+    getAniListConfigMock.mockReset()
     getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: false })
+    setAniListConfigMock.mockReset()
     setAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: false })
     getViewerProgressMock.mockReset()
     saveViewerProgressMock.mockReset()
     getMediaListEntryIdMock.mockReset()
     saveMediaStatusMock.mockReset()
     deleteMediaListEntryMock.mockReset()
+    getViewerNameMock.mockReset()
     resolveMetadataMock.mockReset()
     // Make the inter-title rate-limit delay instant.
     vi.stubGlobal("setTimeout", (fn: () => void) => {
@@ -176,5 +181,70 @@ describe("removeFromAniList", () => {
         await removeFromAniList(undefined)
         expect(getMediaListEntryIdMock).not.toHaveBeenCalled()
         expect(deleteMediaListEntryMock).not.toHaveBeenCalled()
+    })
+})
+
+describe("bughunt regressions", () => {
+    it("does NOT stamp lastSyncAt when the run was aborted partway", async () => {
+        const { runAniListSync, abortAniListSync } = await import("./anilist")
+        await db.manga.bulkPut([
+            makeManga({ id: "a", anilistId: 1, lastReadChapterNumber: 5 }),
+            makeManga({ id: "b", anilistId: 2, lastReadChapterNumber: 5 })
+        ])
+        // Abort while processing the first title.
+        getViewerProgressMock.mockImplementation(async () => {
+            abortAniListSync()
+            return 1
+        })
+        saveViewerProgressMock.mockResolvedValue(5)
+
+        await runAniListSync()
+
+        const stampedLastSyncAt = setAniListConfigMock.mock.calls.some(
+            ([arg]) => arg && Object.prototype.hasOwnProperty.call(arg, "lastSyncAt")
+        )
+        expect(stampedLastSyncAt).toBe(false)
+    })
+
+    it("caches only anilistId (not metadataUpdatedAt) when resolving an id during sync", async () => {
+        const { runAniListSync } = await import("./anilist")
+        await db.manga.put(makeManga({ id: "m1", title: "Solo Leveling", lastReadChapterNumber: 4 }))
+        resolveMetadataMock.mockResolvedValue({ anilistId: 777 })
+        getViewerProgressMock.mockResolvedValue(undefined)
+        saveViewerProgressMock.mockResolvedValue(4)
+
+        await runAniListSync()
+
+        const stored = await db.manga.get("m1")
+        expect(stored?.anilistId).toBe(777)
+        // Must stay undefined so the metadata-enrichment pass still runs for this title.
+        expect(stored?.metadataUpdatedAt).toBeUndefined()
+    })
+
+    it("anilist:config saves the token on a transient (5xx) validation error", async () => {
+        const { anilistHandlers } = await import("./anilist")
+        getViewerNameMock.mockRejectedValue(new Error("AniList API 503"))
+        setAniListConfigMock.mockResolvedValue({ token: "tok", autoSync: false, syncMembership: false })
+
+        const res = await anilistHandlers["anilist:config"]!(
+            { type: "anilist:config", config: { token: "tok" } } as never,
+            {} as never
+        )
+
+        expect(setAniListConfigMock).toHaveBeenCalledWith(expect.objectContaining({ token: "tok" }))
+        expect((res as { hasToken: boolean }).hasToken).toBe(true)
+    })
+
+    it("anilist:config rejects a token on a genuine auth (4xx) error without saving", async () => {
+        const { anilistHandlers } = await import("./anilist")
+        getViewerNameMock.mockRejectedValue(new Error("AniList API 401"))
+
+        await expect(
+            anilistHandlers["anilist:config"]!(
+                { type: "anilist:config", config: { token: "bad" } } as never,
+                {} as never
+            )
+        ).rejects.toThrow(/rejected/i)
+        expect(setAniListConfigMock).not.toHaveBeenCalled()
     })
 })

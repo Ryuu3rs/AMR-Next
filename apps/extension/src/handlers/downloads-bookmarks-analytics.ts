@@ -145,15 +145,19 @@ export const downloadsBookmarksAnalyticsHandlers: HandlerMap = {
         return getAnalyticsSummary(request.days)
     },
     "log:export": async () => {
-        // Gather the known secret values so the formatter can redact them literally
-        // (in addition to its token-pattern backstop) before the log leaves the device.
+        // Gather the known secret values so the formatter can redact them literally (in
+        // addition to its token-pattern backstop). Each config read is best-effort: a
+        // failed read must NOT deny the user their log - it's exactly the artifact they
+        // need when something is already broken. A missing secret still can't leak
+        // because the token-pattern backstop runs regardless.
+        const safe = async <T>(p: Promise<T>): Promise<T | undefined> => p.catch(() => undefined)
         const [logs, anilist, sync, community] = await Promise.all([
             getLogs(),
-            getAniListConfig(),
-            getSyncConfig(),
-            getCommunityProfile()
+            safe(getAniListConfig()),
+            safe(getSyncConfig()),
+            safe(getCommunityProfile())
         ])
-        const secrets = [anilist.token, sync.token, sync.gistId, community.userId, community.username].filter(
+        const secrets = [anilist?.token, sync?.token, sync?.gistId, community?.userId, community?.username].filter(
             (s): s is string => typeof s === "string" && s.length > 0
         )
         const text = formatDiagnosticLog(logs, {

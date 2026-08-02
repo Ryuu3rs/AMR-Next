@@ -46,9 +46,12 @@ export function formatDiagnosticLog(entries: readonly LogEntry[], meta: Diagnost
     const lines = entries.map(entry => {
         const time = new Date(entry.ts).toISOString()
         const src = entry.sourceId ? ` [${flatten(entry.sourceId)}]` : ""
-        const message = redact(flatten(entry.message), secrets)
-        const detail = entry.detail ? ` | ${redact(flatten(entry.detail), secrets)}` : ""
-        return `${time} ${entry.level.toUpperCase()} ${flatten(entry.scope)}${src}: ${message}${detail}`
+        const detail = entry.detail ? ` | ${flatten(entry.detail)}` : ""
+        // Redact the WHOLE assembled line, not per-field, so a secret is stripped no
+        // matter which field it lands in (scope/sourceId were previously un-redacted)
+        // and a secret spanning message+detail is caught too.
+        const line = `${time} ${entry.level.toUpperCase()} ${flatten(entry.scope)}${src}: ${flatten(entry.message)}${detail}`
+        return redact(line, secrets)
     })
 
     return `${header}\n\n${lines.join("\n") || "(no entries)"}`

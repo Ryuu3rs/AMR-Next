@@ -56,4 +56,30 @@ describe("formatDiagnosticLog", () => {
     it("handles an empty log", () => {
         expect(formatDiagnosticLog([], meta())).toContain("(no entries)")
     })
+
+    // Regression: scope + sourceId were previously interpolated un-redacted, leaking a
+    // secret/token that landed in either field.
+    it("redacts a known secret in the sourceId field", () => {
+        const out = formatDiagnosticLog(
+            [entry({ sourceId: "abc-secret-123", message: "ok" })],
+            meta(["abc-secret-123"])
+        )
+        expect(out).not.toContain("abc-secret-123")
+    })
+
+    it("redacts a token pattern in the scope field", () => {
+        const out = formatDiagnosticLog(
+            [entry({ scope: "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", message: "ok" })],
+            meta()
+        )
+        expect(out).not.toContain("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+    })
+
+    it("redacts a known secret in the detail field", () => {
+        const out = formatDiagnosticLog(
+            [entry({ message: "ok", detail: "user=abc-secret-123" })],
+            meta(["abc-secret-123"])
+        )
+        expect(out).not.toContain("abc-secret-123")
+    })
 })
