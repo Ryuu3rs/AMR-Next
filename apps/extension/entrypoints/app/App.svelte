@@ -314,6 +314,25 @@
     let anilistToken = $state("")
     let anilistMessage = $state("")
     let anilistSyncing = $state(false)
+    // AniList setup helper: the user pastes their Client ID and we build the
+    // implicit-grant authorize link for them, so they don't have to hand-assemble the URL.
+    const ANILIST_PIN_REDIRECT = "https://anilist.co/api/v2/oauth/pin"
+    let anilistClientId = $state("")
+    let anilistRedirectCopied = $state(false)
+    const anilistAuthorizeUrl = $derived(
+        anilistClientId.trim()
+            ? `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(anilistClientId.trim())}&response_type=token`
+            : ""
+    )
+    async function copyAniListRedirect() {
+        try {
+            await navigator.clipboard.writeText(ANILIST_PIN_REDIRECT)
+            anilistRedirectCopied = true
+            setTimeout(() => (anilistRedirectCopied = false), 1500)
+        } catch {
+            // Clipboard can be denied; the value is visible for manual copy anyway.
+        }
+    }
 
     function coverFailed(id: string) {
         const next = new Set(failedCovers)
@@ -540,6 +559,7 @@
         failed: number
         checkedAt: number
         errors?: Array<{ mangaId: string; title: string; message: string }>
+        failuresBySource?: Record<string, number>
     } | null>(null)
     let updateProgress = $state<{
         running: boolean
@@ -569,7 +589,8 @@
             checkedAt: updateStatus.checkedAt,
             checked: updateStatus.checked,
             updated: updateStatus.updated,
-            failed: updateStatus.failed
+            failed: updateStatus.failed,
+            ...(updateStatus.failuresBySource ? { failuresBySource: updateStatus.failuresBySource } : {})
         })
         updateLogCopying = true
         let outcome: "ok" | "fail"
@@ -4193,17 +4214,67 @@
             <h1 style="margin-top:32px">AniList sync</h1>
             <div class="data-list">
                 <div class="data-row">
-                    <div>
+                    <div style="flex:1">
                         <p class="row-label">Account</p>
-                        <p class="muted">
-                            Paste an AniList access token (create one at
-                            <code>anilist.co/settings/developer</code>). Stored locally on this device only.
-                            {anilistStatus?.viewerName
-                                ? ` Connected as ${anilistStatus.viewerName}.`
-                                : anilistStatus?.hasToken
-                                  ? " Connected."
-                                  : ""}
-                        </p>
+                        {#if anilistStatus?.hasToken}
+                            <p class="muted">
+                                {anilistStatus?.viewerName ? `Connected as ${anilistStatus.viewerName}.` : "Connected."} Token
+                                stored locally on this device only.
+                            </p>
+                        {:else}
+                            <p class="muted">
+                                Connect AniList to sync your read progress. Your token is stored locally on this device
+                                only and never sent anywhere but AniList.
+                            </p>
+                            <ol
+                                class="anilist-steps"
+                                style="margin:8px 0 0;padding-left:20px;line-height:1.9;max-width:580px">
+                                <li>
+                                    Open
+                                    <a
+                                        href="https://anilist.co/settings/developer"
+                                        target="_blank"
+                                        rel="noopener noreferrer">anilist.co/settings/developer</a>
+                                    and click <strong>Create New Client</strong>.
+                                </li>
+                                <li><strong>Name:</strong> anything, for example <code>AMR-Next</code>.</li>
+                                <li>
+                                    <strong>Redirect URL:</strong> paste this exactly:
+                                    <span
+                                        class="copy-field"
+                                        style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
+                                        <code>{ANILIST_PIN_REDIRECT}</code>
+                                        <button type="button" class="btn-sm" onclick={() => void copyAniListRedirect()}>
+                                            {anilistRedirectCopied ? "Copied" : "Copy"}
+                                        </button>
+                                    </span>
+                                </li>
+                                <li>
+                                    Click <strong>Save</strong>, then copy the <strong>Client ID</strong> it shows (a
+                                    number, e.g. <code>47574</code>).
+                                </li>
+                                <li>
+                                    Paste your <strong>Client ID</strong> here:
+                                    <input
+                                        type="text"
+                                        inputmode="numeric"
+                                        class="anilist-clientid"
+                                        style="margin-left:6px;width:200px"
+                                        placeholder="Client ID, e.g. 47574"
+                                        bind:value={anilistClientId} />
+                                </li>
+                                {#if anilistAuthorizeUrl}
+                                    <li>
+                                        <a href={anilistAuthorizeUrl} target="_blank" rel="noopener noreferrer">
+                                            Open your AniList authorize page
+                                        </a>, approve, then copy the token AniList shows you.
+                                    </li>
+                                {:else}
+                                    <li class="muted">Enter your Client ID above to get your authorize link.</li>
+                                {/if}
+                                <li>Paste the token below and click <strong>Connect</strong>.</li>
+                            </ol>
+                        {/if}
                     </div>
                     <div class="sync-token">
                         {#if anilistStatus?.hasToken}
