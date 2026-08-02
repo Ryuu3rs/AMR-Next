@@ -306,3 +306,16 @@ describe("log:export (bughunt regression)", () => {
         }
     })
 })
+
+describe("chapter:download (bughunt regression)", () => {
+    it("does not save a download when the chapter resolves to zero pages", async () => {
+        vi.mocked(resolveChapterUrl).mockResolvedValue(makeResolved([]))
+        await expect(
+            downloadsBookmarksAnalyticsHandlers["chapter:download"]!(
+                { type: "chapter:download", url: "https://mangadex.org/chapter/1" } as never,
+                ctx
+            )
+        ).rejects.toThrow()
+        expect(await db.downloads.count()).toBe(0)
+    })
+})

@@ -332,10 +332,13 @@ export class AmrDatabase extends Dexie {
 }
 
 function assertFiniteLatestChapterNumber(candidate: Partial<LibraryManga>): void {
-    if (candidate.latestChapterNumber !== undefined && !Number.isFinite(candidate.latestChapterNumber)) {
-        throw new Error(
-            `[AMR] Refusing to persist a non-finite latestChapterNumber (${candidate.latestChapterNumber}) on db.manga - filter to a finite chapter (isNumberedChapter/latestNumberedChapter) before writing.`
-        )
+    for (const field of ["latestChapterNumber", "lastReadChapterNumber"] as const) {
+        const value = candidate[field]
+        if (value !== undefined && !Number.isFinite(value)) {
+            throw new Error(
+                `[AMR] Refusing to persist a non-finite ${field} (${value}) on db.manga - filter to a finite chapter (isNumberedChapter/latestNumberedChapter) before writing.`
+            )
+        }
     }
 }
 
@@ -607,6 +610,14 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                       ((loser.lastReadChapterNumber ?? 0) > (merged.lastReadChapterNumber ?? 0) ||
                           merged.lastReadChapterId === undefined)
                     : fillLastRead && loser.lastReadChapterId !== undefined
+                // Same-source: if the number advanced to the loser's higher value but the
+                // loser carried no id to bring along, the primary's old id now points at a
+                // LOWER chapter than the number claims - clear it (self-heals on next read)
+                // rather than leave number and id desynced.
+                const clearLatestId =
+                    sameSource && !loserLatestWins && mergedLatestNumber !== merged.latestChapterNumber
+                const clearLastReadId =
+                    sameSource && !loserLastReadWins && mergedLastReadNumber !== merged.lastReadChapterNumber
                 const mergedLastReadAt = maxDefined(merged.lastReadAt, loser.lastReadAt)
                 const mergedCategories = [...new Set([...(merged.categories ?? []), ...(loser.categories ?? [])])]
                 const categories = mergedCategories.length > 0 ? mergedCategories : undefined
@@ -628,8 +639,16 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                     addedAt: Math.min(merged.addedAt, loser.addedAt),
                     ...(mergedLastReadNumber !== undefined ? { lastReadChapterNumber: mergedLastReadNumber } : {}),
                     ...(mergedLatestNumber !== undefined ? { latestChapterNumber: mergedLatestNumber } : {}),
-                    ...(loserLatestWins ? { latestChapterId: loser.latestChapterId } : {}),
-                    ...(loserLastReadWins ? { lastReadChapterId: loser.lastReadChapterId } : {}),
+                    ...(loserLatestWins
+                        ? { latestChapterId: loser.latestChapterId }
+                        : clearLatestId
+                          ? { latestChapterId: undefined }
+                          : {}),
+                    ...(loserLastReadWins
+                        ? { lastReadChapterId: loser.lastReadChapterId }
+                        : clearLastReadId
+                          ? { lastReadChapterId: undefined }
+                          : {}),
                     ...(mergedLastReadAt !== undefined ? { lastReadAt: mergedLastReadAt } : {}),
                     ...(categories !== undefined ? { categories } : {}),
                     ...(notes !== undefined ? { notes } : {}),
@@ -765,10 +784,12 @@ export async function fixupDanglingChapterIds(
 ): Promise<void> {
     const merged = await db.manga.get(mangaId)
     if (!merged) return
-    const maxTranslated = translatedChapters.reduce<ChapterRecord | undefined>(
-        (max, c) => (!max || c.sortKey > max.sortKey ? c : max),
-        undefined
-    )
+    // Only a NUMBERED chapter can stand in for "the furthest chapter reached" - an
+    // unnumbered chapter has sortKey Infinity, which would otherwise win this reduce and
+    // repoint a dangling id at a random special instead of the highest real chapter.
+    const maxTranslated = translatedChapters
+        .filter(c => isNumberedChapter(c.sortKey))
+        .reduce<ChapterRecord | undefined>((max, c) => (!max || c.sortKey > max.sortKey ? c : max), undefined)
     const patch: { lastReadChapterId?: string | undefined; latestChapterId?: string | undefined } = {}
     if (merged.lastReadChapterId !== undefined && (await db.chapters.get(merged.lastReadChapterId)) === undefined) {
         const match = canonicalChapters.find(c => c.sortKey === merged.lastReadChapterNumber) ?? maxTranslated
@@ -1005,6 +1026,11 @@ export async function applyUpdateCheckResult(input: {
 }): Promise<{ advanced: boolean }> {
     let advanced = false
     await db.transaction("rw", db.chapters, db.manga, async () => {
+        // If the user removed (or merged away) this title during the multi-hundred-ms
+        // chapter-list fetch, its chapter rows were deleted with it - writing the freshly
+        // fetched chapters back would leave orphan rows with no parent manga. Gate on the
+        // manga still existing, same as repairMangahubChapters.
+        if ((await db.manga.get(input.mangaId)) === undefined) return
         await db.chapters.bulkPut(input.chapters)
         if (input.purgeStaleMangahub) {
             await input.purgeStaleMangahub(new Set(input.chapters.map(c => c.id)))
@@ -1282,6 +1308,12 @@ export async function trackExternalChapter(input: {
 
 export async function saveProgress(progress: ReadingProgress): Promise<void> {
     await db.transaction("rw", db.progress, db.manga, db.chapters, db.historyEvents, async () => {
+        // Don't write progress/history for a title that isn't in the library: the reader's
+        // autosave can fire just after the user removed the title, and db.manga.update on a
+        // missing key is a silent no-op, which would leave orphan progress + history rows
+        // (inflating stats) with no parent manga. Same anti-resurrection stance as
+        // saveReaderResolvedChapter.
+        if ((await db.manga.get(progress.mangaId)) === undefined) return
         const existing = await db.progress.get(progress.chapterId)
         // completed is a one-way ratchet: once a chapter has been completed, a later
         // report from an earlier page (paging back after finishing, or re-reading from
@@ -1414,9 +1446,19 @@ export async function exportDatabase(): Promise<LibraryExportEnvelope> {
 // Infinity into null) into a backup file, where schema.ts's `z.number().finite()` would
 // then reject the whole record on restore.
 function stripNonFiniteLatestChapterNumber(m: LibraryManga): LibraryManga {
-    if (m.latestChapterNumber === undefined || Number.isFinite(m.latestChapterNumber)) return m
-    const { latestChapterNumber: _drop, ...rest } = m
-    return rest
+    // JSON.stringify turns Infinity into null, which libraryMangaSchema's finite() then
+    // rejects on import - dropping the WHOLE title. Strip a non-finite number from either
+    // chapter-number field so the record round-trips (the field just heals on next read).
+    let out = m
+    if (out.latestChapterNumber !== undefined && !Number.isFinite(out.latestChapterNumber)) {
+        const { latestChapterNumber: _drop, ...rest } = out
+        out = rest
+    }
+    if (out.lastReadChapterNumber !== undefined && !Number.isFinite(out.lastReadChapterNumber)) {
+        const { lastReadChapterNumber: _drop, ...rest } = out
+        out = rest
+    }
+    return out
 }
 
 export type ImportResolution = "overwrite" | "skip" | "merge"
@@ -1583,6 +1625,27 @@ function parseImportData(value: unknown): {
     }
 }
 
+// Picks the further-along chapter position (number + id) as a UNIT from the two
+// records, so a merge never keeps one record's chapter NUMBER next to the other's
+// chapter ID (which desynced "continue reading" from the displayed progress). When
+// only one side has a number, that side's id is used; when neither does, the imported
+// id is kept.
+function furtherPosition(
+    existing: LibraryManga,
+    imported: LibraryManga,
+    numberKey: "lastReadChapterNumber" | "latestChapterNumber",
+    idKey: "lastReadChapterId" | "latestChapterId"
+): { number: number | undefined; id: string | undefined } {
+    const en = existing[numberKey]
+    const im = imported[numberKey]
+    if (en !== undefined && im !== undefined) {
+        return en >= im ? { number: en, id: existing[idKey] } : { number: im, id: imported[idKey] }
+    }
+    if (en !== undefined) return { number: en, id: existing[idKey] }
+    if (im !== undefined) return { number: im, id: imported[idKey] }
+    return { number: undefined, id: imported[idKey] ?? existing[idKey] }
+}
+
 function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryManga {
     const rating = existing.rating ?? imported.rating
     // Categories are a list - union them instead of letting one side's tags silently
@@ -1596,8 +1659,10 @@ function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryMang
     const readingDirection = existing.readingDirection ?? imported.readingDirection
     const pageFit = existing.pageFit ?? imported.pageFit
     const noGapContinuous = existing.noGapContinuous ?? imported.noGapContinuous
-    const lastReadChapterNumber = maxDefined(existing.lastReadChapterNumber, imported.lastReadChapterNumber)
-    const latestChapterNumber = maxDefined(existing.latestChapterNumber, imported.latestChapterNumber)
+    const read = furtherPosition(existing, imported, "lastReadChapterNumber", "lastReadChapterId")
+    const latest = furtherPosition(existing, imported, "latestChapterNumber", "latestChapterId")
+    const lastReadChapterNumber = read.number
+    const latestChapterNumber = latest.number
     const lastReadAt = existing.lastReadAt
         ? imported.lastReadAt
             ? Math.max(existing.lastReadAt, imported.lastReadAt)
@@ -1616,6 +1681,9 @@ function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryMang
         ...(noGapContinuous !== undefined ? { noGapContinuous } : {}),
         ...(lastReadChapterNumber !== undefined ? { lastReadChapterNumber } : {}),
         ...(latestChapterNumber !== undefined ? { latestChapterNumber } : {}),
+        // Override the ...imported ids so number and id stay in lockstep (furtherPosition).
+        ...(read.id !== undefined ? { lastReadChapterId: read.id } : {}),
+        ...(latest.id !== undefined ? { latestChapterId: latest.id } : {}),
         ...(lastReadAt !== undefined ? { lastReadAt } : {}),
         addedAt: Math.min(existing.addedAt, imported.addedAt),
         updatedAt: Math.max(existing.updatedAt, imported.updatedAt)
@@ -1699,18 +1767,39 @@ export async function importDatabase(
             if (sourceLinksToWrite.length > 0) await db.sourceLinks.bulkPut(sourceLinksToWrite)
             if (chaptersToWrite.length > 0) await db.chapters.bulkPut(chaptersToWrite)
             if (candidateProgress.length > 0) {
-                // Progress isn't covered by mergeManga's Math.max logic - bulkPut-ing it raw
-                // let a stale imported record (e.g. completed: false) regress a chapter that's
-                // locally marked completed: true. Only overwrite when the incoming record is
-                // at least as recent as what's already stored.
+                // Progress isn't covered by mergeManga's Math.max logic. Take the fresher
+                // record by updatedAt, but ratchet `completed` one-way: a chapter marked
+                // completed locally must never regress to incomplete from an import (matching
+                // saveProgress's own ratchet), even if the imported record is newer.
                 const existingProgress = await db.progress.bulkGet(candidateProgress.map(p => p.chapterId))
-                const progressToWrite = candidateProgress.filter((p, i) => {
+                const progressToWrite: ReadingProgress[] = []
+                candidateProgress.forEach((p, i) => {
                     const existing = existingProgress[i]
-                    return !existing || p.updatedAt >= existing.updatedAt
+                    if (!existing) {
+                        progressToWrite.push(p)
+                        return
+                    }
+                    const base = p.updatedAt >= existing.updatedAt ? p : existing
+                    const completed = existing.completed || p.completed
+                    if (base === existing && completed === existing.completed) return // no change
+                    progressToWrite.push({ ...base, completed })
                 })
                 if (progressToWrite.length > 0) await db.progress.bulkPut(progressToWrite)
             }
-            if (historyToWrite.length > 0) await db.historyEvents.bulkPut(historyToWrite)
+            if (historyToWrite.length > 0) {
+                // History carries no stable natural key, so re-importing the same backup or a
+                // routine sync:pull (both merge without clearing) would multiply events and
+                // inflate stats. Dedup against existing rows by their natural identity.
+                const key = (h: Omit<HistoryEvent, "id">) => `${h.mangaId}|${h.chapterId}|${h.type}|${h.occurredAt}`
+                const seenHistory = new Set((await db.historyEvents.toArray()).map(key))
+                const historyDeduped = historyToWrite.filter(h => {
+                    const k = key(h)
+                    if (seenHistory.has(k)) return false
+                    seenHistory.add(k)
+                    return true
+                })
+                if (historyDeduped.length > 0) await db.historyEvents.bulkAdd(historyDeduped)
+            }
             if (bookmarksToWrite.length > 0) await db.pageBookmarks.bulkPut(bookmarksToWrite)
         }
     )
