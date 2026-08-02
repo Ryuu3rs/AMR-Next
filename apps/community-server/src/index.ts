@@ -24,14 +24,36 @@ const app = new Hono()
 
 app.use("/*", cors({ origin: "*", allowMethods: ["GET", "POST"], allowHeaders: ["Content-Type"] }))
 
+// Best-effort in-memory per-IP rate limit (single instance). Behind Traefik the client
+// IP is the first X-Forwarded-For hop. Generous windows - only stops abuse/DoS bursts
+// (register spam, unbounded event floods), never a normal user.
+type RlBucket = { count: number; resetAt: number }
+const rlBuckets = new Map<string, RlBucket>()
+function withinRateLimit(forwardedFor: string | undefined, name: string, limit: number, windowMs: number): boolean {
+    const ip = (forwardedFor ?? "").split(",")[0]?.trim() || "unknown"
+    const key = `${name}:${ip}`
+    const now = Date.now()
+    const bucket = rlBuckets.get(key)
+    if (!bucket || now > bucket.resetAt) {
+        rlBuckets.set(key, { count: 1, resetAt: now + windowMs })
+        return true
+    }
+    if (bucket.count >= limit) return false
+    bucket.count += 1
+    return true
+}
+
 app.get("/", c => c.json({ name: "AMR Community API", version: "1.0.0", status: "ok" }))
 app.get("/health", c => c.json({ ok: true }))
 
 app.post("/register", async c => {
+    if (!withinRateLimit(c.req.header("x-forwarded-for"), "register", 10, 60 * 60 * 1000)) {
+        return c.json({ error: "Too many requests" }, 429)
+    }
     const body = await c.req.json<{ username?: string }>().catch(() => ({}))
     const username = (body.username ?? "").trim()
     if (!username || !/^[a-zA-Z0-9_-]{2,30}$/.test(username)) {
-        return c.json({ error: "Username must be 2–30 chars: letters, numbers, _ and –" }, 400)
+        return c.json({ error: "Username must be 2-30 chars: letters, numbers, _ and -" }, 400)
     }
     if (getUserByUsername(username)) return c.json({ error: "Username already taken" }, 409)
     const userId = randomUUID()
@@ -40,6 +62,9 @@ app.post("/register", async c => {
 })
 
 app.post("/events", async c => {
+    if (!withinRateLimit(c.req.header("x-forwarded-for"), "events", 120, 60 * 1000)) {
+        return c.json({ error: "Too many requests" }, 429)
+    }
     const body = await c.req
         .json<{
             userId?: string
@@ -85,11 +110,14 @@ app.post("/events", async c => {
 })
 
 app.post("/rate", async c => {
+    if (!withinRateLimit(c.req.header("x-forwarded-for"), "rate", 120, 60 * 1000)) {
+        return c.json({ error: "Too many requests" }, 429)
+    }
     const body = await c.req.json<{ userId?: string; mangaTitle?: string; rating?: number }>().catch(() => ({}))
     if (!body.userId || !body.mangaTitle) return c.json({ error: "userId and mangaTitle required" }, 400)
     if (!getUserById(body.userId)) return c.json({ error: "User not found" }, 404)
     const rating = Number(body.rating)
-    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return c.json({ error: "Rating must be 1–5" }, 400)
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return c.json({ error: "Rating must be 1-5" }, 400)
     upsertRating(body.userId, body.mangaTitle.trim(), rating)
     return c.json({ ok: true })
 })

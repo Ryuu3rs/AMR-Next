@@ -75,3 +75,17 @@ test("resolve route serves stale-but-good and does not poison on a transient fai
     // The good row must survive - not overwritten to a no-match.
     assert.equal(store.getByNormalizedTitle("one piece")?.source, "anilist")
 })
+
+// --- /metadata/link must be authorized (Bug: unauthenticated shared-cache poisoning) ---
+test("POST /metadata/link is rejected without an admin token", async () => {
+    process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "amr-meta-"))
+    delete process.env.METADATA_ADMIN_TOKEN
+    const { app } = await import("./index.ts")
+
+    const res = await app.request("/metadata/link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ normalizedTitle: "naruto", anilistId: 999999 })
+    })
+    assert.equal(res.status, 403)
+})
