@@ -201,6 +201,21 @@ main.single.fit-original .page img {
     object-fit: contain;
 }
 
+/* Two-page spread (paged mode): two pages side by side, each at most half the
+   width. RTL reading puts the earlier page on the right via row-reverse. */
+main.single .page.spread {
+    gap: 2px;
+    align-items: center;
+}
+main.single .page.spread img,
+main.single.fit-width .page.spread img,
+main.single.fit-original .page.spread img {
+    max-width: 50%;
+}
+main.single.dir-rtl .page.spread {
+    flex-direction: row-reverse;
+}
+
 .page-num {
     position: absolute;
     right: 12px;
@@ -260,7 +275,7 @@ header.chrome-hidden {
 }
 
 /* The progress bar is a sibling of header, not a child, so it doesn't hide with
-   the header's translateY — instead it slides up to sit flush at the top. */
+   the header's translateY - instead it slides up to sit flush at the top. */
 header.chrome-hidden + .progress-bar {
     top: 0;
 }
@@ -271,7 +286,7 @@ header.chrome-hidden + .progress-bar {
     color: #fff;
 }
 
-/* Explicit per-series "off" override — distinct from the unset/default state,
+/* Explicit per-series "off" override - distinct from the unset/default state,
    which just renders as a plain .btn-sm with no active/off styling. */
 .btn-sm.off-override {
     border-color: #6b7a8d;
@@ -484,7 +499,7 @@ kbd {
     font-weight: 600;
 }
 
-/* G14: phone viewports — wrap the header chrome, fit pages to width, shrink paddings. */
+/* G14: phone viewports - wrap the header chrome, fit pages to width, shrink paddings. */
 @media (max-width: 600px) {
     header {
         grid-template-columns: auto 1fr;
