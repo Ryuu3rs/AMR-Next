@@ -58,10 +58,11 @@ function extractChapterIds(url: URL): { mangaId: string; chapterSlug: string } |
     return { mangaId, chapterSlug }
 }
 
-function chapterNumberOf(slug: string): string {
+// undefined when nothing parses (unnumbered special) - never default to "1".
+function chapterNumberOf(slug: string): string | undefined {
     const m = slug.match(/chapter-(\d+(?:[.-]\d+)?)/i)
     const raw = m ? captureGroup(m, 1) : undefined
-    return raw ? raw.replace("-", ".") : "1"
+    return raw ? raw.replace("-", ".") : undefined
 }
 
 function mangaPageUrl(mangaId: string): URL {
@@ -155,7 +156,7 @@ function extractChapterList(html: string, mangaId: string): SourceChapter[] {
             mangaId: parentId,
             sourceId: SOURCE_ID,
             sourceChapterId: `${mangaId}:${ids.chapterSlug}`,
-            title: `Chapter ${number}`,
+            title: number ? `Chapter ${number}` : ids.chapterSlug,
             url: `${ORIGIN}/${mangaId}/${ids.chapterSlug}`,
             sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
             language: "en"
@@ -294,7 +295,7 @@ export const manganatoAdapter: SourceAdapter = {
             mangaId,
             sourceId: SOURCE_ID,
             sourceChapterId: `${ids.mangaId}:${ids.chapterSlug}`,
-            title: `Chapter ${number}`,
+            title: number ? `Chapter ${number}` : ids.chapterSlug,
             url: requestUrl.toString(),
             sortKey: parseChapterNumber(number) ?? UNNUMBERED_SORT_KEY,
             language: "en"

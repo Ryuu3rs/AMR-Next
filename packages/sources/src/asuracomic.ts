@@ -171,10 +171,11 @@ function extractCover(html: string): string | undefined {
     )
 }
 
-function chapterNumOf(parsed: ParsedChapter): string {
+// undefined when nothing parses (unnumbered special) - never default to "1".
+function chapterNumOf(parsed: ParsedChapter): string | undefined {
     if (parsed.type === "new") return parsed.num
     const m = parsed.slug.match(/chapter[-_ ]?(\d+(?:[.-]\d+)?)/i)
-    return m?.[1]?.replace("-", ".") ?? "1"
+    return m?.[1]?.replace("-", ".")
 }
 
 function mangaSlugOf(parsed: ParsedChapter): string {
@@ -191,7 +192,11 @@ function extractChapterList(html: string, mangaSlug: string): SourceChapter[] {
             const recs = findChapterArray(JSON.parse(ndm[1]) as unknown)
             if (recs.length > 0) {
                 return recs.map(r => {
-                    const num = String(r.number ?? r.sort_order ?? r.sortOrder ?? r.chapter_number ?? r.chapter ?? 1)
+                    // Keep a token for the id/url even when unnumbered, but derive sortKey
+                    // ONLY from a real number so an unnumbered record isn't pinned to 1.
+                    const rawNum = r.number ?? r.sort_order ?? r.sortOrder ?? r.chapter_number ?? r.chapter
+                    const num = String(rawNum ?? 1)
+                    const parsedNum = rawNum != null ? parseChapterNumber(String(rawNum)) : undefined
                     const chapterId = `${SOURCE_ID}:chapter:${mangaSlug}-chapter-${num}`
                     return {
                         id: chapterId,
@@ -200,7 +205,7 @@ function extractChapterList(html: string, mangaSlug: string): SourceChapter[] {
                         sourceChapterId: `${mangaSlug}/${num}`,
                         title: String(r.title ?? `Chapter ${num}`),
                         url: `${ORIGIN}/series/${mangaSlug}/${num}`,
-                        sortKey: parseChapterNumber(num) ?? UNNUMBERED_SORT_KEY,
+                        sortKey: parsedNum ?? UNNUMBERED_SORT_KEY,
                         language: LANGUAGE
                     }
                 })
@@ -381,7 +386,7 @@ export const asuraComicAdapter: SourceAdapter = {
             mangaId,
             sourceId: SOURCE_ID,
             sourceChapterId: parsed.type === "new" ? `${mangaSlug}/${chapterNum}` : parsed.slug,
-            title: `Chapter ${chapterNum}`,
+            title: chapterNum ? `Chapter ${chapterNum}` : parsed.slug,
             url: parsed.type === "new" ? input.url.toString() : `${ORIGIN}/series/${mangaSlug}/${chapterNum}`,
             sortKey: parseChapterNumber(chapterNum) ?? UNNUMBERED_SORT_KEY,
             language: LANGUAGE

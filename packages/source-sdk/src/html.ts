@@ -155,10 +155,22 @@ const NAMED_ENTITIES: Record<string, string> = {
 // (&#39; / &#x27;) are decoded programmatically; named entities are looked up in
 // NAMED_ENTITIES above. This is the single shared decoder - source adapters should
 // import this instead of hand-rolling their own regex chain.
+// A numeric character reference is valid only for a real Unicode scalar value. An
+// out-of-range (> U+10FFFF), negative, or lone-surrogate code point makes
+// String.fromCodePoint throw a RangeError - and since scraped titles are site-
+// controlled, one malformed/decoy entity would otherwise crash the whole parse. Leave
+// such a reference as its literal text rather than throwing.
+function codePointToString(code: number, original: string): string {
+    if (!Number.isInteger(code) || code < 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
+        return original
+    }
+    return String.fromCodePoint(code)
+}
+
 export function decodeHtmlEntities(value: string): string {
     return value
-        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
-        .replace(/&#0*(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+        .replace(/&#x([0-9a-fA-F]+);/g, (full: string, hex: string) => codePointToString(parseInt(hex, 16), full))
+        .replace(/&#0*(\d+);/g, (full: string, code: string) => codePointToString(Number(code), full))
         .replace(/&([a-zA-Z]+);/g, (full: string, name: string) => NAMED_ENTITIES[name] ?? full)
         .trim()
 }
