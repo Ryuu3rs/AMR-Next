@@ -73,6 +73,15 @@ app.get("/metadata/by-anilist/:id", async c => {
 })
 
 app.post("/metadata/link", async c => {
+    // /link overwrites the SHARED catalog for every user, so it must be authorized. It is
+    // disabled unless METADATA_ADMIN_TOKEN is set, and then requires a matching bearer
+    // token. Without this, any anonymous caller (CORS is open) could globally repoint any
+    // title's metadata for the full cache TTL.
+    const adminToken = process.env.METADATA_ADMIN_TOKEN
+    const auth = c.req.header("Authorization")
+    if (!adminToken || auth !== `Bearer ${adminToken}`) {
+        return c.json({ error: "unauthorized" }, 403)
+    }
     const body = (await c.req.json().catch(() => ({}))) as { normalizedTitle?: string; anilistId?: number }
     const anilistId = Number(body.anilistId)
     const rawTitle = (body.normalizedTitle ?? "").trim()
