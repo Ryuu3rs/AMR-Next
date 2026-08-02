@@ -16,6 +16,9 @@ export type UpdateFailureMeta = {
     checked: number
     updated: number
     failed: number
+    // sourceId -> failure count for this run. Lets the log show the failure
+    // distribution across all failed titles, not just the sampled per-title rows.
+    failuresBySource?: Record<string, number>
 }
 
 const ZWJ = 0x200d
@@ -99,6 +102,18 @@ export function formatUpdateFailureLog(errors: readonly UpdateFailureEntry[], me
         `checked: ${num(meta?.checked)} | updated: ${num(meta?.updated)} | failed: ${num(meta?.failed)}`
     ].join("\n")
 
+    // Failure distribution across every failed title (the per-title rows below are
+    // only a sample). Tolerate a missing/garbage map from older/corrupt storage.
+    const bySource = meta?.failuresBySource
+    const sourceRows =
+        bySource && typeof bySource === "object"
+            ? Object.entries(bySource)
+                  .filter(([, count]) => typeof count === "number" && Number.isFinite(count))
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([source, count]) => `- ${orPlaceholder(flatten(source), "(unknown source)")}: ${count}`)
+            : []
+    const bySourceSection = sourceRows.length > 0 ? `\n\nfailures by source:\n${sourceRows.join("\n")}` : ""
+
     // Tolerate a null/undefined entry or a non-array (corrupt storage / a future producer
     // change) rather than throwing - the whole point is a resilient bug-report artifact.
     const rows = (Array.isArray(errors) ? errors : []).filter((e): e is UpdateFailureEntry => e != null)
@@ -115,5 +130,5 @@ export function formatUpdateFailureLog(errors: readonly UpdateFailureEntry[], me
                   .join("\n")
             : "(no per-title errors recorded)"
 
-    return `${header}\n\n${body}`
+    return `${header}${bySourceSection}\n\n${body}`
 }

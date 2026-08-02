@@ -152,6 +152,10 @@ export async function checkUpdates(sourceId?: string) {
         // per-title "failed to update" row here is noisy and unactionable; one
         // aggregate notice per source is added to `errors` after the loop instead.
         const botBlockedCounts = new Map<string, number>()
+        // Per-sourceId count of titles that hard-failed this run, so the exported
+        // failure log can show which adapters carry the failures instead of only a
+        // 20-row sample. Distinct from botBlockedCounts (a skip, not a failure).
+        const failuresBySource = new Map<string, number>()
 
         const writeProgress = async (currentTitle?: string) => {
             const progress: UpdateProgress = {
@@ -229,6 +233,14 @@ export async function checkUpdates(sourceId?: string) {
                         // loop), not a real per-title failure.
                     } else {
                         failed += 1
+                        // Count a hard failure toward `checked` too, so `checked` means
+                        // "titles attempted" (successes + failures), not "titles that
+                        // succeeded". Before this, a throw skipped the success-path
+                        // increment and checked+failed didn't add up to the real total
+                        // (checked 331 | failed 450 looked like broken math). Bot-block
+                        // skips stay out of both counts - they're a skip, not an attempt.
+                        checked += 1
+                        failuresBySource.set(item.sourceId, (failuresBySource.get(item.sourceId) ?? 0) + 1)
                         const message = error instanceof Error ? error.message : "Update failed"
                         errors.push({ mangaId: item.id, title: item.title, message })
                         diag.warn("update-check", `failed for ${item.sourceId}`, { mangaId: item.id, message })
@@ -256,7 +268,17 @@ export async function checkUpdates(sourceId?: string) {
         }
 
         // Keep only the most recent handful of errors so the status stays small.
-        const status = { checked, updated, failed, checkedAt: Date.now(), errors: errors.slice(0, 20) }
+        const status = {
+            checked,
+            updated,
+            failed,
+            checkedAt: Date.now(),
+            errors: errors.slice(0, 20),
+            // Sorted worst-first, serialised as a plain object (storage.local can't hold a
+            // Map) so the failure log can render a "failures by source" tally over all 450,
+            // not just the 20 sampled rows above.
+            failuresBySource: Object.fromEntries([...failuresBySource].sort((a, b) => b[1] - a[1]))
+        }
         const finalWrite: Record<string, unknown> = {
             updateProgress: { running: false, done, total, startedAt } satisfies UpdateProgress
         }
