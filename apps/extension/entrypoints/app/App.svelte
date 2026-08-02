@@ -8,6 +8,8 @@
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
     import { migrateLegacyImport } from "../../src/legacy-import"
     import { getCachedCovers } from "../../src/database"
+    import { groupSearchResultsIntoWorks } from "../../src/search-grouping"
+    import type { Suggestion } from "../../src/suggestions"
     import { repairMangahubChapterNumbers } from "../../src/handlers/updates-sources"
     import { formatUpdateFailureLog } from "../../src/updates-failure-log"
     import { pruneSelectionToVisible } from "../../src/library-selection"
@@ -33,6 +35,7 @@
 
     const sections = [
         "Home",
+        "Suggestions",
         "Library",
         "Bookmarks",
         "Tags",
@@ -803,6 +806,9 @@
     let searchTotal = $state(0)
     let searchSettled = $state(0)
     let expandedSourceGroups = $state<Set<string>>(new Set())
+    // Search-result view: ON collapses the same work across mirrors into one card
+    // carrying a source chip per mirror; OFF restores today's per-source grouping.
+    let groupDuplicates = $state(true)
     function toggleSourceGroup(sourceId: string) {
         const next = new Set(expandedSourceGroups)
         if (next.has(sourceId)) next.delete(sourceId)
@@ -2370,6 +2376,49 @@
     async function toggleCommunity(enabled: boolean) {
         communityProfile = await sendRuntimeMessage<CommunityProfile>({ type: "community:toggle", enabled })
     }
+
+    // Suggestions tab. Content-based (AniList co-recommendations + local genre/author
+    // overlap) computed in the background handler; community "readers also read" picks
+    // arrive folded into the same list with a `community` marker. Empty/unreachable
+    // AniList degrades to an empty state, never an error.
+    let suggestions = $state<Suggestion[]>([])
+    let suggestionsLoaded = $state(false)
+    let suggestionsLoading = $state(false)
+    let suggestionsFailed = $state(false)
+    const communitySuggestions = $derived(suggestions.filter(s => s.community))
+    async function loadSuggestions(force: boolean) {
+        suggestionsLoading = true
+        suggestionsFailed = false
+        try {
+            suggestions = await sendRuntimeMessage<Suggestion[]>({
+                type: "suggestions:get",
+                ...(force ? { force: true } : {})
+            })
+        } catch {
+            suggestions = []
+            suggestionsFailed = true
+        } finally {
+            suggestionsLoading = false
+        }
+    }
+    $effect(() => {
+        if (activeSection === "Suggestions" && !suggestionsLoaded) {
+            suggestionsLoaded = true
+            void loadSuggestions(false)
+        }
+    })
+    // Send the user to the global search prefilled with a suggestion's title so they can
+    // add it from whichever mirror carries it.
+    function findSuggestion(title: string) {
+        browseQuery = title
+        activeSection = "Home"
+        doSearch()
+    }
+    function suggestionWhy(s: Suggestion): string {
+        if (s.reasons.length > 0) return `Recommended because you read ${s.reasons.slice(0, 2).join(", ")}`
+        if (s.genres && s.genres.length > 0) return `Matches genres you read: ${s.genres.slice(0, 2).join(", ")}`
+        return "Recommended for you"
+    }
     async function executeClear(scope: "history" | "all") {
         clearWorking = true
         try {
@@ -2467,6 +2516,9 @@
         }
         return [...groups.entries()].sort((a, b) => b[1].length - a[1].length)
     })
+    // Cross-mirror "works" view: pure grouping by AniList id when present, else by a
+    // normalized title key. No network - safe with every server off.
+    const searchWorks = $derived(groupSearchResultsIntoWorks(searchResults))
     const achievementsByCategory = $derived.by(() => {
         const groups = new Map<string, NonNullable<typeof stats>["achievements"]>()
         for (const a of stats?.achievements ?? []) {
@@ -2676,43 +2728,84 @@
                                 : "s"} so far
                         </p>
                     {/if}
-                    {#each searchBySource as [sourceId, results], i}
-                        {@const expanded =
-                            expandedSourceGroups.has(sourceId) || (expandedSourceGroups.size === 0 && i === 0)}
-                        <div class="source-group">
-                            <button
-                                type="button"
-                                class="source-group-head"
-                                aria-expanded={expanded}
-                                onclick={() => toggleSourceGroup(sourceId)}>
-                                <span class="source-name">{sourceMeta.get(sourceId)?.name ?? sourceId}</span>
-                                <span class="muted">{results.length} result{results.length === 1 ? "" : "s"}</span>
-                                <span class="source-caret">{expanded ? "▾" : "▸"}</span>
-                            </button>
-                            {#if expanded}
-                                <div class="search-results">
-                                    {#each results as result}
-                                        <div class="search-result">
-                                            <div class="result-cover">
-                                                {#if result.coverUrl}<img
-                                                        src={result.coverUrl}
-                                                        alt={result.title} />{:else}<span>{result.title[0]}</span>{/if}
-                                            </div>
-                                            <div class="result-info">
-                                                <p class="result-title">{result.title}</p>
-                                                <p class="muted">
-                                                    {#if result.latestChapter}latest ch {result.latestChapter}{:else}-{/if}
-                                                </p>
-                                            </div>
-                                            <button type="button" onclick={() => void openResult(result)}>
-                                                {result.sourceId === "mangadex" ? "Chapters" : "Open"}
-                                            </button>
+                    <div style="display:flex;align-items:center;gap:8px;margin:4px 0 12px">
+                        <label class="toggle">
+                            <input
+                                type="checkbox"
+                                bind:checked={groupDuplicates}
+                                aria-label="Group duplicate results across sources" />
+                            <span class="track"></span>
+                        </label>
+                        <span class="muted">Group duplicates across sources</span>
+                    </div>
+                    {#if groupDuplicates}
+                        <div class="search-results">
+                            {#each searchWorks as work (work.key)}
+                                <div class="search-result">
+                                    <div class="result-cover">
+                                        {#if work.coverUrl}<img src={work.coverUrl} alt={work.title} />{:else}<span
+                                                >{work.title[0]}</span
+                                            >{/if}
+                                    </div>
+                                    <div class="result-info">
+                                        <p class="result-title">{work.title}</p>
+                                        <p class="muted">
+                                            {work.members.length} source{work.members.length === 1 ? "" : "s"}
+                                        </p>
+                                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+                                            {#each work.members as member (member.sourceId + member.sourceMangaId)}
+                                                <button
+                                                    type="button"
+                                                    class="btn-sm"
+                                                    onclick={() => void openResult(member)}>
+                                                    {sourceMeta.get(member.sourceId)?.name ?? member.sourceId}
+                                                </button>
+                                            {/each}
                                         </div>
-                                    {/each}
+                                    </div>
                                 </div>
-                            {/if}
+                            {/each}
                         </div>
-                    {/each}
+                    {:else}
+                        {#each searchBySource as [sourceId, results], i}
+                            {@const expanded =
+                                expandedSourceGroups.has(sourceId) || (expandedSourceGroups.size === 0 && i === 0)}
+                            <div class="source-group">
+                                <button
+                                    type="button"
+                                    class="source-group-head"
+                                    aria-expanded={expanded}
+                                    onclick={() => toggleSourceGroup(sourceId)}>
+                                    <span class="source-name">{sourceMeta.get(sourceId)?.name ?? sourceId}</span>
+                                    <span class="muted">{results.length} result{results.length === 1 ? "" : "s"}</span>
+                                    <span class="source-caret">{expanded ? "▾" : "▸"}</span>
+                                </button>
+                                {#if expanded}
+                                    <div class="search-results">
+                                        {#each results as result}
+                                            <div class="search-result">
+                                                <div class="result-cover">
+                                                    {#if result.coverUrl}<img
+                                                            src={result.coverUrl}
+                                                            alt={result.title} />{:else}<span>{result.title[0]}</span
+                                                        >{/if}
+                                                </div>
+                                                <div class="result-info">
+                                                    <p class="result-title">{result.title}</p>
+                                                    <p class="muted">
+                                                        {#if result.latestChapter}latest ch {result.latestChapter}{:else}-{/if}
+                                                    </p>
+                                                </div>
+                                                <button type="button" onclick={() => void openResult(result)}>
+                                                    {result.sourceId === "mangadex" ? "Chapters" : "Open"}
+                                                </button>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                {/if}
+                            </div>
+                        {/each}
+                    {/if}
                 {:else if browseQuery.trim() && !searchLoading}
                     <p class="muted">No results across any source.</p>
                 {/if}
@@ -2844,6 +2937,72 @@
                         ☕ Support on Ko-fi
                     </button>
                 </div>
+            {/if}
+        {:else if activeSection === "Suggestions"}
+            <div class="page-head">
+                <h1>Suggestions</h1>
+                <button
+                    type="button"
+                    class="btn-sm"
+                    disabled={suggestionsLoading}
+                    onclick={() => void loadSuggestions(true)}>
+                    {suggestionsLoading ? "Refreshing…" : "Refresh"}
+                </button>
+            </div>
+            {#if suggestionsLoading && suggestions.length === 0}
+                <p class="muted">Finding titles you might like…</p>
+            {:else if suggestions.length === 0}
+                <p class="muted">
+                    {suggestionsFailed
+                        ? "Couldn't reach AniList for recommendations right now. Try Refresh again later."
+                        : "No suggestions yet. Add a few titles to your library so we can learn what you like."}
+                </p>
+            {:else}
+                <div class="poster-grid">
+                    {#each suggestions as s (s.anilistId)}
+                        <article>
+                            <div class="poster-wrap">
+                                <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
+                                    {#if s.coverUrl}<img src={s.coverUrl} alt={s.title} />{:else}<span
+                                            class="cover-initial">{s.title[0]}</span
+                                        >{/if}
+                                    {#if s.community}
+                                        <div class="poster-badges">
+                                            <span class="updated-chip">Readers also read</span>
+                                        </div>
+                                    {/if}
+                                </button>
+                            </div>
+                            <p class="poster-title">{s.title}</p>
+                            <p class="poster-sub muted">{suggestionWhy(s)}</p>
+                            <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}>
+                                Find on a source
+                            </button>
+                        </article>
+                    {/each}
+                </div>
+                {#if communitySuggestions.length > 0}
+                    <h2 style="margin-top:8px">Readers also read</h2>
+                    <p class="muted">Popular with readers who share your library.</p>
+                    <div class="poster-grid">
+                        {#each communitySuggestions as s (s.anilistId)}
+                            <article>
+                                <div class="poster-wrap">
+                                    <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
+                                        {#if s.coverUrl}<img src={s.coverUrl} alt={s.title} />{:else}<span
+                                                class="cover-initial">{s.title[0]}</span
+                                            >{/if}
+                                    </button>
+                                </div>
+                                <p class="poster-title">{s.title}</p>
+                                <p class="poster-sub muted">{suggestionWhy(s)}</p>
+                                <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}>
+                                    Find on a source
+                                </button>
+                            </article>
+                        {/each}
+                    </div>
+                {/if}
             {/if}
         {:else if activeSection === "Library"}
             <div class="page-head">

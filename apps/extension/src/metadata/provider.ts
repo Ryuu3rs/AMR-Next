@@ -7,6 +7,8 @@
 // first, then AniList directly as a fallback) - see metadata/index.ts. The same
 // resolved anilistId is reused for status/cover enrichment AND personal-list sync.
 
+import type { RecCandidate } from "./recommendations"
+
 export type MangaStatus = "unknown" | "ongoing" | "completed" | "hiatus" | "cancelled"
 
 export type MetadataResult = {
@@ -33,4 +35,7 @@ export interface MetadataProvider {
     readonly name: string
     resolve(query: MetadataQuery): Promise<MetadataResult | null>
     getByAnilistId?(id: number): Promise<MetadataResult | null>
+    // Titles that "readers who liked this also liked", for the Suggestions engine.
+    // Returns [] on no match or any network/parse failure so callers can fall through.
+    getRecommendations?(id: number): Promise<RecCandidate[]>
 }
