@@ -17,6 +17,7 @@ import { success, failure, type HandlerContext } from "../src/background/handler
 import { captureChapter } from "../src/background/capture"
 import { isInternalTab } from "../src/background/tab-fetch"
 import { injectChapterPrompt } from "../src/background/inject-chapter-prompt"
+import { NEW_CHAPTERS_NOTIFICATION_ID } from "../src/notifications"
 import {
     updateAlarmName,
     communityAlarmName,
@@ -96,6 +97,13 @@ export default defineBackground(() => {
         if (alarm.name === syncAlarmName) void autoPush()
         if (alarm.name === anilistAlarmName) void runAniListSync()
         if (alarm.name === extensionUpdateAlarmName) void checkExtensionUpdate()
+    })
+
+    // Clicking a "new chapters" notification opens the library so the user can jump in.
+    browser.notifications.onClicked.addListener(id => {
+        if (id !== NEW_CHAPTERS_NOTIFICATION_ID) return
+        void browser.tabs.create({ url: browser.runtime.getURL("/app.html") })
+        void browser.notifications.clear(id)
     })
 
     const onUpdatedHandler = (
