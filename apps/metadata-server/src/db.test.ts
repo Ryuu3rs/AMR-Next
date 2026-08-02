@@ -33,6 +33,26 @@ test("upsert -> get round trip by normalized title", () => {
     })
 })
 
+test("upsert -> get round trips malId from the Jikan fallback", () => {
+    const store = freshDb()
+    store.upsertMetadata({
+        normalizedTitle: "vinland saga",
+        malId: 642,
+        title: "Vinland Saga",
+        status: "ongoing",
+        coverUrl: "https://example.com/vs.jpg",
+        genres: ["Action"],
+        source: "jikan"
+    })
+
+    const hit = store.getByNormalizedTitle("vinland saga")
+    assert.ok(hit)
+    assert.equal(hit.source, "jikan")
+    assert.equal(hit.result.malId, 642)
+    assert.equal(hit.result.anilistId, undefined)
+    assert.equal(hit.result.status, "ongoing")
+})
+
 test("getByAnilistId returns the stored row", () => {
     const store = freshDb()
     store.upsertMetadata({

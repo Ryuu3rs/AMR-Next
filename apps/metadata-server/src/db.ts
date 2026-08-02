@@ -11,6 +11,7 @@ function defaultPath(): string {
 export type MetadataRow = {
     normalizedTitle: string
     anilistId?: number
+    malId?: number
     title?: string
     status?: MangaStatus
     coverUrl?: string
@@ -23,6 +24,7 @@ export type MetadataRow = {
 type StoredRow = {
     normalized_title: string
     anilist_id: number | null
+    mal_id: number | null
     title: string | null
     status: string
     cover_url: string | null
@@ -48,6 +50,7 @@ export function createDb(path: string = defaultPath()) {
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
             normalized_title TEXT NOT NULL,
             anilist_id       INTEGER,
+            mal_id           INTEGER,
             title            TEXT,
             status           TEXT NOT NULL DEFAULT 'unknown',
             cover_url        TEXT,
@@ -62,6 +65,17 @@ export function createDb(path: string = defaultPath()) {
         CREATE INDEX IF NOT EXISTS idx_metadata_anilist ON title_metadata(anilist_id);
     `)
 
+    // Additive migration for DBs created before mal_id existed. SQLite has no
+    // "ADD COLUMN IF NOT EXISTS", so guard on the current column set - re-running is a
+    // no-op and never touches a DB that already has the column.
+    const columns = new Set(
+        (db.prepare("PRAGMA table_info(title_metadata)").all() as Array<{ name: string }>).map(c => c.name)
+    )
+    if (!columns.has("mal_id")) {
+        db.exec("ALTER TABLE title_metadata ADD COLUMN mal_id INTEGER")
+    }
+    db.exec("CREATE INDEX IF NOT EXISTS idx_metadata_mal ON title_metadata(mal_id)")
+
     function parseJsonArray(raw: string): string[] {
         try {
             const parsed = JSON.parse(raw)
@@ -74,6 +88,7 @@ export function createDb(path: string = defaultPath()) {
     function toResult(row: StoredRow): MetadataResult {
         const result: MetadataResult = { status: (row.status || "unknown") as MangaStatus }
         if (row.anilist_id != null) result.anilistId = row.anilist_id
+        if (row.mal_id != null) result.malId = row.mal_id
         if (row.title != null) result.title = row.title
         if (row.cover_url != null) result.coverUrl = row.cover_url
         const genres = parseJsonArray(row.genres)
@@ -102,10 +117,11 @@ export function createDb(path: string = defaultPath()) {
 
     const upsert = db.prepare(
         `INSERT INTO title_metadata
-            (normalized_title, anilist_id, title, status, cover_url, genres, tags, format, source, fetched_at)
-         VALUES (@normalized_title, @anilist_id, @title, @status, @cover_url, @genres, @tags, @format, @source, unixepoch())
+            (normalized_title, anilist_id, mal_id, title, status, cover_url, genres, tags, format, source, fetched_at)
+         VALUES (@normalized_title, @anilist_id, @mal_id, @title, @status, @cover_url, @genres, @tags, @format, @source, unixepoch())
          ON CONFLICT (normalized_title) DO UPDATE SET
             anilist_id = excluded.anilist_id,
+            mal_id     = excluded.mal_id,
             title      = excluded.title,
             status     = excluded.status,
             cover_url  = excluded.cover_url,
@@ -120,6 +136,7 @@ export function createDb(path: string = defaultPath()) {
         upsert.run({
             normalized_title: row.normalizedTitle,
             anilist_id: row.anilistId ?? null,
+            mal_id: row.malId ?? null,
             title: row.title ?? null,
             status: row.status ?? "unknown",
             cover_url: row.coverUrl ?? null,
