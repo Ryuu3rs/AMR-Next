@@ -31,6 +31,7 @@ const allowedPermissions = ["alarms", "declarativeNetRequest", "downloads", "scr
 const allowedRequiredHosts = [
     "*://*.asurascans.com/*",
     "*://*.compsci88.com/*",
+    "*://*.flamecomics.xyz/*",
     "*://*.images.mangafreak.me/*",
     "*://*.imgsrv4.com/*",
     "*://*.mangadex.network/*",
@@ -54,6 +55,7 @@ const allowedRequiredHosts = [
     "https://eahentai.com/*",
     "https://en-thunderscans.com/*",
     "https://fanfox.net/*",
+    "https://flamecomics.xyz/*",
     "https://graphql.anilist.co/*",
     "https://hentai20.io/*",
     "https://hentairead.com/*",

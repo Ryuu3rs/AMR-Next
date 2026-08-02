@@ -161,5 +161,10 @@
         "seriesUrl": "https://mangakatana.com/manga/the-archmages-restaurant.27314",
         "expectTitle": "The Archmage's Restaurant",
         "note": "sourceMangaId is the whole {slug}.{numericId} token"
+    },
+    "flamecomics": {
+        "seriesUrl": "https://flamecomics.xyz/series/1",
+        "expectTitle": "Solo Leveling",
+        "note": "Next.js app; series are numeric ids, data in __NEXT_DATA__; images on cdn.flamecomics.xyz"
     }
 }

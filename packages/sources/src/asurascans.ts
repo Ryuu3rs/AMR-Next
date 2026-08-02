@@ -41,6 +41,36 @@ function parseSeriesUrl(url: URL): string | null {
     return url.pathname.match(seriesRe)?.[1] ?? null
 }
 
+// Asura rotates the per-series slug hash and has flipped domains repeatedly, so a
+// stored slug goes stale without the title changing. The stable part is the plain
+// title slug; the hash is either a legacy asuracomic.net numeric prefix
+// (0223090894-dungeon-odyssey) or the current asurascans.com hex suffix
+// (dungeon-odyssey-1d35e5bd). Strip both to recover the re-findable base slug.
+function baseSlug(slug: string): string {
+    return slug.replace(/^\d{4,}-/, "").replace(/-[a-f0-9]{8}$/i, "")
+}
+
+function titleFromSlug(slug: string): string {
+    return baseSlug(slug)
+        .replace(/-/g, " ")
+        .replace(/\b\w/g, c => c.toUpperCase())
+}
+
+// Fetch the series page tolerating a rotated slug hash: the stored slug is tried
+// first, and on any failure the hash-stripped base slug is retried, which the site
+// serves/redirects to the current hashed slug so a stale library entry self-heals.
+async function fetchSeriesHtml(slug: string, context: SourceContext): Promise<string> {
+    try {
+        return await context.request.getText(new URL(`${ORIGIN}/comics/${slug}/`), { headers: browserHeaders })
+    } catch (error) {
+        const base = baseSlug(slug)
+        if (base && base !== slug) {
+            return await context.request.getText(new URL(`${ORIGIN}/comics/${base}/`), { headers: browserHeaders })
+        }
+        throw error
+    }
+}
+
 function extractImages(html: string): string[] {
     // Strategy 1: React Flight (RSC) data - "url":[0,"https://cdn.asurascans.com/asura-images/chapters/..."]
     const flightUrls = [
@@ -79,10 +109,7 @@ function extractTitle(html: string, slug: string): string {
         ?.split(/\s+[-|]\s+/)[0]
         ?.trim()
     if (t) return t
-    return slug
-        .replace(/-[a-f0-9]{8}$/, "")
-        .replace(/-/g, " ")
-        .replace(/\b\w/g, c => c.toUpperCase())
+    return titleFromSlug(slug)
 }
 
 function extractCover(html: string): string | undefined {
@@ -92,26 +119,34 @@ function extractCover(html: string): string | undefined {
     )
 }
 
-function extractChapterList(html: string, slug: string): SourceChapter[] {
-    const mangaId = `${SOURCE_ID}:manga:${slug}`
+function extractChapterList(html: string, storedSlug: string): SourceChapter[] {
+    const mangaId = `${SOURCE_ID}:manga:${storedSlug}`
+    const base = baseSlug(storedSlug)
+    const escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const escapedOrigin = ORIGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    // Match the base slug with an optional current-hash segment so a page reached via
+    // the base slug (whose links carry the live hash) still parses after a rotation.
+    // The live slug from the href builds the reader URL; ids stay keyed to the stored
+    // slug so update-check keeps matching the library entry until relink migrates it.
     const linkRe = new RegExp(
-        `href=["'](?:${ORIGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})?/comics/${slug}/chapter/(\\d+(?:[.-]\\d+)?)["']`,
+        `href=["'](?:${escapedOrigin})?/comics/(${escapedBase}(?:-[a-f0-9]{8})?)/chapter/(\\d+(?:[.-]\\d+)?)["']`,
         "gi"
     )
     const seen = new Set<string>()
     const out: SourceChapter[] = []
     for (const m of html.matchAll(linkRe)) {
-        const num = m[1]
-        if (!num || seen.has(num)) continue
+        const liveSlug = m[1]
+        const num = m[2]
+        if (!liveSlug || !num || seen.has(num)) continue
         seen.add(num)
-        const chapterId = `${SOURCE_ID}:chapter:${slug}-chapter-${num}`
+        const chapterId = `${SOURCE_ID}:chapter:${storedSlug}-chapter-${num}`
         out.push({
             id: chapterId,
             mangaId,
             sourceId: SOURCE_ID,
-            sourceChapterId: `${slug}/${num}`,
+            sourceChapterId: `${liveSlug}/${num}`,
             title: `Chapter ${num}`,
-            url: `${ORIGIN}/comics/${slug}/chapter/${num}`,
+            url: `${ORIGIN}/comics/${liveSlug}/chapter/${num}`,
             sortKey: parseChapterNumber(num) ?? UNNUMBERED_SORT_KEY,
             language: LANGUAGE
         })
@@ -158,10 +193,7 @@ export const asuraScansAdapter: SourceAdapter = {
         const slug = input.url ? parseSeriesUrl(input.url) : input.sourceMangaId
         if (!slug) throw new SourceError("invalid-input", "A valid Asura Scans series URL is required")
         const now = context.now()
-        const title = slug
-            .replace(/-[a-f0-9]{8}$/, "")
-            .replace(/-/g, " ")
-            .replace(/\b\w/g, c => c.toUpperCase())
+        const title = titleFromSlug(slug)
         return {
             manga: {
                 id: `${SOURCE_ID}:manga:${slug}`,
@@ -181,9 +213,7 @@ export const asuraScansAdapter: SourceAdapter = {
     async listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]> {
         const slug = input.manga.sourceMangaId
         if (!slug) throw new SourceError("invalid-input", "A valid Asura Scans series id is required")
-        const html = await context.request.getText(new URL(`${ORIGIN}/comics/${slug}/`), {
-            headers: browserHeaders
-        })
+        const html = await fetchSeriesHtml(slug, context)
         const chapters = extractChapterList(html, slug)
         chapters.sort((a, b) => a.sortKey - b.sortKey)
         return input.limit ? chapters.slice(-input.limit) : chapters
@@ -193,10 +223,7 @@ export const asuraScansAdapter: SourceAdapter = {
         const slug = input.sourceMangaId ?? (input.url ? parseSeriesUrl(input.url) : undefined)
         if (!slug) return undefined
         try {
-            const html = await context.request.getText(new URL(`${ORIGIN}/comics/${slug}/`), {
-                headers: browserHeaders
-            })
-            return extractCover(html)
+            return extractCover(await fetchSeriesHtml(slug, context))
         } catch {
             return undefined
         }

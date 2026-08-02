@@ -46,6 +46,9 @@ const BASE_SOURCE_ORIGINS = [
     // AsuraScans (React RSC adapter) - chapter images served from cdn.asurascans.com
     "https://asurascans.com/*",
     "*://*.asurascans.com/*",
+    // Flame Comics (Next.js adapter) - page images served from cdn.flamecomics.xyz
+    "https://flamecomics.xyz/*",
+    "*://*.flamecomics.xyz/*",
     // WEBTOON - images served from Naver's pstatic CDN (webtoon-phinf.pstatic.net)
     "https://www.webtoons.com/*",
     "https://webtoons.com/*",
