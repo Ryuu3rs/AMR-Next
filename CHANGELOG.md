@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.16.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.15.0...v0.16.0) (2026-08-02)
+
+
+### Features
+
+* add exportable diagnostic log ([bb92fc2](https://github.com/Ryuu3rs/AMR-Next/commit/bb92fc2249c07aa0f6927d3407f2d1cc6e91cdea))
+* add self-hosted metadata catalog service and vps provider ([43b608a](https://github.com/Ryuu3rs/AMR-Next/commit/43b608a9bb181e766c4a48486f6f8f90f0c22ca3))
+* enrich manga status, cover and genres from AniList ([19f785b](https://github.com/Ryuu3rs/AMR-Next/commit/19f785ba425edbc9ee5404669a44c2d9b0dcf7a8))
+* mirror library membership to AniList ([06cd6da](https://github.com/Ryuu3rs/AMR-Next/commit/06cd6da49d3bea48e2a8195bc869ea0d7badf069))
+* sync read progress to AniList ([d6b3cf7](https://github.com/Ryuu3rs/AMR-Next/commit/d6b3cf7ef9edfa44b6ab5602c8c5439afcc75761))
+
+
+### Bug Fixes
+
+* adapter unnumbered-chapter sortKey and HTML entity-decoder crash ([433b3fe](https://github.com/Ryuu3rs/AMR-Next/commit/433b3fe47993d83ae6916e2ca66216800a8dd65b))
+* bug-hunt findings across the AniList/import/log changes ([cd6fbae](https://github.com/Ryuu3rs/AMR-Next/commit/cd6fbae03f9cbac81d469f2f03c1e7b9b26f5f52))
+* don't let a transient AniList outage poison the metadata cache ([2722195](https://github.com/Ryuu3rs/AMR-Next/commit/2722195817c571ae603c403a1884d41c26b9885f))
+* fetch the full Weeb Central chapter list ([feea4f5](https://github.com/Ryuu3rs/AMR-Next/commit/feea4f52352450dc368cb6754fbbc1d1c7057be9))
+* harden metadata + community servers ([d7e7518](https://github.com/Ryuu3rs/AMR-Next/commit/d7e751837a9d59671065d6e8fb3e13a6c04f1316))
+* import legacy page bookmarks ([69cd6a5](https://github.com/Ryuu3rs/AMR-Next/commit/69cd6a5a44fa7c1b01c0f0081de063678da39948))
+* import/merge/progress data-integrity holes ([0fd9f0f](https://github.com/Ryuu3rs/AMR-Next/commit/0fd9f0fa1d6e9396b04c21ec869607477cc656c7))
+* make community reading-history sync opt-in ([7af5b9c](https://github.com/Ryuu3rs/AMR-Next/commit/7af5b9c4db0bdbee97affba3a3bc308cf82054c6))
+* preserve and recover read position for numberless imports ([2df9a4e](https://github.com/Ryuu3rs/AMR-Next/commit/2df9a4e2c6d1e10f6c1909efa25c2c3f573ede6d))
+* recover more read progress from legacy imports ([a4a8ebd](https://github.com/Ryuu3rs/AMR-Next/commit/a4a8ebda73705a0a479f960154a603074075e9d8))
+* restore read progress when switching or reconciling a source ([3f416eb](https://github.com/Ryuu3rs/AMR-Next/commit/3f416ebc04ca451b52186b0cbc6ea0b60a9d455c))
+* revert library/settings controls when their write fails ([933a211](https://github.com/Ryuu3rs/AMR-Next/commit/933a211a92067805ba9c843ff6b1b0be4736b1de))
+* show read state for unnumbered titles like oneshots ([1ac8079](https://github.com/Ryuu3rs/AMR-Next/commit/1ac80793b78a540bd4b697bf92f1136780af03a1))
+
 ## [0.15.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.14.1...v0.15.0) (2026-07-31)
 
 
