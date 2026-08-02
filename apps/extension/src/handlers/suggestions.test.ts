@@ -1,0 +1,189 @@
+import "fake-indexeddb/auto"
+import { fakeBrowser } from "wxt/testing"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { LibraryManga } from "../database"
+import type { RecCandidate } from "../metadata/recommendations"
+import type { Suggestion } from "../suggestions"
+
+vi.stubGlobal("browser", fakeBrowser)
+
+vi.mock("../metadata/anilist", () => ({
+    anilistProvider: { getRecommendations: vi.fn() }
+}))
+
+vi.mock("../community", async () => {
+    const actual = await vi.importActual<typeof import("../community")>("../community")
+    return {
+        ...actual,
+        communityConfigured: true,
+        getCommunityProfile: vi.fn()
+    }
+})
+
+const { db } = await import("../database")
+const { anilistProvider } = await import("../metadata/anilist")
+const getRecommendations = vi.mocked(anilistProvider.getRecommendations!)
+const community = await import("../community")
+const getCommunityProfile = vi.mocked(community.getCommunityProfile)
+const { suggestionsHandlers } = await import("./suggestions")
+
+const ctx = { sender: {} as never }
+
+function ownedManga(overrides: Partial<LibraryManga> & Pick<LibraryManga, "id" | "title">): LibraryManga {
+    return {
+        sourceId: "mangadex",
+        sourceUrl: `https://mangadex.org/title/${overrides.id}`,
+        normalizedTitle: overrides.title.toLowerCase(),
+        authors: [],
+        status: "ongoing",
+        addedAt: 1,
+        updatedAt: 1,
+        ...overrides
+    }
+}
+
+const disabledProfile = {
+    enabled: false,
+    username: "",
+    userId: "",
+    lastSyncAt: 0,
+    communityRank: null,
+    recommendations: [],
+    newAchievements: [],
+    communityStats: null
+}
+
+async function getSuggestions(force?: boolean): Promise<Suggestion[]> {
+    const result = await suggestionsHandlers["suggestions:get"]!(
+        { type: "suggestions:get", ...(force !== undefined ? { force } : {}) },
+        ctx
+    )
+    return result as Suggestion[]
+}
+
+beforeEach(async () => {
+    fakeBrowser.reset()
+    vi.clearAllMocks()
+    getRecommendations.mockReset()
+    await db.manga.clear()
+    getRecommendations.mockResolvedValue([])
+    getCommunityProfile.mockResolvedValue(disabledProfile)
+})
+
+describe("suggestions:get", () => {
+    it("excludes owned titles and surfaces new recommendations", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100, genres: ["Action"] }))
+        await db.manga.put(ownedManga({ id: "m2", title: "Owned Two", anilistId: 200, genres: ["Comedy"] }))
+
+        const candidates: RecCandidate[] = [
+            { anilistId: 200, title: "Owned Two", genres: ["Comedy"] },
+            { anilistId: 999, title: "Fresh Pick", genres: ["Action"] }
+        ]
+        getRecommendations.mockResolvedValueOnce(candidates).mockResolvedValueOnce([])
+
+        const suggestions = await getSuggestions()
+
+        expect(suggestions.map(s => s.anilistId)).toEqual([999])
+        expect(suggestions[0]!.title).toBe("Fresh Pick")
+    })
+
+    it("caches the computed list with a timestamp in storage.local", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100 }))
+        getRecommendations.mockResolvedValueOnce([{ anilistId: 999, title: "Fresh Pick" }])
+
+        await getSuggestions()
+
+        const stored = await fakeBrowser.storage.local.get("suggestions")
+        const cache = stored["suggestions"] as { suggestions: Suggestion[]; updatedAt: number }
+        expect(cache.suggestions.map(s => s.anilistId)).toEqual([999])
+        expect(cache.updatedAt).toBeGreaterThan(0)
+    })
+
+    it("returns the fresh cache without recomputing", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100 }))
+        getRecommendations.mockResolvedValueOnce([{ anilistId: 999, title: "Fresh Pick" }])
+
+        await getSuggestions()
+        expect(getRecommendations).toHaveBeenCalledTimes(1)
+
+        const second = await getSuggestions()
+        expect(getRecommendations).toHaveBeenCalledTimes(1)
+        expect(second.map(s => s.anilistId)).toEqual([999])
+    })
+
+    it("recomputes when force is set even with a fresh cache", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100 }))
+        getRecommendations.mockResolvedValue([{ anilistId: 999, title: "Fresh Pick" }])
+
+        await getSuggestions()
+        expect(getRecommendations).toHaveBeenCalledTimes(1)
+
+        await getSuggestions(true)
+        expect(getRecommendations).toHaveBeenCalledTimes(2)
+    })
+
+    it("returns an empty list for an empty library without calling AniList", async () => {
+        const suggestions = await getSuggestions()
+
+        expect(suggestions).toEqual([])
+        expect(getRecommendations).not.toHaveBeenCalled()
+    })
+
+    it("skips owned titles that have no anilistId", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "No Anilist" }))
+
+        const suggestions = await getSuggestions()
+
+        expect(getRecommendations).not.toHaveBeenCalled()
+        expect(suggestions).toEqual([])
+    })
+
+    it("falls back to the previous cache when a later recompute yields nothing", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100 }))
+        getRecommendations.mockResolvedValueOnce([{ anilistId: 999, title: "Fresh Pick" }])
+        await getSuggestions()
+
+        getRecommendations.mockResolvedValue([])
+        const degraded = await getSuggestions(true)
+
+        expect(degraded.map(s => s.anilistId)).toEqual([999])
+    })
+
+    it("never throws when the library read fails, returning any cached list", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100 }))
+        getRecommendations.mockResolvedValueOnce([{ anilistId: 999, title: "Fresh Pick" }])
+        await getSuggestions()
+
+        vi.spyOn(console, "warn").mockImplementation(() => {})
+        const toArray = vi.spyOn(db.manga, "toArray").mockRejectedValueOnce(new Error("db down"))
+
+        const result = await getSuggestions(true)
+
+        expect(result.map(s => s.anilistId)).toEqual([999])
+        toArray.mockRestore()
+    })
+
+    it("folds in community co-read picks when the profile is opted in", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100 }))
+        getRecommendations.mockResolvedValueOnce([{ anilistId: 999, title: "Fresh Pick" }])
+        getCommunityProfile.mockResolvedValue({
+            ...disabledProfile,
+            enabled: true,
+            userId: "user-1",
+            recommendations: [{ title: "Fresh Pick", sourceId: "mangadex" }]
+        })
+
+        const suggestions = await getSuggestions()
+
+        expect(suggestions[0]!.community).toBe(true)
+    })
+
+    it("degrades to content-based when the community profile is disabled", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100 }))
+        getRecommendations.mockResolvedValueOnce([{ anilistId: 999, title: "Fresh Pick" }])
+
+        const suggestions = await getSuggestions()
+
+        expect(suggestions[0]!.community).toBe(false)
+    })
+})

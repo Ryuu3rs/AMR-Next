@@ -1,4 +1,10 @@
 import type { MangaStatus, MetadataProvider, MetadataQuery, MetadataResult } from "./provider"
+import {
+    mapRecommendations,
+    RECOMMENDATIONS_QUERY,
+    type RecCandidate,
+    type RecommendationsResponse
+} from "./recommendations"
 
 const ANILIST_GRAPHQL = "https://graphql.anilist.co"
 
@@ -97,6 +103,15 @@ export const anilistProvider: MetadataProvider = {
             return data?.Media ? mapAniListMedia(data.Media) : null
         } catch {
             return null
+        }
+    },
+
+    async getRecommendations(id: number): Promise<RecCandidate[]> {
+        try {
+            const data = await query<{ Media: RecommendationsResponse }>(RECOMMENDATIONS_QUERY, { id })
+            return data?.Media ? mapRecommendations(data.Media) : []
+        } catch {
+            return []
         }
     }
 }

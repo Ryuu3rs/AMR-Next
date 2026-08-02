@@ -5,6 +5,7 @@ import { anilistHandlers } from "../handlers/anilist"
 import { dataSyncSettingsHandlers } from "../handlers/data-sync-settings"
 import { readerHandlers } from "../handlers/reader"
 import { downloadsBookmarksAnalyticsHandlers } from "../handlers/downloads-bookmarks-analytics"
+import { suggestionsHandlers } from "../handlers/suggestions"
 import type { HandlerMap } from "./handler-types"
 
 // Merged dispatch table for every RuntimeRequest variant. TypeScript's structural
@@ -20,7 +21,8 @@ export const handlers: HandlerMap = {
     ...anilistHandlers,
     ...dataSyncSettingsHandlers,
     ...readerHandlers,
-    ...downloadsBookmarksAnalyticsHandlers
+    ...downloadsBookmarksAnalyticsHandlers,
+    ...suggestionsHandlers
 }
 
 // Exposed only for the exhaustiveness/duplicate-key test - not used by the dispatcher.
@@ -31,5 +33,6 @@ export const handlerGroups = {
     anilistHandlers,
     dataSyncSettingsHandlers,
     readerHandlers,
-    downloadsBookmarksAnalyticsHandlers
+    downloadsBookmarksAnalyticsHandlers,
+    suggestionsHandlers
 }

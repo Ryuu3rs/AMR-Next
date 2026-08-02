@@ -136,6 +136,7 @@ export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<Runt
     "community:sync",
     "community:rate",
     "community:manga-stats",
+    "suggestions:get",
     "settings:get",
     "settings:update"
 ])

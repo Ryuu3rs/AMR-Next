@@ -180,6 +180,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         rating: z.number().int().min(1).max(5)
     }),
     z.object({ type: z.literal("community:manga-stats"), mangaTitle: z.string().min(1) }),
+    z.object({ type: z.literal("suggestions:get"), force: z.boolean().optional() }),
     z.object({ type: z.literal("settings:get") }),
     z.object({
         type: z.literal("settings:update"),
