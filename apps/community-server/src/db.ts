@@ -156,6 +156,13 @@ export function getRecommendations(userId: string): Array<{ title: string; sourc
         .all(userId, userId, userId) as Array<{ title: string; sourceId: string }>
 }
 
+// A candidate title must be read by at least this many distinct co-readers before it can
+// be surfaced. Without this floor, seeding your own account with a niche title collapses
+// your co-reader set to a single other user, and the response becomes that one user's
+// private reading list verbatim (an intersection/probe deanonymization). Requiring >= K
+// distinct co-readers per surfaced title means no single user's library can leak.
+const CO_READ_MIN_READERS = 3
+
 export function getCoReadRecommendations(userId: string): Array<{ title: string; sourceId: string }> {
     return db
         .prepare(
@@ -180,9 +187,10 @@ export function getCoReadRecommendations(userId: string): Array<{ title: string;
             FROM candidates c
             JOIN co_readers cr ON c.user_id = cr.user_id
             GROUP BY c.manga_title
+            HAVING COUNT(DISTINCT c.user_id) >= ?
             ORDER BY score DESC, c.manga_title ASC LIMIT 10`
         )
-        .all(userId, userId) as Array<{ title: string; sourceId: string }>
+        .all(userId, userId, CO_READ_MIN_READERS) as Array<{ title: string; sourceId: string }>
 }
 
 export function upsertRating(userId: string, mangaTitle: string, rating: number): void {
