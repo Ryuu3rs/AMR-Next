@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.17.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.16.0...v0.17.0) (2026-08-02)
+
+
+### Features
+
+* **anilist:** guide access-token setup in settings ([febf1c9](https://github.com/Ryuu3rs/AMR-Next/commit/febf1c9e6f790eb2bd058364295aed6f92fd32fe))
+* **anilist:** make the setup authorize URL copyable ([ef0f484](https://github.com/Ryuu3rs/AMR-Next/commit/ef0f484c7dedcd76fe570468a3904b7af10064d0))
+* **community:** rank readers-also-read recommendations by co-occurrence ([c355d0b](https://github.com/Ryuu3rs/AMR-Next/commit/c355d0b5295b6cd70c28ee83024f6f99ea471f89))
+* **library:** add a "recently updated" sort ([72bd73b](https://github.com/Ryuu3rs/AMR-Next/commit/72bd73b146e8822a6458ec625c948d4c02d92dd5))
+* **metadata:** add Jikan (MAL) fallback for covers and MAL ids ([f29ade8](https://github.com/Ryuu3rs/AMR-Next/commit/f29ade88f1e958f9bcf662539cb9044cbc60ae53))
+* **reader:** add a double-page (2-up) spread in paged mode ([1c408ae](https://github.com/Ryuu3rs/AMR-Next/commit/1c408ae5fffb744dabec6d514e944214c0bd8433))
+* **search:** collapse duplicate results across mirrors into work cards ([f89054b](https://github.com/Ryuu3rs/AMR-Next/commit/f89054b8d98dd7a2d3a295060644adaca51f4692))
+* **suggestions:** add a content-based Suggestions tab ([d5c9346](https://github.com/Ryuu3rs/AMR-Next/commit/d5c93464ac404ba44dbdf7bd708fe66865fe3d84))
+* **updates:** notify on new chapters after an update check ([b1c9e94](https://github.com/Ryuu3rs/AMR-Next/commit/b1c9e94535c70e7d6ccf09e0c27ff723d6229174))
+
+
+### Bug Fixes
+
+* **anilist:** put the token box below the setup steps ([17622b1](https://github.com/Ryuu3rs/AMR-Next/commit/17622b1314a88e36f69d42eff7ec58e44e8039ac))
+* **community:** block the co-read intersection leak with a k-anonymity floor ([b7879ea](https://github.com/Ryuu3rs/AMR-Next/commit/b7879eaf12d125e1d68333a171d4791adc8dd557))
+* **community:** reach the community server from the shipped build ([3b31ac1](https://github.com/Ryuu3rs/AMR-Next/commit/3b31ac1337d467b28c493498c1db5b7bff15fbae))
+* **reader:** make the double-page spread lay out side by side ([20662b9](https://github.com/Ryuu3rs/AMR-Next/commit/20662b97f2a178489792514b1bd4799240fb648d))
+* **sources:** restore AsuraScans and Flame Comics update checks ([92752d2](https://github.com/Ryuu3rs/AMR-Next/commit/92752d29f50d7abac09b9ce71306ce72263a3778))
+* **suggestions:** harden grouping and the handler after a bug hunt ([9d300d2](https://github.com/Ryuu3rs/AMR-Next/commit/9d300d273144f7491036b8809e8c820268b2cc33))
+* **updates:** make failure-log counts honest and add a per-source tally ([2178ea8](https://github.com/Ryuu3rs/AMR-Next/commit/2178ea85d7364427f5204d538ee4f9a90cc8d128))
+
 ## [0.16.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.15.0...v0.16.0) (2026-08-02)
 
 
