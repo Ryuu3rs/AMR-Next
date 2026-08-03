@@ -4559,10 +4559,10 @@
                             aria-label="Update schedule"
                             value={updateIntervalSelection}
                             onchange={e => changeUpdateInterval(e.currentTarget.value)}>
-                            <option value="0">Manual only</option>
-                            <option value="6">Every 6 h</option>
-                            <option value="12">Every 12 h</option>
-                            <option value="24">Daily</option>
+                            <option value={0}>Manual only</option>
+                            <option value={6}>Every 6 h</option>
+                            <option value={12}>Every 12 h</option>
+                            <option value={24}>Daily</option>
                         </select>
                         {#if updateIntervalSaved}<span class="saved-flash">✓ Saved</span>{/if}
                     </div>
