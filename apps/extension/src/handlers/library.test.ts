@@ -22,6 +22,14 @@ vi.mock("../background/covers", () => ({
     fetchCoverBlob: vi.fn()
 }))
 
+vi.mock("../metadata", () => ({
+    resolveMetadata: vi.fn()
+}))
+
+vi.mock("../diag-log", () => ({
+    diag: { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+}))
+
 vi.mock("../background/chapter-cache", () => ({
     scheduleChapterListRefresh: vi.fn()
 }))
@@ -51,6 +59,7 @@ const {
     resolveCoverFor
 } = await import("../sources")
 const { fetchCoverBlob } = await import("../background/covers")
+const { resolveMetadata } = await import("../metadata")
 const { scheduleChapterListRefresh } = await import("../background/chapter-cache")
 const { fetchChapterHtmlViaTab } = await import("../background/tab-fetch")
 
@@ -887,6 +896,36 @@ describe("library:covers:backfill", () => {
         const cachedRow = await db.covers.get("webtoons:manga:8579")
         expect(cachedRow?.blob.type).toBe(fakeBlob.type)
         expect(cachedRow?.blob.size).toBe(fakeBlob.size)
+    })
+
+    it("falls back to the metadata catalog cover when the source cannot resolve one (dead source)", async () => {
+        const { libraryHandlers } = await import("./library")
+
+        const deadSource: LibraryManga = {
+            ...manga,
+            id: "aquamanga:manga:dead",
+            sourceId: "aquamanga",
+            sourceUrl: "https://aquamanga.com/manga/dead",
+            coverUrl: undefined
+        }
+        await db.manga.put(deadSource)
+
+        vi.mocked(resolveCoverFor).mockResolvedValue(undefined) // source is dead - no scrape
+        vi.mocked(resolveMetadata).mockResolvedValue({
+            coverUrl: "https://s4.anilist.co/cover.jpg",
+            status: "ongoing"
+        } as never)
+        const fakeBlob = new Blob(["cover-bytes"], { type: "image/jpeg" })
+        vi.mocked(fetchCoverBlob).mockResolvedValue(fakeBlob)
+
+        const handler = libraryHandlers["library:covers:backfill"]!
+        const result = (await handler({ type: "library:covers:backfill" } as never, ctx)) as { updated: number }
+
+        expect(resolveMetadata).toHaveBeenCalled()
+        expect(fetchCoverBlob).toHaveBeenCalledWith("https://s4.anilist.co/cover.jpg")
+        expect(result.updated).toBe(1)
+        const stored = await db.manga.get("aquamanga:manga:dead")
+        expect(stored?.coverUrl).toBe("https://s4.anilist.co/cover.jpg")
     })
 
     it("processes titles from two different sources in the same batch concurrently", async () => {
