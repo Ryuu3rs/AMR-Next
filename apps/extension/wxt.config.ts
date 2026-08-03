@@ -1,5 +1,5 @@
 import { defineConfig } from "wxt"
-import { ALL_OPTIONAL_ORIGINS, ANILIST_API_ORIGIN, GITHUB_API_ORIGIN } from "./src/permissions"
+import { ALL_OPTIONAL_ORIGINS, ANILIST_API_ORIGIN, GITHUB_API_ORIGIN, METADATA_COVER_ORIGINS } from "./src/permissions"
 
 export default defineConfig({
     manifestVersion: 3,
@@ -45,6 +45,7 @@ export default defineConfig({
         host_permissions: [
             GITHUB_API_ORIGIN,
             ANILIST_API_ORIGIN,
+            ...METADATA_COVER_ORIGINS,
             ...(process.env.VITE_COMMUNITY_API_ORIGIN ? [process.env.VITE_COMMUNITY_API_ORIGIN] : []),
             ...(process.env.VITE_METADATA_API_ORIGIN ? [process.env.VITE_METADATA_API_ORIGIN] : []),
             ...ALL_OPTIONAL_ORIGINS

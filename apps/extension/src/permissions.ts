@@ -119,6 +119,12 @@ export const GITHUB_API_ORIGIN = "https://api.github.com/*" as const
 // Added to host_permissions in wxt.config.ts, so NOT repeated in optional origins.
 export const ANILIST_API_ORIGIN = "https://graphql.anilist.co/*" as const
 
+// Cover-image CDNs for the metadata catalog: AniList serves covers from s4.anilist.co
+// and MAL/Jikan from cdn.myanimelist.net. Required so the cover backfill can fetch and
+// cache those blobs (a service-worker fetch needs the host permission, unlike an <img>
+// hotlink). Added to host_permissions in wxt.config.ts.
+export const METADATA_COVER_ORIGINS = ["https://s4.anilist.co/*", "https://cdn.myanimelist.net/*"] as const
+
 // Gist sync origins - still requested optionally in the UI so the user knows
 // they are authorising Gist access (the network-level permission is already
 // granted via host_permissions; this optional grant is for the UI prompt only).

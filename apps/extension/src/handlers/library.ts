@@ -34,6 +34,8 @@ import {
 import { isBotBlocked } from "../background/capture"
 import { scheduleChapterListRefresh } from "../background/chapter-cache"
 import { fetchCoverBlob } from "../background/covers"
+import { resolveMetadata } from "../metadata"
+import { diag } from "../diag-log"
 import { fetchChapterHtmlViaTab } from "../background/tab-fetch"
 import { matchReadChapterId, matchReadChapterByUrl } from "../reconcile-match"
 import { removeFromAniList } from "./anilist"
@@ -1006,42 +1008,65 @@ export const libraryHandlers: HandlerMap = {
                         try {
                             const storedRemoteCover =
                                 m.coverUrl && /^https?:\/\//.test(m.coverUrl) ? m.coverUrl : undefined
-                            let remote = storedRemoteCover ?? (await resolveCoverFor(m))
-                            if (!remote) continue
-                            let touched = false
-                            // Store the source's own remote URL as-is - covers are never inlined
-                            // as data: URIs anymore (see database.ts's v8 migration).
-                            if (!m.coverUrl) {
-                                await updateManga(m.id, { coverUrl: remote })
-                                touched = true
-                            }
-                            // Cache the raw blob so the UI can serve it from IndexedDB without
-                            // hotlinking the source CDN on every render. Non-fatal: the URL is
-                            // already stored (either just now, or previously).
-                            let blob = await fetchCoverBlob(remote)
-                            if (!blob && targeted && storedRemoteCover) {
-                                // Targeted calls exist for titles just relinked away from a dead
-                                // source - the stored coverUrl is still the OLD source's dead URL
-                                // until something overwrites it. Re-resolve from the (now live)
-                                // source rather than silently no-oping.
-                                const fresh = await resolveCoverFor(m)
-                                if (fresh) {
-                                    const freshBlob = await fetchCoverBlob(fresh)
-                                    if (freshBlob) {
-                                        remote = fresh
-                                        blob = freshBlob
-                                        await updateManga(m.id, { coverUrl: fresh })
-                                        touched = true
-                                    }
+
+                            // Try cover sources in order of trust: the stored remote URL, then a
+                            // fresh scrape from the source adapter, then the metadata catalog
+                            // (AniList -> Jikan, by title). Stop at the first whose blob actually
+                            // fetches. The metadata fallback is what recovers covers for dead or
+                            // moved sources that can no longer be scraped - the previous version
+                            // only ever tried the source, so those stayed blank forever.
+                            let firstResolved: string | undefined
+                            let chosen: string | undefined
+                            let blob: Blob | undefined
+                            let via = ""
+                            const tryUrl = async (url: string | undefined, from: string) => {
+                                if (!url || blob) return
+                                firstResolved ??= url
+                                const b = await fetchCoverBlob(url)
+                                if (b) {
+                                    chosen = url
+                                    blob = b
+                                    via = from
                                 }
+                            }
+
+                            await tryUrl(storedRemoteCover, "stored")
+                            if (!blob) await tryUrl(await resolveCoverFor(m), "source")
+                            if (!blob) {
+                                const meta = await resolveMetadata({
+                                    title: m.title,
+                                    sourceId: m.sourceId,
+                                    ...(m.sourceMangaId ? { sourceMangaId: m.sourceMangaId } : {})
+                                }).catch(() => null)
+                                await tryUrl(meta?.coverUrl, "metadata")
+                            }
+
+                            // Fall back to the first URL that at least resolved, so a hotlink can
+                            // still render even when no blob was cacheable (e.g. a CDN that serves
+                            // <img> but refuses a service-worker fetch).
+                            const url = chosen ?? firstResolved
+                            if (!url) {
+                                diag.warn("cover-backfill", `no cover found for ${m.sourceId}`, { mangaId: m.id })
+                                continue
+                            }
+                            let touched = false
+                            if (m.coverUrl !== url) {
+                                await updateManga(m.id, { coverUrl: url })
+                                touched = true
                             }
                             if (blob) {
                                 await cacheCover(m.id, blob)
                                 touched = true
                             }
-                            if (touched) updated += 1
+                            if (touched) {
+                                updated += 1
+                                diag.info("cover-backfill", `cover via ${via || "hotlink"} for ${m.sourceId}`, {
+                                    mangaId: m.id
+                                })
+                            }
                         } catch (error) {
-                            console.warn("[AMR] Cover backfill failed", { mangaId: m.id, error })
+                            const message = error instanceof Error ? error.message : "cover backfill failed"
+                            diag.warn("cover-backfill", `failed for ${m.sourceId}`, { mangaId: m.id, message })
                         }
                     }
                 }
