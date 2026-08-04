@@ -184,3 +184,38 @@ test("POST /metadata/link is rejected without an admin token", async () => {
     })
     assert.equal(res.status, 403)
 })
+
+test("POST /metadata/link rejects a wrong token and accepts the correct one (constant-time compare)", async () => {
+    process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "amr-meta-"))
+    process.env.METADATA_ADMIN_TOKEN = "s3cret-admin-token"
+    const { app } = await import("./index.ts")
+
+    const wrong = await app.request("/metadata/link", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer nope" },
+        body: JSON.stringify({ normalizedTitle: "naruto", anilistId: 30011 })
+    })
+    assert.equal(wrong.status, 403)
+
+    const realFetch = globalThis.fetch
+    globalThis.fetch = async () =>
+        new Response(
+            JSON.stringify({ data: { Media: { id: 30011, title: { english: "Naruto" }, status: "FINISHED" } } }),
+            {
+                status: 200
+            }
+        )
+    try {
+        const ok = await app.request("/metadata/link", {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: "Bearer s3cret-admin-token" },
+            body: JSON.stringify({ normalizedTitle: "naruto", anilistId: 30011 })
+        })
+        assert.equal(ok.status, 200)
+        const body = (await ok.json()) as { anilistId?: number }
+        assert.equal(body.anilistId, 30011)
+    } finally {
+        globalThis.fetch = realFetch
+        delete process.env.METADATA_ADMIN_TOKEN
+    }
+})

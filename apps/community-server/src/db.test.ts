@@ -6,7 +6,7 @@ import { join } from "node:path"
 
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "amr-community-"))
 
-const { createUser, insertEvents, getCoReadRecommendations } = await import("./db.js")
+const { createUser, insertEvents, getCoReadRecommendations, getRecommendations } = await import("./db.js")
 
 let seq = 0
 // Distinct title/user namespaces per test - the db is a shared module singleton, so
@@ -74,4 +74,34 @@ test("returns [] on no overlap / cold start", () => {
 
     seed("empty", [])
     assert.deepEqual(getCoReadRecommendations("empty"), [])
+})
+
+function seedWithGenres(userId: string, entries: Array<{ title: string; genres: string[] }>): void {
+    createUser(userId, `user_${userId}`)
+    insertEvents(
+        userId,
+        entries.map(e => ({
+            id: `evt_${seq++}`,
+            sourceId: `src_${e.title}`,
+            mangaTitle: e.title,
+            genres: e.genres,
+            date: "2026-08-01"
+        }))
+    )
+}
+
+test("genre recommender applies the k-anonymity floor", () => {
+    // me's top genre is Action. gr_popular is read by 3 distinct others -> surfaces.
+    // gr_solo is read by only 1 other -> suppressed, so it cannot leak that user's library.
+    seedWithGenres("gr_me", [{ title: "gr_own", genres: ["Action"] }])
+    seedWithGenres("gr_u1", [
+        { title: "gr_solo", genres: ["Action"] },
+        { title: "gr_popular", genres: ["Action"] }
+    ])
+    seedWithGenres("gr_u2", [{ title: "gr_popular", genres: ["Action"] }])
+    seedWithGenres("gr_u3", [{ title: "gr_popular", genres: ["Action"] }])
+
+    const titles = getRecommendations("gr_me").map(r => r.title)
+    assert.ok(titles.includes("gr_popular"))
+    assert.ok(!titles.includes("gr_solo"))
 })
