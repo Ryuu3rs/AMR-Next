@@ -45,7 +45,7 @@
         coverUrl?: string
         latestChapter?: string
     }
-    let imageErrorCount = $state(0)
+    let failedPages = $state(new Set<number>())
     let mirrorOpen = $state(false)
     let mirrorLoading = $state(false)
     let mirrorSearched = $state(false)
@@ -174,11 +174,19 @@
     const sourceDomain = $derived(sourceUrl ? new URL(sourceUrl).hostname.replace(/^www\./, "") : "")
 
     // pages.length === 0 means the adapter returned sidebar-only metadata (no reader).
-    // imagesBroken is only true when pages exist but they all errored.
     const zeroPages = $derived(Boolean(chapter) && chapter!.pages.length === 0)
-    const imagesBroken = $derived(
-        Boolean(chapter) && chapter!.pages.length > 0 && imageErrorCount >= chapter!.pages.length
-    )
+    const imagesBroken = $derived.by(() => {
+        if (!chapter || chapter.pages.length === 0) return false
+        const pageCount = chapter.pages.length
+        if (effectiveMode === "single") {
+            // Paged mode mounts only the current one or two pages, so trip when every
+            // page in the current view has failed - but require two distinct failures
+            // overall so a single transient error never shows the banner.
+            if (failedPages.size < 2 && pageCount > 1) return false
+            return spreadIndices.length > 0 && spreadIndices.every(p => failedPages.has(p))
+        }
+        return failedPages.size >= pageCount
+    })
 
     async function findOnAnotherMirror() {
         mirrorOpen = true
@@ -235,16 +243,20 @@
     })
 
     async function refreshDownloadState(chapterId: string) {
-        revokeOfflinePages()
-        downloaded = false
         try {
             const record = await sendRuntimeMessage<{ pageBlobs: Blob[]; pageCount: number } | null>({
                 type: "chapter:download:get",
                 chapterId
             })
+            // Bail if the chapter switched while the lookup was in flight - otherwise
+            // we'd paint chapter A's offline blobs over chapter B and leak A's URLs.
+            if (chapter?.chapter.id !== chapterId) return
+            revokeOfflinePages()
             if (record && record.pageBlobs.length > 0) {
                 downloaded = true
                 offlinePages = record.pageBlobs.map(blob => URL.createObjectURL(blob))
+            } else {
+                downloaded = false
             }
         } catch {
             // offline read is best-effort
@@ -612,7 +624,7 @@
         chapter = undefined
         revokeOfflinePages()
         downloaded = false
-        imageErrorCount = 0
+        failedPages = new Set()
         scrollCompleteFired = false
         mirrorOpen = false
         mirrorSearched = false
@@ -679,6 +691,7 @@
     }
 
     let unsubscribeLive: (() => void) | undefined
+    let settingsListener: Parameters<typeof browser.storage.onChanged.addListener>[0] | undefined
 
     // Coalesces reader:progress runtime messages into a trailing 1s window so
     // rapid page onload events (e.g. scrolling a 100-page webtoon chapter)
@@ -713,7 +726,7 @@
         // comment on settings:update). Only the fields with no per-series override
         // path are safe to apply blindly; mode/direction/pageFit can be overridden
         // per-title and are left alone here to avoid clobbering an active override.
-        browser.storage.onChanged.addListener((changes, area) => {
+        settingsListener = (changes, area) => {
             if (area !== "local" || !changes["settings"]) return
             const next = changes["settings"].newValue as
                 | Partial<{ showPageNumber: boolean; noGapContinuous: boolean; preloadPages: number }>
@@ -725,7 +738,8 @@
                 noGapDefault = next.noGapContinuous
                 if (noGapOverride === null) noGapContinuous = noGapDefault
             }
-        })
+        }
+        browser.storage.onChanged.addListener(settingsListener)
 
         const params = new URL(location.href).searchParams
         const url = params.get("url")
@@ -746,6 +760,7 @@
         revokeOfflinePages()
         if (noGapSavedTimer) clearTimeout(noGapSavedTimer)
         unsubscribeLive?.()
+        if (settingsListener) browser.storage.onChanged.removeListener(settingsListener)
     })
 
     function recordProgress(pageIndex: number) {
@@ -757,6 +772,22 @@
         // "Chapter finished" must reach the DB/live-bus immediately, not wait
         // out the trailing coalescing window.
         if (completed) progressReporter?.flush()
+    }
+
+    // Continuous mode drives progress from image onload, but eager-preloaded pages
+    // fire onload before the reader has scrolled to them. Ignore those, and never let
+    // an onload drag saved progress back below the page we resumed at.
+    function recordContinuousProgress(pageIndex: number) {
+        if (pageIndex < preloadPages) return
+        if (pageIndex <= currentPage) return
+        recordProgress(pageIndex)
+    }
+
+    function clearPageError(pageIndex: number) {
+        if (!failedPages.has(pageIndex)) return
+        const next = new Set(failedPages)
+        next.delete(pageIndex)
+        failedPages = next
     }
 
     function goToChapter(url: string | undefined) {
@@ -776,12 +807,11 @@
         goToChapter(nextUrl)
     }
 
-    function handleImageError(e: Event) {
+    function handleImageError(e: Event, pageIndex: number) {
         const img = e.currentTarget as HTMLImageElement
         console.warn("[AMR reader] Image error:", img.src)
-        if (img.dataset.didFallback) return
         const isMangaDex = chapterUrl?.includes("mangadex.org") ?? false
-        if (isMangaDex) {
+        if (!img.dataset.didFallback && isMangaDex) {
             const match = img.src.match(/\/data\/([a-fA-F0-9]+)\/(.+?)(?:\?.*)?$/)
             if (match && match[1] && match[2]) {
                 img.dataset.didFallback = "1"
@@ -789,8 +819,12 @@
                 return
             }
         }
-        console.warn("[AMR reader] Image load failed, no fallback pattern matched:", img.src)
-        imageErrorCount += 1
+        console.warn("[AMR reader] Image load failed:", img.src)
+        if (!failedPages.has(pageIndex)) {
+            const next = new Set(failedPages)
+            next.add(pageIndex)
+            failedPages = next
+        }
     }
 
     async function goToApp() {
@@ -851,8 +885,18 @@
         if (effectiveMode !== "single") return
         const lastIndex = chapter.pages.length - 1
         const step = effectiveSpread
-        const next = () => recordProgress(Math.min(currentPage + step, lastIndex))
-        const prev = () => recordProgress(Math.max(currentPage - step, 0))
+        // The highest page index the current view already shows. When it reaches the
+        // last page, forward is a no-op so a 2-up spread over an even page count never
+        // re-shows the final page alone (and never misaligns backward stepping).
+        const maxShown = currentPage + spreadIndices.length - 1
+        const next = () => {
+            if (maxShown >= lastIndex) return
+            recordProgress(Math.min(currentPage + step, lastIndex))
+        }
+        const prev = () => {
+            if (currentPage === 0) return
+            recordProgress(Math.max(currentPage - step, 0))
+        }
         const key = event.key.toLowerCase()
         if (key === "j") next()
         else if (key === "k") prev()
@@ -1164,9 +1208,10 @@
                     src={pageSrcs[p]}
                     alt={`Page ${p + 1}`}
                     ondblclick={toggleZoom}
-                    onerror={handleImageError}
+                    onerror={e => handleImageError(e, p)}
                     onload={e => {
                         delete (e.currentTarget as HTMLImageElement).dataset.didFallback
+                        clearPageError(p)
                         recordProgress(currentPage)
                     }} />
             {/each}
@@ -1185,8 +1230,12 @@
                     alt={`Page ${index + 1}`}
                     loading={index < preloadPages ? "eager" : "lazy"}
                     ondblclick={toggleZoom}
-                    onerror={handleImageError}
-                    onload={() => recordProgress(index)} />
+                    onerror={e => handleImageError(e, index)}
+                    onload={e => {
+                        delete (e.currentTarget as HTMLImageElement).dataset.didFallback
+                        clearPageError(index)
+                        recordContinuousProgress(index)
+                    }} />
                 {#if showPageNumber}<span class="page-num">{index + 1} / {chapter.pages.length}</span>{/if}
             </div>
         {/each}
