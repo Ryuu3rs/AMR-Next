@@ -135,7 +135,7 @@ export type LogEntry = {
 export type LibraryBackup = {
     id?: number
     createdAt: number
-    reason: "pre-import" | "pre-sync-pull" | "pre-clear" | "pre-cleanup"
+    reason: "pre-import" | "pre-sync-pull" | "pre-clear" | "pre-cleanup" | "pre-update"
     envelope: Awaited<ReturnType<typeof exportDatabase>>
 }
 
@@ -1174,6 +1174,12 @@ export async function repairMangahubChapters(input: {
 }
 
 const MANGA_PATH_MARKERS = ["manga", "comic", "comics", "series", "manhwa", "manhua", "title", "read"]
+// First path segments that name a chapter/reading context, never a title. Sites like
+// MangaDex address chapters as /chapter/<opaque-id> with no series slug anywhere in the
+// path, so the segments[0] fallback below would hand back "chapter" as the "slug" for
+// EVERY title on the source - collapsing them all onto one record via sameHostSlug. Treat
+// these as "no reliable slug" (null) instead.
+const NON_TITLE_SEGMENTS = new Set(["chapter", "chapters", "chap", "viewer", "episode", "episodes", "reader"])
 const WEBTOONS_HOSTNAMES = new Set(["www.webtoons.com", "webtoons.com"])
 
 // Returns null when no reliable per-title slug can be derived - callers must treat
@@ -1196,7 +1202,8 @@ function deriveSlug(u: URL): string | null {
         const titleNo = u.searchParams.get("title_no")
         return titleNo ? `title_no:${titleNo}` : null
     }
-    return segments[0] || null
+    const first = segments[0]
+    return first && !NON_TITLE_SEGMENTS.has(first.toLowerCase()) ? first : null
 }
 
 function deriveMangaUrl(u: URL, slug: string | null): string {

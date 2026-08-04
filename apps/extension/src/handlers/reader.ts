@@ -5,7 +5,8 @@ import {
     recordAnalyticsEvent,
     saveProgress,
     saveReaderResolvedChapter,
-    trackExternalChapter
+    trackExternalChapter,
+    updateManga
 } from "../database"
 import { findSource, getSourceById, listChaptersBySource, resolveChapterFromHtml, resolveChapterUrl } from "../sources"
 import {
@@ -14,7 +15,7 @@ import {
     scheduleChapterListRefresh
 } from "../background/chapter-cache"
 import { fetchChapterHtmlViaTab } from "../background/tab-fetch"
-import { captureChapter, isBotBlocked } from "../background/capture"
+import { captureChapter, isBotBlocked, isSlugLikeTitle, refreshExternalMangaMetadata } from "../background/capture"
 import { publishLive } from "../live"
 import type { HandlerMap } from "../background/handler-types"
 
@@ -219,7 +220,27 @@ export const readerHandlers: HandlerMap = {
             sourceId: source.manifest.id,
             ts: Date.now()
         })
-        const mangaInfo = source.parseMangaUrl?.(parsedUrl) ?? undefined
+        // Prefer the adapter's URL-level series id. When the adapter can't derive one from a
+        // chapter URL (e.g. MangaDex's /chapter/<uuid>, which carries no series id, and has no
+        // parseMangaUrl at all), a plain URL track keys the entry off deriveSlug's generic
+        // first path segment - "chapter" - so EVERY distinct title on that source collapses
+        // onto one shared record. A manual mark on a new title then silently merges into the
+        // first one tracked and never appears as its own library entry - the "Mark read
+        // doesn't add the manga" report. Resolve the chapter once to recover the real series
+        // id (unique per title, stable across its chapters) so the entry is a proper,
+        // per-title record instead of a colliding stub.
+        let mangaInfo = source.parseMangaUrl?.(parsedUrl) ?? undefined
+        let resolvedManga: Awaited<ReturnType<typeof resolveChapterUrl>>["manga"] | undefined
+        if (!mangaInfo) {
+            try {
+                const resolved = await resolveChapterUrl(request.url)
+                resolvedManga = resolved.manga
+                mangaInfo = { sourceMangaId: resolved.manga.sourceMangaId, mangaUrl: resolved.manga.url }
+            } catch {
+                // Offline / bot-blocked - fall through to the lightweight URL track below so
+                // the read is still recorded, even if the entry stays a URL-keyed stub.
+            }
+        }
         const tracked = await trackExternalChapter({
             url: request.url,
             sourceId: source.manifest.id,
@@ -239,8 +260,29 @@ export const readerHandlers: HandlerMap = {
         // the manga record. A count-based heuristic can't tell "not yet populated" from "a
         // real oneshot with one chapter", so it re-crawled a oneshot on every revisit; the
         // creation flag is unambiguous and fires only on the genuine first track.
-        if (mangaInfo && tracked.created) {
-            scheduleChapterListRefresh(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
+        if (tracked.created) {
+            if (mangaInfo) {
+                scheduleChapterListRefresh(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
+            }
+            // trackExternalChapter titles a fresh record from the chapter URL slug, which is a
+            // placeholder at best ("Chapter", "Title No:95") - upgrade it to the real title and
+            // cover so the new entry is recognizable in the library. Use the metadata the
+            // resolve above already returned when we have it, otherwise best-effort pull it by
+            // series id, mirroring the auto-capture external-track path (capture.ts).
+            if (resolvedManga) {
+                const patch: Parameters<typeof updateManga>[1] = {}
+                if (resolvedManga.manga.title && !isSlugLikeTitle(resolvedManga.manga.title)) {
+                    patch.title = resolvedManga.manga.title
+                    patch.normalizedTitle = resolvedManga.manga.title.toLocaleLowerCase("en").replace(/\s+/g, " ")
+                }
+                if (resolvedManga.manga.coverUrl) patch.coverUrl = resolvedManga.manga.coverUrl
+                // The dispatcher publishes ["library", "chapters"] for chapter:track once this
+                // handler resolves (see MUTATION_SCOPES), so this in-band update needs no
+                // separate publish - the refresh below is the fire-and-forget branch that does.
+                if (Object.keys(patch).length > 0) await updateManga(tracked.mangaId, patch)
+            } else if (mangaInfo) {
+                void refreshExternalMangaMetadata(source.manifest.id, mangaInfo, tracked.mangaId)
+            }
         }
         return { supported: true as const, ...tracked }
     },

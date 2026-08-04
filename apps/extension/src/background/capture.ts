@@ -128,7 +128,7 @@ export function isSlugLikeTitle(title: string): boolean {
     return /[-_]/.test(title) && !/\s/.test(title)
 }
 
-async function refreshExternalMangaMetadata(
+export async function refreshExternalMangaMetadata(
     sourceId: string,
     mangaInfo: { sourceMangaId: string; mangaUrl: string },
     mangaId: string

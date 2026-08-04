@@ -10,13 +10,15 @@ const resolveChapterFromHtmlMock = vi.fn()
 const listChaptersBySourceMock = vi.fn()
 const findSourceMock = vi.fn()
 const getSourceByIdMock = vi.fn()
+const resolveMangaMetadataMock = vi.fn()
 
 vi.mock("../sources", () => ({
     findSource: (...args: unknown[]) => findSourceMock(...args),
     getSourceById: (...args: unknown[]) => getSourceByIdMock(...args),
     resolveChapterUrl: (...args: unknown[]) => resolveChapterUrlMock(...args),
     resolveChapterFromHtml: (...args: unknown[]) => resolveChapterFromHtmlMock(...args),
-    listChaptersBySource: (...args: unknown[]) => listChaptersBySourceMock(...args)
+    listChaptersBySource: (...args: unknown[]) => listChaptersBySourceMock(...args),
+    resolveMangaMetadata: (...args: unknown[]) => resolveMangaMetadataMock(...args)
 }))
 
 const fetchChapterHtmlViaTabMock = vi.fn()
@@ -335,6 +337,79 @@ describe("chapter:track (mark-read) chapter-list population", () => {
         // panel's prev/next is a plain DB read - without this the title would keep exactly
         // one chapter row forever and never show navigation.
         expect(scheduleChapterListRefresh).toHaveBeenCalled()
+    })
+
+    it("adds a distinct, resolved entry per title on a source with no URL-level series id", async () => {
+        // MangaDex-style source: chapter URLs are /chapter/<uuid> with no series slug, and
+        // the adapter has no parseMangaUrl. A plain URL track derives the generic "chapter"
+        // slug for EVERY title, so distinct titles used to collapse onto one shared
+        // "mangadex:manga:chapter" record - the second mark silently merged into the first
+        // and never appeared. Resolving the chapter recovers the real per-title series id.
+        const source = { manifest: { id: "mangadex" }, match: vi.fn().mockReturnValue("chapter") }
+        findSourceMock.mockReturnValue(source)
+        getSettingsMock.mockResolvedValue({ autoAdd: false })
+
+        const resolvedFor = (sourceMangaId: string, title: string, chUrl: string) => ({
+            manga: {
+                manga: {
+                    ...manga,
+                    id: `mangadex:manga:${sourceMangaId}`,
+                    title,
+                    normalizedTitle: title.toLowerCase(),
+                    coverUrl: `https://cdn.example/${sourceMangaId}.jpg`
+                },
+                sourceId: "mangadex",
+                sourceMangaId,
+                url: `https://mangadex.org/title/${sourceMangaId}`
+            },
+            chapter: chapter(`mangadex:chapter:${sourceMangaId}:1`, 1, chUrl)
+        })
+
+        const handler = readerHandlers["chapter:track"]!
+
+        resolveChapterUrlMock.mockResolvedValueOnce(
+            resolvedFor("aaa", "Solo Leveling", "https://mangadex.org/chapter/aaa-uuid")
+        )
+        await handler({ type: "chapter:track", url: "https://mangadex.org/chapter/aaa-uuid" }, { sender: {} } as never)
+
+        resolveChapterUrlMock.mockResolvedValueOnce(
+            resolvedFor("bbb", "One Piece", "https://mangadex.org/chapter/bbb-uuid")
+        )
+        await handler({ type: "chapter:track", url: "https://mangadex.org/chapter/bbb-uuid" }, { sender: {} } as never)
+
+        const all = await db.manga.toArray()
+        // Pre-fix both marks collapse onto a single stub -> length 1.
+        expect(all.length).toBe(2)
+        expect(all.map(m => m.title).sort()).toEqual(["One Piece", "Solo Leveling"])
+        // Every entry is a proper, non-stub record: real series id and resolved title/cover,
+        // not a slug placeholder like "Chapter".
+        for (const m of all) {
+            expect(m.sourceMangaId).toBeTruthy()
+            expect(m.coverUrl).toBeTruthy()
+            expect(m.title).not.toBe("Chapter")
+        }
+        // The marked chapter is recorded as read and resumable.
+        const solo = all.find(m => m.title === "Solo Leveling")!
+        expect(solo.lastReadChapterId).toBeTruthy()
+        const progress = await db.progress.get(solo.lastReadChapterId!)
+        expect(progress?.completed).toBe(true)
+    })
+
+    it("still records the read as a URL-keyed entry when resolution fails (offline / bot-blocked)", async () => {
+        const source = { manifest: { id: "mangadex" }, match: vi.fn().mockReturnValue("chapter") }
+        findSourceMock.mockReturnValue(source)
+        getSettingsMock.mockResolvedValue({ autoAdd: false })
+        resolveChapterUrlMock.mockRejectedValue(new SourceRequestError("blocked", 403))
+
+        const handler = readerHandlers["chapter:track"]!
+        const res = (await handler({ type: "chapter:track", url: "https://mangadex.org/chapter/offline-uuid" }, {
+            sender: {}
+        } as never)) as { supported: boolean; mangaId: string; tracked: boolean }
+
+        expect(res.supported).toBe(true)
+        expect(res.tracked).toBe(true)
+        const stored = await db.manga.get(res.mangaId)
+        expect(stored).toBeDefined()
     })
 })
 
