@@ -14,8 +14,8 @@ import { runtimeRequestSchema, type RuntimeRequest } from "../src/runtime"
 import { SOURCE_ORIGINS } from "../src/permissions"
 import { findSource, searchMangaStreaming } from "../src/sources"
 import { success, failure, type HandlerContext } from "../src/background/handler-types"
-import { captureChapter } from "../src/background/capture"
-import { isInternalTab } from "../src/background/tab-fetch"
+import { captureChapter, clearAddedBadge, ADD_BADGE_ALARM_NAME } from "../src/background/capture"
+import { isInternalTab, isInternalUrl } from "../src/background/tab-fetch"
 import { injectChapterPrompt } from "../src/background/inject-chapter-prompt"
 import { NEW_CHAPTERS_NOTIFICATION_ID } from "../src/notifications"
 import {
@@ -89,6 +89,9 @@ export default defineBackground(() => {
         })
         void checkExtensionUpdate()
         void backfillMangaGenres()
+        // Clear any "ADD" badge left stuck by a capture whose clear-timeout never ran
+        // because the worker was suspended.
+        void clearAddedBadge()
     })
 
     browser.alarms.onAlarm.addListener(alarm => {
@@ -97,6 +100,7 @@ export default defineBackground(() => {
         if (alarm.name === syncAlarmName) void autoPush()
         if (alarm.name === anilistAlarmName) void runAniListSync()
         if (alarm.name === extensionUpdateAlarmName) void checkExtensionUpdate()
+        if (alarm.name === ADD_BADGE_ALARM_NAME) void clearAddedBadge()
     })
 
     // Clicking a "new chapters" notification opens the library so the user can jump in.
@@ -111,12 +115,12 @@ export default defineBackground(() => {
         changeInfo: { url?: string; status?: string },
         tab: { url?: string | undefined }
     ) => {
-        if (changeInfo.url && !isInternalTab(tabId)) {
+        if (changeInfo.url && !isInternalTab(tabId) && !isInternalUrl(changeInfo.url)) {
             void captureChapter(changeInfo.url).catch(error => {
                 console.warn("[AMR] Automatic chapter capture failed", error)
             })
         }
-        if (changeInfo.status === "complete" && tab.url && !isInternalTab(tabId)) {
+        if (changeInfo.status === "complete" && tab.url && !isInternalTab(tabId) && !isInternalUrl(tab.url)) {
             let parsedUrl: URL
             try {
                 parsedUrl = new URL(tab.url)
@@ -144,13 +148,22 @@ export default defineBackground(() => {
     // as each adapter settles instead of waiting for all to finish.
     browser.runtime.onConnect.addListener(port => {
         if (port.name !== "search-stream") return
+        // The controller for the current query on this port. A new query aborts the
+        // previous one so its late partials are dropped instead of interleaving with the
+        // fresh results; a disconnect (search UI closed) aborts it so in-flight adapter
+        // work stops feeding a dead port.
+        let activeController: AbortController | null = null
         port.onMessage.addListener((msg: { type: string; query: string }) => {
             if (msg.type !== "manga:search" || !msg.query) return
+            activeController?.abort()
+            const controller = new AbortController()
+            activeController = controller
             const searchable = sourceRegistry.list().filter(a => !!a.search)
             port.postMessage({ type: "start", total: searchable.length })
             searchMangaStreaming(
                 msg.query,
                 (results, sourceId) => {
+                    if (controller.signal.aborted) return
                     try {
                         port.postMessage({ type: "partial", results, sourceId })
                     } catch {
@@ -158,13 +171,19 @@ export default defineBackground(() => {
                     }
                 },
                 () => {
+                    if (controller.signal.aborted) return
                     try {
                         port.postMessage({ type: "done" })
                     } catch {
                         // port may have disconnected
                     }
-                }
+                },
+                controller.signal
             )
+        })
+        port.onDisconnect.addListener(() => {
+            activeController?.abort()
+            activeController = null
         })
     })
 

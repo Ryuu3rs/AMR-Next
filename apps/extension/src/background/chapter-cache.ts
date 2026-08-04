@@ -142,14 +142,16 @@ export function scheduleChapterListRefresh(
 // are Webtoons-specific - this is only wired up for sources that implement
 // getChapterListUrl, which today is Webtoons alone. A future source using this path
 // with a different URL scheme would need its own title-match guard here.
-// Returns the number of new episodes stored (0 = nothing useful found).
+// Returns the episode numbers mined from this HTML (empty = nothing useful found) so
+// the pagination loop can track episode identity across the whole crawl and stop when
+// a page re-serves already-seen episodes instead of counting per-page link totals.
 export async function mineAndCacheEpisodesFromHtml(
     mangaId: string,
     sourceId: string,
     sourceMangaId: string,
     hostname: string,
     html: string
-): Promise<number> {
+): Promise<number[]> {
     const epLinks: Array<{ url: string; epNo: number }> = []
     const seen = new Set<number>()
 
@@ -175,7 +177,7 @@ export async function mineAndCacheEpisodesFromHtml(
     }
 
     // Ignore if we only got the 2-3 paginate prev/next links present in SSR HTML.
-    if (epLinks.length <= 2) return 0
+    if (epLinks.length <= 2) return []
 
     const dbChapters: ChapterRecord[] = epLinks.map(({ url, epNo }) => ({
         id: `${sourceId}:chapter:${sourceMangaId}:${epNo}`,
@@ -227,7 +229,7 @@ export async function mineAndCacheEpisodesFromHtml(
     // that reopened a background source tab endlessly (Webtoons' tab-list path).
     if (changed) publishLive(["chapters"], [mangaId])
 
-    return epLinks.length
+    return epLinks.map(({ epNo }) => epNo)
 }
 
 // Fetch and cache the full chapter list for a manga.
@@ -256,19 +258,26 @@ export async function listChaptersWithTabFallback(
         // advertising a next page - mirrors the equivalent SW-fetch pagination loop
         // in webtoons.ts's own listChapters().
         const MAX_PAGES = 20
+        // Track episode identity across the whole crawl, not per-page link counts. A
+        // site that clamps &page=N (Webtoons re-serves the last page while still
+        // advertising a next page) would otherwise drive the loop to MAX_PAGES for zero
+        // new data - stop as soon as a page contributes no episode not already seen.
+        const seenEpNos = new Set<number>()
         for (let page = 1; page <= MAX_PAGES; page++) {
             const pageUrl = new URL(listUrl)
             if (page > 1) pageUrl.searchParams.set("page", String(page))
             const html = await fetchChapterHtmlViaTab(pageUrl.toString())
-            const added = await mineAndCacheEpisodesFromHtml(
+            const minedEpNos = await mineAndCacheEpisodesFromHtml(
                 mangaId,
                 source!.manifest.id,
                 sourceMangaId,
                 pageUrl.hostname,
                 html
             )
-            if (added === 0) break
-            totalCached += added
+            const newEpNos = minedEpNos.filter(epNo => !seenEpNos.has(epNo))
+            if (newEpNos.length === 0) break
+            for (const epNo of newEpNos) seenEpNos.add(epNo)
+            totalCached += newEpNos.length
             // Webtoons uses &amp; in href attributes, so check for the raw number only.
             const hasNext = new RegExp(`page=${page + 1}(?:\\D|$)`).test(html)
             if (!hasNext) break

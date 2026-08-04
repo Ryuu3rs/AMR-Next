@@ -386,14 +386,18 @@ export async function searchManga(query: string): Promise<SourceSearchResult[]> 
 
 // Streaming variant - fires all adapters concurrently and calls onPartial as each
 // adapter settles, then calls onDone when all are complete. Enables progressive UI.
+// An optional signal lets the caller (background.ts's search port) cancel: once
+// aborted, no further partials are delivered and onDone is suppressed, so a closed
+// search UI or a superseding query can't have stale results appended to it.
 export function searchMangaStreaming(
     query: string,
     onPartial: (results: SourceSearchResult[], sourceId: string) => void,
-    onDone: () => void
+    onDone: () => void,
+    signal?: AbortSignal
 ): void {
     const searchable = sourceRegistry.list().filter(adapter => !!adapter.search)
     if (searchable.length === 0) {
-        onDone()
+        if (!signal?.aborted) onDone()
         return
     }
     const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
@@ -405,12 +409,13 @@ export function searchMangaStreaming(
             10000
         )
             .then(results => {
+                if (signal?.aborted) return
                 const matched = results.filter(result => matchesQueryWithAltTitles(result, query))
                 if (matched.length > 0) onPartial(matched, adapter.manifest.id)
             })
             .catch(() => {})
             .finally(() => {
-                if (--remaining === 0) onDone()
+                if (--remaining === 0 && !signal?.aborted) onDone()
             })
     }
 }
