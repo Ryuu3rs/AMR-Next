@@ -5,7 +5,9 @@ import {
     getAniListStatus,
     getViewerProgress,
     saveViewerProgress,
-    getViewerName
+    getViewerName,
+    getViewerMangaList,
+    mapMediaListEntry
 } from "./anilist"
 
 function stubStorage() {
@@ -86,5 +88,85 @@ describe("AniList authed API", () => {
     it("throws on a non-ok response", async () => {
         vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }))
         await expect(getViewerName("bad")).rejects.toThrow(/401/)
+    })
+})
+
+describe("mapMediaListEntry", () => {
+    it("maps media status to our publication-status enum", () => {
+        const cases: Array<[string, string]> = [
+            ["RELEASING", "ongoing"],
+            ["FINISHED", "completed"],
+            ["HIATUS", "hiatus"],
+            ["CANCELLED", "cancelled"],
+            ["NOT_YET_RELEASED", "unknown"]
+        ]
+        for (const [raw, expected] of cases) {
+            expect(mapMediaListEntry({ media: { id: 1, status: raw } }).status).toBe(expected)
+        }
+    })
+
+    it("prefers english, falls back to romaji then native", () => {
+        expect(mapMediaListEntry({ media: { id: 1, title: { english: "E", romaji: "R", native: "N" } } }).title).toBe(
+            "E"
+        )
+        expect(mapMediaListEntry({ media: { id: 1, title: { romaji: "R", native: "N" } } }).title).toBe("R")
+        expect(mapMediaListEntry({ media: { id: 1, title: { native: "N" } } }).title).toBe("N")
+    })
+
+    it("prefers extraLarge cover, falls back to large, else undefined", () => {
+        expect(mapMediaListEntry({ media: { id: 1, coverImage: { extraLarge: "xl", large: "l" } } }).coverUrl).toBe(
+            "xl"
+        )
+        expect(mapMediaListEntry({ media: { id: 1, coverImage: { large: "l" } } }).coverUrl).toBe("l")
+        expect(mapMediaListEntry({ media: { id: 1 } }).coverUrl).toBeUndefined()
+    })
+
+    it("carries anilistId, genres, and progress; defaults a missing progress to 0", () => {
+        const mapped = mapMediaListEntry({
+            progress: 12,
+            media: { id: 99, genres: ["Action", null, ""], title: { romaji: "R" } }
+        })
+        expect(mapped.anilistId).toBe(99)
+        expect(mapped.genres).toEqual(["Action"])
+        expect(mapped.progress).toBe(12)
+        expect(mapMediaListEntry({ media: { id: 1 } }).progress).toBe(0)
+    })
+})
+
+describe("getViewerMangaList", () => {
+    it("resolves the viewer id then flattens every list's entries", async () => {
+        const fetchMock = vi
+            .fn()
+            .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { Viewer: { id: 7 } } }) })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    data: {
+                        MediaListCollection: {
+                            lists: [
+                                {
+                                    entries: [
+                                        { progress: 3, media: { id: 1, title: { romaji: "A" }, status: "RELEASING" } }
+                                    ]
+                                },
+                                {
+                                    entries: [
+                                        { progress: 0, media: { id: 2, title: { english: "B" }, status: "FINISHED" } }
+                                    ]
+                                },
+                                null
+                            ]
+                        }
+                    }
+                })
+            })
+        vi.stubGlobal("fetch", fetchMock)
+
+        const list = await getViewerMangaList("t")
+
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(list).toHaveLength(2)
+        expect(list[0]).toMatchObject({ anilistId: 1, title: "A", status: "ongoing", progress: 3 })
+        expect(list[1]).toMatchObject({ anilistId: 2, title: "B", status: "completed", progress: 0 })
     })
 })

@@ -60,6 +60,7 @@ export const MUTATION_SCOPES: Partial<Record<RuntimeRequest["type"], LiveScope[]
     "library:categories": ["library"],
     "library:numbers": ["library"],
     "library:dismiss": ["library"],
+    "anilist:import": ["library"],
     "library:merge": ["library", "chapters", "progress"],
     "library:cleanup:apply": ["library", "chapters", "progress"],
     "library:relink": ["library", "chapters"],

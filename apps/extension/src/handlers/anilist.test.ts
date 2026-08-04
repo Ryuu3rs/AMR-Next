@@ -12,6 +12,7 @@ const {
     saveMediaStatusMock,
     deleteMediaListEntryMock,
     getViewerNameMock,
+    getViewerMangaListMock,
     resolveMetadataMock,
     configureAniListAlarmMock
 } = vi.hoisted(() => ({
@@ -23,6 +24,7 @@ const {
     saveMediaStatusMock: vi.fn(),
     deleteMediaListEntryMock: vi.fn(),
     getViewerNameMock: vi.fn(),
+    getViewerMangaListMock: vi.fn(),
     resolveMetadataMock: vi.fn(),
     configureAniListAlarmMock: vi.fn()
 }))
@@ -34,6 +36,7 @@ vi.mock("../anilist", () => ({
     getViewerName: getViewerNameMock,
     getViewerProgress: getViewerProgressMock,
     saveViewerProgress: saveViewerProgressMock,
+    getViewerMangaList: getViewerMangaListMock,
     getMediaListEntryId: getMediaListEntryIdMock,
     saveMediaStatus: saveMediaStatusMock,
     deleteMediaListEntry: deleteMediaListEntryMock
@@ -67,6 +70,7 @@ beforeEach(async () => {
     saveMediaStatusMock.mockReset()
     deleteMediaListEntryMock.mockReset()
     getViewerNameMock.mockReset()
+    getViewerMangaListMock.mockReset()
     resolveMetadataMock.mockReset()
     // Make the inter-title rate-limit delay instant.
     vi.stubGlobal("setTimeout", (fn: () => void) => {
@@ -181,6 +185,94 @@ describe("removeFromAniList", () => {
         await removeFromAniList(undefined)
         expect(getMediaListEntryIdMock).not.toHaveBeenCalled()
         expect(deleteMediaListEntryMock).not.toHaveBeenCalled()
+    })
+})
+
+describe("anilist:import", () => {
+    function entry(o: Record<string, unknown> = {}) {
+        return {
+            anilistId: 100,
+            title: "Solo Leveling",
+            status: "ongoing" as const,
+            genres: ["Action"],
+            progress: 0,
+            ...o
+        }
+    }
+
+    it("creates a reconcile-ready entry with progress as lastReadChapterNumber", async () => {
+        const { runAniListImport } = await import("./anilist")
+        getViewerMangaListMock.mockResolvedValue([entry({ anilistId: 100, progress: 42, coverUrl: "c" })])
+
+        const result = await runAniListImport()
+
+        expect(result).toEqual({ imported: 1, skipped: 0, total: 1 })
+        const created = await db.manga.get("anilist:manga:100")
+        expect(created).toMatchObject({
+            anilistId: 100,
+            title: "Solo Leveling",
+            normalizedTitle: "solo leveling",
+            status: "ongoing",
+            genres: ["Action"],
+            coverUrl: "c",
+            manualTracking: true,
+            lastReadChapterNumber: 42,
+            authors: []
+        })
+        // Surfaces in the ImportReconcile relink flow: manualTracking + a dot-containing sourceId.
+        expect(created?.sourceId).toContain(".")
+        expect(created?.manualTracking).toBe(true)
+    })
+
+    it("omits lastReadChapterNumber when progress is 0", async () => {
+        const { runAniListImport } = await import("./anilist")
+        getViewerMangaListMock.mockResolvedValue([entry({ anilistId: 200, progress: 0 })])
+
+        await runAniListImport()
+
+        expect((await db.manga.get("anilist:manga:200"))?.lastReadChapterNumber).toBeUndefined()
+    })
+
+    it("skips a title already in the library by anilistId", async () => {
+        const { runAniListImport } = await import("./anilist")
+        await db.manga.put(makeManga({ id: "existing", anilistId: 100 }))
+        getViewerMangaListMock.mockResolvedValue([entry({ anilistId: 100 })])
+
+        const result = await runAniListImport()
+
+        expect(result).toEqual({ imported: 0, skipped: 1, total: 1 })
+        expect(await db.manga.get("anilist:manga:100")).toBeUndefined()
+    })
+
+    it("skips a title already in the library by normalizedTitle", async () => {
+        const { runAniListImport } = await import("./anilist")
+        await db.manga.put(makeManga({ id: "existing", title: "Solo Leveling", normalizedTitle: "solo leveling" }))
+        getViewerMangaListMock.mockResolvedValue([entry({ anilistId: 999, title: "Solo Leveling" })])
+
+        const result = await runAniListImport()
+
+        expect(result).toEqual({ imported: 0, skipped: 1, total: 1 })
+    })
+
+    it("imports the new titles and counts the duplicates as skipped", async () => {
+        const { runAniListImport } = await import("./anilist")
+        await db.manga.put(makeManga({ id: "existing", anilistId: 1 }))
+        getViewerMangaListMock.mockResolvedValue([
+            entry({ anilistId: 1, title: "Dup" }),
+            entry({ anilistId: 2, title: "Fresh A" }),
+            entry({ anilistId: 3, title: "Fresh B" })
+        ])
+
+        const result = await runAniListImport()
+
+        expect(result).toEqual({ imported: 2, skipped: 1, total: 3 })
+    })
+
+    it("throws when no token is configured", async () => {
+        const { runAniListImport } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ autoSync: false })
+        await expect(runAniListImport()).rejects.toThrow(/account|token/i)
+        expect(getViewerMangaListMock).not.toHaveBeenCalled()
     })
 })
 
