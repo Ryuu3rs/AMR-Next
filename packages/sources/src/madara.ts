@@ -326,6 +326,17 @@ function extractSearchResults(html: string, config: MadaraConfig, mangaPath: str
     return out
 }
 
+// Isolate the chapter number from a visible label. A label like "Vol.2 Chapter 5"
+// carries two numbers and the volume comes first, so a naive first-number match reads
+// the volume (2) and collides with the real Chapter 2. Prefer the number token that
+// follows a chapter/episode keyword; only when no such keyword is present fall back to
+// the first number in the label.
+function chapterNumberTokenFromLabel(label: string): string | undefined {
+    const afterKeyword = label.match(/(?:chapter|episode|\bch|\bep)[\s._-]*(\d+(?:\.\d+)?)/i)?.[1]
+    if (afterKeyword !== undefined) return afterKeyword
+    return label.match(/(\d+(?:\.\d+)?)/)?.[1]
+}
+
 // Parse a Madara chapter list (from the manga page or the admin-ajax fragment).
 //
 // Madara chapter lists render newest-first (descending chapter number) - live-verified
@@ -363,8 +374,7 @@ function extractChapterList(
         if (!chapterSlug || seen.has(chapterSlug)) continue
         seen.add(chapterSlug)
         const label = sanitizeScrapedText(anchor ? (captureGroup(anchor, 2) ?? "") : "")
-        const numMatch = label.match(/(\d+(?:\.\d+)?)/) ?? chapterSlug.match(/(\d+(?:\.\d+)?)/)
-        const numberStr = numMatch ? captureGroup(numMatch, 1) : undefined
+        const numberStr = chapterNumberTokenFromLabel(label) ?? chapterSlug.match(/(\d+(?:\.\d+)?)/)?.[1]
         entries.push({ chapterSlug, absolute, label, number: parseChapterNumber(numberStr) })
     }
 

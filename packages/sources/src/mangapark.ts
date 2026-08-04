@@ -117,7 +117,7 @@ function findImageArrayInJson(obj: unknown, depth: number = 0): string[] {
         const httpUrls = obj.filter(
             (u): u is string => typeof u === "string" && u.startsWith("http") && /\.(jpe?g|png|webp|gif)/i.test(u)
         )
-        if (httpUrls.length > 2) return httpUrls
+        if (httpUrls.length > 0) return httpUrls
         for (const item of obj) {
             const found = findImageArrayInJson(item, depth + 1)
             if (found.length > 0) return found
