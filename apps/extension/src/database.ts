@@ -1,5 +1,6 @@
 import { readingProgressSchema, sourceLinkRecordSchema } from "@amr/contracts"
 import type { ChapterRecord, MangaRecord, ReadingProgress, SourceLinkRecord } from "@amr/contracts"
+import { normalizeTitle } from "@amr/normalize"
 import { isNumberedChapter } from "@amr/source-sdk"
 import Dexie, { type EntityTable, type Table } from "dexie"
 import { z } from "zod"
@@ -689,6 +690,38 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                 await db.manga.delete(loserId)
             }
 
+            // The position-adoption above can leave latestChapterId/lastReadChapterId
+            // pointing at a loser's chapter row that this same transaction just deleted.
+            // library:merge calls mergeMangaRecords directly (no fixupDanglingChapterIds
+            // afterwards, unlike applyCleanupGroup), so repair dangling ids here against
+            // the surviving chapter set: prefer the survivor matching the stored number,
+            // else the highest-numbered survivor. Only repoint when a replacement exists,
+            // so a merge of records with no persisted chapter rows keeps its ids as-is.
+            const survivingChapters = await db.chapters.where("mangaId").equals(primaryId).toArray()
+            if (survivingChapters.length > 0) {
+                const survivingIds = new Set(survivingChapters.map(c => c.id))
+                const highestNumbered = survivingChapters
+                    .filter(c => isNumberedChapter(c.sortKey))
+                    .reduce<
+                        ChapterRecord | undefined
+                    >((max, c) => (!max || c.sortKey > max.sortKey ? c : max), undefined)
+                const repoint = (id: string, number: number | undefined): string => {
+                    if (survivingIds.has(id)) return id
+                    const byNumber =
+                        number !== undefined ? survivingChapters.find(c => c.sortKey === number) : undefined
+                    return (byNumber ?? highestNumbered)?.id ?? id
+                }
+                merged = {
+                    ...merged,
+                    ...(merged.latestChapterId !== undefined
+                        ? { latestChapterId: repoint(merged.latestChapterId, merged.latestChapterNumber) }
+                        : {}),
+                    ...(merged.lastReadChapterId !== undefined
+                        ? { lastReadChapterId: repoint(merged.lastReadChapterId, merged.lastReadChapterNumber) }
+                        : {})
+                }
+            }
+
             await db.manga.put(merged)
             return merged
         }
@@ -922,29 +955,57 @@ export async function updateManga(mangaId: string, patch: Partial<LibraryManga>)
     await db.manga.update(mangaId, patch)
 }
 
-// Bulk-adds imported library entries (e.g. an AniList list pull), skipping any whose
-// anilistId or normalizedTitle already exists so a re-import never clobbers a live
-// entry. Dedup also applies within the batch itself. Runs in one transaction so the
-// existence check and the writes can't interleave with a concurrent import. Returns
-// how many were newly written vs skipped.
+// Bulk-adds imported library entries (e.g. an AniList list pull), skipping any that
+// duplicate a title already in the library so a re-import never clobbers a live entry.
+// Title dedup recomputes normalizeTitle(title) on both sides: several write paths store
+// normalizedTitle under weaker rules (no trim/collapse/locale), so keying off the stored
+// field would miss a "Solo Leveling " vs "Solo Leveling" match and duplicate it. Against
+// the EXISTING library a title collision skips; within a single batch only identity
+// (anilistId / id) dedups, so two DISTINCT media that happen to share a normalized title
+// both import. When a candidate carries an anilistId but the colliding existing entry has
+// none, the id is backfilled onto that entry rather than dropped. Runs in one transaction
+// so the existence check and the writes can't interleave with a concurrent import.
 export async function addImportedManga(candidates: LibraryManga[]): Promise<{ imported: number; skipped: number }> {
     return db.transaction("rw", db.manga, async () => {
         const existing = await db.manga.toArray()
-        const anilistIds = new Set(existing.map(m => m.anilistId).filter((id): id is number => id !== undefined))
-        const normalized = new Set(existing.map(m => m.normalizedTitle))
+        const existingAnilistIds = new Set(
+            existing.map(m => m.anilistId).filter((id): id is number => id !== undefined)
+        )
+        const existingIds = new Set(existing.map(m => m.id))
+        const existingByTitle = new Map<string, LibraryManga>()
+        for (const m of existing) {
+            const key = normalizeTitle(m.title)
+            if (!existingByTitle.has(key)) existingByTitle.set(key, m)
+        }
+        const batchAnilistIds = new Set<number>()
+        const batchIds = new Set<string>()
         const toWrite: LibraryManga[] = []
+        const backfills: Array<{ id: string; anilistId: number }> = []
         let skipped = 0
         for (const candidate of candidates) {
-            const duplicate =
-                (candidate.anilistId !== undefined && anilistIds.has(candidate.anilistId)) ||
-                normalized.has(candidate.normalizedTitle)
-            if (duplicate) {
+            const anilistDuplicate =
+                candidate.anilistId !== undefined &&
+                (existingAnilistIds.has(candidate.anilistId) || batchAnilistIds.has(candidate.anilistId))
+            const idDuplicate = existingIds.has(candidate.id) || batchIds.has(candidate.id)
+            if (anilistDuplicate || idDuplicate) {
+                skipped++
+                continue
+            }
+            const titleMatch = existingByTitle.get(normalizeTitle(candidate.title))
+            if (titleMatch) {
+                if (candidate.anilistId !== undefined && titleMatch.anilistId === undefined) {
+                    backfills.push({ id: titleMatch.id, anilistId: candidate.anilistId })
+                    existingAnilistIds.add(candidate.anilistId)
+                }
                 skipped++
                 continue
             }
             toWrite.push(candidate)
-            if (candidate.anilistId !== undefined) anilistIds.add(candidate.anilistId)
-            normalized.add(candidate.normalizedTitle)
+            if (candidate.anilistId !== undefined) batchAnilistIds.add(candidate.anilistId)
+            batchIds.add(candidate.id)
+        }
+        for (const backfill of backfills) {
+            await db.manga.update(backfill.id, { anilistId: backfill.anilistId } as Partial<LibraryManga>)
         }
         if (toWrite.length > 0) await db.manga.bulkPut(toWrite)
         return { imported: toWrite.length, skipped }
@@ -1350,7 +1411,8 @@ export async function saveProgress(progress: ReadingProgress): Promise<void> {
         // missing key is a silent no-op, which would leave orphan progress + history rows
         // (inflating stats) with no parent manga. Same anti-resurrection stance as
         // saveReaderResolvedChapter.
-        if ((await db.manga.get(progress.mangaId)) === undefined) return
+        const mangaRecord = await db.manga.get(progress.mangaId)
+        if (mangaRecord === undefined) return
         const existing = await db.progress.get(progress.chapterId)
         // completed is a one-way ratchet: once a chapter has been completed, a later
         // report from an earlier page (paging back after finishing, or re-reading from
@@ -1363,10 +1425,23 @@ export async function saveProgress(progress: ReadingProgress): Promise<void> {
         const next = existing?.completed && !progress.completed ? { ...progress, completed: true } : progress
         await db.progress.put(next)
         const chapter = await db.chapters.get(progress.chapterId)
+        const reportedNumber = chapter && Number.isFinite(chapter.sortKey) ? chapter.sortKey : undefined
+        // Ratchet the furthest-read position: re-reading an earlier chapter (paging back,
+        // re-reading an old chapter) must not regress lastReadChapterNumber and its paired
+        // id/time, which drive completed/unread/resume/stats. Advance the trio only when the
+        // reported chapter is at or beyond the stored furthest number, or none is stored yet.
+        // The per-chapter progress row and history above still record every read regardless.
+        const advancePosition =
+            mangaRecord.lastReadChapterNumber === undefined ||
+            (reportedNumber !== undefined && reportedNumber >= mangaRecord.lastReadChapterNumber)
         await db.manga.update(progress.mangaId, {
-            lastReadChapterId: progress.chapterId,
-            ...(chapter && Number.isFinite(chapter.sortKey) ? { lastReadChapterNumber: chapter.sortKey } : {}),
-            lastReadAt: progress.updatedAt,
+            ...(advancePosition
+                ? {
+                      lastReadChapterId: progress.chapterId,
+                      ...(reportedNumber !== undefined ? { lastReadChapterNumber: reportedNumber } : {}),
+                      lastReadAt: progress.updatedAt
+                  }
+                : {}),
             updatedAt: progress.updatedAt
         })
         if (!existing) {
@@ -1683,45 +1758,43 @@ function furtherPosition(
     return { number: undefined, id: imported[idKey] ?? existing[idKey] }
 }
 
+// Merges an imported record onto the live one. EXISTING wins by default (spread last),
+// so an older backup can never revert live identity (sourceId/sourceUrl/mangaUrl/
+// sourceMangaId set by a relink) or drop live enrichment (anilistId/genres/
+// metadataUpdatedAt) - the old `{ ...imported, <allowlist> }` shape did exactly that,
+// letting every non-allowlisted field take the imported value. Only the fields that
+// genuinely move forward are imported-wins: the furthest chapter position (via
+// furtherPosition), max(updatedAt), max(lastReadAt/latestChapterAt), min(addedAt), and
+// enrichment gaps filled from the import when the live record has none.
 function mergeManga(existing: LibraryManga, imported: LibraryManga): LibraryManga {
-    const rating = existing.rating ?? imported.rating
     // Categories are a list - union them instead of letting one side's tags silently
     // disappear just because the other record also had some set.
     const mergedCategories = [...new Set([...(existing.categories ?? []), ...(imported.categories ?? [])])]
     const categories = mergedCategories.length > 0 ? mergedCategories : undefined
-    const notes = existing.notes ?? imported.notes
-    const nsfw = existing.nsfw ?? imported.nsfw
-    const manualTracking = existing.manualTracking ?? imported.manualTracking
-    const onHold = existing.onHold ?? imported.onHold
-    const readingDirection = existing.readingDirection ?? imported.readingDirection
-    const pageFit = existing.pageFit ?? imported.pageFit
-    const noGapContinuous = existing.noGapContinuous ?? imported.noGapContinuous
     const read = furtherPosition(existing, imported, "lastReadChapterNumber", "lastReadChapterId")
     const latest = furtherPosition(existing, imported, "latestChapterNumber", "latestChapterId")
-    const lastReadChapterNumber = read.number
-    const latestChapterNumber = latest.number
-    const lastReadAt = existing.lastReadAt
-        ? imported.lastReadAt
-            ? Math.max(existing.lastReadAt, imported.lastReadAt)
-            : existing.lastReadAt
-        : imported.lastReadAt
+    const lastReadAt = maxDefined(existing.lastReadAt, imported.lastReadAt)
+    const latestChapterAt = maxDefined(existing.latestChapterAt, imported.latestChapterAt)
     return {
         ...imported,
-        ...(rating !== undefined ? { rating } : {}),
+        ...existing,
+        // Fill enrichment gaps from the import only when the live record lacks them.
+        ...(existing.anilistId === undefined && imported.anilistId !== undefined
+            ? { anilistId: imported.anilistId }
+            : {}),
+        ...(existing.genres === undefined && imported.genres !== undefined ? { genres: imported.genres } : {}),
+        ...(existing.metadataUpdatedAt === undefined && imported.metadataUpdatedAt !== undefined
+            ? { metadataUpdatedAt: imported.metadataUpdatedAt }
+            : {}),
+        ...(existing.coverUrl === undefined && imported.coverUrl !== undefined ? { coverUrl: imported.coverUrl } : {}),
         ...(categories !== undefined ? { categories } : {}),
-        ...(notes !== undefined ? { notes } : {}),
-        ...(nsfw !== undefined ? { nsfw } : {}),
-        ...(manualTracking !== undefined ? { manualTracking } : {}),
-        ...(onHold !== undefined ? { onHold } : {}),
-        ...(readingDirection !== undefined ? { readingDirection } : {}),
-        ...(pageFit !== undefined ? { pageFit } : {}),
-        ...(noGapContinuous !== undefined ? { noGapContinuous } : {}),
-        ...(lastReadChapterNumber !== undefined ? { lastReadChapterNumber } : {}),
-        ...(latestChapterNumber !== undefined ? { latestChapterNumber } : {}),
-        // Override the ...imported ids so number and id stay in lockstep (furtherPosition).
+        // Chapter positions move forward (furthest wins), number+id kept in lockstep.
+        ...(read.number !== undefined ? { lastReadChapterNumber: read.number } : {}),
+        ...(latest.number !== undefined ? { latestChapterNumber: latest.number } : {}),
         ...(read.id !== undefined ? { lastReadChapterId: read.id } : {}),
         ...(latest.id !== undefined ? { latestChapterId: latest.id } : {}),
         ...(lastReadAt !== undefined ? { lastReadAt } : {}),
+        ...(latestChapterAt !== undefined ? { latestChapterAt } : {}),
         addedAt: Math.min(existing.addedAt, imported.addedAt),
         updatedAt: Math.max(existing.updatedAt, imported.updatedAt)
     }
@@ -1779,22 +1852,29 @@ export async function importDatabase(
         }
     }
 
-    const sourceLinksToWrite = data.sourceLinks.filter(sl => !skippedIds.has(sl.mangaId))
-    const chaptersToWrite = data.chapters.filter(ch => !skippedIds.has(ch.mangaId))
-    const candidateProgress = data.progress.filter(p => !skippedIds.has(p.mangaId))
+    // parseImportData only drops dependent rows whose parent manga was PRESENT-but-invalid.
+    // A dependent row whose mangaId is absent from the envelope entirely AND not in the
+    // local library would otherwise be written as an orphan with no parent manga. Gate every
+    // dependent write on the final valid manga set: existing local manga ids UNION the manga
+    // this import writes (skipped manga stay valid - they already exist locally).
+    const validMangaIds = new Set((await db.manga.toCollection().primaryKeys()) as string[])
+    for (const m of mangaToWrite) validMangaIds.add(m.id)
+    const isValidParent = (mangaId: string): boolean => !skippedIds.has(mangaId) && validMangaIds.has(mangaId)
+
+    const sourceLinksToWrite = data.sourceLinks.filter(sl => isValidParent(sl.mangaId))
+    const chaptersToWrite = data.chapters.filter(ch => isValidParent(ch.mangaId))
+    const candidateProgress = data.progress.filter(p => isValidParent(p.mangaId))
     // Drop the auto-increment id from imported history events - a backup from a
     // different profile has its own id sequence starting at 1, so bulkPut-ing those
     // ids raw would silently overwrite unrelated local history at the same keys.
     // historyEvents.id isn't referenced as a foreign key anywhere else, so letting
     // Dexie assign fresh ids on insert is safe.
-    const historyToWrite = data.historyEvents
-        .filter(h => !skippedIds.has(h.mangaId))
-        .map(({ id: _id, ...rest }) => rest)
+    const historyToWrite = data.historyEvents.filter(h => isValidParent(h.mangaId)).map(({ id: _id, ...rest }) => rest)
     // pageBookmarks use a string primary key (`${chapterId}:${pageIndex}`, see
     // toggleBookmark), which is semantically stable across profiles - unlike
     // historyEvents' arbitrary auto-increment id, the same key really does mean "the
     // same bookmark", so bulkPut-ing it raw (last-write-wins) is correct here.
-    const bookmarksToWrite = data.pageBookmarks.filter(b => !skippedIds.has(b.mangaId))
+    const bookmarksToWrite = data.pageBookmarks.filter(b => isValidParent(b.mangaId))
 
     await db.transaction(
         "rw",
@@ -1909,12 +1989,40 @@ export async function restoreBackup(id: number): Promise<{ manga: number; chapte
     // safeParse loop) is fully synchronous - no awaits that would hold this
     // transaction open idle.
     await createBackup("pre-import")
+    // db.covers/db.downloads are added to the table set purely for the post-restore orphan
+    // sweep below; clearImportableTables/importDatabase declare a strict subset (the 6
+    // envelope tables) so they still join this transaction rather than open their own.
     return await db.transaction(
         "rw",
-        [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents, db.pageBookmarks],
+        [
+            db.manga,
+            db.sourceLinks,
+            db.chapters,
+            db.progress,
+            db.historyEvents,
+            db.pageBookmarks,
+            db.covers,
+            db.downloads
+        ],
         async () => {
             await clearImportableTables()
-            return await importDatabase(envelope)
+            const result = await importDatabase(envelope)
+            // Covers/downloads are deliberately outside the backup envelope (see
+            // clearImportableTables), so a title present locally but absent from the backup
+            // keeps its cover/download rows after the wholesale replace - orphans whose
+            // parent manga/chapter is now gone, and which a later same-slug re-add would
+            // wrongly reuse. Drop any cover/download whose parent no longer exists.
+            const validMangaIds = new Set(await db.manga.toCollection().primaryKeys())
+            const validChapterIds = new Set(await db.chapters.toCollection().primaryKeys())
+            const orphanCoverIds = (await db.covers.toArray())
+                .filter(c => !validMangaIds.has(c.mangaId))
+                .map(c => c.mangaId)
+            if (orphanCoverIds.length > 0) await db.covers.bulkDelete(orphanCoverIds)
+            const orphanDownloadIds = (await db.downloads.toArray())
+                .filter(d => !validMangaIds.has(d.mangaId) || !validChapterIds.has(d.chapterId))
+                .map(d => d.chapterId)
+            if (orphanDownloadIds.length > 0) await db.downloads.bulkDelete(orphanDownloadIds)
+            return result
         }
     )
 }

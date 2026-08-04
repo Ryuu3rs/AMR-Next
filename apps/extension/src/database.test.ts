@@ -1,9 +1,11 @@
 import "fake-indexeddb/auto"
 import type { ChapterRecord, MangaRecord, ReadingProgress, SourceLinkRecord } from "@amr/contracts"
+import { normalizeTitle } from "@amr/normalize"
 import type { SourceChapter } from "@amr/source-sdk"
 import Dexie from "dexie"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
+    addImportedManga,
     applyCleanupGroup,
     cacheCover,
     createBackup,
@@ -1748,12 +1750,26 @@ describe("import merge - progress and history", () => {
         const localId = localEvents[0]!.id!
 
         // A backup from a different profile whose own auto-increment also started at 1 -
-        // importing it must not silently overwrite the unrelated local event above.
+        // importing it must not silently overwrite the unrelated local event above. The
+        // event's parent manga travels in the same envelope so it isn't dropped as an
+        // orphan (see the parent-validity guard in importDatabase).
         await importDatabase({
             format: "all-mangas-reader",
             version: 1,
             data: {
-                manga: [],
+                manga: [
+                    {
+                        id: "other:manga:xyz",
+                        title: "Other Manga",
+                        normalizedTitle: "other manga",
+                        authors: [],
+                        status: "ongoing",
+                        addedAt: 1,
+                        updatedAt: 1,
+                        sourceId: "mangadex",
+                        sourceUrl: "https://mangadex.org/chapter/other"
+                    }
+                ],
                 sourceLinks: [],
                 chapters: [],
                 progress: [],
@@ -2769,5 +2785,273 @@ describe("getCachedCovers", () => {
         } finally {
             nowSpy.mockRestore()
         }
+    })
+})
+
+describe("addImportedManga dedup (Fixes 1-4)", () => {
+    function candidate(o: Partial<LibraryManga> & { id: string; title: string }): LibraryManga {
+        return {
+            normalizedTitle: normalizeTitle(o.title),
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "anilist.co",
+            sourceUrl: "https://anilist.co/manga/x",
+            ...o
+        }
+    }
+
+    it("dedups against an existing row whose stored normalizedTitle was written under weaker rules (Fix 1)", async () => {
+        // Stored normalizedTitle has a trailing space (a weaker write path), so keying off
+        // the stored field would miss the match. addImportedManga must recompute both sides.
+        await db.manga.put({
+            ...manga,
+            id: "src:manga:solo",
+            title: "Solo Leveling ",
+            normalizedTitle: "solo leveling ",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/title/solo"
+        })
+
+        const result = await addImportedManga([candidate({ id: "anilist:manga:1", title: "Solo Leveling" })])
+
+        expect(result).toEqual({ imported: 0, skipped: 1 })
+        expect(await db.manga.get("anilist:manga:1")).toBeUndefined()
+    })
+
+    it("imports two distinct media that share a normalized title within one batch (Fix 2)", async () => {
+        const result = await addImportedManga([
+            candidate({ id: "anilist:manga:1", title: "ReLIFE", anilistId: 1 }),
+            candidate({ id: "anilist:manga:2", title: "ReLIFE", anilistId: 2 })
+        ])
+
+        expect(result).toEqual({ imported: 2, skipped: 0 })
+        expect(await db.manga.get("anilist:manga:1")).toBeDefined()
+        expect(await db.manga.get("anilist:manga:2")).toBeDefined()
+    })
+
+    it("backfills anilistId onto a title-colliding existing entry that has none, counting the candidate as skipped (Fix 3)", async () => {
+        await db.manga.put({
+            ...manga,
+            id: "src:manga:berserk",
+            title: "Berserk",
+            normalizedTitle: "berserk",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/title/berserk"
+        })
+
+        const result = await addImportedManga([candidate({ id: "anilist:manga:42", title: "Berserk", anilistId: 42 })])
+
+        expect(result).toEqual({ imported: 0, skipped: 1 })
+        expect((await db.manga.get("src:manga:berserk"))?.anilistId).toBe(42)
+        expect(await db.manga.get("anilist:manga:42")).toBeUndefined()
+    })
+
+    it("dedups two candidates that share an id so bulkPut can't collapse them into one silent import (Fix 4)", async () => {
+        const result = await addImportedManga([
+            candidate({ id: "dup:manga:1", title: "First" }),
+            candidate({ id: "dup:manga:1", title: "Second" })
+        ])
+
+        expect(result).toEqual({ imported: 1, skipped: 1 })
+        expect(await db.manga.count()).toBe(1)
+    })
+})
+
+describe("saveProgress ratchets the furthest-read position (Fix 5)", () => {
+    it("does not regress lastReadChapterNumber when an earlier chapter is re-read", async () => {
+        const m: MangaRecord = { ...manga, id: "ratchet:manga:1" }
+        const ch100: ChapterRecord = {
+            id: "ratchet:ch100",
+            mangaId: m.id,
+            sourceId: "mangadex",
+            title: "Chapter 100",
+            url: "https://mangadex.org/chapter/ratchet-100",
+            sortKey: 100
+        }
+        const ch5: ChapterRecord = {
+            id: "ratchet:ch5",
+            mangaId: m.id,
+            sourceId: "mangadex",
+            title: "Chapter 5",
+            url: "https://mangadex.org/chapter/ratchet-5",
+            sortKey: 5
+        }
+        await saveResolvedChapter({
+            manga: m,
+            chapter: ch100,
+            sourceLink: { ...sourceLink, mangaId: m.id },
+            chapters: [ch100, ch5]
+        })
+
+        await saveProgress({
+            mangaId: m.id,
+            chapterId: ch100.id,
+            pageIndex: 9,
+            pageCount: 10,
+            completed: true,
+            updatedAt: 1_000
+        })
+        await saveProgress({
+            mangaId: m.id,
+            chapterId: ch5.id,
+            pageIndex: 3,
+            pageCount: 10,
+            completed: true,
+            updatedAt: 2_000
+        })
+
+        const stored = await db.manga.get(m.id)
+        // Furthest position stays at ch100; re-reading ch5 must not un-read ch6-100.
+        expect(stored?.lastReadChapterNumber).toBe(100)
+        expect(stored?.lastReadChapterId).toBe(ch100.id)
+        expect(stored?.lastReadAt).toBe(1_000)
+        // The re-read is still recorded on ch5's own progress row.
+        expect((await db.progress.get(ch5.id))?.completed).toBe(true)
+    })
+})
+
+describe("mergeMangaRecords repairs a dangling id it creates (Fix 6)", () => {
+    it("repoints an adopted-then-deleted loser latestChapterId onto a surviving chapter", async () => {
+        const primary: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:danglingprimary",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/danglingprimary",
+            mangaUrl: "https://mangadex.org/title/danglingprimary",
+            latestChapterNumber: 3,
+            latestChapterId: "p:ch3"
+        }
+        const loser: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:danglingloser",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/danglingloser",
+            mangaUrl: "https://mangadex.org/title/danglingloser",
+            latestChapterNumber: 10,
+            latestChapterId: "l:ch10"
+        }
+        await db.manga.bulkPut([primary, loser])
+        await db.chapters.bulkPut([
+            { id: "p:ch3", mangaId: primary.id, sourceId: "mangadex", title: "Ch.3", url: "https://x/p3", sortKey: 3 },
+            { id: "l:ch10", mangaId: loser.id, sourceId: "mangadex", title: "Ch.10", url: "https://x/l10", sortKey: 10 }
+        ])
+
+        const merged = await mergeMangaRecords(primary.id, [loser.id])
+
+        // The merge adopted the loser's higher number but its chapter row was deleted -
+        // latestChapterId must resolve to a chapter that still exists, not the dangling one.
+        expect(merged.latestChapterId).toBe("p:ch3")
+        expect(await db.chapters.get(merged.latestChapterId!)).toBeDefined()
+    })
+})
+
+describe("restoreBackup sweeps orphaned covers/downloads (Fix 7)", () => {
+    it("deletes a cover row whose manga is absent from the restored backup", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await createBackup("pre-import")
+        const [backup] = await listBackups()
+
+        // A title added AFTER the backup, with a cover - absent from the backup envelope.
+        await db.manga.put({
+            ...manga,
+            id: "later:manga:b",
+            title: "Later B",
+            normalizedTitle: "later b",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/later-b"
+        })
+        await db.covers.put({ mangaId: "later:manga:b", blob: new Blob(["b-cover"]), cachedAt: 1 })
+
+        await restoreBackup(backup!.id)
+
+        expect(await db.manga.get("later:manga:b")).toBeUndefined()
+        expect(await db.covers.get("later:manga:b")).toBeUndefined()
+    })
+})
+
+describe("mergeManga keeps live identity + enrichment over an older import (Fix 8)", () => {
+    it("does not revert sourceId or drop anilistId/genres when merging an older backup with a higher updatedAt", async () => {
+        const live: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:enriched",
+            sourceId: "newsource",
+            sourceUrl: "https://newsource.example/chapter/enriched",
+            mangaUrl: "https://newsource.example/title/enriched",
+            anilistId: 12345,
+            genres: ["Action"],
+            metadataUpdatedAt: 5_000,
+            addedAt: 50,
+            updatedAt: 100
+        }
+        await db.manga.put(live)
+
+        const olderBackup = {
+            format: "all-mangas-reader" as const,
+            version: 1 as const,
+            data: {
+                manga: [
+                    {
+                        ...manga,
+                        id: live.id,
+                        sourceId: "mangadex",
+                        sourceUrl: "https://mangadex.org/chapter/enriched",
+                        mangaUrl: "https://mangadex.org/title/enriched",
+                        addedAt: 40,
+                        updatedAt: 200
+                    }
+                ],
+                sourceLinks: [],
+                chapters: [],
+                progress: [],
+                historyEvents: [],
+                pageBookmarks: []
+            }
+        }
+
+        await importDatabase(olderBackup)
+
+        const merged = await db.manga.get(live.id)
+        expect(merged?.anilistId).toBe(12345)
+        expect(merged?.genres).toEqual(["Action"])
+        expect(merged?.metadataUpdatedAt).toBe(5_000)
+        expect(merged?.sourceId).toBe("newsource")
+        expect(merged?.sourceUrl).toBe("https://newsource.example/chapter/enriched")
+        expect(merged?.mangaUrl).toBe("https://newsource.example/title/enriched")
+        // Timestamps still move forward.
+        expect(merged?.updatedAt).toBe(200)
+        expect(merged?.addedAt).toBe(40)
+    })
+})
+
+describe("importDatabase drops dependents with no parent manga anywhere (Fix 9)", () => {
+    it("does not write a progress row whose mangaId is absent from the envelope and the local library", async () => {
+        const envelope = {
+            format: "all-mangas-reader" as const,
+            version: 1 as const,
+            data: {
+                manga: [],
+                sourceLinks: [],
+                chapters: [],
+                progress: [
+                    {
+                        mangaId: "ghost",
+                        chapterId: "ghost:ch1",
+                        pageIndex: 0,
+                        pageCount: 10,
+                        completed: false,
+                        updatedAt: 1_000
+                    }
+                ],
+                historyEvents: [],
+                pageBookmarks: []
+            }
+        }
+
+        await importDatabase(envelope)
+
+        expect(await db.progress.get("ghost:ch1")).toBeUndefined()
+        expect(await db.progress.count()).toBe(0)
     })
 })
