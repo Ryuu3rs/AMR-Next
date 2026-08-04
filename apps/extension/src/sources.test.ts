@@ -431,6 +431,40 @@ describe("searchMangaStreaming result filtering", () => {
         expect(partials).toEqual([{ sourceId: "source-a", titles: ["Best Manga"] }])
     })
 
+    it("delivers no partials and suppresses onDone once the abort signal fires (closed search UI / superseded query)", async () => {
+        let resolveSearch!: (r: SourceSearchResult[]) => void
+        const adapter = makeAdapter("slow-source", [])
+        adapter.search = vi.fn(
+            () =>
+                new Promise<SourceSearchResult[]>(resolve => {
+                    resolveSearch = resolve
+                })
+        )
+        listMock = () => [adapter]
+        const { searchMangaStreaming } = await import("./sources")
+
+        const controller = new AbortController()
+        const partials: string[] = []
+        let doneCalled = false
+        searchMangaStreaming(
+            "best",
+            (_results, sourceId) => partials.push(sourceId),
+            () => {
+                doneCalled = true
+            },
+            controller.signal
+        )
+
+        // The UI closes (or a new query starts) before the adapter settles.
+        controller.abort()
+        resolveSearch([result("Best Manga", "slow-source")])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(partials).toEqual([])
+        expect(doneCalled).toBe(false)
+    })
+
     it("emits results matched only via altTitles", async () => {
         listMock = () => [
             makeAdapter("mangadex", [result("Attack on Titan", "mangadex", ["Shingeki no Kyojin"])]),

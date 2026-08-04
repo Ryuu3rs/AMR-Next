@@ -3,8 +3,17 @@
 // and race against the in-flight tab fetch.
 const internalTabIds = new Set<number>()
 
+// URLs currently loading in an internal fetch tab. Registered synchronously BEFORE
+// tabs.create resolves, closing the window where the tab's first onUpdated url event
+// fires before we learn its tabId and would be mistaken for user navigation.
+const internalUrls = new Set<string>()
+
 export function isInternalTab(tabId: number): boolean {
     return internalTabIds.has(tabId)
+}
+
+export function isInternalUrl(url: string | undefined): boolean {
+    return url !== undefined && internalUrls.has(url)
 }
 
 // A Cloudflare (or similar) managed challenge reports "complete" for the interim
@@ -32,18 +41,38 @@ async function extractHtml(tabId: number): Promise<string> {
 
 function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
     return new Promise<void>((resolve, reject) => {
+        let settled = false
+        const cleanup = () => {
+            clearTimeout(timeoutId)
+            browser.tabs.onUpdated.removeListener(listener)
+        }
         const listener = (changedId: number, info: { status?: string }) => {
-            if (changedId === tabId && info.status === "complete") {
-                clearTimeout(timeoutId)
-                browser.tabs.onUpdated.removeListener(listener)
+            if (changedId === tabId && info.status === "complete" && !settled) {
+                settled = true
+                cleanup()
                 resolve()
             }
         }
         const timeoutId = setTimeout(() => {
-            browser.tabs.onUpdated.removeListener(listener)
+            if (settled) return
+            settled = true
+            cleanup()
             reject(new Error("Tab load timed out"))
         }, timeoutMs)
         browser.tabs.onUpdated.addListener(listener)
+        // A fast or cached page can reach "complete" before the listener attached, so
+        // the event never arrives - poll once so we don't wait out the full timeout for
+        // a load that already finished.
+        void browser.tabs
+            .get(tabId)
+            .then(tab => {
+                if (tab.status === "complete" && !settled) {
+                    settled = true
+                    cleanup()
+                    resolve()
+                }
+            })
+            .catch(() => {})
     })
 }
 
@@ -51,11 +80,16 @@ function waitForTabComplete(tabId: number, timeoutMs: number): Promise<void> {
 // Used as a fallback when direct fetch is blocked by bot-detection (5xx, 403).
 // The tab uses the user's real browser session (cookies, TLS fingerprint).
 export async function fetchChapterHtmlViaTab(url: string): Promise<string> {
-    const tab = await browser.tabs.create({ url, active: false })
-    const tabId = tab.id
-    if (!tabId) throw new Error("Tab creation failed")
-    internalTabIds.add(tabId)
+    // Mark the URL internal before creating the tab: onUpdated can fire the tab's first
+    // url event before tabs.create resolves and we learn its tabId, and without this
+    // that event would be captured as if the user had navigated there.
+    internalUrls.add(url)
+    let tabId: number | undefined
     try {
+        const tab = await browser.tabs.create({ url, active: false })
+        tabId = tab.id
+        if (!tabId) throw new Error("Tab creation failed")
+        internalTabIds.add(tabId)
         await waitForTabComplete(tabId, 25_000)
         let html = await extractHtml(tabId)
         // The challenge auto-solves and reloads within a few seconds for a real
@@ -66,7 +100,10 @@ export async function fetchChapterHtmlViaTab(url: string): Promise<string> {
         }
         return html
     } finally {
-        internalTabIds.delete(tabId)
-        await browser.tabs.remove(tabId).catch(() => {})
+        internalUrls.delete(url)
+        if (tabId !== undefined) {
+            internalTabIds.delete(tabId)
+            await browser.tabs.remove(tabId).catch(() => {})
+        }
     }
 }

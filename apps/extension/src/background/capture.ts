@@ -166,10 +166,25 @@ async function refreshExternalMangaMetadata(
     }
 }
 
+// Alarm that clears the "ADD" badge. A setTimeout does not survive MV3 service-worker
+// suspension, so a worker torn down before the timeout fired would leave the badge
+// stuck. An alarm wakes the worker to clear it; background.ts also clears it on
+// startup as a final net.
+export const ADD_BADGE_ALARM_NAME = "amr:clear-add-badge"
+
+export async function clearAddedBadge() {
+    await browser.action.setBadgeText({ text: "" })
+}
+
 export async function flashAddedBadge() {
     await browser.action.setBadgeBackgroundColor({ color: "#2d8a61" })
     await browser.action.setBadgeText({ text: "ADD" })
-    setTimeout(() => void browser.action.setBadgeText({ text: "" }), 4000)
+    // setTimeout keeps the flash short while the worker stays alive; the alarm is the
+    // durable clear for the case where the worker suspends before it fires.
+    setTimeout(() => void clearAddedBadge(), 4000)
+    // Best-effort: the alarms API is absent in some contexts (and in unit tests); the
+    // setTimeout above still handles the common case, so a missing alarms API is fine.
+    await browser.alarms?.create(ADD_BADGE_ALARM_NAME, { when: Date.now() + 4000 })
 }
 
 export function classifyError(error: unknown): string {

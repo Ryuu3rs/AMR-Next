@@ -81,7 +81,7 @@ describe("mineAndCacheEpisodesFromHtml", () => {
 
         const stored = await mineAndCacheEpisodesFromHtml(MANGA_ID, SOURCE_ID, SOURCE_MANGA_ID, HOSTNAME, html)
 
-        expect(stored).toBe(3)
+        expect(stored.sort((a, b) => a - b)).toEqual([1, 2, 3])
         const chapters = await db.chapters.where("mangaId").equals(MANGA_ID).toArray()
         expect(chapters).toHaveLength(3)
         expect(chapters.every(c => c.id.startsWith(`${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:`))).toBe(true)
@@ -107,7 +107,7 @@ describe("mineAndCacheEpisodesFromHtml", () => {
         // background-tab reopen the Webtoons reader hit on Next.
         publishLiveMock.mockClear()
         const storedAgain = await mineAndCacheEpisodesFromHtml(MANGA_ID, SOURCE_ID, SOURCE_MANGA_ID, HOSTNAME, html)
-        expect(storedAgain).toBe(3)
+        expect(storedAgain).toHaveLength(3)
         expect(publishLiveMock).not.toHaveBeenCalled()
     })
 
@@ -151,7 +151,7 @@ describe("mineAndCacheEpisodesFromHtml", () => {
 
         const stored = await mineAndCacheEpisodesFromHtml(MANGA_ID, SOURCE_ID, SOURCE_MANGA_ID, HOSTNAME, html)
 
-        expect(stored).toBe(0)
+        expect(stored).toEqual([])
         const chapters = await db.chapters.where("mangaId").equals(MANGA_ID).toArray()
         expect(chapters).toHaveLength(0)
         expect(publishLiveMock).not.toHaveBeenCalled()
@@ -227,6 +227,25 @@ describe("listChaptersWithTabFallback pagination (Webtoons-style JS-rendered lis
         expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledTimes(2)
         const chapters = await db.chapters.where("mangaId").equals(MANGA_ID).toArray()
         expect(chapters).toHaveLength(5)
+    })
+
+    it("stops after two pages when the site re-serves the same episodes while still advertising a next page (Webtoons &page clamp guard)", async () => {
+        await db.manga.put(manga)
+        // Every page echoes the identical newest episodes AND keeps advertising a next
+        // page - Webtoons clamps &page=N past the last real page. Tracking per-page link
+        // counts drove this to MAX_PAGES (~20 tab loads, ~8 min). Tracking episode
+        // identity across the crawl stops it the moment a page adds nothing new.
+        fetchChapterHtmlViaTabMock.mockImplementation((pageUrlStr: string) => {
+            const requestedPage = Number(new URL(pageUrlStr).searchParams.get("page") ?? "1")
+            return Promise.resolve(pageHtml([5, 4, 3, 2, 1], requestedPage + 1))
+        })
+
+        const source = fakeSource(() => LIST_URL)
+        await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+
+        expect(fetchChapterHtmlViaTabMock.mock.calls.length).toBeLessThanOrEqual(2)
+        const chapters = await db.chapters.where("mangaId").equals(MANGA_ID).toArray()
+        expect(chapters.map(c => c.sortKey).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5])
     })
 
     it("stops once a page's own pagination control stops advertising a next page", async () => {

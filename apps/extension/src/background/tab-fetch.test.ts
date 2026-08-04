@@ -1,0 +1,79 @@
+import { fakeBrowser } from "wxt/testing"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
+vi.stubGlobal("browser", fakeBrowser)
+
+const { fetchChapterHtmlViaTab, isInternalTab, isInternalUrl } = await import("./tab-fetch")
+
+beforeEach(() => {
+    fakeBrowser.reset()
+    vi.spyOn(fakeBrowser.scripting, "executeScript").mockResolvedValue([{ result: "<html>done</html>" }] as never)
+})
+
+afterEach(() => {
+    vi.restoreAllMocks()
+})
+
+describe("fetchChapterHtmlViaTab internal-tab tracking", () => {
+    it("registers the URL as internal before tabs.create resolves, closing the capture race window", async () => {
+        // create is left pending so the tabId is still unknown - exactly the window in
+        // which the tab's first onUpdated url event could fire and be mistaken for user
+        // navigation. The URL must already read as internal here.
+        let resolveCreate!: (tab: { id: number }) => void
+        vi.spyOn(fakeBrowser.tabs, "create").mockReturnValue(
+            new Promise<{ id: number }>(resolve => {
+                resolveCreate = resolve
+            }) as never
+        )
+        vi.spyOn(fakeBrowser.tabs, "get").mockResolvedValue({ id: 7, status: "complete" } as never)
+        const removeSpy = vi.spyOn(fakeBrowser.tabs, "remove").mockResolvedValue(undefined as never)
+
+        const url = "https://www.webtoons.com/en/fantasy/slug/ep-1/viewer?title_no=99&episode_no=1"
+        const pending = fetchChapterHtmlViaTab(url)
+
+        expect(isInternalUrl(url)).toBe(true)
+
+        resolveCreate({ id: 7 })
+        await pending
+
+        // Cleaned up on completion - neither the URL nor the tabId lingers as internal.
+        expect(isInternalUrl(url)).toBe(false)
+        expect(isInternalTab(7)).toBe(false)
+        expect(removeSpy).toHaveBeenCalledWith(7)
+    })
+
+    it("marks the created tabId internal while the fetch is in flight", async () => {
+        let resolveGet!: (tab: { id: number; status: string }) => void
+        vi.spyOn(fakeBrowser.tabs, "create").mockResolvedValue({ id: 12 } as never)
+        vi.spyOn(fakeBrowser.tabs, "get").mockReturnValue(
+            new Promise<{ id: number; status: string }>(resolve => {
+                resolveGet = resolve
+            }) as never
+        )
+        vi.spyOn(fakeBrowser.tabs, "remove").mockResolvedValue(undefined as never)
+
+        const pending = fetchChapterHtmlViaTab("https://ex.com/x")
+        // Let create resolve and tabId register before the load completes.
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(isInternalTab(12)).toBe(true)
+
+        resolveGet({ id: 12, status: "complete" })
+        await pending
+        expect(isInternalTab(12)).toBe(false)
+    })
+})
+
+describe("waitForTabComplete proactive completion check", () => {
+    it("resolves from the proactive tabs.get when the page is already complete and no onUpdated event ever fires", async () => {
+        vi.spyOn(fakeBrowser.tabs, "create").mockResolvedValue({ id: 42 } as never)
+        // The tab is already "complete" - the onUpdated listener would wait out the full
+        // 25s timeout on its own, so only the proactive get can resolve this.
+        vi.spyOn(fakeBrowser.tabs, "get").mockResolvedValue({ id: 42, status: "complete" } as never)
+        vi.spyOn(fakeBrowser.tabs, "remove").mockResolvedValue(undefined as never)
+
+        const html = await fetchChapterHtmlViaTab("https://ex.com/cached")
+
+        expect(html).toBe("<html>done</html>")
+    })
+})
