@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server"
 import { pathToFileURL } from "node:url"
+import { timingSafeEqual } from "node:crypto"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { resolveFromAniList, resolveFromAniListById } from "./anilist.js"
@@ -11,6 +12,17 @@ export const app = new Hono()
 const store = getDb()
 
 app.use("/*", cors({ origin: "*", allowMethods: ["GET", "POST"], allowHeaders: ["Content-Type"] }))
+
+// Constant-time bearer-token check. The length guard is required because timingSafeEqual
+// throws on unequal-length buffers; comparing lengths first also short-circuits the obvious
+// mismatch without leaking per-character timing on the token body.
+function bearerMatches(authHeader: string | undefined, token: string): boolean {
+    if (!authHeader) return false
+    const expected = Buffer.from(`Bearer ${token}`)
+    const actual = Buffer.from(authHeader)
+    if (actual.length !== expected.length) return false
+    return timingSafeEqual(actual, expected)
+}
 
 app.get("/", c => c.json({ name: "AMR Metadata API", status: "ok" }))
 app.get("/health", c => c.json({ ok: true }))
@@ -95,7 +107,7 @@ app.post("/metadata/link", async c => {
     // title's metadata for the full cache TTL.
     const adminToken = process.env.METADATA_ADMIN_TOKEN
     const auth = c.req.header("Authorization")
-    if (!adminToken || auth !== `Bearer ${adminToken}`) {
+    if (!adminToken || !bearerMatches(auth, adminToken)) {
         return c.json({ error: "unauthorized" }, 403)
     }
     const body = (await c.req.json().catch(() => ({}))) as { normalizedTitle?: string; anilistId?: number }

@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server"
+import { pathToFileURL } from "node:url"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { randomUUID } from "node:crypto"
@@ -25,22 +26,66 @@ const app = new Hono()
 
 app.use("/*", cors({ origin: "*", allowMethods: ["GET", "POST"], allowHeaders: ["Content-Type"] }))
 
-// Best-effort in-memory per-IP rate limit (single instance). Behind Traefik the client
-// IP is the first X-Forwarded-For hop. Generous windows - only stops abuse/DoS bursts
-// (register spam, unbounded event floods), never a normal user.
+// Best-effort in-memory per-IP rate limit (single instance). Generous windows - only stops
+// abuse/DoS bursts (register spam, unbounded event floods), never a normal user.
 type RlBucket = { count: number; resetAt: number }
-const rlBuckets = new Map<string, RlBucket>()
-function withinRateLimit(forwardedFor: string | undefined, name: string, limit: number, windowMs: number): boolean {
-    const ip = (forwardedFor ?? "").split(",")[0]?.trim() || "unknown"
-    const key = `${name}:${ip}`
+export const rlBuckets = new Map<string, RlBucket>()
+
+// Our reverse proxy (Traefik) appends the real client IP as the rightmost X-Forwarded-For
+// hop; every hop to its left is client-supplied and forgeable. Trusting the FIRST hop lets a
+// caller rotate/spoof it per request to dodge the limit and to mint unbounded distinct
+// buckets. Count TRUSTED_PROXY_DEPTH from the right instead so a forged prefix maps to one
+// real bucket.
+const TRUSTED_PROXY_DEPTH = (() => {
+    const v = Number(process.env.TRUSTED_PROXY_DEPTH)
+    return Number.isInteger(v) && v > 0 ? v : 1
+})()
+
+// Cap the bucket map so a flood of unique keys cannot grow it without limit (memory DoS).
+const RL_MAX_BUCKETS = (() => {
+    const v = Number(process.env.RL_MAX_BUCKETS)
+    return Number.isInteger(v) && v > 0 ? v : 10000
+})()
+
+export function clientIpFromForwardedFor(forwardedFor: string | undefined): string {
+    const hops = (forwardedFor ?? "")
+        .split(",")
+        .map(h => h.trim())
+        .filter(Boolean)
+    if (hops.length === 0) return "unknown"
+    const idx = Math.max(0, hops.length - TRUSTED_PROXY_DEPTH)
+    return hops[idx] || "unknown"
+}
+
+function evictExpiredOrOldest(now: number): void {
+    for (const [key, bucket] of rlBuckets) {
+        if (now > bucket.resetAt) rlBuckets.delete(key)
+    }
+    if (rlBuckets.size < RL_MAX_BUCKETS) return
+    const target = Math.max(1, Math.floor(RL_MAX_BUCKETS * 0.1))
+    let removed = 0
+    for (const key of rlBuckets.keys()) {
+        rlBuckets.delete(key)
+        if (++removed >= target) break
+    }
+}
+
+export function withinRateLimit(
+    forwardedFor: string | undefined,
+    name: string,
+    limit: number,
+    windowMs: number
+): boolean {
+    const key = `${name}:${clientIpFromForwardedFor(forwardedFor)}`
     const now = Date.now()
     const bucket = rlBuckets.get(key)
-    if (!bucket || now > bucket.resetAt) {
-        rlBuckets.set(key, { count: 1, resetAt: now + windowMs })
+    if (bucket && now <= bucket.resetAt) {
+        if (bucket.count >= limit) return false
+        bucket.count += 1
         return true
     }
-    if (bucket.count >= limit) return false
-    bucket.count += 1
+    if (rlBuckets.size >= RL_MAX_BUCKETS) evictExpiredOrOldest(now)
+    rlBuckets.set(key, { count: 1, resetAt: now + windowMs })
     return true
 }
 
@@ -141,7 +186,10 @@ app.get("/manga", c => {
 
 app.get("/community", c => c.json(getCommunityStats()))
 
-const port = Number(process.env.PORT ?? 3000)
-serve({ fetch: app.fetch, port }, () => {
-    console.log(`[AMR community] :${port}`)
-})
+// Only listen when run directly, not when imported by a test.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+    const port = Number(process.env.PORT ?? 3000)
+    serve({ fetch: app.fetch, port }, () => {
+        console.log(`[AMR community] :${port}`)
+    })
+}

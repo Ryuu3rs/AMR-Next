@@ -132,6 +132,11 @@ export function getUserRank(userId: string): number | null {
     return row?.rank ?? null
 }
 
+// A candidate title must be read by at least this many distinct users before it can be
+// surfaced by any recommender. Without this floor, a title read by a single other user leaks
+// that one user's private library (an intersection/probe deanonymization).
+const MIN_DISTINCT_READERS = 3
+
 export function getRecommendations(userId: string): Array<{ title: string; sourceId: string }> {
     return db
         .prepare(
@@ -151,17 +156,12 @@ export function getRecommendations(userId: string): Array<{ title: string; sourc
                     SELECT 1 FROM json_each(e.genres) g
                     JOIN user_genres ug ON g.value = ug.genre
                 )
-            GROUP BY e.manga_title ORDER BY cnt DESC LIMIT 5`
+            GROUP BY e.manga_title
+            HAVING COUNT(DISTINCT e.user_id) >= ?
+            ORDER BY cnt DESC LIMIT 5`
         )
-        .all(userId, userId, userId) as Array<{ title: string; sourceId: string }>
+        .all(userId, userId, userId, MIN_DISTINCT_READERS) as Array<{ title: string; sourceId: string }>
 }
-
-// A candidate title must be read by at least this many distinct co-readers before it can
-// be surfaced. Without this floor, seeding your own account with a niche title collapses
-// your co-reader set to a single other user, and the response becomes that one user's
-// private reading list verbatim (an intersection/probe deanonymization). Requiring >= K
-// distinct co-readers per surfaced title means no single user's library can leak.
-const CO_READ_MIN_READERS = 3
 
 export function getCoReadRecommendations(userId: string): Array<{ title: string; sourceId: string }> {
     return db
@@ -190,7 +190,7 @@ export function getCoReadRecommendations(userId: string): Array<{ title: string;
             HAVING COUNT(DISTINCT c.user_id) >= ?
             ORDER BY score DESC, c.manga_title ASC LIMIT 10`
         )
-        .all(userId, userId, CO_READ_MIN_READERS) as Array<{ title: string; sourceId: string }>
+        .all(userId, userId, MIN_DISTINCT_READERS) as Array<{ title: string; sourceId: string }>
 }
 
 export function upsertRating(userId: string, mangaTitle: string, rating: number): void {
