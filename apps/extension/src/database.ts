@@ -135,7 +135,7 @@ export type LogEntry = {
 export type LibraryBackup = {
     id?: number
     createdAt: number
-    reason: "pre-import" | "pre-sync-pull" | "pre-clear" | "pre-cleanup" | "pre-update"
+    reason: "pre-import" | "pre-sync-pull" | "pre-clear" | "pre-cleanup" | "pre-update" | "auto"
     envelope: Awaited<ReturnType<typeof exportDatabase>>
 }
 
@@ -1930,20 +1930,40 @@ export async function importDatabase(
     return { manga: mangaToWrite.length, chapters: chaptersToWrite.length, skipped: data.skipped }
 }
 
-const MAX_BACKUPS = 3
+// Retention is partitioned by kind so the two backup populations never evict each
+// other: the daily "auto" snapshots and the pre-operation safety snapshots are
+// pruned independently. Keep the newest AUTO_MAX autos AND the newest SAFETY_MAX
+// pre-op snapshots; without the split a burst of daily autos would silently push the
+// pre-import/pre-sync-pull safety net out of the pool (and vice versa).
+const AUTO_MAX = 7
+const SAFETY_MAX = 5
 
-// Automatic, silent safety-net snapshot taken before any import/sync-pull mutation
-// (see the data:import and sync:pull handlers in handlers/data-sync-settings.ts) so
-// a bad import/merge can be undone. No user prompt - zero friction by design.
+// Automatic, silent safety-net snapshot. Taken before any import/sync-pull mutation
+// (see the data:import and sync:pull handlers in handlers/data-sync-settings.ts) and,
+// with reason "auto", once a day by the daily backup alarm. No user prompt - zero
+// friction by design.
 export async function createBackup(reason: LibraryBackup["reason"]): Promise<number> {
     const envelope = await exportDatabase()
     const id = await db.backups.add({ createdAt: Date.now(), reason, envelope })
     const all = await db.backups.orderBy("createdAt").reverse().toArray()
-    const stale = all.slice(MAX_BACKUPS)
+    const autos = all.filter(b => b.reason === "auto")
+    const safety = all.filter(b => b.reason !== "auto")
+    const stale = [...autos.slice(AUTO_MAX), ...safety.slice(SAFETY_MAX)]
     if (stale.length > 0) {
         await db.backups.bulkDelete(stale.map(b => b.id!))
     }
     return id!
+}
+
+// Cheap fingerprint of the library used by the daily backup job to skip snapshotting
+// on idle days (nothing added, updated, or removed since the last auto backup). The
+// manga count catches additions/removals; the max updatedAt catches in-place edits
+// and update-check advances. Returns "0:0" for an empty library.
+export async function libraryChangeSignature(): Promise<string> {
+    const count = await db.manga.count()
+    if (count === 0) return "0:0"
+    const newest = await db.manga.orderBy("updatedAt").last()
+    return `${count}:${newest?.updatedAt ?? 0}`
 }
 
 export async function listBackups(): Promise<BackupSummary[]> {

@@ -25,11 +25,13 @@ import {
     syncAlarmName,
     anilistAlarmName,
     extensionUpdateAlarmName,
+    backupAlarmName,
     EXTENSION_UPDATE_INTERVAL_HOURS,
     configureUpdateAlarm,
     configureSyncAlarm,
     configureCommunityAlarm,
-    configureAniListAlarm
+    configureAniListAlarm,
+    configureBackupAlarm
 } from "../src/background/alarms"
 import {
     checkUpdates,
@@ -40,7 +42,8 @@ import {
 } from "../src/handlers/updates-sources"
 import { runCommunitySync } from "../src/handlers/community"
 import { runAniListSync, abortAniListSync } from "../src/handlers/anilist"
-import { autoPush } from "../src/handlers/data-sync-settings"
+import { autoPush, runAutoBackup } from "../src/handlers/data-sync-settings"
+import { getSettings } from "../src/settings"
 import { handlers } from "../src/background/dispatch"
 import { MUTATION_SCOPES } from "../src/background/mutation-scopes"
 import { publishLive } from "../src/live"
@@ -72,6 +75,7 @@ export default defineBackground(() => {
         void configureSyncAlarm()
         void configureCommunityAlarm()
         void configureAniListAlarm()
+        void getSettings().then(settings => configureBackupAlarm(settings.autoBackup))
         void browser.alarms.create(extensionUpdateAlarmName, {
             periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
         })
@@ -90,6 +94,7 @@ export default defineBackground(() => {
         void configureSyncAlarm()
         void configureCommunityAlarm()
         void configureAniListAlarm()
+        void getSettings().then(settings => configureBackupAlarm(settings.autoBackup))
         void browser.alarms.create(extensionUpdateAlarmName, {
             periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
         })
@@ -106,6 +111,7 @@ export default defineBackground(() => {
         if (alarm.name === syncAlarmName) void autoPush()
         if (alarm.name === anilistAlarmName) void runAniListSync()
         if (alarm.name === extensionUpdateAlarmName) void checkExtensionUpdate()
+        if (alarm.name === backupAlarmName) void runAutoBackup()
         if (alarm.name === ADD_BADGE_ALARM_NAME) void clearAddedBadge()
     })
 

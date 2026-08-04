@@ -8,6 +8,7 @@ export const communityAlarmName = "community-sync"
 export const syncAlarmName = "sync-push"
 export const anilistAlarmName = "anilist-sync"
 export const extensionUpdateAlarmName = "check-extension-update"
+export const backupAlarmName = "amr-daily-backup"
 
 export const EXTENSION_UPDATE_INTERVAL_HOURS = 24
 export const GITHUB_RELEASES_URL = "https://api.github.com/repos/Ryuu3rs/AMR-Next/releases/latest"
@@ -35,6 +36,13 @@ export async function configureAniListAlarm(): Promise<void> {
     await browser.alarms.clear(anilistAlarmName)
     if (config.autoSync && config.token) {
         await browser.alarms.create(anilistAlarmName, { periodInMinutes: 180 })
+    }
+}
+
+export async function configureBackupAlarm(enabled: boolean): Promise<void> {
+    await browser.alarms.clear(backupAlarmName)
+    if (enabled) {
+        await browser.alarms.create(backupAlarmName, { periodInMinutes: 24 * 60 })
     }
 }
 
