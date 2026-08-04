@@ -87,3 +87,34 @@ describe("anilistProvider.resolve", () => {
         expect(fetchMock).not.toHaveBeenCalled()
     })
 })
+
+describe("anilistProvider rate limiting", () => {
+    afterEach(() => vi.unstubAllGlobals())
+
+    it("serializes concurrent queries instead of firing them all at once", async () => {
+        let inFlight = 0
+        let maxInFlight = 0
+        const fetchMock = vi.fn(async () => {
+            inFlight += 1
+            maxInFlight = Math.max(maxInFlight, inFlight)
+            await Promise.resolve()
+            inFlight -= 1
+            return {
+                ok: true,
+                json: async () => ({ data: { Media: { id: 1, title: { english: "X" }, status: "FINISHED" } } })
+            }
+        })
+        vi.stubGlobal("fetch", fetchMock)
+
+        await Promise.all([
+            anilistProvider.resolve({ title: "a" }),
+            anilistProvider.resolve({ title: "b" }),
+            anilistProvider.resolve({ title: "c" })
+        ])
+
+        expect(fetchMock).toHaveBeenCalledTimes(3)
+        // The limiter chains every query, so no two fetches ever overlap; without it
+        // all three would fire together and maxInFlight would be 3.
+        expect(maxInFlight).toBe(1)
+    })
+})

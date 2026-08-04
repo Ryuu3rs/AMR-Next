@@ -648,6 +648,9 @@
     // in-flight button and (via disabled={mirrorSwitching !== null} below) blocks a
     // second concurrent switch on the same manga while one is still running.
     let mirrorSwitching = $state<string | null>(null)
+    // openInReader awaits chapter:resume before opening the tab; without a guard a
+    // fast double-click resolves twice and opens two reader tabs.
+    let openingReader = false
 
     // Re-point detailManga at the freshly-fetched record so an open detail
     // overlay reflects the latest library data (e.g. another tab's edit, a
@@ -1453,6 +1456,8 @@
     }
 
     async function openInReader(manga: LibraryManga) {
+        if (openingReader) return
+        openingReader = true
         // Resume at the last-read chapter (or the first if unread) instead of always
         // opening sourceUrl, which is the latest chapter. Fall back to sourceUrl if the
         // resolver can't find a chapter.
@@ -1462,6 +1467,8 @@
             if (resumed?.url) target = resumed.url
         } catch {
             // ignore - fall back to sourceUrl
+        } finally {
+            openingReader = false
         }
         void browser.tabs.create({
             url: browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(target)}`)

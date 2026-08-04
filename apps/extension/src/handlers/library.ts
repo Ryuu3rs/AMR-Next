@@ -1031,7 +1031,7 @@ export const libraryHandlers: HandlerMap = {
                             }
 
                             await tryUrl(storedRemoteCover, "stored")
-                            if (!blob) await tryUrl(await resolveCoverFor(m), "source")
+                            if (!blob) await tryUrl(await resolveCoverFor(m).catch(() => undefined), "source")
                             if (!blob) {
                                 const meta = await resolveMetadata({
                                     title: m.title,
