@@ -4738,6 +4738,22 @@
                 </div>
                 <div class="settings-row">
                     <div>
+                        <p class="row-label">Daily automatic backup</p>
+                        <p class="muted">
+                            Keep a rolling on-device restore point, refreshed daily when your library changes. Restore
+                            from Data.
+                        </p>
+                    </div>
+                    <label class="toggle">
+                        <input
+                            type="checkbox"
+                            checked={settings?.autoBackup !== false}
+                            onchange={e => void updateSetting({ autoBackup: e.currentTarget.checked })} />
+                        <span class="track"></span>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <div>
                         <p class="row-label">Remove gaps between pages (continuous mode)</p>
                         <p class="muted">Seamless webtoon-style scroll with no vertical gap between page images.</p>
                     </div>

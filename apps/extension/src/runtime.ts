@@ -200,7 +200,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
             dailyGoal: z.number().int().min(0).max(50).optional(),
             blurNsfw: z.boolean().optional(),
             updateIntervalHours: z.union([z.literal(0), z.literal(6), z.literal(12), z.literal(24)]).optional(),
-            notifyNewChapters: z.boolean().optional()
+            notifyNewChapters: z.boolean().optional(),
+            autoBackup: z.boolean().optional()
         })
     })
 ])

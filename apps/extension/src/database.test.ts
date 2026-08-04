@@ -16,6 +16,7 @@ import {
     getCachedCovers,
     getLocalStats,
     importDatabase,
+    libraryChangeSignature,
     listBackups,
     mergeMangaRecords,
     rekeyManga,
@@ -1506,11 +1507,50 @@ describe("pre-import backups (Bug 4)", () => {
         expect(stored[0]?.envelope.data.manga).toHaveLength(1)
     })
 
-    it("prunes to the last 3 backups", async () => {
-        for (let i = 0; i < 5; i++) {
-            await createBackup("pre-import")
-        }
-        expect(await db.backups.count()).toBe(3)
+    it("partitioned retention: autos and pre-op snapshots are pruned independently and never evict each other", async () => {
+        for (let i = 0; i < 10; i++) await createBackup("auto")
+        for (let i = 0; i < 6; i++) await createBackup("pre-import")
+
+        const all = await db.backups.toArray()
+        const autos = all.filter(b => b.reason === "auto")
+        const safety = all.filter(b => b.reason !== "auto")
+
+        // At most AUTO_MAX (=7) autos and SAFETY_MAX (=5) pre-op snapshots survive.
+        expect(autos.length).toBe(7)
+        expect(safety.length).toBe(5)
+        // A pre-op snapshot survives despite the flood of autos, and vice versa.
+        expect(safety.length).toBeGreaterThan(0)
+        expect(autos.length).toBeGreaterThan(0)
+    })
+
+    it("a burst of daily autos never evicts an existing pre-op safety snapshot", async () => {
+        const safetyId = await createBackup("pre-import")
+        for (let i = 0; i < 20; i++) await createBackup("auto")
+
+        expect(await db.backups.get(safetyId)).toBeDefined()
+        const autos = (await db.backups.toArray()).filter(b => b.reason === "auto")
+        expect(autos.length).toBe(7)
+    })
+
+    it("many pre-op snapshots never evict an existing auto snapshot", async () => {
+        const autoId = await createBackup("auto")
+        for (let i = 0; i < 20; i++) await createBackup("pre-import")
+
+        expect(await db.backups.get(autoId)).toBeDefined()
+        const safety = (await db.backups.toArray()).filter(b => b.reason !== "auto")
+        expect(safety.length).toBe(5)
+    })
+
+    it("libraryChangeSignature is 0:0 when empty and changes when a manga is added or updated", async () => {
+        expect(await libraryChangeSignature()).toBe("0:0")
+
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        const afterAdd = await libraryChangeSignature()
+        expect(afterAdd).not.toBe("0:0")
+
+        await db.manga.update(manga.id, { updatedAt: 9_999_999 })
+        const afterUpdate = await libraryChangeSignature()
+        expect(afterUpdate).not.toBe(afterAdd)
     })
 
     it("restoreBackup re-imports the snapshot and itself snapshots a pre-restore backup first", async () => {

@@ -18,6 +18,7 @@ export type AppSettings = {
     blurNsfw: boolean
     updateIntervalHours: 0 | 6 | 12 | 24
     notifyNewChapters: boolean
+    autoBackup: boolean
 }
 
 const settingsKey = "settings"
@@ -36,7 +37,8 @@ export const defaultSettings: AppSettings = {
     dailyGoal: 0,
     blurNsfw: true,
     updateIntervalHours: 12,
-    notifyNewChapters: true
+    notifyNewChapters: true,
+    autoBackup: true
 }
 
 export async function getSettings(): Promise<AppSettings> {

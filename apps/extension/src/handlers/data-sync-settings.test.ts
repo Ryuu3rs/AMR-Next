@@ -255,7 +255,61 @@ describe("settings:update", () => {
         )
 
         expect(alarmsClear).toHaveBeenCalledWith("check-manga-updates")
-        expect(alarmsCreate).not.toHaveBeenCalled()
+        expect(alarmsCreate).not.toHaveBeenCalledWith("check-manga-updates", expect.anything())
+    })
+
+    it("arms the daily backup alarm when autoBackup is on and clears it when off", async () => {
+        const { dataSyncSettingsHandlers } = await import("./data-sync-settings")
+
+        await dataSyncSettingsHandlers["settings:update"]!(
+            { type: "settings:update", settings: { autoBackup: true } },
+            ctx
+        )
+        expect(alarmsCreate).toHaveBeenCalledWith("amr-daily-backup", { periodInMinutes: 24 * 60 })
+
+        vi.clearAllMocks()
+        await dataSyncSettingsHandlers["settings:update"]!(
+            { type: "settings:update", settings: { autoBackup: false } },
+            ctx
+        )
+        expect(alarmsClear).toHaveBeenCalledWith("amr-daily-backup")
+        expect(alarmsCreate).not.toHaveBeenCalledWith("amr-daily-backup", expect.anything())
+    })
+})
+
+describe("runAutoBackup", () => {
+    it("creates an auto backup when the library changed, then skips on an unchanged rerun", async () => {
+        const { runAutoBackup } = await import("./data-sync-settings")
+        await db.manga.add(manga)
+
+        await runAutoBackup()
+        expect(await db.backups.count()).toBe(1)
+        expect((await db.backups.toArray())[0]?.reason).toBe("auto")
+
+        // Signature unchanged -> no second snapshot.
+        await runAutoBackup()
+        expect(await db.backups.count()).toBe(1)
+
+        // Library changes -> a fresh snapshot is taken.
+        await db.manga.update(manga.id, { updatedAt: 5_000 })
+        await runAutoBackup()
+        expect(await db.backups.count()).toBe(2)
+    })
+
+    it("no-ops when the library is empty", async () => {
+        const { runAutoBackup } = await import("./data-sync-settings")
+        await runAutoBackup()
+        expect(await db.backups.count()).toBe(0)
+    })
+
+    it("no-ops when the autoBackup setting is off", async () => {
+        const { runAutoBackup } = await import("./data-sync-settings")
+        const { updateSettings } = await import("../settings")
+        await updateSettings({ autoBackup: false })
+        await db.manga.add(manga)
+
+        await runAutoBackup()
+        expect(await db.backups.count()).toBe(0)
     })
 })
 

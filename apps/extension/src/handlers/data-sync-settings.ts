@@ -1,7 +1,9 @@
 import {
     createBackup,
+    db,
     exportDatabase,
     importDatabase,
+    libraryChangeSignature,
     listBackups,
     previewImport,
     restoreBackup,
@@ -9,8 +11,10 @@ import {
 } from "../database"
 import { getSettings, updateSettings } from "../settings"
 import { getSyncConfig, getSyncStatus, pullFromGist, pushToGist, setSyncConfig } from "../sync"
-import { configureSyncAlarm, configureUpdateAlarm } from "../background/alarms"
+import { configureBackupAlarm, configureSyncAlarm, configureUpdateAlarm } from "../background/alarms"
 import type { HandlerMap } from "../background/handler-types"
+
+const autoBackupSigKey = "autoBackupSig"
 
 export const dataSyncSettingsHandlers: HandlerMap = {
     "data:export": async () => {
@@ -71,6 +75,7 @@ export const dataSyncSettingsHandlers: HandlerMap = {
             >
         )
         await configureUpdateAlarm()
+        await configureBackupAlarm(settings.autoBackup)
         return settings
     }
 }
@@ -82,5 +87,24 @@ export async function autoPush() {
         await pushToGist(await exportDatabase())
     } catch (error) {
         console.warn("[AMR] Auto sync push failed", error)
+    }
+}
+
+// Daily automatic library restore-point. Driven by the backup alarm. Skips when the
+// setting is off, the library is empty, or nothing has changed since the last auto
+// snapshot (so idle days add no churn to the bounded backups table). Never throws -
+// an alarm listener has no caller to catch a rejection.
+export async function runAutoBackup() {
+    try {
+        const settings = await getSettings()
+        if (!settings.autoBackup) return
+        if ((await db.manga.count()) === 0) return
+        const signature = await libraryChangeSignature()
+        const stored = (await browser.storage.local.get(autoBackupSigKey))[autoBackupSigKey] as string | undefined
+        if (stored === signature) return
+        await createBackup("auto")
+        await browser.storage.local.set({ [autoBackupSigKey]: signature })
+    } catch (error) {
+        console.warn("[AMR] Auto backup failed", error)
     }
 }
