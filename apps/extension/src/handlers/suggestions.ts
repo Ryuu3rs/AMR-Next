@@ -16,6 +16,9 @@ const STALE_MS = 6 * 60 * 60 * 1000
 // from queuing dozens of calls per refresh.
 const MAX_SEED_TITLES = 40
 
+// Upper bound on how many suggestions are surfaced/cached at once.
+const MAX_SUGGESTIONS = 60
+
 type SuggestionsCache = {
     suggestions: Suggestion[]
     updatedAt: number
@@ -71,11 +74,13 @@ async function computeSuggestions(): Promise<Suggestion[]> {
     }
 
     const communityRecs = await loadCommunityRecs()
+    // Cap the surfaced list - a large library can aggregate 100+ candidates, which is slow
+    // to render and more than anyone browses. The top slice by score is what matters.
     return scoreSuggestions({
         library,
         anilistRecs,
         ...(communityRecs ? { communityRecs } : {})
-    })
+    }).slice(0, MAX_SUGGESTIONS)
 }
 
 // Shared across concurrent suggestions:get calls so the AniList fan-out runs once, not
