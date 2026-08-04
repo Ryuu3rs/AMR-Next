@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.18.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.17.0...v0.18.0) (2026-08-04)
+
+
+### Features
+
+* **anilist:** import your AniList list into the library ([ca4dbbb](https://github.com/Ryuu3rs/AMR-Next/commit/ca4dbbb61c48b6b3ad5c5179d97276de43b7df29))
+* **app:** AniList import button and inline tag management ([b9cbf69](https://github.com/Ryuu3rs/AMR-Next/commit/b9cbf690455c7ea4c1683b1270c138d900daef47))
+
+
+### Bug Fixes
+
+* **background:** stop crawl churn, tab races and uncancellable search ([e1a8a65](https://github.com/Ryuu3rs/AMR-Next/commit/e1a8a65290824a84b217f0f9f04c9da428efc872))
+* **covers:** metadata-fallback robustness + AniList import/open guards ([36c2ebe](https://github.com/Ryuu3rs/AMR-Next/commit/36c2ebe34ea666e42c0edff1f5fbf860a8e9415d))
+* **covers:** recover missing covers from the metadata catalog ([7c2daff](https://github.com/Ryuu3rs/AMR-Next/commit/7c2dafff4e4041c79c536c07d8ecbba5ad1cc52a))
+* **db:** close import-dedup, progress-ratchet and merge/restore integrity holes ([cf893b1](https://github.com/Ryuu3rs/AMR-Next/commit/cf893b1d52fdae82668a84cef314105799090702))
+* **reader:** paging, download-state race, progress regression, cleanup ([08b7490](https://github.com/Ryuu3rs/AMR-Next/commit/08b7490c45d0eb8c17b1d64bd7093720c6890ead))
+* **reader:** resume at the last-read chapter, not the latest ([3afd7d2](https://github.com/Ryuu3rs/AMR-Next/commit/3afd7d27ae11adf2fe8e80adf56b407fb919a407))
+* **server:** harden rate limiter and recommender/admin privacy ([9fd6b01](https://github.com/Ryuu3rs/AMR-Next/commit/9fd6b01318707ffba300c87e3e07d960cf49c27b))
+* **settings:** keep the update-schedule selection after leaving the tab ([6a4dc2a](https://github.com/Ryuu3rs/AMR-Next/commit/6a4dc2a8462e25b695c650e3bdc1c06f4b079723))
+* **sources:** correct chapter parsing in madara, comix and mangapark ([8321e44](https://github.com/Ryuu3rs/AMR-Next/commit/8321e4487d18309bbc48dbeff4f5a8f64e7b0b76))
+
 ## [0.17.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.16.0...v0.17.0) (2026-08-02)
 
 
