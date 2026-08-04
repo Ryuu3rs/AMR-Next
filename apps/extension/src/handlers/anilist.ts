@@ -1,4 +1,5 @@
-import { db, updateManga, type LibraryManga } from "../database"
+import { normalizeTitle } from "@amr/normalize"
+import { addImportedManga, db, updateManga, type LibraryManga } from "../database"
 import {
     getAniListConfig,
     setAniListConfig,
@@ -6,6 +7,7 @@ import {
     getViewerName,
     getViewerProgress,
     saveViewerProgress,
+    getViewerMangaList,
     getMediaListEntryId,
     saveMediaStatus,
     deleteMediaListEntry
@@ -24,6 +26,49 @@ export function abortAniListSync(): void {
 }
 
 export type AniListSyncResult = { pushed: number; added: number; checked: number; skipped: number }
+
+export type AniListImportResult = { imported: number; skipped: number; total: number }
+
+// Pulls the user's AniList manga list INTO the library. Each new title lands as a
+// backup-style "needs a source" entry: a hostname-style (dot-containing) sourceId
+// plus manualTracking, exactly the shape a broken backup import produces, so the
+// SAME ImportReconcile relink flow (App.svelte's libraryNeedsAttention filter keys
+// on `manualTracking && sourceId.includes(".")`) surfaces it for the user to attach a
+// real mirror. Dedup + write are atomic in addImportedManga; one malformed entry
+// never aborts the batch.
+export async function runAniListImport(): Promise<AniListImportResult> {
+    const config = await getAniListConfig()
+    if (!config.token) throw new Error("Connect your AniList account first")
+    const entries = await getViewerMangaList(config.token)
+    const now = Date.now()
+    const candidates: LibraryManga[] = []
+    for (const entry of entries) {
+        try {
+            const title = entry.title.trim()
+            if (!title || entry.anilistId <= 0) continue
+            candidates.push({
+                id: `anilist:manga:${entry.anilistId}`,
+                title,
+                normalizedTitle: normalizeTitle(title),
+                authors: [],
+                status: entry.status,
+                addedAt: now,
+                updatedAt: now,
+                anilistId: entry.anilistId,
+                sourceId: "anilist.co",
+                sourceUrl: `https://anilist.co/manga/${entry.anilistId}`,
+                manualTracking: true,
+                ...(entry.coverUrl ? { coverUrl: entry.coverUrl } : {}),
+                ...(entry.genres.length > 0 ? { genres: entry.genres } : {}),
+                ...(entry.progress > 0 ? { lastReadChapterNumber: entry.progress } : {})
+            })
+        } catch (error) {
+            console.warn("[AMR] AniList import: skipping a malformed entry", error)
+        }
+    }
+    const { imported } = await addImportedManga(candidates)
+    return { imported, skipped: entries.length - imported, total: entries.length }
+}
 
 // Deletes a title's AniList list entry when it's removed from the library. No-op
 // unless membership sync is on and the title has a known AniList id. Fire-and-forget
@@ -176,5 +221,10 @@ export const anilistHandlers: HandlerMap = {
             .then(() => publishLive(["library"]))
             .catch(error => console.warn("[AMR] AniList sync failed", error))
         return { started: true }
+    },
+    "anilist:import": async () => {
+        // Awaits the full import and returns counts; the dispatcher publishes the
+        // ["library"] live event from MUTATION_SCOPES once this resolves.
+        return await runAniListImport()
     }
 }

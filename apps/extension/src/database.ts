@@ -922,6 +922,35 @@ export async function updateManga(mangaId: string, patch: Partial<LibraryManga>)
     await db.manga.update(mangaId, patch)
 }
 
+// Bulk-adds imported library entries (e.g. an AniList list pull), skipping any whose
+// anilistId or normalizedTitle already exists so a re-import never clobbers a live
+// entry. Dedup also applies within the batch itself. Runs in one transaction so the
+// existence check and the writes can't interleave with a concurrent import. Returns
+// how many were newly written vs skipped.
+export async function addImportedManga(candidates: LibraryManga[]): Promise<{ imported: number; skipped: number }> {
+    return db.transaction("rw", db.manga, async () => {
+        const existing = await db.manga.toArray()
+        const anilistIds = new Set(existing.map(m => m.anilistId).filter((id): id is number => id !== undefined))
+        const normalized = new Set(existing.map(m => m.normalizedTitle))
+        const toWrite: LibraryManga[] = []
+        let skipped = 0
+        for (const candidate of candidates) {
+            const duplicate =
+                (candidate.anilistId !== undefined && anilistIds.has(candidate.anilistId)) ||
+                normalized.has(candidate.normalizedTitle)
+            if (duplicate) {
+                skipped++
+                continue
+            }
+            toWrite.push(candidate)
+            if (candidate.anilistId !== undefined) anilistIds.add(candidate.anilistId)
+            normalized.add(candidate.normalizedTitle)
+        }
+        if (toWrite.length > 0) await db.manga.bulkPut(toWrite)
+        return { imported: toWrite.length, skipped }
+    })
+}
+
 // Thin wrapper so handlers never call db.chapters.bulkPut directly.
 export async function putChapters(chapters: ChapterRecord[]): Promise<void> {
     await db.chapters.bulkPut(chapters)

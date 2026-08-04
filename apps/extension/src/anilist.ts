@@ -4,6 +4,8 @@
 // sees only a token-free status view. Public metadata reads live separately in
 // metadata/anilist.ts and need no token.
 
+import type { MangaStatus } from "./metadata/provider"
+
 const ANILIST_KEY = "anilistConfig"
 const GRAPHQL = "https://graphql.anilist.co"
 
@@ -114,6 +116,98 @@ export async function saveMediaStatus(token: string, mediaId: number, status: st
         }`,
         { mediaId, status }
     )
+}
+
+// One title pulled from the user's AniList manga list, flattened to the fields the
+// library import needs. progress is the user's read chapter count on AniList.
+export type AniListListEntry = {
+    anilistId: number
+    title: string
+    coverUrl?: string
+    status: MangaStatus
+    genres: string[]
+    progress: number
+}
+
+type RawMediaListEntry = {
+    progress?: number | null
+    media?: {
+        id?: number | null
+        title?: { romaji?: string | null; english?: string | null; native?: string | null } | null
+        coverImage?: { extraLarge?: string | null; large?: string | null } | null
+        status?: string | null
+        genres?: (string | null)[] | null
+    } | null
+}
+
+// AniList Media.status (MANGA) -> our publication-status enum. Mirrors mapStatus in
+// metadata/anilist.ts so an imported title's status matches an enriched one.
+function mapMediaStatus(status: string | null | undefined): MangaStatus {
+    switch (status) {
+        case "RELEASING":
+            return "ongoing"
+        case "FINISHED":
+            return "completed"
+        case "HIATUS":
+            return "hiatus"
+        case "CANCELLED":
+            return "cancelled"
+        default:
+            return "unknown"
+    }
+}
+
+// Pure mapping - exported for tests, no network.
+export function mapMediaListEntry(raw: RawMediaListEntry): AniListListEntry {
+    const media = raw.media ?? {}
+    const title = media.title?.english ?? media.title?.romaji ?? media.title?.native ?? ""
+    const coverUrl = media.coverImage?.extraLarge ?? media.coverImage?.large ?? undefined
+    const genres = (media.genres ?? []).filter((g): g is string => typeof g === "string" && g.length > 0)
+    return {
+        anilistId: media.id ?? 0,
+        title,
+        ...(coverUrl ? { coverUrl } : {}),
+        status: mapMediaStatus(media.status),
+        genres,
+        progress: typeof raw.progress === "number" && Number.isFinite(raw.progress) ? raw.progress : 0
+    }
+}
+
+// Pulls the authed user's whole manga list. Two steps: resolve the viewer id, then
+// fetch every list (Reading/Completed/Planning/...) and flatten its entries. Reuses
+// anilistFetch's auth + error handling.
+export async function getViewerMangaList(token: string): Promise<AniListListEntry[]> {
+    const viewer = await anilistFetch<{ Viewer: { id: number } | null }>(token, `query { Viewer { id } }`, {})
+    const userId = viewer.Viewer?.id
+    if (userId === undefined) throw new Error("AniList: could not resolve the viewer id")
+    const data = await anilistFetch<{
+        MediaListCollection: { lists: ({ entries: RawMediaListEntry[] | null } | null)[] | null } | null
+    }>(
+        token,
+        `query ($userId: Int) {
+            MediaListCollection(userId: $userId, type: MANGA) {
+                lists {
+                    entries {
+                        progress
+                        status
+                        media {
+                            id
+                            title { romaji english native }
+                            coverImage { extraLarge large }
+                            status
+                            genres
+                        }
+                    }
+                }
+            }
+        }`,
+        { userId }
+    )
+    const entries: AniListListEntry[] = []
+    for (const list of data.MediaListCollection?.lists ?? []) {
+        for (const raw of list?.entries ?? []) entries.push(mapMediaListEntry(raw))
+    }
+    return entries
 }
 
 // Removes a title from the user's list by its list-entry id.

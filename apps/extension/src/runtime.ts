@@ -107,6 +107,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         })
     }),
     z.object({ type: z.literal("anilist:sync") }),
+    z.object({ type: z.literal("anilist:import") }),
     z.object({ type: z.literal("log:export") }),
     z.object({ type: z.literal("manga:search"), query: z.string().min(1) }),
     z.object({ type: z.literal("manga:chapters"), mangaId: z.string().min(1) }),
