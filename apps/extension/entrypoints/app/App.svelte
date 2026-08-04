@@ -38,7 +38,6 @@
         "Suggestions",
         "Library",
         "Bookmarks",
-        "Tags",
         "Updates",
         "History",
         "Stats",
@@ -64,6 +63,9 @@
         "recent-read"
     )
     let categoryFilter = $state("")
+    // Reveals the rename/delete tag manager inline in the Library (replaces the old
+    // dedicated Tags tab, which was mostly a redundant filtered-library view).
+    let manageTags = $state(false)
     let genreFilter = $state("")
     let sourceFilter = $state("")
     let ratingFilter = $state(0)
@@ -319,6 +321,7 @@
     let anilistToken = $state("")
     let anilistMessage = $state("")
     let anilistSyncing = $state(false)
+    let anilistImporting = $state(false)
     // AniList setup helper: the user pastes their Client ID and we build the
     // implicit-grant authorize link for them, so they don't have to hand-assemble the URL.
     const ANILIST_PIN_REDIRECT = "https://anilist.co/api/v2/oauth/pin"
@@ -1217,6 +1220,22 @@
             anilistMessage = cause instanceof Error ? cause.message : "Sync failed."
         } finally {
             anilistSyncing = false
+        }
+    }
+
+    async function importAniListNow() {
+        anilistImporting = true
+        anilistMessage = ""
+        try {
+            const result = await sendRuntimeMessage<{ imported: number; skipped: number; total: number }>({
+                type: "anilist:import"
+            })
+            anilistMessage = `Imported ${result.imported}, skipped ${result.skipped}.`
+            await refresh()
+        } catch (cause) {
+            anilistMessage = cause instanceof Error ? cause.message : "Import failed."
+        } finally {
+            anilistImporting = false
         }
     }
 
@@ -3049,6 +3068,12 @@
                                 <option value={cat}>{cat}</option>
                             {/each}
                         </select>
+                        <button
+                            type="button"
+                            class="btn-sm"
+                            class:active={manageTags}
+                            aria-pressed={manageTags}
+                            onclick={() => (manageTags = !manageTags)}>Manage tags</button>
                     {/if}
                     {#if allGenres.length > 0}
                         <select aria-label="Filter by genre" bind:value={genreFilter}>
@@ -3189,6 +3214,41 @@
                 <button type="submit" disabled={adding}>{adding ? "Adding..." : "Add"}</button>
             </form>
             {#if addMessage}<p class="notice">{addMessage}</p>{/if}
+            {#if manageTags}
+                <div class="tag-manage">
+                    <p class="muted search-hint">
+                        Rename or delete a tag to update every title at once. Add tags per title from the ⋯ details
+                        panel.
+                    </p>
+                    {#if tagCounts.length === 0}
+                        <p class="muted">No tags yet. Open a title's details to add some.</p>
+                    {:else}
+                        <div class="tag-table">
+                            {#each tagCounts as [tag, count] (tag)}
+                                <div class="tag-row">
+                                    <button
+                                        type="button"
+                                        class="tag-name"
+                                        onclick={() => filterByTag(tag)}
+                                        title="Filter library">{tag}</button>
+                                    <span class="tag-count muted">{count} title{count === 1 ? "" : "s"}</span>
+                                    <input
+                                        class="tag-rename"
+                                        value={tag}
+                                        disabled={tagBusy}
+                                        aria-label={`Rename ${tag}`}
+                                        onchange={e => void renameTag(tag, e.currentTarget.value)} />
+                                    <button
+                                        type="button"
+                                        class="btn-sm confirm-remove-btn"
+                                        disabled={tagBusy}
+                                        onclick={() => void deleteTag(tag)}>Delete</button>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
+                </div>
+            {/if}
             {#if showDuplicates && duplicateGroups.length > 0}
                 <div class="dup-panel">
                     <p class="row-label">Possible duplicates</p>
@@ -3468,39 +3528,6 @@
                         </li>
                     {/each}
                 </ul>
-            {/if}
-        {:else if activeSection === "Tags"}
-            <h1>Tags</h1>
-            <p class="muted search-hint">
-                Organise your library with tags. Add tags per title from the ⋯ details panel (with one-click suggestions
-                pulled from the source). Rename or delete a tag here to update every title at once.
-            </p>
-            {#if tagCounts.length === 0}
-                <p class="muted">No tags yet. Open a title's details to add some.</p>
-            {:else}
-                <div class="tag-table">
-                    {#each tagCounts as [tag, count] (tag)}
-                        <div class="tag-row">
-                            <button
-                                type="button"
-                                class="tag-name"
-                                onclick={() => filterByTag(tag)}
-                                title="Filter library">{tag}</button>
-                            <span class="tag-count muted">{count} title{count === 1 ? "" : "s"}</span>
-                            <input
-                                class="tag-rename"
-                                value={tag}
-                                disabled={tagBusy}
-                                aria-label={`Rename ${tag}`}
-                                onchange={e => void renameTag(tag, e.currentTarget.value)} />
-                            <button
-                                type="button"
-                                class="btn-sm confirm-remove-btn"
-                                disabled={tagBusy}
-                                onclick={() => void deleteTag(tag)}>Delete</button>
-                        </div>
-                    {/each}
-                </div>
             {/if}
         {:else if activeSection === "Updates"}
             <div class="page-head">
@@ -4541,6 +4568,20 @@
                         {anilistSyncing ? "Syncing…" : "Sync now"}
                     </button>
                 </div>
+                {#if anilistStatus?.hasToken}
+                    <div class="data-row">
+                        <div>
+                            <p class="row-label">Import my AniList list</p>
+                            <p class="muted">
+                                Pull your AniList manga into the library. New titles are added without a source, then
+                                appear in the reconcile panel so you can attach a mirror. Existing titles are skipped.
+                            </p>
+                        </div>
+                        <button type="button" onclick={() => void importAniListNow()} disabled={anilistImporting}>
+                            {anilistImporting ? "Importing…" : "Import"}
+                        </button>
+                    </div>
+                {/if}
             </div>
             {#if anilistMessage}<p class="notice">{anilistMessage}</p>{/if}
         {:else}
