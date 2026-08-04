@@ -18,6 +18,7 @@ import { captureChapter, clearAddedBadge, ADD_BADGE_ALARM_NAME } from "../src/ba
 import { isInternalTab, isInternalUrl } from "../src/background/tab-fetch"
 import { injectChapterPrompt } from "../src/background/inject-chapter-prompt"
 import { NEW_CHAPTERS_NOTIFICATION_ID } from "../src/notifications"
+import { createBackup } from "../src/database"
 import {
     updateAlarmName,
     communityAlarmName,
@@ -60,7 +61,12 @@ export default defineBackground(() => {
         abortAniListSync()
     })
 
-    browser.runtime.onInstalled.addListener(() => {
+    browser.runtime.onInstalled.addListener(details => {
+        // Snapshot the library the first time a new version runs, so a bad update (or a
+        // migration/sync that goes wrong afterwards) is always recoverable from Data ->
+        // Restore. The browser can't run our code BEFORE it swaps in the new version, so
+        // this first-run snapshot is the earliest safe point.
+        if (details.reason === "update") void createBackup("pre-update")
         void clearStaleUpdateProgress()
         void configureUpdateAlarm()
         void configureSyncAlarm()

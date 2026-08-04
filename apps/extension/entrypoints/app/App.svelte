@@ -62,6 +62,11 @@
     let librarySort = $state<"recent-read" | "recent-added" | "recently-updated" | "title" | "latest-chapter">(
         "recent-read"
     )
+    // Persist the chosen sort so the library reopens the same way. Saved on change only
+    // (never via an effect) so the default can't clobber the stored value on startup.
+    function persistLibrarySort() {
+        void browser.storage.local.set({ librarySort })
+    }
     let categoryFilter = $state("")
     // Reveals the rename/delete tag manager inline in the Library (replaces the old
     // dedicated Tags tab, which was mostly a redundant filtered-library view).
@@ -978,6 +983,20 @@
             onboardingDismissed = Boolean(stored["onboardingDismissed"])
         } catch {
             onboardingDismissed = false
+        }
+        try {
+            const v = (await browser.storage.local.get("librarySort"))["librarySort"]
+            if (
+                v === "recent-read" ||
+                v === "recent-added" ||
+                v === "recently-updated" ||
+                v === "title" ||
+                v === "latest-chapter"
+            ) {
+                librarySort = v
+            }
+        } catch {
+            // keep the default sort
         }
         await loadSyncStatus()
         await loadAniListStatus()
@@ -3061,7 +3080,7 @@
             <div class="page-head">
                 <h1>Library</h1>
                 <div class="library-controls">
-                    <select aria-label="Sort library" bind:value={librarySort}>
+                    <select aria-label="Sort library" bind:value={librarySort} onchange={persistLibrarySort}>
                         <option value="recent-read">Recently read</option>
                         <option value="recently-updated">Recently updated</option>
                         <option value="recent-added">Recently added</option>
