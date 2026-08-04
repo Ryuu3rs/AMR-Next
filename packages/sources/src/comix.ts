@@ -223,7 +223,7 @@ export const comixAdapter: SourceAdapter = {
         const highest = Math.max(latestChapter ?? 0, ...known.keys(), 0)
         const total = Math.min(Math.floor(highest), MAX_SYNTHESISED_CHAPTERS)
         const out: SourceChapter[] = []
-        for (let n = 1; n <= total; n++) {
+        const emit = (n: number) => {
             // Prefer a real URL when the SSR gave us one; otherwise the placeholder form,
             // which the site redirects to the canonical chapter.
             const url = known.get(n) ?? `${ORIGIN}/title/${slug}/${PLACEHOLDER_CHAPTER_ID}-chapter-${n}`
@@ -238,6 +238,11 @@ export const comixAdapter: SourceAdapter = {
                 language: "en"
             })
         }
+        for (let n = 1; n <= total; n++) emit(n)
+        // Math.floor drops a fractional latest (e.g. 57.5), so the newest chapter - and any
+        // mid-series .5 - would never be emitted. Append the true latest past the integer
+        // range so it is always present, still within the synthesised-range cap.
+        if (highest > total && highest <= MAX_SYNTHESISED_CHAPTERS) emit(highest)
         return out
     },
 

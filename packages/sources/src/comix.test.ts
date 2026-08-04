@@ -93,6 +93,28 @@ describe("comix listChapters", () => {
         expect(chapters[56]?.sortKey).toBe(57)
     })
 
+    it("emits a fractional latest chapter that Math.floor would otherwise drop", async () => {
+        const requests: string[] = []
+        const context = createContext(
+            {
+                [MANGA_PATH]: initialDataHtml({
+                    title: "Lord of Goblins",
+                    latestChapter: 57.5,
+                    firstChapterUrl: `/title/${SLUG}/6219258-chapter-1`,
+                    latestChapterUrl: `/title/${SLUG}/6220912-chapter-57.5`
+                })
+            },
+            requests
+        )
+
+        const chapters = await comixAdapter.listChapters!(listInput(), context)
+
+        const maxSortKey = Math.max(...chapters.map(c => c.sortKey))
+        expect(maxSortKey).toBe(57.5)
+        const latest = chapters.find(c => c.sortKey === 57.5)
+        expect(latest?.url).toBe(`${ORIGIN}/title/${SLUG}/6220912-chapter-57.5`)
+    })
+
     it("caps the synthesised range so a malformed latestChapter can't spin out a huge list", async () => {
         const requests: string[] = []
         const context = createContext(

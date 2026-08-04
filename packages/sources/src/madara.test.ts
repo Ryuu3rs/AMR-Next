@@ -254,6 +254,40 @@ describe("createMadaraAdapter", () => {
         })
     })
 
+    it("reads the chapter number after the keyword so 'Vol.2 Chapter 5' isn't parsed as volume 2", async () => {
+        // A label carrying both a volume and a chapter number ("Vol.2 Chapter 5") lists the
+        // volume first. Taking the first digit run reads the volume (2), colliding with the
+        // real Chapter 2 and mis-ordering the list. The number after the chapter keyword is
+        // the authoritative one, so this entry must land at sortKey 5.
+        const mangaHtml = `<html><body>
+<div id="manga-chapters-holder" data-id="555">
+<ul class="main version-chap">
+  <li class="wp-manga-chapter"><a href="https://test-madara.example/series/cool-manga/ch-5/">Vol.2 Chapter 5</a></li>
+  <li class="wp-manga-chapter"><a href="https://test-madara.example/series/cool-manga/ch-2/">Chapter 2</a></li>
+  <li class="wp-manga-chapter"><a href="https://test-madara.example/series/cool-manga/ch-1/">Chapter 1</a></li>
+</ul></div></body></html>`
+        const context = createContext({ "/series/cool-manga/": mangaHtml })
+        const manga = {
+            manga: {
+                id: "testmadara:manga:cool-manga",
+                title: "Cool Manga",
+                normalizedTitle: "cool manga",
+                authors: [],
+                status: "unknown" as const,
+                addedAt: 0,
+                updatedAt: 0
+            },
+            sourceId: "testmadara",
+            sourceMangaId: "cool-manga",
+            url: "https://test-madara.example/series/cool-manga/"
+        }
+        const chapters = await adapter.listChapters({ manga }, context)
+        const vol2 = chapters.find(c => c.sourceChapterId === "cool-manga:ch-5")
+        expect(vol2?.sortKey).toBe(5)
+        const two = chapters.find(c => c.sourceChapterId === "cool-manga:ch-2")
+        expect(two?.sortKey).toBe(2)
+    })
+
     it("interpolates a sortKey for a bonus chapter with no parseable number instead of defaulting to 0", async () => {
         // Realistic descending (newest-first) list, live-verified shape from
         // tritinia.org/manga/live-dungeon/ajax/chapters/ - a bonus/extra entry has no digits
