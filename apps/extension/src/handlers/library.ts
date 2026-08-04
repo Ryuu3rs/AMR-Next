@@ -1111,6 +1111,23 @@ export const libraryHandlers: HandlerMap = {
         return getActivityCalendar(request.days ?? 120)
     },
 
+    // Which chapter to open when a title is launched from the library: resume at the
+    // last-read chapter, else start at the first (lowest-numbered) chapter. Falls back to
+    // sourceUrl (the latest chapter) only when nothing else is known - previously EVERY
+    // open used sourceUrl, so "Continue reading" always jumped to the newest chapter.
+    "chapter:resume": async request => {
+        const manga = await db.manga.get(request.mangaId)
+        if (!manga) return { url: undefined }
+        if (manga.lastReadChapterId) {
+            const ch = await db.chapters.get(manga.lastReadChapterId)
+            if (ch?.url) return { url: ch.url }
+        }
+        const chapters = await db.chapters.where("mangaId").equals(request.mangaId).sortBy("sortKey")
+        const numbered = chapters.filter(c => Number.isFinite(c.sortKey))
+        const first = (numbered.length > 0 ? numbered : chapters)[0]
+        return { url: first?.url ?? manga.sourceUrl }
+    },
+
     "chapter:adjacent": async request => {
         const manga = await db.manga.get(request.mangaId)
         if (!manga) return { current: null, next: null, prev: null }

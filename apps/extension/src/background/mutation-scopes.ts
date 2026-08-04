@@ -93,6 +93,7 @@ export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<Runt
     "stats:get",
     "history:list",
     "chapter:adjacent",
+    "chapter:resume",
     "activity:get",
     "data:export",
     "data:import:preview",

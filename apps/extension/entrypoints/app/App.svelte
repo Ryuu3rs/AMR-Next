@@ -1433,9 +1433,19 @@
         void browser.tabs.create({ url, active: e?.button !== 1 })
     }
 
-    function openInReader(manga: LibraryManga) {
+    async function openInReader(manga: LibraryManga) {
+        // Resume at the last-read chapter (or the first if unread) instead of always
+        // opening sourceUrl, which is the latest chapter. Fall back to sourceUrl if the
+        // resolver can't find a chapter.
+        let target = manga.sourceUrl
+        try {
+            const resumed = await sendRuntimeMessage<{ url?: string }>({ type: "chapter:resume", mangaId: manga.id })
+            if (resumed?.url) target = resumed.url
+        } catch {
+            // ignore - fall back to sourceUrl
+        }
         void browser.tabs.create({
-            url: browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(manga.sourceUrl)}`)
+            url: browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(target)}`)
         })
     }
 
@@ -1453,7 +1463,7 @@
             return
         }
         if (settings?.openChapterIn === "browser") openInBrowser(manga)
-        else openInReader(manga)
+        else void openInReader(manga)
     }
 
     async function remove(mangaId: string) {
