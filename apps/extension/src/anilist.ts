@@ -177,9 +177,9 @@ export function mapMediaListEntry(raw: RawMediaListEntry): AniListListEntry {
 // fetch every list (Reading/Completed/Planning/...) and flatten its entries. Reuses
 // anilistFetch's auth + error handling.
 export async function getViewerMangaList(token: string): Promise<AniListListEntry[]> {
-    const viewer = await anilistFetch<{ Viewer: { id: number } | null }>(token, `query { Viewer { id } }`, {})
+    const viewer = await anilistFetch<{ Viewer: { id: number | null } | null }>(token, `query { Viewer { id } }`, {})
     const userId = viewer.Viewer?.id
-    if (userId === undefined) throw new Error("AniList: could not resolve the viewer id")
+    if (typeof userId !== "number") throw new Error("AniList: could not resolve the viewer id")
     const data = await anilistFetch<{
         MediaListCollection: { lists: ({ entries: RawMediaListEntry[] | null } | null)[] | null } | null
     }>(

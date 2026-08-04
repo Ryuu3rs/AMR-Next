@@ -169,4 +169,14 @@ describe("getViewerMangaList", () => {
         expect(list[0]).toMatchObject({ anilistId: 1, title: "A", status: "ongoing", progress: 3 })
         expect(list[1]).toMatchObject({ anilistId: 2, title: "B", status: "completed", progress: 0 })
     })
+
+    it("rejects and never fires the collection query when the viewer id is null", async () => {
+        const fetchMock = vi
+            .fn()
+            .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { Viewer: { id: null } } }) })
+        vi.stubGlobal("fetch", fetchMock)
+
+        await expect(getViewerMangaList("t")).rejects.toThrow(/viewer id/)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
 })

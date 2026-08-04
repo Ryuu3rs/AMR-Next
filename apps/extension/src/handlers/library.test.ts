@@ -928,6 +928,35 @@ describe("library:covers:backfill", () => {
         expect(stored?.coverUrl).toBe("https://s4.anilist.co/cover.jpg")
     })
 
+    it("falls back to the metadata catalog cover even when the source scrape throws", async () => {
+        const { libraryHandlers } = await import("./library")
+
+        const throwingSource: LibraryManga = {
+            ...manga,
+            id: "aquamanga:manga:throws",
+            sourceId: "aquamanga",
+            sourceUrl: "https://aquamanga.com/manga/throws",
+            coverUrl: undefined
+        }
+        await db.manga.put(throwingSource)
+
+        vi.mocked(resolveCoverFor).mockRejectedValue(new Error("adapter blew up"))
+        vi.mocked(resolveMetadata).mockResolvedValue({
+            coverUrl: "https://s4.anilist.co/recovered.jpg",
+            status: "ongoing"
+        } as never)
+        vi.mocked(fetchCoverBlob).mockResolvedValue(new Blob(["cover-bytes"], { type: "image/jpeg" }))
+
+        const handler = libraryHandlers["library:covers:backfill"]!
+        const result = (await handler({ type: "library:covers:backfill" } as never, ctx)) as { updated: number }
+
+        expect(resolveMetadata).toHaveBeenCalled()
+        expect(fetchCoverBlob).toHaveBeenCalledWith("https://s4.anilist.co/recovered.jpg")
+        expect(result.updated).toBe(1)
+        const stored = await db.manga.get("aquamanga:manga:throws")
+        expect(stored?.coverUrl).toBe("https://s4.anilist.co/recovered.jpg")
+    })
+
     it("processes titles from two different sources in the same batch concurrently", async () => {
         const { libraryHandlers } = await import("./library")
 

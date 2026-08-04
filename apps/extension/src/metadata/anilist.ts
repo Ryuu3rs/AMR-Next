@@ -7,6 +7,28 @@ import {
 } from "./recommendations"
 
 const ANILIST_GRAPHQL = "https://graphql.anilist.co"
+const MIN_INTERVAL_MS = 700 // ~85 req/min, under AniList's 90/min limit
+
+let lastRequest = 0
+let requestChain: Promise<unknown> = Promise.resolve()
+
+// Serializes every AniList query behind a single promise chain with a minimum gap
+// between requests. The covers backfill runs four concurrent source groups whose
+// metadata fallbacks all land here; without this they burst past AniList's rate
+// limit and the 429s silently degrade to "no cover".
+function rateLimited<T>(fn: () => Promise<T>): Promise<T> {
+    const run = requestChain.then(async () => {
+        const wait = MIN_INTERVAL_MS - (Date.now() - lastRequest)
+        if (wait > 0) await new Promise(r => setTimeout(r, wait))
+        lastRequest = Date.now()
+        return fn()
+    })
+    requestChain = run.then(
+        () => undefined,
+        () => undefined
+    )
+    return run
+}
 
 // AniList Media.status (MANGA) -> our publication-status enum.
 function mapStatus(status: string | null | undefined): MangaStatus {
@@ -62,15 +84,17 @@ const MEDIA_FIELDS = `
     coverImage { extraLarge large }
 `
 
-async function query<T>(gql: string, variables: Record<string, unknown>): Promise<T | null> {
-    const res = await fetch(ANILIST_GRAPHQL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ query: gql, variables })
+function query<T>(gql: string, variables: Record<string, unknown>): Promise<T | null> {
+    return rateLimited(async () => {
+        const res = await fetch(ANILIST_GRAPHQL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ query: gql, variables })
+        })
+        if (!res.ok) return null
+        const json = (await res.json()) as { data?: T }
+        return json.data ?? null
     })
-    if (!res.ok) return null
-    const json = (await res.json()) as { data?: T }
-    return json.data ?? null
 }
 
 // AniList metadata provider - queries the public GraphQL API directly. Used as the
