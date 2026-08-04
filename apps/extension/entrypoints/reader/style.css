@@ -184,7 +184,7 @@ main.fit-original .page img {
 }
 
 main.fit-original .page {
-    justify-content: flex-start;
+    justify-content: safe center;
     overflow-x: auto;
 }
 
@@ -201,14 +201,18 @@ main.single.fit-original .page img {
     object-fit: contain;
 }
 
-/* Two-page spread (paged mode): two pages side by side, each taking half the width.
-   flex-wrap:nowrap + min-width:0 defeat the flex min-content floor that otherwise made
-   the images overflow or drop to a second row (i.e. "stacked"). RTL puts the earlier
-   page on the right via row-reverse. These win over the fit-mode img rules and the
-   narrow-screen media query by coming last in the sheet. */
+/* Two-page spread (paged mode): the two pages meet near the centre with a hairline
+   gutter. Each image is sized to its own content (flex:0 0 auto + width:auto) and
+   capped at half the container (max-width:50%), so a portrait page stays narrow and
+   sits adjacent to its partner instead of being stretched to fill a 50% slot and
+   leaving a wide inner gap. min-width:0 defeats the flex min-content floor; centring
+   the pair keeps it together. RTL puts the earlier page on the right via row-reverse.
+   These win over the fit-mode img rules and the narrow-screen media query by coming
+   last in the sheet. */
 main.single .page.spread {
     flex-wrap: nowrap;
-    gap: 0;
+    justify-content: center;
+    gap: 2px;
     align-items: center;
     width: 100%;
 }
@@ -217,7 +221,7 @@ main.single.fit-width .page.spread img,
 main.single.fit-height .page.spread img,
 main.single.fit-contain .page.spread img,
 main.single.fit-original .page.spread img {
-    flex: 0 1 50%;
+    flex: 0 0 auto;
     width: auto;
     min-width: 0;
     max-width: 50%;

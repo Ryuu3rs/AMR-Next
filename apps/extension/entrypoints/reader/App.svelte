@@ -5,6 +5,7 @@
     import { sendRuntimeMessage } from "../../src/runtime"
     import { subscribeLive } from "../../src/live"
     import { createProgressReporter } from "../../src/throttle"
+    import { spreadView } from "../../src/reader-spread"
 
     type ReadingDirection = "ltr" | "rtl" | "vertical"
     type PageFit = "width" | "height" | "contain" | "original"
@@ -16,6 +17,8 @@
     let mode = $state<"continuous" | "single">("continuous")
     // Pages shown at once in paged mode: 1 (single) or 2 (side-by-side spread).
     let spread = $state<1 | 2>(1)
+    // 2-up "offset": show page 0 (cover) alone, then pair [1,2],[3,4],... per title.
+    let spreadOffset = $state(false)
     let direction = $state<ReadingDirection>("ltr")
     let pageFit = $state<PageFit>("width")
     let showPageNumber = $state(true)
@@ -482,6 +485,11 @@
         if (mangaId) await browser.storage.local.set({ [`readerSpread:${mangaId}`]: next })
     }
 
+    async function setSpreadOffset(next: boolean) {
+        spreadOffset = next
+        if (mangaId) await browser.storage.local.set({ [`readerSpreadOffset:${mangaId}`]: next })
+    }
+
     // Per-series "Webtoon view" (no-gap continuous) override - mirrors setDirection's
     // shape, but persists to the library record via library:reading-prefs instead of
     // local storage, since this is a per-manga DB override rather than a device-local one.
@@ -526,13 +534,12 @@
     const effectiveMode = $derived(direction === "vertical" ? "continuous" : mode)
     // Two-page spread only applies to paged (single) LTR/RTL reading, never to scroll.
     const effectiveSpread = $derived(effectiveMode === "single" && direction !== "vertical" ? spread : 1)
-    // The page indices shown in the current paged view (one, or a pair when 2-up and a
-    // next page exists). RTL ordering is handled in CSS (row-reverse), not here.
-    const spreadIndices = $derived.by(() => {
-        if (effectiveSpread !== 2) return [currentPage]
-        const pageCount = chapter?.pages.length ?? 0
-        return currentPage + 1 < pageCount ? [currentPage, currentPage + 1] : [currentPage]
-    })
+    const effectiveOffset = $derived(effectiveSpread === 2 && spreadOffset)
+    // The page indices shown in the current paged view (one, or a pair). Offset shows the
+    // cover alone then pairs the rest. RTL ordering is handled in CSS (row-reverse).
+    const spreadIndices = $derived(
+        spreadView(currentPage, effectiveSpread, effectiveOffset, chapter?.pages.length ?? 0).indices
+    )
     // A5: double-click toggles between the configured fit and original (zoom).
     const effectivePageFit = $derived(fitOverride ?? pageFit)
     const progressPct = $derived(
@@ -646,6 +653,7 @@
                 const modeKey = `readerMode:${mangaId}`
                 const dirKey = `readerDirection:${mangaId}`
                 const spreadKey = `readerSpread:${mangaId}`
+                const spreadOffsetKey = `readerSpreadOffset:${mangaId}`
                 const [settings, stored, libraryManga] = await Promise.all([
                     sendRuntimeMessage<{
                         readingMode: "continuous" | "single"
@@ -656,7 +664,7 @@
                         preloadPages: number
                     }>({ type: "settings:get" }),
                     browser.storage.local
-                        .get([modeKey, dirKey, spreadKey])
+                        .get([modeKey, dirKey, spreadKey, spreadOffsetKey])
                         .catch(() => ({}) as Record<string, unknown>),
                     sendRuntimeMessage<{
                         readingDirection?: ReadingDirection
@@ -668,6 +676,7 @@
                 const dirOverride = stored[dirKey]
                 mode = modeOverride === "single" || modeOverride === "continuous" ? modeOverride : settings.readingMode
                 spread = stored[spreadKey] === 2 ? 2 : 1
+                spreadOffset = stored[spreadOffsetKey] === true
                 // Per-series DB override wins, then the local per-title override, then global.
                 direction =
                     libraryManga?.readingDirection ??
@@ -883,19 +892,15 @@
             return
         }
         if (effectiveMode !== "single") return
-        const lastIndex = chapter.pages.length - 1
-        const step = effectiveSpread
-        // The highest page index the current view already shows. When it reaches the
-        // last page, forward is a no-op so a 2-up spread over an even page count never
-        // re-shows the final page alone (and never misaligns backward stepping).
-        const maxShown = currentPage + spreadIndices.length - 1
+        // Snaps to offset-aware boundaries; nextStart/prevStart equal the current start
+        // at the ends, so forward never re-shows the final page and backward stays aligned.
+        const view = spreadView(currentPage, effectiveSpread, effectiveOffset, chapter.pages.length)
+        const start = view.indices[0]!
         const next = () => {
-            if (maxShown >= lastIndex) return
-            recordProgress(Math.min(currentPage + step, lastIndex))
+            if (view.nextStart !== start) recordProgress(view.nextStart)
         }
         const prev = () => {
-            if (currentPage === 0) return
-            recordProgress(Math.max(currentPage - step, 0))
+            if (view.prevStart !== start) recordProgress(view.prevStart)
         }
         const key = event.key.toLowerCase()
         if (key === "j") next()
@@ -986,6 +991,16 @@
                     onclick={() => void setSpread(spread === 2 ? 1 : 2)}>
                     {spread === 2 ? "2-up" : "1-up"}
                 </button>
+                {#if effectiveSpread === 2}
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        class:active={spreadOffset}
+                        title="Offset: show the first page (cover) alone, then pair the rest"
+                        onclick={() => void setSpreadOffset(!spreadOffset)}>
+                        Offset
+                    </button>
+                {/if}
             {/if}
             {#if effectiveMode === "continuous"}
                 <button
@@ -1217,8 +1232,9 @@
             {/each}
             {#if showPageNumber}
                 <span class="page-num">
-                    {spreadIndices.length > 1 ? `${currentPage + 1}-${currentPage + 2}` : `${currentPage + 1}`} / {chapter
-                        .pages.length}
+                    {spreadIndices.length > 1
+                        ? `${spreadIndices[0]! + 1}-${spreadIndices[1]! + 1}`
+                        : `${spreadIndices[0]! + 1}`} / {chapter.pages.length}
                 </span>
             {/if}
         </div>
