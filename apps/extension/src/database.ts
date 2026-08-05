@@ -43,6 +43,11 @@ export type LibraryManga = MangaRecord & {
     // the "reading" filter/pool so a paused title doesn't nag with an unread badge.
     // Unlike manualTracking the source link stays live - un-holding resumes normal checks.
     onHold?: boolean
+    // Explicit reading-status override for the states that CAN'T be derived from read
+    // progress (reading/completed/unread are derived - see reading-status.ts). Cleared
+    // automatically when the user reads a chapter (saveProgress un-pauses/un-drops).
+    // Non-indexed, so no Dexie schema/version change is needed - same as onHold/manualTracking.
+    readingStatus?: "paused" | "dropped" | "planning"
     // User categories / labels for filtering the library.
     categories?: string[]
     // User-flagged adult content (covers blurred when the blur setting is on).
@@ -489,6 +494,7 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                 const nsfw = next.nsfw ?? existing.nsfw
                 const manualTracking = next.manualTracking ?? existing.manualTracking
                 const onHold = next.onHold ?? existing.onHold
+                const readingStatus = next.readingStatus ?? existing.readingStatus
                 const readingDirection = next.readingDirection ?? existing.readingDirection
                 const pageFit = next.pageFit ?? existing.pageFit
                 const noGapContinuous = next.noGapContinuous ?? existing.noGapContinuous
@@ -504,6 +510,7 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                     ...(nsfw !== undefined ? { nsfw } : {}),
                     ...(manualTracking !== undefined ? { manualTracking } : {}),
                     ...(onHold !== undefined ? { onHold } : {}),
+                    ...(readingStatus !== undefined ? { readingStatus } : {}),
                     ...(readingDirection !== undefined ? { readingDirection } : {}),
                     ...(pageFit !== undefined ? { pageFit } : {}),
                     ...(noGapContinuous !== undefined ? { noGapContinuous } : {})
@@ -635,6 +642,7 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                 const nsfw = merged.nsfw ?? loser.nsfw
                 const manualTracking = merged.manualTracking ?? loser.manualTracking
                 const onHold = merged.onHold ?? loser.onHold
+                const readingStatus = merged.readingStatus ?? loser.readingStatus
                 const readingDirection = merged.readingDirection ?? loser.readingDirection
                 const pageFit = merged.pageFit ?? loser.pageFit
                 const noGapContinuous = merged.noGapContinuous ?? loser.noGapContinuous
@@ -661,6 +669,7 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                     ...(nsfw !== undefined ? { nsfw } : {}),
                     ...(manualTracking !== undefined ? { manualTracking } : {}),
                     ...(onHold !== undefined ? { onHold } : {}),
+                    ...(readingStatus !== undefined ? { readingStatus } : {}),
                     ...(readingDirection !== undefined ? { readingDirection } : {}),
                     ...(pageFit !== undefined ? { pageFit } : {}),
                     ...(noGapContinuous !== undefined ? { noGapContinuous } : {})
@@ -911,6 +920,7 @@ export async function saveResolvedChapter(input: {
             ...(existing?.lastReadAt !== undefined ? { lastReadAt: existing.lastReadAt } : {}),
             ...(existing?.manualTracking !== undefined ? { manualTracking: existing.manualTracking } : {}),
             ...(existing?.onHold !== undefined ? { onHold: existing.onHold } : {}),
+            ...(existing?.readingStatus !== undefined ? { readingStatus: existing.readingStatus } : {}),
             ...(existing?.categories !== undefined ? { categories: existing.categories } : {}),
             ...(existing?.nsfw !== undefined ? { nsfw: existing.nsfw } : {}),
             ...(existing?.notes !== undefined ? { notes: existing.notes } : {}),
@@ -1441,6 +1451,12 @@ export async function saveProgress(progress: ReadingProgress): Promise<void> {
         const advancePosition =
             mangaRecord.lastReadChapterNumber === undefined ||
             (reportedNumber !== undefined && reportedNumber >= mangaRecord.lastReadChapterNumber)
+        // Local activity wins: any recorded read un-pauses / un-drops the title, so a
+        // stored paused/dropped override never sticks once the user is reading again.
+        // (planning is left alone - it's a "not started" tag the derivation already
+        // ignores once hasRead is true.) lastReadAt stays tied to the forward-advance
+        // path above so re-reading an earlier chapter can't reset the auto-pause clock.
+        const clearOverride = mangaRecord.readingStatus === "paused" || mangaRecord.readingStatus === "dropped"
         await db.manga.update(progress.mangaId, {
             ...(advancePosition
                 ? {
@@ -1449,8 +1465,9 @@ export async function saveProgress(progress: ReadingProgress): Promise<void> {
                       lastReadAt: progress.updatedAt
                   }
                 : {}),
+            ...(clearOverride ? { readingStatus: undefined } : {}),
             updatedAt: progress.updatedAt
-        })
+        } as unknown as Partial<LibraryManga>)
         if (!existing) {
             await db.historyEvents.add({
                 mangaId: progress.mangaId,

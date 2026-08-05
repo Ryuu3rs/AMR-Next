@@ -27,6 +27,7 @@ export const libraryMangaSchema = mangaRecordSchema.extend({
     metadataUpdatedAt: z.number().int().nonnegative().optional(),
     noGapContinuous: z.boolean().optional(),
     onHold: z.boolean().optional(),
+    readingStatus: z.enum(["paused", "dropped", "planning"]).optional(),
     readingDirection: z.enum(["ltr", "rtl", "vertical"]).optional(),
     pageFit: z.enum(["width", "height", "contain", "original"]).optional(),
     // Set by library:switch when moving to a source whose chapter numbering can't be

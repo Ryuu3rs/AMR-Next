@@ -14,7 +14,8 @@ const {
     getViewerNameMock,
     getViewerMangaListMock,
     resolveMetadataMock,
-    configureAniListAlarmMock
+    configureAniListAlarmMock,
+    getSettingsMock
 } = vi.hoisted(() => ({
     getAniListConfigMock: vi.fn(),
     setAniListConfigMock: vi.fn(),
@@ -26,7 +27,8 @@ const {
     getViewerNameMock: vi.fn(),
     getViewerMangaListMock: vi.fn(),
     resolveMetadataMock: vi.fn(),
-    configureAniListAlarmMock: vi.fn()
+    configureAniListAlarmMock: vi.fn(),
+    getSettingsMock: vi.fn()
 }))
 
 vi.mock("../anilist", () => ({
@@ -42,6 +44,7 @@ vi.mock("../anilist", () => ({
     deleteMediaListEntry: deleteMediaListEntryMock
 }))
 vi.mock("../metadata", () => ({ resolveMetadata: resolveMetadataMock }))
+vi.mock("../settings", () => ({ getSettings: getSettingsMock }))
 vi.mock("../background/alarms", () => ({ configureAniListAlarm: configureAniListAlarmMock }))
 vi.mock("../live", () => ({ publishLive: vi.fn() }))
 
@@ -72,6 +75,8 @@ beforeEach(async () => {
     getViewerNameMock.mockReset()
     getViewerMangaListMock.mockReset()
     resolveMetadataMock.mockReset()
+    getSettingsMock.mockReset()
+    getSettingsMock.mockResolvedValue({ anilistImportPaused: true, anilistImportDropped: true })
     // Make the inter-title rate-limit delay instant.
     vi.stubGlobal("setTimeout", (fn: () => void) => {
         fn()
@@ -273,6 +278,81 @@ describe("anilist:import", () => {
         getAniListConfigMock.mockResolvedValue({ autoSync: false })
         await expect(runAniListImport()).rejects.toThrow(/account|token/i)
         expect(getViewerMangaListMock).not.toHaveBeenCalled()
+    })
+
+    it("carries the AniList list status onto readingStatus", async () => {
+        const { runAniListImport } = await import("./anilist")
+        getViewerMangaListMock.mockResolvedValue([
+            entry({ anilistId: 10, title: "Paused One", listStatus: "paused" }),
+            entry({ anilistId: 11, title: "Dropped One", listStatus: "dropped" }),
+            entry({ anilistId: 12, title: "Planning One", listStatus: "planning" }),
+            entry({ anilistId: 13, title: "Reading One" }) // no listStatus
+        ])
+
+        await runAniListImport()
+
+        expect((await db.manga.get("anilist:manga:10"))?.readingStatus).toBe("paused")
+        expect((await db.manga.get("anilist:manga:11"))?.readingStatus).toBe("dropped")
+        expect((await db.manga.get("anilist:manga:12"))?.readingStatus).toBe("planning")
+        expect((await db.manga.get("anilist:manga:13"))?.readingStatus).toBeUndefined()
+    })
+
+    it("skips paused/dropped entries when those import options are off", async () => {
+        const { runAniListImport } = await import("./anilist")
+        getSettingsMock.mockResolvedValue({ anilistImportPaused: false, anilistImportDropped: false })
+        getViewerMangaListMock.mockResolvedValue([
+            entry({ anilistId: 20, title: "Paused", listStatus: "paused" }),
+            entry({ anilistId: 21, title: "Dropped", listStatus: "dropped" }),
+            entry({ anilistId: 22, title: "Planning", listStatus: "planning" }),
+            entry({ anilistId: 23, title: "Reading" })
+        ])
+
+        const result = await runAniListImport()
+
+        expect(result.imported).toBe(2)
+        expect(await db.manga.get("anilist:manga:20")).toBeUndefined()
+        expect(await db.manga.get("anilist:manga:21")).toBeUndefined()
+        expect((await db.manga.get("anilist:manga:22"))?.readingStatus).toBe("planning")
+        expect(await db.manga.get("anilist:manga:23")).toBeDefined()
+    })
+})
+
+describe("runAniListSync reconcile (removed on AniList)", () => {
+    it("drops a read local title missing from the remote list, only with membership sync on", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        // read + has anilistId, but not present in the remote list below.
+        await db.manga.put(makeManga({ id: "gone", anilistId: 500, lastReadChapterNumber: 12 }))
+        getViewerProgressMock.mockResolvedValue(12)
+        getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }])
+
+        await runAniListSync()
+
+        expect((await db.manga.get("gone"))?.readingStatus).toBe("dropped")
+    })
+
+    it("leaves an unread orphan untouched (never auto-drops what was never read)", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        await db.manga.put(makeManga({ id: "unread-orphan", anilistId: 501 }))
+        getMediaListEntryIdMock.mockResolvedValue(1) // already on list, so no add
+        getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }])
+
+        await runAniListSync()
+
+        expect((await db.manga.get("unread-orphan"))?.readingStatus).toBeUndefined()
+    })
+
+    it("does not reconcile when membership sync is off", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: false })
+        await db.manga.put(makeManga({ id: "gone", anilistId: 500, lastReadChapterNumber: 12 }))
+        getViewerProgressMock.mockResolvedValue(12)
+
+        await runAniListSync()
+
+        expect(getViewerMangaListMock).not.toHaveBeenCalled()
+        expect((await db.manga.get("gone"))?.readingStatus).toBeUndefined()
     })
 })
 

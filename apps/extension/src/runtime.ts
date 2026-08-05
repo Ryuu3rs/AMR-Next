@@ -9,6 +9,11 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("library:rate"), mangaId: z.string().min(1), rating: z.number().int().min(0).max(5) }),
     z.object({ type: z.literal("library:manual"), mangaId: z.string().min(1), manual: z.boolean() }),
     z.object({ type: z.literal("library:hold"), mangaId: z.string().min(1), onHold: z.boolean() }),
+    z.object({
+        type: z.literal("library:status"),
+        mangaId: z.string().min(1),
+        status: z.union([z.enum(["paused", "dropped", "planning"]), z.null()])
+    }),
     z.object({ type: z.literal("library:nsfw"), mangaId: z.string().min(1), nsfw: z.boolean() }),
     z.object({
         type: z.literal("library:categories"),
@@ -209,7 +214,10 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
             blurNsfw: z.boolean().optional(),
             updateIntervalHours: z.union([z.literal(0), z.literal(6), z.literal(12), z.literal(24)]).optional(),
             notifyNewChapters: z.boolean().optional(),
-            autoBackup: z.boolean().optional()
+            autoBackup: z.boolean().optional(),
+            autoPauseDays: z.number().int().min(0).max(3650).optional(),
+            anilistImportPaused: z.boolean().optional(),
+            anilistImportDropped: z.boolean().optional()
         })
     })
 ])
