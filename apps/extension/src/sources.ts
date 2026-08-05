@@ -338,7 +338,7 @@ function shouldIncludeInSearch(sourceId: string): boolean {
 }
 
 // mangahub paginates its search up to 3 pages under its own rate limit and can
-// legitimately take 4-6s+, longer than the 8s default every other adapter races
+// legitimately take 4-6s+, longer than the 10s default every other adapter races
 // against.
 const SEARCH_RACE_TIMEOUT_MS: Record<string, number> = { mangahub: 12_000 }
 
@@ -357,7 +357,7 @@ export async function searchManga(query: string): Promise<SourceSearchResult[]> 
         searchable.map(adapter =>
             withTimeout(
                 adapter.search!(query, createSourceContext(adapter.manifest.id, adapter.manifest.requestRateLimit)),
-                SEARCH_RACE_TIMEOUT_MS[adapter.manifest.id] ?? 8_000
+                SEARCH_RACE_TIMEOUT_MS[adapter.manifest.id] ?? 10_000
             )
         )
     )

@@ -150,7 +150,7 @@ describe("searchManga timeout-skip memo", () => {
         // some real time pass between them, so this isn't the behavior under test.
         for (let i = 0; i < 3; i++) {
             const pending = searchManga("anything")
-            await vi.advanceTimersByTimeAsync(8000)
+            await vi.advanceTimersByTimeAsync(10000)
             await pending
             await vi.advanceTimersByTimeAsync(1)
         }
@@ -162,14 +162,14 @@ describe("searchManga timeout-skip memo", () => {
         // eager first probe, which is what actually stamps lastProbeAt. It times out
         // again too.
         const eagerProbe = searchManga("anything")
-        await vi.advanceTimersByTimeAsync(8000)
+        await vi.advanceTimersByTimeAsync(10000)
         await eagerProbe
         expect(hangingAdapter.search).toHaveBeenCalledTimes(4)
 
         // Genuinely within SEARCH_RETRY_PROBE_MS of that stamped probe now - skipped
         // entirely, no dispatch.
         const skipped = searchManga("anything")
-        await vi.advanceTimersByTimeAsync(8000)
+        await vi.advanceTimersByTimeAsync(10000)
         await skipped
         expect(hangingAdapter.search).toHaveBeenCalledTimes(4)
 
@@ -184,7 +184,7 @@ describe("searchManga timeout-skip memo", () => {
         // Streak was reset (deleted) by the successful probe - immediately dispatches
         // again rather than staying skipped.
         const afterSuccess = searchManga("anything")
-        await vi.advanceTimersByTimeAsync(8000)
+        await vi.advanceTimersByTimeAsync(10000)
         await afterSuccess
         expect(hangingAdapter.search).toHaveBeenCalledTimes(6)
     })
@@ -201,7 +201,7 @@ describe("searchManga timeout-skip memo", () => {
         // lastIncrementAt guard should only let ONE of them register a streak tick.
         const p1 = searchManga("anything")
         const p2 = searchManga("anything")
-        await vi.advanceTimersByTimeAsync(8000)
+        await vi.advanceTimersByTimeAsync(10000)
         await Promise.all([p1, p2])
         expect(hangingAdapter.search).toHaveBeenCalledTimes(2)
         // See the sequential test above for why this small gap is needed - it keeps
@@ -215,13 +215,13 @@ describe("searchManga timeout-skip memo", () => {
         // concurrent pair to 1 tick, two MORE sequential timeouts (p3, p4) are
         // needed to reach the threshold, so both still dispatch.
         const p3 = searchManga("anything")
-        await vi.advanceTimersByTimeAsync(8000)
+        await vi.advanceTimersByTimeAsync(10000)
         await p3
         await vi.advanceTimersByTimeAsync(1)
         expect(hangingAdapter.search).toHaveBeenCalledTimes(3)
 
         const p4 = searchManga("anything")
-        await vi.advanceTimersByTimeAsync(8000)
+        await vi.advanceTimersByTimeAsync(10000)
         await p4
         expect(hangingAdapter.search).toHaveBeenCalledTimes(4)
 
@@ -229,13 +229,13 @@ describe("searchManga timeout-skip memo", () => {
         // as an eager first probe (lastProbeAt not yet stamped - see the sequential
         // test above for the same quirk), and times out again too.
         const p5 = searchManga("anything")
-        await vi.advanceTimersByTimeAsync(8000)
+        await vi.advanceTimersByTimeAsync(10000)
         await p5
         expect(hangingAdapter.search).toHaveBeenCalledTimes(5)
 
         // Now genuinely within the retry window of that stamped probe - skipped.
         const p6 = searchManga("anything")
-        await vi.advanceTimersByTimeAsync(8000)
+        await vi.advanceTimersByTimeAsync(10000)
         await p6
         expect(hangingAdapter.search).toHaveBeenCalledTimes(5)
     })
@@ -249,7 +249,7 @@ describe("searchManga timeout-skip memo", () => {
 
         for (let i = 0; i < 3; i++) {
             const pending = searchManga("anything")
-            await vi.advanceTimersByTimeAsync(8000)
+            await vi.advanceTimersByTimeAsync(10000)
             await pending
         }
         expect(hangingAdapter.search).toHaveBeenCalledTimes(3)
@@ -268,29 +268,29 @@ describe("searchManga timeout-skip memo", () => {
         expect(partials).toEqual([{ sourceId: id, titles: ["Streaming Found"] }])
     })
 
-    it("applies a 12s race timeout for mangahub search while other adapters use the 8s default", async () => {
+    it("applies a 12s race timeout for mangahub search while other adapters use the 10s default", async () => {
         const { searchManga } = await import("./sources")
         const mangahubAdapter = makeAdapter("mangahub", [])
         mangahubAdapter.search = vi.fn(
             () =>
                 new Promise(resolve => {
-                    setTimeout(() => resolve([result("Searchable Title", "mangahub")]), 9000)
+                    setTimeout(() => resolve([result("Searchable Title", "mangahub")]), 11000)
                 })
         )
         const otherAdapter = makeAdapter("other-source", [])
         otherAdapter.search = vi.fn(
             () =>
                 new Promise(resolve => {
-                    setTimeout(() => resolve([result("Searchable Title", "other-source")]), 9000)
+                    setTimeout(() => resolve([result("Searchable Title", "other-source")]), 11000)
                 })
         )
         listMock = () => [mangahubAdapter, otherAdapter]
 
         const pending = searchManga("searchable")
-        await vi.advanceTimersByTimeAsync(9000)
+        await vi.advanceTimersByTimeAsync(11000)
         const results = await pending
 
-        // other-source's 8s cap fires before its 9s response lands - only mangahub
+        // other-source's 10s cap fires before its 11s response lands - only mangahub
         // (12s cap) survives to return a result.
         expect(results.map(r => r.sourceId)).toEqual(["mangahub"])
     })
