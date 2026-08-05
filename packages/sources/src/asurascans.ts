@@ -96,18 +96,26 @@ function extractImages(html: string): string[] {
     ].map(m => m[1]!)
 }
 
+// A chapter reader page's og:title / <title> is "<Series> Chapter <n>", so the
+// bare split leaves a "Chapter N" tail that would become the stored library title.
+// Drop that trailing chapter marker to recover the series name.
+function stripChapterSuffix(title: string): string {
+    return title.replace(/\s+chapter\s+\d+(?:[.-]\d+)?\s*$/i, "").trim()
+}
+
 function extractTitle(html: string, slug: string): string {
     const og =
         html.match(/<meta\b[^>]*\bproperty=["']og:title["'][^>]*\bcontent=["']([^"']+)["']/i) ??
         html.match(/<meta\b[^>]*\bcontent=["']([^"']+)["'][^>]*\bproperty=["']og:title["']/i)
     if (og?.[1]) {
-        const t = og[1].split(/\s+[-|]\s+/)[0]?.trim()
+        const t = stripChapterSuffix(og[1].split(/\s+[-|]\s+/)[0]?.trim() ?? "")
         if (t) return t
     }
-    const t = html
+    const raw = html
         .match(/<title>([^<]+)<\/title>/i)?.[1]
         ?.split(/\s+[-|]\s+/)[0]
         ?.trim()
+    const t = raw ? stripChapterSuffix(raw) : ""
     if (t) return t
     return titleFromSlug(slug)
 }
