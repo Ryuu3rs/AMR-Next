@@ -160,7 +160,10 @@ function mapMediaStatus(status: string | null | undefined): MangaStatus {
 // Pure mapping - exported for tests, no network.
 export function mapMediaListEntry(raw: RawMediaListEntry): AniListListEntry {
     const media = raw.media ?? {}
-    const title = media.title?.english ?? media.title?.romaji ?? media.title?.native ?? ""
+    // Romaji first: it matches the title AniList shows on the entry page and is what
+    // scanlation sources index under, so mirror search finds far more hits than the
+    // official English title (which often differs from the scanlation name).
+    const title = media.title?.romaji ?? media.title?.english ?? media.title?.native ?? ""
     const coverUrl = media.coverImage?.extraLarge ?? media.coverImage?.large ?? undefined
     const genres = (media.genres ?? []).filter((g): g is string => typeof g === "string" && g.length > 0)
     return {

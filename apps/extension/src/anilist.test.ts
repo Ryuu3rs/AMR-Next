@@ -105,11 +105,11 @@ describe("mapMediaListEntry", () => {
         }
     })
 
-    it("prefers english, falls back to romaji then native", () => {
+    it("prefers romaji, falls back to english then native", () => {
         expect(mapMediaListEntry({ media: { id: 1, title: { english: "E", romaji: "R", native: "N" } } }).title).toBe(
-            "E"
+            "R"
         )
-        expect(mapMediaListEntry({ media: { id: 1, title: { romaji: "R", native: "N" } } }).title).toBe("R")
+        expect(mapMediaListEntry({ media: { id: 1, title: { english: "E", native: "N" } } }).title).toBe("E")
         expect(mapMediaListEntry({ media: { id: 1, title: { native: "N" } } }).title).toBe("N")
     })
 
