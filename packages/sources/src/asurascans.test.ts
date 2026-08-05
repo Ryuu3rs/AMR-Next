@@ -155,4 +155,19 @@ describe("asuraScansAdapter.resolveChapter", () => {
         expect(result.chapter.url).toBe(CHAPTER_URL)
         expect(result.manga.sourceMangaId).toBe(LIVE_SLUG)
     })
+
+    it("stores the clean series title, not the chapter-page title, and returns a resolvable chapter", async () => {
+        const requests: string[] = []
+        const context = createContext({ [`/comics/${LIVE_SLUG}/chapter/${CHAPTER_NUM}`]: chapterHtml }, requests)
+
+        const result = await asuraScansAdapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)
+
+        expect(result.manga.manga.title).toBe("Dungeon Odyssey")
+        expect(result.manga.manga.title).not.toMatch(/chapter/i)
+        expect(result.manga.manga.normalizedTitle).toBe("dungeon odyssey")
+        expect(result.manga.sourceMangaId).toBe(LIVE_SLUG)
+        expect(result.manga.url).toBe(MANGA_URL)
+        expect(result.chapter.sortKey).toBe(157)
+        expect(result.chapter.mangaId).toBe(result.manga.manga.id)
+    })
 })
