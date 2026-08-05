@@ -66,6 +66,7 @@ export const MUTATION_SCOPES: Partial<Record<RuntimeRequest["type"], LiveScope[]
     "library:relink": ["library", "chapters"],
     "library:link-url": ["library"],
     "library:switch": ["library", "chapters"],
+    "library:add": ["library", "chapters"],
     "library:covers:backfill": ["library"],
     "library:note": ["library"],
     "library:reading-prefs": ["library"],

@@ -62,6 +62,14 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         mangaUrl: z.url(),
         allowTabFallback: z.boolean().optional()
     }),
+    z.object({
+        type: z.literal("library:add"),
+        sourceId: z.string().min(1),
+        sourceMangaId: z.string().min(1),
+        mangaUrl: z.url(),
+        title: z.string().min(1),
+        coverUrl: z.string().optional()
+    }),
     z.object({ type: z.literal("library:covers:backfill"), mangaId: z.string().optional() }),
     z.object({ type: z.literal("stats:get") }),
     z.object({ type: z.literal("history:list") }),
