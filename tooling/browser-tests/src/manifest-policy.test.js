@@ -90,6 +90,7 @@ const allowedRequiredHosts = [
     "https://read.oppai.stream/*",
     "https://s4.anilist.co/*",
     "https://spiderscans.xyz/*",
+    "https://tritinia.com/*",
     "https://tritinia.org/*",
     "https://uploads.mangadex.org/*",
     "https://webtoons.com/*",
