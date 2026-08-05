@@ -2071,6 +2071,87 @@
         })
     }
 
+    let addingResultKey = $state<string | null>(null)
+    let searchAddMessage = $state("")
+
+    function resultKey(result: SearchResult): string {
+        return `${result.sourceId}:${result.sourceMangaId}`
+    }
+
+    function resultInLibrary(result: SearchResult): boolean {
+        const id = `${result.sourceId}:manga:${result.sourceMangaId}`
+        return library.some(m => m.id === id)
+    }
+
+    // Primary click on a search result adds the series in an unread state instead of
+    // leaving the app. page:capture is the same "add" path addByUrl uses - it creates
+    // the library entry without marking any chapter read. It needs a capturable chapter
+    // URL though, and a search result only carries the series-page URL, so MangaDex
+    // (the one source that lists chapters over runtime) is bridged to its latest chapter
+    // first. Dedupe is handled up front by the stable library id and again by
+    // page:capture/saveResolvedChapter, which merge onto an existing record.
+    async function addResult(result: SearchResult) {
+        if (resultInLibrary(result)) {
+            searchAddMessage = `${result.title} is already in your library.`
+            return
+        }
+        addingResultKey = resultKey(result)
+        searchAddMessage = ""
+        try {
+            const granted = await browser.permissions.request({ origins: sourceOrigins() })
+            if (!granted) {
+                searchAddMessage = "Site access was not granted."
+                return
+            }
+            let captureUrl = result.url
+            if (result.sourceId === "mangadex") {
+                try {
+                    const chapters = await sendRuntimeMessage<Array<{ url: string }>>({
+                        type: "manga:chapters",
+                        mangaId: result.sourceMangaId
+                    })
+                    if (chapters.length > 0) captureUrl = chapters[0]!.url
+                } catch {
+                    // Fall back to the series URL below.
+                }
+            }
+            const captured = await sendRuntimeMessage<{ supported: boolean; added?: boolean }>({
+                type: "page:capture",
+                url: captureUrl
+            })
+            if (captured.supported && captured.added) {
+                searchAddMessage = "Added to your library."
+                await load()
+            } else if (captured.supported) {
+                searchAddMessage = "Automatic adding is turned off in settings."
+            } else {
+                searchAddMessage = `Couldn't add ${result.title} automatically - use Open on site to add it.`
+            }
+        } catch (cause) {
+            searchAddMessage = cause instanceof Error ? cause.message : "This title could not be added."
+        } finally {
+            addingResultKey = null
+        }
+    }
+
+    // Ctrl/Cmd-click keeps the old behavior (open on the source site / MangaDex chapter
+    // list) so that route isn't lost now that a plain click adds to the library.
+    function activateResult(event: MouseEvent, result: SearchResult) {
+        if (event.ctrlKey || event.metaKey) {
+            void openResult(result)
+            return
+        }
+        void addResult(result)
+    }
+
+    // Middle-click opens on the source site without adding.
+    function auxActivateResult(event: MouseEvent, result: SearchResult) {
+        if (event.button === 1) {
+            event.preventDefault()
+            void openResult(result)
+        }
+    }
+
     const allCategories = $derived(
         [...new Set(library.flatMap(m => m.categories ?? []))].sort((a, b) => a.localeCompare(b))
     )
@@ -2810,6 +2891,7 @@
                         </label>
                         <span class="muted">Group duplicates across sources</span>
                     </div>
+                    {#if searchAddMessage}<p class="notice">{searchAddMessage}</p>{/if}
                     {#if groupDuplicates}
                         <div class="search-results">
                             {#each searchWorks as work (work.key)}
@@ -2824,14 +2906,31 @@
                                         <p class="muted">
                                             {work.members.length} source{work.members.length === 1 ? "" : "s"}
                                         </p>
+                                        <p class="muted">Click a source to add it - Ctrl-click to open on site</p>
                                         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
                                             {#each work.members as member (member.sourceId + member.sourceMangaId)}
-                                                <button
-                                                    type="button"
-                                                    class="btn-sm"
-                                                    onclick={() => void openResult(member)}>
-                                                    {sourceMeta.get(member.sourceId)?.name ?? member.sourceId}
-                                                </button>
+                                                {@const inLibrary = resultInLibrary(member)}
+                                                <span style="display:inline-flex;align-items:center;gap:2px">
+                                                    <button
+                                                        type="button"
+                                                        class="btn-sm"
+                                                        disabled={inLibrary || addingResultKey === resultKey(member)}
+                                                        title={inLibrary
+                                                            ? "Already in your library"
+                                                            : "Add to library (Ctrl-click or middle-click to open on site)"}
+                                                        onclick={e => activateResult(e, member)}
+                                                        onauxclick={e => auxActivateResult(e, member)}>
+                                                        {inLibrary ? "✓ " : ""}{sourceMeta.get(member.sourceId)?.name ??
+                                                            member.sourceId}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="btn-sm"
+                                                        title="Open on source site"
+                                                        aria-label="Open {sourceMeta.get(member.sourceId)?.name ??
+                                                            member.sourceId} on site"
+                                                        onclick={() => void openResult(member)}>↗</button>
+                                                </span>
                                             {/each}
                                         </div>
                                     </div>
@@ -2855,6 +2954,7 @@
                                 {#if expanded}
                                     <div class="search-results">
                                         {#each results as result}
+                                            {@const inLibrary = resultInLibrary(result)}
                                             <div class="search-result">
                                                 <div class="result-cover">
                                                     {#if result.coverUrl}<img
@@ -2868,9 +2968,29 @@
                                                         {#if result.latestChapter}latest ch {result.latestChapter}{:else}-{/if}
                                                     </p>
                                                 </div>
-                                                <button type="button" onclick={() => void openResult(result)}>
-                                                    {result.sourceId === "mangadex" ? "Chapters" : "Open"}
-                                                </button>
+                                                <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+                                                    <button
+                                                        type="button"
+                                                        disabled={inLibrary || addingResultKey === resultKey(result)}
+                                                        title={inLibrary
+                                                            ? "Already in your library"
+                                                            : "Add to library (Ctrl-click or middle-click to open on site)"}
+                                                        onclick={e => activateResult(e, result)}
+                                                        onauxclick={e => auxActivateResult(e, result)}>
+                                                        {#if inLibrary}✓ In library{:else if addingResultKey === resultKey(result)}Adding…{:else}Add{/if}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        title={result.sourceId === "mangadex"
+                                                            ? "Browse chapters"
+                                                            : "Open on source site"}
+                                                        aria-label={result.sourceId === "mangadex"
+                                                            ? "Browse chapters"
+                                                            : "Open on source site"}
+                                                        onclick={() => void openResult(result)}>
+                                                        {result.sourceId === "mangadex" ? "Chapters" : "↗"}
+                                                    </button>
+                                                </div>
                                             </div>
                                         {/each}
                                     </div>
