@@ -166,7 +166,7 @@ main.fit-width .page img {
 main.fit-height .page img {
     width: auto;
     max-width: 100%;
-    height: calc(100vh - 80px);
+    height: calc(100vh - 96px);
 }
 
 main.fit-contain .page img {
@@ -230,6 +230,32 @@ main.single.fit-original .page.spread img {
 }
 main.single.dir-rtl .page.spread {
     flex-direction: row-reverse;
+}
+
+/* Seamless spread: no gutter, and each half fills its own 50% slot with its inner
+   edge pinned to the centre so a split artwork lines up. The left page is pushed
+   flush-right and the right page flush-left; RTL swaps which page is which. */
+main.single .page.spread.seamless {
+    gap: 0;
+}
+main.single .page.spread.seamless img,
+main.single.fit-width .page.spread.seamless img,
+main.single.fit-height .page.spread.seamless img,
+main.single.fit-contain .page.spread.seamless img,
+main.single.fit-original .page.spread.seamless img {
+    flex: 0 1 50%;
+    max-width: 50%;
+    object-fit: contain;
+    object-position: right center;
+}
+main.single .page.spread.seamless img:last-child {
+    object-position: left center;
+}
+main.single.dir-rtl .page.spread.seamless img {
+    object-position: left center;
+}
+main.single.dir-rtl .page.spread.seamless img:last-child {
+    object-position: right center;
 }
 
 .page-num {
