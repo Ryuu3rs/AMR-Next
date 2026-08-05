@@ -51,13 +51,19 @@ function extractChapterId(url: URL): string | undefined {
 }
 
 // Extract a float chapter number from a title string, e.g. "Chapter 1", "Ch. 1.5",
-// "Vol.2 Chapter 12". Returns undefined when the text has no parseable chapter number at all
-// (e.g. "Extra", "Special") - callers decide the fallback since the right one differs by
-// context (see extractChapterList vs extractChapterPageMeta below).
+// "Vol.2 Chapter 12", "Episode 246". Weeb Central labels webtoon series "Episode N" rather than
+// "Chapter N" (live-verified), so an episode marker must be recognised too - otherwise every
+// episode parses to undefined and assignListSortKeys collapses the whole series to position/1000
+// sortKeys (Episode 17 -> 0.017, Episode 269 -> 0.269), sinking a caught-up series below its own
+// real lastRead. Falls back to the first bare number so a numeric-only label still resolves.
+// Returns undefined when the text has no parseable number at all (e.g. "Extra", "Special") -
+// callers decide the fallback since the right one differs by context (see extractChapterList vs
+// extractChapterPageMeta below).
 function chapterNumberFromText(text: string): number | undefined {
-    const m = text.match(/(?:ch(?:apter)?\.?\s*)(\d+(?:[.-]\d+)?)/i)
-    const raw = m ? captureGroup(m, 1) : undefined
-    return parseChapterNumber(raw?.replace("-", "."))
+    const marked = text.match(/\b(?:chapter|chap|ch|episode|ep)\b\.?\s*#?\s*(\d+(?:[.-]\d+)?)/i)
+    if (marked?.[1] !== undefined) return parseChapterNumber(marked[1].replace("-", "."))
+    const bare = text.match(/\b(\d+(?:\.\d+)?)\b/)
+    return bare?.[1] !== undefined ? parseChapterNumber(bare[1]) : undefined
 }
 
 // Weeb Central chapter/search anchors wrap a hidden "Last Read" indicator span
