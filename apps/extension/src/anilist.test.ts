@@ -121,6 +121,17 @@ describe("mapMediaListEntry", () => {
         expect(mapMediaListEntry({ media: { id: 1 } }).coverUrl).toBeUndefined()
     })
 
+    it("maps the entry list status to our reading-status override (paused/dropped/planning only)", () => {
+        expect(mapMediaListEntry({ status: "PAUSED", media: { id: 1 } }).listStatus).toBe("paused")
+        expect(mapMediaListEntry({ status: "DROPPED", media: { id: 1 } }).listStatus).toBe("dropped")
+        expect(mapMediaListEntry({ status: "PLANNING", media: { id: 1 } }).listStatus).toBe("planning")
+        // Derived states carry no override.
+        expect(mapMediaListEntry({ status: "CURRENT", media: { id: 1 } }).listStatus).toBeUndefined()
+        expect(mapMediaListEntry({ status: "COMPLETED", media: { id: 1 } }).listStatus).toBeUndefined()
+        expect(mapMediaListEntry({ status: "REPEATING", media: { id: 1 } }).listStatus).toBeUndefined()
+        expect(mapMediaListEntry({ media: { id: 1 } }).listStatus).toBeUndefined()
+    })
+
     it("carries anilistId, genres, and progress; defaults a missing progress to 0", () => {
         const mapped = mapMediaListEntry({
             progress: 12,

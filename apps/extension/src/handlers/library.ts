@@ -390,6 +390,15 @@ export const libraryHandlers: HandlerMap = {
         return null
     },
 
+    // Manual reading-status override for the non-derivable states (paused/dropped/
+    // planning). null clears it, restoring the derived reading/completed/unread status.
+    "library:status": async request => {
+        await updateManga(request.mangaId, {
+            readingStatus: request.status ?? undefined
+        } as Partial<LibraryManga>)
+        return null
+    },
+
     "library:dismiss": async request => {
         // Clear the hostname-style sourceId that flags this as a broken import
         // so it no longer appears in the reconcile panel.

@@ -127,10 +127,18 @@ export type AniListListEntry = {
     status: MangaStatus
     genres: string[]
     progress: number
+    // The user's list status on AniList (MediaListStatus), mapped to our explicit
+    // reading-status overrides. Only paused/dropped/planning carry over; CURRENT /
+    // COMPLETED / REPEATING stay undefined because our reading/completed status is
+    // derived from read progress, not stored (see reading-status.ts).
+    listStatus?: "paused" | "dropped" | "planning"
 }
 
 type RawMediaListEntry = {
     progress?: number | null
+    // MediaListStatus on the entry itself (CURRENT/PLANNING/COMPLETED/DROPPED/PAUSED/
+    // REPEATING) - distinct from media.status below, which is the publication status.
+    status?: string | null
     media?: {
         id?: number | null
         title?: { romaji?: string | null; english?: string | null; native?: string | null } | null
@@ -157,9 +165,26 @@ function mapMediaStatus(status: string | null | undefined): MangaStatus {
     }
 }
 
+// AniList MediaListStatus -> our explicit reading-status override. Only the states we
+// can't derive from read progress carry over; CURRENT/COMPLETED/REPEATING map to
+// undefined (derived from progress instead).
+function mapListStatus(status: string | null | undefined): "paused" | "dropped" | "planning" | undefined {
+    switch (status) {
+        case "PAUSED":
+            return "paused"
+        case "DROPPED":
+            return "dropped"
+        case "PLANNING":
+            return "planning"
+        default:
+            return undefined
+    }
+}
+
 // Pure mapping - exported for tests, no network.
 export function mapMediaListEntry(raw: RawMediaListEntry): AniListListEntry {
     const media = raw.media ?? {}
+    const listStatus = mapListStatus(raw.status)
     // Romaji first: it matches the title AniList shows on the entry page and is what
     // scanlation sources index under, so mirror search finds far more hits than the
     // official English title (which often differs from the scanlation name).
@@ -172,7 +197,8 @@ export function mapMediaListEntry(raw: RawMediaListEntry): AniListListEntry {
         ...(coverUrl ? { coverUrl } : {}),
         status: mapMediaStatus(media.status),
         genres,
-        progress: typeof raw.progress === "number" && Number.isFinite(raw.progress) ? raw.progress : 0
+        progress: typeof raw.progress === "number" && Number.isFinite(raw.progress) ? raw.progress : 0,
+        ...(listStatus ? { listStatus } : {})
     }
 }
 

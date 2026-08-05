@@ -19,6 +19,13 @@ export type AppSettings = {
     updateIntervalHours: 0 | 6 | 12 | 24
     notifyNewChapters: boolean
     autoBackup: boolean
+    // Auto-pause a title whose most recent read is older than this many days (0 = off).
+    // Consumed by effectiveReadingStatus (reading-status.ts).
+    autoPauseDays: number
+    // When importing an AniList list, include entries the user has PAUSED / DROPPED
+    // there (default true). When false, those entries are skipped on import.
+    anilistImportPaused: boolean
+    anilistImportDropped: boolean
 }
 
 const settingsKey = "settings"
@@ -38,7 +45,10 @@ export const defaultSettings: AppSettings = {
     blurNsfw: true,
     updateIntervalHours: 12,
     notifyNewChapters: true,
-    autoBackup: true
+    autoBackup: true,
+    autoPauseDays: 0,
+    anilistImportPaused: true,
+    anilistImportDropped: true
 }
 
 export async function getSettings(): Promise<AppSettings> {

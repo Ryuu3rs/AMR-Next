@@ -56,6 +56,7 @@ export const MUTATION_SCOPES: Partial<Record<RuntimeRequest["type"], LiveScope[]
     "library:rate": ["library"],
     "library:manual": ["library"],
     "library:hold": ["library"],
+    "library:status": ["library"],
     "library:nsfw": ["library"],
     "library:categories": ["library"],
     "library:numbers": ["library"],

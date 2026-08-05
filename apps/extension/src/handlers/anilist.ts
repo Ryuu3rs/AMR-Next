@@ -1,5 +1,7 @@
 import { normalizeTitle } from "@amr/normalize"
 import { addImportedManga, db, updateManga, type LibraryManga } from "../database"
+import { getSettings } from "../settings"
+import { neverRead } from "../reading-status"
 import {
     getAniListConfig,
     setAniListConfig,
@@ -40,12 +42,17 @@ export async function runAniListImport(): Promise<AniListImportResult> {
     const config = await getAniListConfig()
     if (!config.token) throw new Error("Connect your AniList account first")
     const entries = await getViewerMangaList(config.token)
+    const settings = await getSettings()
     const now = Date.now()
     const candidates: LibraryManga[] = []
     for (const entry of entries) {
         try {
             const title = entry.title.trim()
             if (!title || entry.anilistId <= 0) continue
+            // Respect the import-status opt-outs: when the user turned off importing
+            // paused/dropped titles, skip those AniList entries entirely.
+            if (entry.listStatus === "paused" && !settings.anilistImportPaused) continue
+            if (entry.listStatus === "dropped" && !settings.anilistImportDropped) continue
             candidates.push({
                 id: `anilist:manga:${entry.anilistId}`,
                 title,
@@ -60,7 +67,8 @@ export async function runAniListImport(): Promise<AniListImportResult> {
                 manualTracking: true,
                 ...(entry.coverUrl ? { coverUrl: entry.coverUrl } : {}),
                 ...(entry.genres.length > 0 ? { genres: entry.genres } : {}),
-                ...(entry.progress > 0 ? { lastReadChapterNumber: entry.progress } : {})
+                ...(entry.progress > 0 ? { lastReadChapterNumber: entry.progress } : {}),
+                ...(entry.listStatus ? { readingStatus: entry.listStatus } : {})
             })
         } catch (error) {
             console.warn("[AMR] AniList import: skipping a malformed entry", error)
@@ -169,6 +177,29 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
             // AniList allows ~90 requests/min; two calls per title -> ~1.3s spacing.
             await new Promise<void>(r => setTimeout(r, 1300))
         }
+        // Reconcile removals: a title still in the library but no longer on the user's
+        // AniList list is treated as dropped IF they've read it (local read progress is
+        // real signal the title was tracked, not junk). An unread local title is left
+        // untouched - never delete, never tag. Gated on membership sync, the same flag
+        // that authorizes AniList-driven membership changes. Skipped on abort.
+        if (membership && !anilistSyncAborted) {
+            try {
+                const remote = await getViewerMangaList(token)
+                const remoteIds = new Set(remote.map(e => e.anilistId))
+                const orphaned = await db.manga
+                    .filter(m => m.anilistId !== undefined && !remoteIds.has(m.anilistId))
+                    .toArray()
+                for (const m of orphaned) {
+                    if (m.readingStatus === "dropped" || neverRead(m)) continue
+                    await updateManga(m.id, { readingStatus: "dropped" } as Partial<LibraryManga>)
+                }
+            } catch (error) {
+                // A reconcile failure (rate limit, network) must not fail the whole sync -
+                // the push above already succeeded. Leave it for the next run.
+                console.warn("[AMR] AniList reconcile failed", error)
+            }
+        }
+
         // Only record a completed sync when the loop actually finished. An aborted run
         // (pending extension update) processed only part of the library, so stamping
         // lastSyncAt would mislabel a partial push as a full sync.
