@@ -19,6 +19,8 @@
     let spread = $state<1 | 2>(1)
     // 2-up "offset": show page 0 (cover) alone, then pair [1,2],[3,4],... per title.
     let spreadOffset = $state(false)
+    // 2-up "seamless": drop the centre gutter so a connected spread's two halves join.
+    let spreadSeamless = $state(false)
     let direction = $state<ReadingDirection>("ltr")
     let pageFit = $state<PageFit>("width")
     let showPageNumber = $state(true)
@@ -490,6 +492,11 @@
         if (mangaId) await browser.storage.local.set({ [`readerSpreadOffset:${mangaId}`]: next })
     }
 
+    async function setSpreadSeamless(next: boolean) {
+        spreadSeamless = next
+        if (mangaId) await browser.storage.local.set({ [`readerSeamless:${mangaId}`]: next })
+    }
+
     // Per-series "Webtoon view" (no-gap continuous) override - mirrors setDirection's
     // shape, but persists to the library record via library:reading-prefs instead of
     // local storage, since this is a per-manga DB override rather than a device-local one.
@@ -535,6 +542,7 @@
     // Two-page spread only applies to paged (single) LTR/RTL reading, never to scroll.
     const effectiveSpread = $derived(effectiveMode === "single" && direction !== "vertical" ? spread : 1)
     const effectiveOffset = $derived(effectiveSpread === 2 && spreadOffset)
+    const effectiveSeamless = $derived(effectiveSpread === 2 && spreadSeamless)
     // The page indices shown in the current paged view (one, or a pair). Offset shows the
     // cover alone then pairs the rest. RTL ordering is handled in CSS (row-reverse).
     const spreadIndices = $derived(
@@ -654,6 +662,7 @@
                 const dirKey = `readerDirection:${mangaId}`
                 const spreadKey = `readerSpread:${mangaId}`
                 const spreadOffsetKey = `readerSpreadOffset:${mangaId}`
+                const spreadSeamlessKey = `readerSeamless:${mangaId}`
                 const [settings, stored, libraryManga] = await Promise.all([
                     sendRuntimeMessage<{
                         readingMode: "continuous" | "single"
@@ -664,7 +673,7 @@
                         preloadPages: number
                     }>({ type: "settings:get" }),
                     browser.storage.local
-                        .get([modeKey, dirKey, spreadKey, spreadOffsetKey])
+                        .get([modeKey, dirKey, spreadKey, spreadOffsetKey, spreadSeamlessKey])
                         .catch(() => ({}) as Record<string, unknown>),
                     sendRuntimeMessage<{
                         readingDirection?: ReadingDirection
@@ -677,6 +686,7 @@
                 mode = modeOverride === "single" || modeOverride === "continuous" ? modeOverride : settings.readingMode
                 spread = stored[spreadKey] === 2 ? 2 : 1
                 spreadOffset = stored[spreadOffsetKey] === true
+                spreadSeamless = stored[spreadSeamlessKey] === true
                 // Per-series DB override wins, then the local per-title override, then global.
                 direction =
                     libraryManga?.readingDirection ??
@@ -882,6 +892,16 @@
             showHelp = false
             return
         }
+        // Immersion: toggle the top bar. Reveal-on-scroll-up and mouse-to-top always
+        // bring it back too, so hiding can never strand the controls.
+        if (event.key === "h" || event.key === "H") {
+            chromeHidden = !chromeHidden
+            return
+        }
+        if (event.key === "Escape" && chromeHidden) {
+            chromeHidden = false
+            return
+        }
         // Chapter navigation works in any mode.
         if (event.key === "[") {
             goToChapter(prevUrl)
@@ -909,6 +929,9 @@
         else if (event.key === "ArrowLeft") (direction === "rtl" ? next : prev)()
     }}
     onscroll={onScroll}
+    onmousemove={event => {
+        if (chromeHidden && event.clientY < 60) chromeHidden = false
+    }}
     onpagehide={() => progressReporter?.flush()} />
 
 <svelte:document
@@ -999,6 +1022,14 @@
                         title="Offset: show the first page (cover) alone, then pair the rest"
                         onclick={() => void setSpreadOffset(!spreadOffset)}>
                         Offset
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        class:active={spreadSeamless}
+                        title="Seamless: drop the centre gutter so a split spread's halves join"
+                        onclick={() => void setSpreadSeamless(!spreadSeamless)}>
+                        Seamless
                     </button>
                 {/if}
             {/if}
@@ -1217,7 +1248,10 @@
     {:else if !chapter}
         <section class="message"><p>No chapter loaded.</p></section>
     {:else if effectiveMode === "single" && !imagesBroken}
-        <div class="page" class:spread={effectiveSpread === 2 && spreadIndices.length > 1}>
+        <div
+            class="page"
+            class:spread={effectiveSpread === 2 && spreadIndices.length > 1}
+            class:seamless={effectiveSeamless && spreadIndices.length > 1}>
             {#each spreadIndices as p (p)}
                 <img
                     src={pageSrcs[p]}
@@ -1296,6 +1330,10 @@
                 <div class="shortcut-row">
                     <span class="keys"><kbd>[</kbd> / <kbd>]</kbd></span>
                     <span class="label">Previous / next chapter</span>
+                </div>
+                <div class="shortcut-row">
+                    <span class="keys"><kbd>h</kbd></span>
+                    <span class="label">Hide / show the top bar (or move the mouse to the top edge)</span>
                 </div>
                 <div class="shortcut-row">
                     <span class="keys"><kbd>?</kbd></span>
