@@ -1,5 +1,5 @@
 import type { ChapterRecord, MangaRecord, SourceLinkRecord } from "@amr/contracts"
-import { SourceError } from "@amr/source-sdk"
+import { SourceError, UNNUMBERED_SORT_KEY } from "@amr/source-sdk"
 import { sourceRegistry } from "@amr/sources"
 import {
     db,
@@ -259,6 +259,90 @@ export const libraryHandlers: HandlerMap = {
 
     "library:get": async request => {
         return (await db.manga.get(request.mangaId)) ?? null
+    },
+
+    // Add a series to the library in an UNREAD state from a search result's series-level
+    // info. Works for every source (unlike page:capture, which needs a capturable CHAPTER
+    // URL a search result doesn't carry). Deduped by the stable source-scoped id; a title
+    // already present is a no-op that reports added:false rather than a duplicate.
+    "library:add": async request => {
+        const mangaId = `${request.sourceId}:manga:${request.sourceMangaId}`
+        if (await db.manga.get(mangaId)) return { added: false, mangaId }
+
+        const now = Date.now()
+        const manga: MangaRecord = {
+            id: mangaId,
+            title: request.title,
+            normalizedTitle: request.title.toLocaleLowerCase("en"),
+            ...(request.coverUrl ? { coverUrl: request.coverUrl } : {}),
+            authors: [],
+            status: "unknown",
+            addedAt: now,
+            updatedAt: now
+        }
+        const sourceLink: SourceLinkRecord = {
+            mangaId,
+            sourceId: request.sourceId,
+            sourceMangaId: request.sourceMangaId,
+            url: request.mangaUrl,
+            title: request.title,
+            addedAt: now,
+            updatedAt: now
+        }
+
+        // Best-effort: pull the series' chapter list so the unread count is right the moment
+        // the title lands. A failure (offline / anti-scrape / CF-gated source) must NOT fail
+        // the add - the record is still created and the background update check backfills
+        // chapters + latestChapterNumber later.
+        let chapters: ChapterRecord[] = []
+        try {
+            chapters = await listChaptersBySource(request.sourceId, request.sourceMangaId, request.mangaUrl)
+        } catch {
+            chapters = []
+        }
+
+        if (chapters.length > 0) {
+            // saveResolvedChapter is the DB layer's manga + link + chapters writer. The
+            // representative (latest numbered chapter, else the first) only sets the manga's
+            // latest-chapter fields - it writes NO progress row, so the title lands unread,
+            // and latestChapterNumber is set from the max finite sortKey.
+            const numbered = chapters.filter(c => Number.isFinite(c.sortKey))
+            const representative =
+                numbered.length > 0 ? numbered.reduce((max, c) => (c.sortKey > max.sortKey ? c : max)) : chapters[0]!
+            await saveResolvedChapter({ manga, chapter: representative, sourceLink, chapters })
+        } else {
+            // No chapters resolved - still create the record (manga + link) unread. No DB
+            // primitive writes a manga+link with no chapter, so drive saveResolvedChapter
+            // with a throwaway representative and an empty chapters list (nothing is written
+            // to db.chapters), then clear the dangling latest-chapter id it stamps from that
+            // placeholder. An UNNUMBERED sortKey keeps latestChapterNumber unset.
+            const placeholder: ChapterRecord = {
+                id: `${mangaId}:pending`,
+                mangaId,
+                sourceId: request.sourceId,
+                title: request.title,
+                url: request.mangaUrl,
+                sortKey: UNNUMBERED_SORT_KEY
+            }
+            await saveResolvedChapter({ manga, chapter: placeholder, sourceLink, chapters: [] })
+            await updateManga(mangaId, {
+                latestChapterId: undefined,
+                sourceUrl: request.mangaUrl
+            } as unknown as Partial<LibraryManga>)
+        }
+
+        // Best-effort cover cache so the cover renders from the extension origin (some CDNs
+        // refuse a service-worker fetch of a hotlinked <img>). Never fails the add.
+        if (request.coverUrl) {
+            try {
+                const blob = await fetchCoverBlob(request.coverUrl)
+                if (blob) await cacheCover(mangaId, blob)
+            } catch {
+                // best-effort; covers:backfill retries later
+            }
+        }
+
+        return { added: true, mangaId }
     },
 
     "library:remove": async request => {

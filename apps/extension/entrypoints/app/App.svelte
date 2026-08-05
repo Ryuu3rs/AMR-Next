@@ -2084,12 +2084,11 @@
     }
 
     // Primary click on a search result adds the series in an unread state instead of
-    // leaving the app. page:capture is the same "add" path addByUrl uses - it creates
-    // the library entry without marking any chapter read. It needs a capturable chapter
-    // URL though, and a search result only carries the series-page URL, so MangaDex
-    // (the one source that lists chapters over runtime) is bridged to its latest chapter
-    // first. Dedupe is handled up front by the stable library id and again by
-    // page:capture/saveResolvedChapter, which merge onto an existing record.
+    // leaving the app. library:add takes the result's own series-level fields and works
+    // for EVERY source (unlike the old page:capture path, which needed a capturable
+    // chapter URL a search result never carries, so non-MangaDex sources fell back to
+    // "open on site"). Dedupe is handled up front by the stable library id and again in
+    // the handler, which reports added:false for a title already present.
     async function addResult(result: SearchResult) {
         if (resultInLibrary(result)) {
             searchAddMessage = `${result.title} is already in your library.`
@@ -2103,29 +2102,19 @@
                 searchAddMessage = "Site access was not granted."
                 return
             }
-            let captureUrl = result.url
-            if (result.sourceId === "mangadex") {
-                try {
-                    const chapters = await sendRuntimeMessage<Array<{ url: string }>>({
-                        type: "manga:chapters",
-                        mangaId: result.sourceMangaId
-                    })
-                    if (chapters.length > 0) captureUrl = chapters[0]!.url
-                } catch {
-                    // Fall back to the series URL below.
-                }
-            }
-            const captured = await sendRuntimeMessage<{ supported: boolean; added?: boolean }>({
-                type: "page:capture",
-                url: captureUrl
+            const added = await sendRuntimeMessage<{ added: boolean; mangaId: string }>({
+                type: "library:add",
+                sourceId: result.sourceId,
+                sourceMangaId: result.sourceMangaId,
+                mangaUrl: result.url,
+                title: result.title,
+                ...(result.coverUrl ? { coverUrl: result.coverUrl } : {})
             })
-            if (captured.supported && captured.added) {
+            if (added.added) {
                 searchAddMessage = "Added to your library."
                 await load()
-            } else if (captured.supported) {
-                searchAddMessage = "Automatic adding is turned off in settings."
             } else {
-                searchAddMessage = `Couldn't add ${result.title} automatically - use Open on site to add it.`
+                searchAddMessage = `${result.title} is already in your library.`
             }
         } catch (cause) {
             searchAddMessage = cause instanceof Error ? cause.message : "This title could not be added."
