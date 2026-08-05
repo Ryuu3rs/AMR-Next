@@ -5,7 +5,7 @@
     import { sendRuntimeMessage } from "../../src/runtime"
     import { subscribeLive } from "../../src/live"
     import { createProgressReporter } from "../../src/throttle"
-    import { spreadView } from "../../src/reader-spread"
+    import { spreadRows, spreadView } from "../../src/reader-spread"
 
     type ReadingDirection = "ltr" | "rtl" | "vertical"
     type PageFit = "width" | "height" | "contain" | "original"
@@ -539,12 +539,26 @@
 
     // Vertical (webtoon) direction always scrolls continuously.
     const effectiveMode = $derived(direction === "vertical" ? "continuous" : mode)
-    // Two-page spread only applies to paged (single) LTR/RTL reading, never to scroll.
-    const effectiveSpread = $derived(effectiveMode === "single" && direction !== "vertical" ? spread : 1)
+    // Two-page spread is a continuous side-by-side scroll; it never applies to the paged
+    // single view or to vertical direction.
+    const effectiveSpread = $derived(effectiveMode === "continuous" && direction !== "vertical" && spread === 2 ? 2 : 1)
     const effectiveOffset = $derived(effectiveSpread === 2 && spreadOffset)
     const effectiveSeamless = $derived(effectiveSpread === 2 && spreadSeamless)
-    // The page indices shown in the current paged view (one, or a pair). Offset shows the
-    // cover alone then pairs the rest. RTL ordering is handled in CSS (row-reverse).
+    // The single labelled 3-way view control: Strip (continuous 1-up), Single (paged 1-up),
+    // Double (continuous 2-up spreads).
+    type ViewMode = "strip" | "single" | "double"
+    const viewMode = $derived<ViewMode>(
+        effectiveMode === "single" ? "single" : effectiveSpread === 2 ? "double" : "strip"
+    )
+
+    function setView(v: ViewMode) {
+        if (v === "strip") void Promise.all([setMode("continuous"), setSpread(1)])
+        else if (v === "single") void Promise.all([setMode("single"), setSpread(1)])
+        else void Promise.all([setMode("continuous"), setSpread(2)])
+    }
+
+    // The page indices shown in the current paged (single) view. In double the rows come
+    // from spreadRows instead. RTL ordering is handled in CSS (row-reverse).
     const spreadIndices = $derived(
         spreadView(currentPage, effectiveSpread, effectiveOffset, chapter?.pages.length ?? 0).indices
     )
@@ -553,6 +567,23 @@
     const progressPct = $derived(
         chapter && chapter.pages.length > 0 ? Math.round(((currentPage + 1) / chapter.pages.length) * 100) : 0
     )
+
+    // On-screen page nav for the single paged view: grey out at the ends (nextStart/prevStart
+    // collapse onto the current start there, mirroring the keyboard handler's guards).
+    const pageNavState = $derived.by(() => {
+        if (!chapter) return { atStart: true, atEnd: true }
+        const view = spreadView(currentPage, effectiveSpread, effectiveOffset, chapter.pages.length)
+        const start = view.indices[0]!
+        return { atStart: view.prevStart === start, atEnd: view.nextStart === start }
+    })
+
+    function pageNav(dir: "prev" | "next") {
+        if (!chapter) return
+        const view = spreadView(currentPage, effectiveSpread, effectiveOffset, chapter.pages.length)
+        const start = view.indices[0]!
+        const target = dir === "next" ? view.nextStart : view.prevStart
+        if (target !== start) recordProgress(target)
+    }
 
     function toggleZoom() {
         fitOverride = fitOverride ? null : "original"
@@ -942,7 +973,7 @@
 
 <header class:chrome-hidden={chromeHidden}>
     <div class="header-left">
-        <button type="button" class="btn-back" onclick={() => void goToApp()}>← Dashboard</button>
+        <button type="button" class="btn-back" onclick={() => void goToApp()}>← Dash</button>
     </div>
     <div class="header-title">
         <strong>{chapter?.manga.manga.title ?? (resolving ? "Loading…" : "Reader")}</strong>
@@ -989,15 +1020,51 @@
                     title="Next chapter"
                     onclick={() => goToChapter(nextUrl)}>Next ›</button>
             {/if}
+            {#if viewMode === "single"}
+                <button
+                    type="button"
+                    class="btn-sm nav-page"
+                    disabled={pageNavState.atStart}
+                    title="Previous page"
+                    aria-label="Previous page"
+                    onclick={() => pageNav("prev")}>◀</button>
+            {/if}
             <span class="page-count">{currentPage + 1} / {chapter.pages.length}</span>
-            <button
-                type="button"
-                class="btn-sm"
-                disabled={direction === "vertical"}
-                title={direction === "vertical" ? "Vertical mode always scrolls" : "Toggle reading mode"}
-                onclick={() => void setMode(mode === "continuous" ? "single" : "continuous")}>
-                {effectiveMode === "continuous" ? "Single" : "Scroll"}
-            </button>
+            {#if viewMode === "single"}
+                <button
+                    type="button"
+                    class="btn-sm nav-page"
+                    disabled={pageNavState.atEnd}
+                    title="Next page"
+                    aria-label="Next page"
+                    onclick={() => pageNav("next")}>▶</button>
+            {/if}
+            <div class="seg" role="group" aria-label="View mode">
+                <button
+                    type="button"
+                    class="seg-btn"
+                    class:seg-active={viewMode === "strip"}
+                    title="Strip: one continuous vertical scroll"
+                    onclick={() => setView("strip")}>Strip</button>
+                <button
+                    type="button"
+                    class="seg-btn"
+                    class:seg-active={viewMode === "single"}
+                    disabled={direction === "vertical"}
+                    title={direction === "vertical"
+                        ? "Vertical direction always scrolls as a strip"
+                        : "Single: one page at a time"}
+                    onclick={() => setView("single")}>Single</button>
+                <button
+                    type="button"
+                    class="seg-btn"
+                    class:seg-active={viewMode === "double"}
+                    disabled={direction === "vertical"}
+                    title={direction === "vertical"
+                        ? "Vertical direction always scrolls as a strip"
+                        : "Double: two-page spreads, scrolling"}
+                    onclick={() => setView("double")}>Double</button>
+            </div>
             <button
                 type="button"
                 class="btn-sm"
@@ -1005,35 +1072,25 @@
                 onclick={cycleDirection}>
                 {direction === "ltr" ? "→" : direction === "rtl" ? "←" : "↓"}
             </button>
-            {#if effectiveMode === "single" && direction !== "vertical"}
+            {#if viewMode === "double"}
                 <button
                     type="button"
                     class="btn-sm"
-                    class:active={spread === 2}
-                    title="Single or double-page spread"
-                    onclick={() => void setSpread(spread === 2 ? 1 : 2)}>
-                    {spread === 2 ? "2-up" : "1-up"}
+                    class:active={spreadOffset}
+                    title="Offset: show the first page (cover) alone, then pair the rest"
+                    onclick={() => void setSpreadOffset(!spreadOffset)}>
+                    Offset
                 </button>
-                {#if effectiveSpread === 2}
-                    <button
-                        type="button"
-                        class="btn-sm"
-                        class:active={spreadOffset}
-                        title="Offset: show the first page (cover) alone, then pair the rest"
-                        onclick={() => void setSpreadOffset(!spreadOffset)}>
-                        Offset
-                    </button>
-                    <button
-                        type="button"
-                        class="btn-sm"
-                        class:active={spreadSeamless}
-                        title="Seamless: drop the centre gutter so a split spread's halves join"
-                        onclick={() => void setSpreadSeamless(!spreadSeamless)}>
-                        Seamless
-                    </button>
-                {/if}
+                <button
+                    type="button"
+                    class="btn-sm"
+                    class:active={spreadSeamless}
+                    title="Seamless: drop the centre gutter so a split spread's halves join"
+                    onclick={() => void setSpreadSeamless(!spreadSeamless)}>
+                    Seamless
+                </button>
             {/if}
-            {#if effectiveMode === "continuous"}
+            {#if viewMode === "strip"}
                 <button
                     type="button"
                     class="btn-sm"
@@ -1248,10 +1305,7 @@
     {:else if !chapter}
         <section class="message"><p>No chapter loaded.</p></section>
     {:else if effectiveMode === "single" && !imagesBroken}
-        <div
-            class="page"
-            class:spread={effectiveSpread === 2 && spreadIndices.length > 1}
-            class:seamless={effectiveSeamless && spreadIndices.length > 1}>
+        <div class="page">
             {#each spreadIndices as p (p)}
                 <img
                     src={pageSrcs[p]}
@@ -1265,13 +1319,32 @@
                     }} />
             {/each}
             {#if showPageNumber}
-                <span class="page-num">
-                    {spreadIndices.length > 1
-                        ? `${spreadIndices[0]! + 1}-${spreadIndices[1]! + 1}`
-                        : `${spreadIndices[0]! + 1}`} / {chapter.pages.length}
-                </span>
+                <span class="page-num">{spreadIndices[0]! + 1} / {chapter.pages.length}</span>
             {/if}
         </div>
+    {:else if effectiveSpread === 2 && direction !== "vertical" && !imagesBroken}
+        {#each spreadRows(chapter.pages.length, 2, effectiveOffset) as row (row[0])}
+            <div class="page spread" class:seamless={effectiveSeamless && row.length > 1}>
+                {#each row as p (p)}
+                    <img
+                        src={pageSrcs[p]}
+                        alt={`Page ${p + 1}`}
+                        loading={p < preloadPages ? "eager" : "lazy"}
+                        ondblclick={toggleZoom}
+                        onerror={e => handleImageError(e, p)}
+                        onload={e => {
+                            delete (e.currentTarget as HTMLImageElement).dataset.didFallback
+                            clearPageError(p)
+                            recordContinuousProgress(p)
+                        }} />
+                {/each}
+                {#if showPageNumber}
+                    <span class="page-num">
+                        {row.length > 1 ? `${row[0]! + 1}-${row[1]! + 1}` : `${row[0]! + 1}`} / {chapter.pages.length}
+                    </span>
+                {/if}
+            </div>
+        {/each}
     {:else if !imagesBroken}
         {#each pageSrcs as src, index}
             <div class="page">
@@ -1349,7 +1422,8 @@
                 </div>
             </div>
             <p class="help-note">
-                Page keys (<kbd>j</kbd>/<kbd>k</kbd>, arrows) apply in single-page mode. Chapter keys work in any mode.
+                Page keys (<kbd>j</kbd>/<kbd>k</kbd>, arrows) and the on-screen <kbd>◀</kbd>/<kbd>▶</kbd> buttons apply in
+                Single view. Strip and Double scroll. Chapter keys work in any mode.
             </p>
             <button type="button" class="help-got-it" onclick={() => (showHelp = false)}>Got it</button>
         </div>

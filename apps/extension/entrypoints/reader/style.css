@@ -79,7 +79,10 @@ header {
     border: none;
     outline: none;
     cursor: pointer;
-    max-width: 100%;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 0;
     appearance: auto;
 }
@@ -101,19 +104,24 @@ header {
 }
 
 .btn-back {
-    background: transparent;
-    border: none;
-    color: #9faab7;
-    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #18202a;
+    border: 1px solid #3b4653;
+    color: #c7d0db;
+    padding: 0 12px;
     font-size: 13px;
     cursor: pointer;
-    border-radius: 6px;
-    min-height: 36px;
+    border-radius: 7px;
+    min-height: 32px;
+    white-space: nowrap;
 }
 
 .btn-back:hover {
     color: #f5f7fa;
-    background: rgba(255, 255, 255, 0.06);
+    background: #1e2a3a;
+    border-color: #4a5666;
 }
 
 .btn-sm {
@@ -201,26 +209,27 @@ main.single.fit-original .page img {
     object-fit: contain;
 }
 
-/* Two-page spread (paged mode): the two pages meet near the centre with a hairline
-   gutter. Each image is sized to its own content (flex:0 0 auto + width:auto) and
-   capped at half the container (max-width:50%), so a portrait page stays narrow and
-   sits adjacent to its partner instead of being stretched to fill a 50% slot and
-   leaving a wide inner gap. min-width:0 defeats the flex min-content floor; centring
-   the pair keeps it together. RTL puts the earlier page on the right via row-reverse.
-   These win over the fit-mode img rules and the narrow-screen media query by coming
-   last in the sheet. */
-main.single .page.spread {
+/* Two-page spread: the two pages meet near the centre with a hairline gutter. Used by
+   the Double view, which scrolls these rows continuously. Each image is sized to its own
+   content (flex:0 0 auto + width:auto) and capped at half the container (max-width:50%),
+   so a portrait page stays narrow and sits adjacent to its partner instead of being
+   stretched to fill a 50% slot and leaving a wide inner gap. min-width:0 defeats the
+   flex min-content floor; centring the pair keeps it together. Each row is capped at the
+   viewport height so a spread fits the screen and you scroll to the next. RTL puts the
+   earlier page on the right via row-reverse. These win over the fit-mode img rules and
+   the narrow-screen media query by coming last in the sheet. */
+main .page.spread {
     flex-wrap: nowrap;
     justify-content: center;
     gap: 2px;
     align-items: center;
     width: 100%;
 }
-main.single .page.spread img,
-main.single.fit-width .page.spread img,
-main.single.fit-height .page.spread img,
-main.single.fit-contain .page.spread img,
-main.single.fit-original .page.spread img {
+main .page.spread img,
+main.fit-width .page.spread img,
+main.fit-height .page.spread img,
+main.fit-contain .page.spread img,
+main.fit-original .page.spread img {
     flex: 0 0 auto;
     width: auto;
     min-width: 0;
@@ -228,33 +237,33 @@ main.single.fit-original .page.spread img {
     max-height: calc(100vh - 80px);
     object-fit: contain;
 }
-main.single.dir-rtl .page.spread {
+main.dir-rtl .page.spread {
     flex-direction: row-reverse;
 }
 
 /* Seamless spread: no gutter, and each half fills its own 50% slot with its inner
    edge pinned to the centre so a split artwork lines up. The left page is pushed
    flush-right and the right page flush-left; RTL swaps which page is which. */
-main.single .page.spread.seamless {
+main .page.spread.seamless {
     gap: 0;
 }
-main.single .page.spread.seamless img,
-main.single.fit-width .page.spread.seamless img,
-main.single.fit-height .page.spread.seamless img,
-main.single.fit-contain .page.spread.seamless img,
-main.single.fit-original .page.spread.seamless img {
+main .page.spread.seamless img,
+main.fit-width .page.spread.seamless img,
+main.fit-height .page.spread.seamless img,
+main.fit-contain .page.spread.seamless img,
+main.fit-original .page.spread.seamless img {
     flex: 0 1 50%;
     max-width: 50%;
     object-fit: contain;
     object-position: right center;
 }
-main.single .page.spread.seamless img:last-child {
+main .page.spread.seamless img:last-child {
     object-position: left center;
 }
-main.single.dir-rtl .page.spread.seamless img {
+main.dir-rtl .page.spread.seamless img {
     object-position: left center;
 }
-main.single.dir-rtl .page.spread.seamless img:last-child {
+main.dir-rtl .page.spread.seamless img:last-child {
     object-position: right center;
 }
 
@@ -326,6 +335,55 @@ header.chrome-hidden + .progress-bar {
     background: #8b5cf6;
     border-color: #7c3aed;
     color: #fff;
+}
+
+.btn-sm:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.nav-page {
+    min-width: 30px;
+    padding: 0 8px;
+    font-size: 13px;
+    line-height: 1;
+}
+
+/* One labelled 3-way view control (Strip / Single / Double) - a joined segment group. */
+.seg {
+    display: inline-flex;
+    border: 1px solid #3b4653;
+    border-radius: 7px;
+    overflow: hidden;
+}
+
+.seg-btn {
+    min-height: 30px;
+    padding: 0 12px;
+    font-size: 12px;
+    border: none;
+    border-radius: 0;
+    background: #18202a;
+    color: #c7d0db;
+}
+
+.seg-btn + .seg-btn {
+    border-left: 1px solid #3b4653;
+}
+
+.seg-btn:hover:not(:disabled) {
+    background: #1e2a3a;
+    color: #f5f7fa;
+}
+
+.seg-btn.seg-active {
+    background: #8b5cf6;
+    color: #fff;
+}
+
+.seg-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 /* Explicit per-series "off" override - distinct from the unset/default state,

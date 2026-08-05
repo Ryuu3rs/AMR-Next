@@ -25,3 +25,25 @@ export function spreadView(currentPage: number, spread: 1 | 2, offset: boolean, 
     const prevStart = start === 0 ? 0 : offset && start <= 2 ? 0 : clamp(start - 2)
     return { indices, nextStart, prevStart }
 }
+
+// Groups every page index into the rows of a continuous spread view, in reading order.
+// columns=1 yields one page per row; columns=2 pairs them ([0,1],[2,3],...). With offset
+// and columns=2 the first page (cover) stands alone, then the rest pair ([0],[1,2],...).
+// A trailing odd page becomes its own single-element row. RTL ordering is handled in CSS.
+export function spreadRows(pageCount: number, columns: 1 | 2, offset: boolean): number[][] {
+    if (pageCount <= 0) return []
+    const rows: number[][] = []
+    if (columns === 1) {
+        for (let p = 0; p < pageCount; p += 1) rows.push([p])
+        return rows
+    }
+    let start = 0
+    if (offset) {
+        rows.push([0])
+        start = 1
+    }
+    for (let i = start; i < pageCount; i += 2) {
+        rows.push(i + 1 < pageCount ? [i, i + 1] : [i])
+    }
+    return rows
+}

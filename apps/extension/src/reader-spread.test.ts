@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { spreadView } from "./reader-spread"
+import { spreadRows, spreadView } from "./reader-spread"
 
 describe("spreadView", () => {
     it("single page mode steps one page at a time", () => {
@@ -72,5 +72,47 @@ describe("spreadView", () => {
 
     it("clamps an out-of-range current page", () => {
         expect(spreadView(99, 2, false, 10).indices).toEqual([8, 9])
+    })
+})
+
+describe("spreadRows", () => {
+    it("returns no rows for an empty chapter", () => {
+        expect(spreadRows(0, 1, false)).toEqual([])
+        expect(spreadRows(0, 2, false)).toEqual([])
+        expect(spreadRows(0, 2, true)).toEqual([])
+    })
+
+    it("one column yields one page per row", () => {
+        expect(spreadRows(3, 1, false)).toEqual([[0], [1], [2]])
+    })
+
+    it("one column ignores offset", () => {
+        expect(spreadRows(3, 1, true)).toEqual([[0], [1], [2]])
+    })
+
+    it("two columns pair pages two at a time", () => {
+        expect(spreadRows(6, 2, false)).toEqual([
+            [0, 1],
+            [2, 3],
+            [4, 5]
+        ])
+    })
+
+    it("two columns leave a trailing odd page in its own row", () => {
+        expect(spreadRows(5, 2, false)).toEqual([[0, 1], [2, 3], [4]])
+    })
+
+    it("two columns with offset stand the cover alone then pair the rest", () => {
+        expect(spreadRows(5, 2, true)).toEqual([[0], [1, 2], [3, 4]])
+    })
+
+    it("two columns with offset leave a trailing odd page in its own row", () => {
+        expect(spreadRows(6, 2, true)).toEqual([[0], [1, 2], [3, 4], [5]])
+    })
+
+    it("handles a single-page chapter for every column/offset combination", () => {
+        expect(spreadRows(1, 1, false)).toEqual([[0]])
+        expect(spreadRows(1, 2, false)).toEqual([[0]])
+        expect(spreadRows(1, 2, true)).toEqual([[0]])
     })
 })
