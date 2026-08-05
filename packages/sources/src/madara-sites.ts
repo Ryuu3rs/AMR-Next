@@ -85,7 +85,11 @@ const SITES: MadaraConfig[] = [
         id: "tritinia",
         name: "Tritinia Scans",
         origin: "https://tritinia.org",
-        domains: ["tritinia.org", "tritinia.com"]
+        domains: ["tritinia.org", "tritinia.com"],
+        // Tritinia chapter permalinks are /manga/<slug>/ch-N/, not the Madara
+        // default /chapter-N/ - without this the chapter URL matches neither the
+        // chapter nor the manga regex and the reader can't resolve it.
+        chapterPrefix: "ch"
     },
     { id: "manhuaus", name: "ManhuaUS", origin: "https://manhuaus.com", domains: ["manhuaus.com"] },
     { id: "mgread", name: "MgRead", origin: "https://mgread.io", domains: ["mgread.io"] },
