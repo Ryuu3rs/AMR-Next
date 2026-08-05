@@ -8,6 +8,9 @@ import {
     bonusChapterTitlesById,
     bonusSeriesHtml,
     bonusSeriesId,
+    episodeChapterNumberById,
+    episodeSeriesHtml,
+    episodeSeriesId,
     chapterPageHtml,
     chapterPageHtmlUnparseableTitle,
     imagesHtml,
@@ -175,6 +178,55 @@ describe("weebCentralAdapter.listChapters", () => {
         const extra = chapters.find(c => bonusChapterTitlesById[c.sourceChapterId] === "Extra")!
         expect(extra.sortKey).toBeGreaterThan(chapter3.sortKey)
         expect(extra.sortKey).toBeLessThan(chapter4.sortKey)
+    })
+})
+
+// WeebCentral labels webtoon series "Episode N" (live-verified: The Beginning After The End).
+// chapterNumberFromText only recognised a chapter/ch marker, so every "Episode N" parsed to
+// undefined and assignListSortKeys assigned position/1000 sortKeys - Episode 17 -> 0.017,
+// Episode 269 -> 0.269 - for ALL episode-labeled series. A mangled latest of 0.269 then sorts
+// below a real lastRead of 1, so a caught-up series was wrongly treated as read.
+describe("weebCentralAdapter.listChapters - Episode-labeled webtoon series (0.NNN sortKey regression)", () => {
+    const stubManga = {
+        manga: {
+            id: `weebcentral:manga:${episodeSeriesId}`,
+            title: "The Beginning After The End",
+            normalizedTitle: "the beginning after the end",
+            authors: [] as string[],
+            status: "unknown" as const,
+            addedAt: 0,
+            updatedAt: 0
+        },
+        sourceId: "weebcentral",
+        sourceMangaId: episodeSeriesId,
+        url: `${ORIGIN}/series/${episodeSeriesId}`
+    }
+    const runListChapters = () => {
+        const ctx = makeContext({ [`${ORIGIN}/series/${episodeSeriesId}/full-chapter-list`]: episodeSeriesHtml })
+        return adapter.listChapters({ manga: stubManga }, ctx as never)
+    }
+
+    it("reads the real 'Episode N' label as the chapter number", async () => {
+        const chapters = await runListChapters()
+        for (const chapter of chapters) {
+            expect(chapter.sortKey).toBe(episodeChapterNumberById[chapter.sourceChapterId])
+        }
+    })
+
+    it("never collapses a numbered episode to a fractional 0.0NN sortKey", async () => {
+        const chapters = await runListChapters()
+        // Pre-fix every episode parsed to undefined and assignListSortKeys assigned
+        // position/1000 (0.001..0.007) - all below 1. A real numbered episode must be >= 1.
+        expect(chapters.every(c => Number.isFinite(c.sortKey) && c.sortKey >= 1)).toBe(true)
+    })
+
+    it("keeps 17 -> 17, 269 -> 269, and a decimal 269.5 -> 269.5", async () => {
+        const chapters = await runListChapters()
+        const sortKeyFor = (num: number) =>
+            chapters.find(c => episodeChapterNumberById[c.sourceChapterId] === num)?.sortKey
+        expect(sortKeyFor(17)).toBe(17)
+        expect(sortKeyFor(269)).toBe(269)
+        expect(sortKeyFor(269.5)).toBe(269.5)
     })
 })
 

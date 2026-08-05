@@ -106,6 +106,57 @@ export const bonusChapterTitlesById: Record<string, string> = {
     [BONUS_CHAPTER_4]: "Chapter 4"
 }
 
+// Real full-chapter-list markup for a WEBTOON series - live-verified against
+// weebcentral.com/series/01J76XYE23859ZWDP7BJ520AKY/full-chapter-list ("The Beginning
+// After The End"): the label reads "Episode N", not "Chapter N", and hrefs are RELATIVE
+// (/chapters/{ULID}) with an <img> badge instead of an inline path SVG. chapterNumberFromText
+// used to recognise only a chapter/ch marker, so every "Episode N" parsed to undefined and
+// assignListSortKeys collapsed the whole series to position/1000 sortKeys (Episode 17 -> 0.017,
+// Episode 269 -> 0.269), which made a caught-up series look unread. This fixture reproduces that
+// exact markup so the regression is exercised.
+const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+function episodeUlid(index: number): string {
+    let enc = ""
+    let n = index + 1
+    do {
+        enc = CROCKFORD[n % 32] + enc
+        n = Math.floor(n / 32)
+    } while (n > 0)
+    return `01J${enc.padStart(23, "0")}`
+}
+
+// Newest-first, mirroring the live site's descending order. Includes a decimal episode (269.5)
+// and the exact numbers from the bug report (17, 269).
+const EPISODE_NUMBERS = [269.5, 269, 18, 17, 16, 2, 1]
+
+export const episodeSeriesId = "01J76XYE23859ZWDP7BJ520AKY"
+export const episodeChapterNumberById: Record<string, number> = {}
+
+function episodeRow(num: number, index: number): string {
+    const ulid = episodeUlid(index)
+    episodeChapterNumberById[ulid] = num
+    return `<div class="flex items-center" x-data="{ new_chapter: checkNewChapter('2024-09-07T17:04:15.717343Z') }">
+    <a href="/chapters/${ulid}" class="hover:bg-base-300 flex-1 flex items-center p-2">
+        <span class="me-2">
+            <img src="/static/images/chapter-badge-official.svg" alt="" width="16" height="16" class="w-4 h-4" decoding="async">
+        </span>
+        <span class="grow flex items-center gap-2">
+            <span class="">Episode ${num}</span>
+            <span class="flex gap-1 items-center link-info" x-show="last_read_chapter === '${ulid}'">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 384 512" aria-hidden="true"><path d="M215.7 499.2"></path></svg>
+                <span class="hidden md:inline">Last Read</span>
+            </span>
+            <span x-show="new_chapter">
+                <img src="/static/images/new-chapter.svg" alt="" width="20" height="20" class="w-5 h-5" decoding="async">
+            </span>
+        </span>
+        <time class="text-datetime opacity-50" datetime="2024-09-07T17:04:15.717Z">2024-09-07T17:04:15.717343Z</time>
+    </a>
+</div>`
+}
+
+export const episodeSeriesHtml = EPISODE_NUMBERS.map((num, i) => episodeRow(num, i)).join("\n")
+
 // Chapter page also links the series with an ABSOLUTE href, live-verified.
 export const chapterPageHtml = `<!DOCTYPE html>
 <html lang="en">
