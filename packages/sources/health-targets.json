@@ -122,6 +122,11 @@
         "expectTitle": "Martial Peak",
         "note": "best-guess slug"
     },
+    "gdscans": {
+        "seriesUrl": "https://gdscans.com/manga/kimi-wa-meido/",
+        "expectTitle": "Kimi wa Meido",
+        "note": "Madara with /volume-N/chapter-M/ chapter URLs; live-verified 2026-08-05"
+    },
     "mgread": {
         "seriesUrl": "https://mgread.io/manga/one-piece/",
         "expectTitle": "One Piece",

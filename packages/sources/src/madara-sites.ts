@@ -92,6 +92,15 @@ const SITES: MadaraConfig[] = [
         chapterPrefix: "ch"
     },
     { id: "manhuaus", name: "ManhuaUS", origin: "https://manhuaus.com", domains: ["manhuaus.com"] },
+    {
+        id: "gdscans",
+        name: "GD Scans",
+        origin: "https://gdscans.com",
+        domains: ["gdscans.com"],
+        // GD Scans (WordPress/Madara) nests chapters under a volume segment,
+        // e.g. /manga/<slug>/volume-9/chapter-71/ - live-verified 2026-08-05.
+        volumePath: true
+    },
     { id: "mgread", name: "MgRead", origin: "https://mgread.io", domains: ["mgread.io"] },
     // { id: "aquascans", name: "Aqua Scans", origin: "https://aquascans.com", domains: ["aquascans.com"] }, // retired: site down 2026-07 - domain has a registrar SOA record but no A/AAAA (doesn't resolve to a host), verified 2026-07-11
     // { id: "s2manga", name: "S2Manga", origin: "https://s2manga.com", domains: ["s2manga.com"] }, // retired: site down 2026-07 - NXDOMAIN, verified 2026-07-11

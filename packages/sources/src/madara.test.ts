@@ -147,6 +147,31 @@ describe("createMadaraAdapter", () => {
         expect(adapter.match(new URL("https://other.example/series/x/ch-1/"))).toBe("none")
     })
 
+    it("with volumePath, matches chapters nested under a volume segment (GD Scans)", () => {
+        const volAdapter = createMadaraAdapter({
+            id: "testvol",
+            name: "Test Vol",
+            origin: "https://test-vol.example",
+            domains: ["test-vol.example"],
+            volumePath: true
+        })
+        // volume segment present and absent both resolve to the same manga slug + chapter
+        const withVol = new URL("https://test-vol.example/manga/cool-manga/volume-9/chapter-71/")
+        const noVol = new URL("https://test-vol.example/manga/cool-manga/chapter-71/")
+        expect(volAdapter.match(withVol)).toBe("chapter")
+        expect(volAdapter.match(noVol)).toBe("chapter")
+        expect(volAdapter.match(new URL("https://test-vol.example/manga/cool-manga/"))).toBe("manga")
+        expect(volAdapter.parseMangaUrl?.(withVol)?.sourceMangaId).toBe("cool-manga")
+        // Without the flag, the default adapter must NOT match a volume-nested chapter URL.
+        const plain = createMadaraAdapter({
+            id: "testplain",
+            name: "Test Plain",
+            origin: "https://test-vol.example",
+            domains: ["test-vol.example"]
+        })
+        expect(plain.match(withVol)).toBe("none")
+    })
+
     it("always fetches chapter with ?style=list (legacy add_list_to_chapter_url behaviour)", async () => {
         const { context, fetchedUrls } = createCapturingContext({ "/series/cool-manga/ch-12/": chapterHtml })
         await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)

@@ -65,6 +65,7 @@ const allowedRequiredHosts = [
     "https://en-thunderscans.com/*",
     "https://fanfox.net/*",
     "https://flamecomics.xyz/*",
+    "https://gdscans.com/*",
     "https://graphql.anilist.co/*",
     "https://hentai20.io/*",
     "https://hentairead.com/*",
