@@ -1,6 +1,13 @@
 <script lang="ts">
     import type { ImportConflict, ImportResolution, LibraryManga, PageBookmark } from "../../src/database"
-    import { neverRead, hasNewerChapters, statusOf, readChapterLabel } from "../../src/reading-status"
+    import {
+        neverRead,
+        hasNewerChapters,
+        statusOf,
+        readChapterLabel,
+        effectiveReadingStatus,
+        isOngoing
+    } from "../../src/reading-status"
     import type { AppSettings } from "../../src/settings"
     import { onDestroy, onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
@@ -57,6 +64,10 @@
     let noGapSelection = $state(false)
     let noGapSelectionSaved = $state(false)
     let noGapSelectionSavedTimer: ReturnType<typeof setTimeout> | undefined
+    // Local mirror of the auto-pause window (days of no reading before a title reads as
+    // paused). 0 disables it. Drives both the settings input and the effective-status
+    // filtering, so keep it in sync with settings on every load/refresh.
+    let autoPauseDays = $state(0)
     let loading = $state(true)
     let query = $state("")
     let librarySort = $state<"recent-read" | "recent-added" | "recently-updated" | "title" | "latest-chapter">(
@@ -1348,6 +1359,7 @@
             ])
             updateIntervalSelection = settings.updateIntervalHours
             noGapSelection = settings.noGapContinuous
+            autoPauseDays = settings.autoPauseDays ?? 0
             // stats:get scans the whole progress/history tables and isn't needed to paint
             // the library - fetch it in the background instead of blocking the grid on it.
             void sendRuntimeMessage<typeof stats>({ type: "stats:get" }).then(result => {
@@ -1404,6 +1416,7 @@
         settings = nextSettings
         updateIntervalSelection = settings.updateIntervalHours
         noGapSelection = settings.noGapContinuous
+        autoPauseDays = settings.autoPauseDays ?? 0
         void sendRuntimeMessage<typeof stats>({ type: "stats:get" }).then(result => {
             stats = result
         })
@@ -1662,6 +1675,18 @@
             await sendRuntimeMessage({ type: "library:hold", mangaId: manga.id, onHold })
             library = library.map(m => (m.id === manga.id ? { ...m, onHold } : m))
             if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, onHold }
+        } catch {
+            revertControls()
+        }
+    }
+
+    // Sets or clears a title's explicit reading-status override. null clears it (back to
+    // derived "Reading"). Reloads afterward so the effective status - which folds in read
+    // progress and the auto-pause window - is recomputed from the persisted value.
+    async function setReadingStatusOverride(manga: LibraryManga, status: "paused" | "dropped" | "planning" | null) {
+        try {
+            await sendRuntimeMessage({ type: "library:status", mangaId: manga.id, status })
+            await load()
         } catch {
             revertControls()
         }
@@ -1967,6 +1992,12 @@
         }, 1500)
     }
 
+    async function changeAutoPauseDays(raw: string) {
+        const next = Math.max(0, Math.floor(Number(raw) || 0))
+        autoPauseDays = next
+        await updateSetting({ autoPauseDays: next })
+    }
+
     async function seedData() {
         try {
             await sendRuntimeMessage({ type: "data:seed" })
@@ -2195,15 +2226,23 @@
         if (ratingFilter > 0 && (m.rating ?? 0) < ratingFilter) return false
         if (updatedSinceFilter > 0 && m.updatedAt < Date.now() - updatedSinceFilter * 86_400_000) return false
         switch (libraryFilter) {
+            case "all":
+                return true
             case "manual":
                 return Boolean(m.manualTracking)
             case "on-hold":
                 return Boolean(m.onHold)
-            case "reading":
-                return statusOf(m) === "reading" && !m.onHold
+        }
+        const effective = effectiveReadingStatus(m, { autoPauseDays, now: Date.now() })
+        switch (libraryFilter) {
+            case "ongoing":
+                return isOngoing(effective)
             case "unread":
+            case "reading":
             case "completed":
-                return statusOf(m) === libraryFilter
+            case "paused":
+            case "dropped":
+                return effective === libraryFilter
             default:
                 return true
         }
@@ -2266,8 +2305,20 @@
     // Library view: grid (covers) or list (rows), with a user-set page size so
     // large libraries don't render everything at once.
     let libraryView = $state<"grid" | "list">("grid")
-    let libraryFilter = $state<"all" | "unread" | "reading" | "completed" | "manual" | "on-hold">("all")
-    const LIBRARY_FILTERS = ["all", "unread", "reading", "completed", "manual", "on-hold"] as const
+    let libraryFilter = $state<
+        "all" | "ongoing" | "unread" | "reading" | "completed" | "paused" | "dropped" | "manual" | "on-hold"
+    >("ongoing")
+    const LIBRARY_FILTERS = [
+        "all",
+        "ongoing",
+        "unread",
+        "reading",
+        "completed",
+        "paused",
+        "dropped",
+        "on-hold",
+        "manual"
+    ] as const
     let libraryPageSize = $state(50)
     let libraryLimit = $state(50)
     const pagedLibrary = $derived(visibleLibrary.slice(0, libraryLimit))
@@ -3533,7 +3584,7 @@
             {:else}
                 <div class="list-view">
                     {#each pagedLibrary as manga (manga.id)}
-                        {@const status = statusOf(manga)}
+                        {@const status = effectiveReadingStatus(manga, { autoPauseDays, now: Date.now() })}
                         <div class="list-row" class:selected={selectMode && selectedIds.has(manga.id)}>
                             <button
                                 type="button"
@@ -4716,6 +4767,30 @@
                             {anilistImporting ? "Importing…" : "Import"}
                         </button>
                     </div>
+                    <div class="data-row">
+                        <div>
+                            <p class="row-label">What to import</p>
+                            <p class="muted">Unchecking skips those entries from your AniList lists on import.</p>
+                            <div class="detail-toggles" style="margin-top:8px">
+                                <label class="menu-toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings?.anilistImportPaused ?? true}
+                                        onchange={e =>
+                                            void updateSetting({ anilistImportPaused: e.currentTarget.checked })} />
+                                    Import paused titles
+                                </label>
+                                <label class="menu-toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings?.anilistImportDropped ?? true}
+                                        onchange={e =>
+                                            void updateSetting({ anilistImportDropped: e.currentTarget.checked })} />
+                                    Import dropped titles
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                 {/if}
             </div>
             {#if anilistMessage}<p class="notice">{anilistMessage}</p>{/if}
@@ -4752,6 +4827,22 @@
                         </select>
                         {#if updateIntervalSaved}<span class="saved-flash">✓ Saved</span>{/if}
                     </div>
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Auto-pause after N days</p>
+                        <p class="muted">
+                            Titles with no reading for this many days show as paused. 0 disables auto-pause.
+                        </p>
+                    </div>
+                    <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        aria-label="Auto-pause after days of no reading"
+                        style="width:96px"
+                        value={autoPauseDays}
+                        onchange={e => void changeAutoPauseDays(e.currentTarget.value)} />
                 </div>
                 <div class="settings-row">
                     <div>
@@ -5279,6 +5370,43 @@
                                 </p>
                             {/if}
                         </div>
+                    </div>
+                </div>
+                <div class="detail-categories detail-section">
+                    <span class="muted">Status</span>
+                    <div class="detail-reading-row" style="align-items:center">
+                        <div class="view-toggle">
+                            <button
+                                type="button"
+                                class="btn-sm"
+                                class:active={!detailManga.readingStatus}
+                                title="Clear override (back to reading)"
+                                onclick={() => detailManga && void setReadingStatusOverride(detailManga, null)}
+                                >Reading</button>
+                            <button
+                                type="button"
+                                class="btn-sm"
+                                class:active={detailManga.readingStatus === "paused"}
+                                onclick={() => detailManga && void setReadingStatusOverride(detailManga, "paused")}
+                                >Paused</button>
+                            <button
+                                type="button"
+                                class="btn-sm"
+                                class:active={detailManga.readingStatus === "dropped"}
+                                onclick={() => detailManga && void setReadingStatusOverride(detailManga, "dropped")}
+                                >Dropped</button>
+                            <button
+                                type="button"
+                                class="btn-sm"
+                                class:active={detailManga.readingStatus === "planning"}
+                                onclick={() => detailManga && void setReadingStatusOverride(detailManga, "planning")}
+                                >Planning</button>
+                        </div>
+                        <span
+                            class="list-status status-{effectiveReadingStatus(detailManga, {
+                                autoPauseDays,
+                                now: Date.now()
+                            })}">{effectiveReadingStatus(detailManga, { autoPauseDays, now: Date.now() })}</span>
                     </div>
                 </div>
                 <div class="detail-categories detail-section">
