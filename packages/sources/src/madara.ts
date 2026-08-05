@@ -31,6 +31,11 @@ export type MadaraConfig = {
     mangaPath?: string
     // Chapter slug prefix, e.g. "chapter" -> chapter-12. Default "chapter".
     chapterPrefix?: string
+    // Some Madara sites nest chapters under a volume segment, e.g.
+    // /manga/<slug>/volume-9/chapter-71/. Set true to accept an optional
+    // volume-<x>/ segment between the series slug and the chapter slug so
+    // match()/resolveChapter recognise those URLs. Off by default.
+    volumePath?: boolean
     language?: string
     rateLimit?: { requests: number; intervalMs: number }
     // When true, read src before data-src in image strategies. Use for sites that put
@@ -404,7 +409,10 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
     const language = config.language ?? "en"
     const escapedPath = mangaPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     const escapedPrefix = chapterPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    const chapterRe = new RegExp(`^/${escapedPath}/([^/]+)/(${escapedPrefix}[^/]+)(?:/|$)`)
+    // Optionally accept a Madara volume segment (e.g. /volume-9/) between the series
+    // slug and the chapter slug for sites that nest chapters under volumes.
+    const volumeSegment = config.volumePath ? "(?:vol(?:ume)?[-_][^/]+/)?" : ""
+    const chapterRe = new RegExp(`^/${escapedPath}/([^/]+)/${volumeSegment}(${escapedPrefix}[^/]+)(?:/|$)`)
     const mangaRe = new RegExp(`^/${escapedPath}/([^/]+)/?$`)
     const chapterNumberRe = new RegExp(`${escapedPrefix}-(\\d+(?:\\.\\d+)?)`, "i")
 
