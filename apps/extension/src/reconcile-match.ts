@@ -27,17 +27,44 @@ export function matchReadChapterId(
     return best?.id
 }
 
+// The query params that carry a query-keyed source's stable chapter identity.
+// Webtoons chapter URLs are all .../viewer?title_no=..&episode_no=N, so the path
+// segment ("viewer") is identical for every chapter and useless as a token; the
+// distinguishing id lives in the query string instead.
+const QUERY_ID_KEYS = ["episode_no", "chapter", "ch", "id"]
+
+// Path segments that are a shared route name rather than a chapter id. On a
+// query-keyed source these are the same for every chapter, so tokenizing on them
+// would make an unrelated chapter (typically the first) falsely match.
+const GENERIC_SEGMENTS = new Set(["viewer", "reader", "read", "chapter", "chapters"])
+
 // Fallback for when the read NUMBER is unknown (a numberless import that only
 // preserved the last-read chapter URL). Finds the fetched chapter that is the same
-// physical chapter by URL: exact URL first, then the trailing stable id token - the
-// last path segment, which for a same-source re-fetch is the chapter's uuid
+// physical chapter by URL: exact URL first, then the trailing stable id token.
+// For path-keyed sources that token is the last path segment - the chapter's uuid
 // (MangaDex), ulid (Weeb Central) or numeric id (bato), stable across domain/path
-// changes. Returns the whole chapter so the caller can also recover its number from
-// sortKey. Requires a token of >= 4 chars to avoid matching on a short/empty segment.
+// changes. For query-keyed sources (Webtoons) whose path segment is a shared route
+// name, the token is built from the distinguishing query param(s) instead, so every
+// chapter no longer collapses to the same "viewer" token and matches the first one.
+// Requires a token of >= 4 chars to avoid matching on a short/empty segment.
 function chapterIdToken(url: string): string | undefined {
-    const path = url.split(/[?#]/)[0] ?? url
-    const segment = path.replace(/\/+$/, "").split("/").pop()
-    return segment && segment.length >= 4 ? segment.toLowerCase() : undefined
+    const hashless = url.split("#")[0] ?? url
+    const queryIndex = hashless.indexOf("?")
+    const path = queryIndex >= 0 ? hashless.slice(0, queryIndex) : hashless
+    const query = queryIndex >= 0 ? hashless.slice(queryIndex + 1) : ""
+
+    const params = new URLSearchParams(query)
+    const queryId = QUERY_ID_KEYS.map(key => {
+        const value = params.get(key)
+        return value ? `${key}=${value.toLowerCase()}` : ""
+    })
+        .filter(Boolean)
+        .join("&")
+    if (queryId) return queryId
+
+    const segment = path.replace(/\/+$/, "").split("/").pop()?.toLowerCase()
+    if (!segment || segment.length < 4 || GENERIC_SEGMENTS.has(segment)) return undefined
+    return segment
 }
 
 export function matchReadChapterByUrl<T extends { url: string }>(

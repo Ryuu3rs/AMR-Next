@@ -64,6 +64,17 @@ describe("matchesQuery", () => {
         const { matchesQuery } = await import("./sources")
         expect(matchesQuery("Anything", "   ")).toBe(true)
     })
+
+    it("filters non-latin queries instead of matching every title", async () => {
+        const { matchesQuery } = await import("./sources")
+        // A CJK query must survive normalization and actually filter - it used to
+        // collapse to "" under [^a-z0-9], leaving zero tokens and admitting all.
+        expect(matchesQuery("Naruto", "ワンピース")).toBe(false)
+        expect(matchesQuery("ワンピース", "ワンピース")).toBe(true)
+        // Cyrillic behaves the same way.
+        expect(matchesQuery("Наруто", "наруто")).toBe(true)
+        expect(matchesQuery("One Piece", "наруто")).toBe(false)
+    })
 })
 
 describe("searchManga result filtering", () => {

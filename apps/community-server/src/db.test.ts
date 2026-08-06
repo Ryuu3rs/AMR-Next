@@ -6,7 +6,8 @@ import { join } from "node:path"
 
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "amr-community-"))
 
-const { createUser, insertEvents, getCoReadRecommendations, getRecommendations } = await import("./db.js")
+const { createUser, insertEvents, getCoReadRecommendations, getRecommendations, upsertRating, getMangaStats } =
+    await import("./db.js")
 
 let seq = 0
 // Distinct title/user namespaces per test - the db is a shared module singleton, so
@@ -74,6 +75,34 @@ test("returns [] on no overlap / cold start", () => {
 
     seed("empty", [])
     assert.deepEqual(getCoReadRecommendations("empty"), [])
+})
+
+test("getMangaStats suppresses exact values below the k-anonymity floor", () => {
+    // A single reader + single rater must not disclose that one user's exact rating or presence.
+    seed("ms_solo", ["ms_lonely_title"])
+    createUser("ms_solo_rater", "user_ms_solo_rater")
+    upsertRating("ms_solo_rater", "ms_lonely_title", 5)
+
+    const solo = getMangaStats("ms_lonely_title")
+    assert.equal(solo.avgRating, null)
+    assert.equal(solo.ratingCount, 0)
+    assert.equal(solo.readerCount, 0)
+
+    // A title with >= MIN_DISTINCT_READERS (3) readers and raters returns real stats.
+    seed("ms_r1", ["ms_popular_title"])
+    seed("ms_r2", ["ms_popular_title"])
+    seed("ms_r3", ["ms_popular_title"])
+    createUser("ms_v1", "user_ms_v1")
+    createUser("ms_v2", "user_ms_v2")
+    createUser("ms_v3", "user_ms_v3")
+    upsertRating("ms_v1", "ms_popular_title", 4)
+    upsertRating("ms_v2", "ms_popular_title", 5)
+    upsertRating("ms_v3", "ms_popular_title", 3)
+
+    const popular = getMangaStats("ms_popular_title")
+    assert.equal(popular.readerCount, 3)
+    assert.equal(popular.ratingCount, 3)
+    assert.equal(popular.avgRating, 4)
 })
 
 function seedWithGenres(userId: string, entries: Array<{ title: string; genres: string[] }>): void {

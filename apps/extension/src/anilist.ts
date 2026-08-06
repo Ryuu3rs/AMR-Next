@@ -17,6 +17,11 @@ export type AniListConfig = {
     // Off by default - it mutates the user's AniList list, not just progress.
     syncMembership: boolean
     lastSyncAt?: number
+    // The anilistIds the user has actually had on their AniList list, carried across
+    // syncs. Reconcile treats a title as a genuine removal ONLY when its id is in this
+    // set AND absent from the current remote list - so metadata enrichment stamping an
+    // anilistId on a title the user never tracked can never trigger an auto-drop.
+    knownMembership?: number[]
 }
 
 const defaultConfig: AniListConfig = { autoSync: false, syncMembership: false }
@@ -30,6 +35,17 @@ export async function setAniListConfig(patch: Partial<AniListConfig>): Promise<A
     const next = { ...(await getAniListConfig()), ...patch }
     await browser.storage.local.set({ [ANILIST_KEY]: next })
     return next
+}
+
+// The set of anilistIds the user has actually had on their AniList list as of the last
+// completed membership sync. Empty on a fresh install, so the first sync drops nothing.
+export async function getKnownMembership(): Promise<number[]> {
+    const c = await getAniListConfig()
+    return c.knownMembership ?? []
+}
+
+export async function setKnownMembership(ids: number[]): Promise<void> {
+    await setAniListConfig({ knownMembership: ids })
 }
 
 // Token-free view for the UI - never ship the token back to the page.

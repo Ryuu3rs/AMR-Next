@@ -12,7 +12,9 @@ import {
     getViewerMangaList,
     getMediaListEntryId,
     saveMediaStatus,
-    deleteMediaListEntry
+    deleteMediaListEntry,
+    getKnownMembership,
+    setKnownMembership
 } from "../anilist"
 import { resolveMetadata } from "../metadata"
 import { configureAniListAlarm } from "../background/alarms"
@@ -122,29 +124,37 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
             )
             .toArray()
 
-        // Reconcile snapshot, captured BEFORE the push loop resolves or guesses any ids.
-        // - preexistingAniListIds: only ids the user genuinely already had linked are ever
-        //   eligible to be auto-dropped. An id resolved/guessed this run must never count.
-        // - remoteIds: the AniList list fetched ONCE, up front. Fetching before the push
-        //   means a genuinely-removed title is seen as absent even though saveViewerProgress
-        //   re-creates it during the push. A throwing OR empty remote is indistinguishable
-        //   from a soft failure, so reconcile is skipped entirely (both stay undefined) -
-        //   never drop anything on an empty/failed remote.
-        let preexistingAniListIds: Set<number> | undefined
-        let remoteIds: Set<number> | undefined
+        // Reconcile snapshot, captured BEFORE the push loop mutates the remote list.
+        // - currentRemoteIds: the AniList list fetched ONCE, up front. Fetching before the
+        //   push means a genuinely-removed title is seen as absent even though the push
+        //   re-creates it. A throwing OR empty remote is indistinguishable from a soft
+        //   failure, so reconcile is skipped entirely (stays undefined) - never drop
+        //   anything on an empty/failed remote.
+        // - genuineRemovals: ids the user HAD on their AniList list last sync
+        //   (knownMembership) that are absent from currentRemoteIds now. This is the only
+        //   eligible-to-drop set. It is deliberately NOT derived from local anilistIds:
+        //   metadata enrichment stamps an anilistId on nearly every library title, so a
+        //   local id proves nothing about whether the user ever tracked it on AniList.
+        //   On the first sync knownMembership is empty, so nothing is dropped.
+        let currentRemoteIds: Set<number> | undefined
+        let genuineRemovals: Set<number> | undefined
         if (membership) {
             try {
                 const remote = await getViewerMangaList(token)
                 if (remote.length > 0) {
-                    remoteIds = new Set(remote.map(e => e.anilistId))
-                    preexistingAniListIds = new Set(
-                        mangas.filter(m => m.anilistId !== undefined).map(m => m.anilistId as number)
-                    )
+                    currentRemoteIds = new Set(remote.map(e => e.anilistId))
+                    const known = new Set(await getKnownMembership())
+                    genuineRemovals = new Set([...known].filter(id => !currentRemoteIds!.has(id)))
                 }
             } catch (error) {
                 console.warn("[AMR] AniList reconcile: remote fetch failed, skipping reconcile", error)
             }
         }
+
+        // Ids that are on the user's AniList list after this run: everything the push
+        // touched (created or confirmed) becomes the next knownMembership together with
+        // currentRemoteIds. A genuine-removal title is never pushed, so it is excluded.
+        const pushedIds = new Set<number>()
 
         for (const manga of mangas) {
             if (anilistSyncAborted) break
@@ -170,17 +180,37 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
                 continue
             }
 
+            // Genuine removal: the user had this on their AniList list and has since
+            // deleted it there. Mark it dropped locally and DO NOT push it - pushing would
+            // re-create the very entry we just detected as removed (the oscillation bug).
+            // Only read, not-on-hold, not-already-dropped titles are touched.
+            if (
+                genuineRemovals !== undefined &&
+                genuineRemovals.has(anilistId) &&
+                !manga.onHold &&
+                !neverRead(manga) &&
+                manga.readingStatus !== "dropped"
+            ) {
+                await updateManga(manga.id, { readingStatus: "dropped" } as Partial<LibraryManga>)
+                continue
+            }
+
             const local =
                 manga.lastReadChapterNumber !== undefined ? Math.floor(manga.lastReadChapterNumber) : undefined
 
             try {
-                if (local !== undefined && local > 0) {
+                if (!neverRead(manga)) {
+                    // Read title: push progress. Branch on neverRead, NOT on local > 0 - a
+                    // title read only to Ch 0 / 0.5 floors to 0 but is still read, so it
+                    // must push progress (never fall through to the PLANNING add below).
+                    const target = local ?? 0
                     const remote = await getViewerProgress(token, anilistId)
                     checked++
-                    if (remote === undefined || local > remote) {
-                        await saveViewerProgress(token, anilistId, local)
+                    if (remote === undefined || target > remote) {
+                        await saveViewerProgress(token, anilistId, target)
                         pushed++
                     }
+                    pushedIds.add(anilistId)
                 } else if (membership) {
                     // Unread library title: add as PLANNING only when not already on the
                     // list, so an existing CURRENT/COMPLETED status is never clobbered.
@@ -190,6 +220,7 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
                         await saveMediaStatus(token, anilistId, "PLANNING")
                         added++
                     }
+                    pushedIds.add(anilistId)
                 } else {
                     skipped++
                     continue
@@ -201,31 +232,16 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
             // AniList allows ~90 requests/min; two calls per title -> ~1.3s spacing.
             await new Promise<void>(r => setTimeout(r, 1300))
         }
-        // Reconcile removals: a title still in the library but no longer on the user's
-        // AniList list is treated as dropped IF (1) its id was ALREADY linked before this
-        // run (preexistingAniListIds - never an id resolved/guessed this run, which the user
-        // never chose to track) and (2) they've read it (local read progress is real signal
-        // the title was tracked, not junk). An unread local title is left untouched - never
-        // delete, never tag. This runs independently of push success: a title whose push
-        // failed this run is still safe to evaluate because removal is judged against the
-        // up-front remote snapshot, not against what the push happened to write. remoteIds
-        // is undefined when the remote fetch threw or came back empty, so reconcile is
-        // skipped there. Gated on membership sync and skipped on abort.
-        if (membership && !anilistSyncAborted && remoteIds !== undefined && preexistingAniListIds !== undefined) {
-            try {
-                const locals = await db.manga.toArray()
-                for (const m of locals) {
-                    if (m.anilistId === undefined) continue
-                    if (!preexistingAniListIds.has(m.anilistId)) continue
-                    if (remoteIds.has(m.anilistId)) continue
-                    if (m.onHold || neverRead(m) || m.readingStatus === "dropped") continue
-                    await updateManga(m.id, { readingStatus: "dropped" } as Partial<LibraryManga>)
-                }
-            } catch (error) {
-                // A reconcile failure (rate limit, network) must not fail the whole sync -
-                // the push above already succeeded. Leave it for the next run.
-                console.warn("[AMR] AniList reconcile failed", error)
-            }
+
+        // Persist the membership known as of this completed sync: the current remote list
+        // unioned with everything the push just added, so the next run can tell a real
+        // removal from a title the user never tracked. Only when the remote fetch actually
+        // succeeded (currentRemoteIds defined) and the run finished - an aborted or
+        // soft-failed run must not overwrite the previous known set.
+        if (membership && !anilistSyncAborted && currentRemoteIds !== undefined) {
+            const nextKnown = new Set(currentRemoteIds)
+            for (const id of pushedIds) nextKnown.add(id)
+            await setKnownMembership([...nextKnown])
         }
 
         // Only record a completed sync when the loop actually finished. An aborted run

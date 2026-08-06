@@ -284,12 +284,15 @@ export async function listChaptersFromSourceHtml(
 }
 
 // Normalize a title the same way entrypoints/app/App.svelte's normTitle does
-// (lowercase, non-alphanumeric runs collapsed to a single space, trimmed) so
+// (lowercase, non-letter/number runs collapsed to a single space, trimmed) so
 // matching behaves consistently between the mirror-check UI and search here.
+// Uses the Unicode letter/number classes (\p{L}\p{N}) rather than [a-z0-9] so
+// CJK/Cyrillic/other-script tokens survive; a Latin-only class would collapse a
+// whole non-Latin query to "" and make matchesQuery admit every title.
 function normTitle(s: string): string {
     return s
         .toLowerCase()
-        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
         .trim()
 }
 
