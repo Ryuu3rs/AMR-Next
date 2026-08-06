@@ -417,7 +417,7 @@ export function searchMangaStreaming(
     for (const adapter of searchable) {
         withTimeout(
             adapter.search!(query, createSourceContext(adapter.manifest.id, adapter.manifest.requestRateLimit)),
-            10000
+            SEARCH_RACE_TIMEOUT_MS[adapter.manifest.id] ?? 10_000
         )
             .then(results => {
                 if (signal?.aborted) return

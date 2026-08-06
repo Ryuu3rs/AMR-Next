@@ -221,4 +221,44 @@ describe("suggestions:get - bughunt regressions", () => {
         const result = await getSuggestions()
         expect(result.map(s => s.anilistId)).toEqual([999])
     })
+
+    it("force runs a fresh compute over the current library, not a stale in-flight revalidate", async () => {
+        // A stale cache drives the non-force path into a background revalidate. That
+        // revalidate captures a snapshot of the library BEFORE the new seed is added; a
+        // force arriving while it is in flight must not reuse it, it must recompute over
+        // the current library and surface the newly-added seed's recommendation.
+        await db.manga.put(ownedManga({ id: "m1", title: "Seed A", anilistId: 100, lastReadAt: 2 }))
+        await fakeBrowser.storage.local.set({
+            suggestions: { suggestions: [], updatedAt: Date.now() - 7 * 60 * 60 * 1000 }
+        })
+
+        let signalFirstCall!: () => void
+        const firstCalled = new Promise<void>(resolve => {
+            signalFirstCall = resolve
+        })
+        // The parked revalidate's getRecommendations(100) never resolves, keeping that
+        // compute in flight. Every later call resolves so the force compute can finish.
+        getRecommendations.mockImplementationOnce(() => {
+            signalFirstCall()
+            return new Promise<RecCandidate[]>(() => {})
+        })
+        getRecommendations.mockImplementation(async anilistId =>
+            anilistId === 200 ? [{ anilistId: 999, title: "Fresh Pick" }] : []
+        )
+
+        // Non-force: returns the stale cache instantly and starts the parked revalidate.
+        const stale = await getSuggestions(false)
+        expect(stale).toEqual([])
+        await firstCalled
+
+        // Library changes after the stale revalidate captured its snapshot.
+        await db.manga.put(ownedManga({ id: "m2", title: "Seed B", anilistId: 200, lastReadAt: 3 }))
+
+        const forced = await getSuggestions(true)
+        expect(forced.map(s => s.anilistId)).toEqual([999])
+
+        const stored = await fakeBrowser.storage.local.get("suggestions")
+        const cache = stored["suggestions"] as { suggestions: Suggestion[] }
+        expect(cache.suggestions.map(s => s.anilistId)).toEqual([999])
+    })
 })
