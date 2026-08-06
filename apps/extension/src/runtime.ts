@@ -72,8 +72,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         sourceId: z.string().min(1),
         sourceMangaId: z.string().min(1),
         mangaUrl: z.url(),
-        title: z.string().min(1),
-        coverUrl: z.string().optional()
+        title: z.string().trim().min(1),
+        coverUrl: z.url().optional()
     }),
     z.object({ type: z.literal("library:covers:backfill"), mangaId: z.string().optional() }),
     z.object({ type: z.literal("stats:get") }),

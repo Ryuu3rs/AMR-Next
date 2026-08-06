@@ -487,6 +487,52 @@ describe("searchMangaStreaming result filtering", () => {
     })
 })
 
+describe("searchMangaStreaming race timeout", () => {
+    beforeEach(() => {
+        vi.useFakeTimers()
+    })
+    afterEach(() => {
+        vi.useRealTimers()
+    })
+
+    it("applies the 12s mangahub cap in streaming, matching searchManga (an ~11s response survives)", async () => {
+        const { searchMangaStreaming } = await import("./sources")
+        const mangahubAdapter = makeAdapter("mangahub", [])
+        mangahubAdapter.search = vi.fn(
+            () =>
+                new Promise<SourceSearchResult[]>(resolve => {
+                    setTimeout(() => resolve([result("Searchable Title", "mangahub")]), 11000)
+                })
+        )
+        const otherAdapter = makeAdapter("other-source", [])
+        otherAdapter.search = vi.fn(
+            () =>
+                new Promise<SourceSearchResult[]>(resolve => {
+                    setTimeout(() => resolve([result("Searchable Title", "other-source")]), 11000)
+                })
+        )
+        listMock = () => [mangahubAdapter, otherAdapter]
+
+        const partials: Array<{ sourceId: string; titles: string[] }> = []
+        let doneCalled = false
+        searchMangaStreaming(
+            "searchable",
+            (results, sourceId) => partials.push({ sourceId, titles: results.map(r => r.title) }),
+            () => {
+                doneCalled = true
+            }
+        )
+
+        await vi.advanceTimersByTimeAsync(11000)
+        await vi.runAllTimersAsync()
+
+        // other-source's 10s cap fires before its 11s response lands; mangahub's 12s cap
+        // lets the ~11s response through - same outcome as searchManga.
+        expect(partials).toEqual([{ sourceId: "mangahub", titles: ["Searchable Title"] }])
+        expect(doneCalled).toBe(true)
+    })
+})
+
 // Regression: an external-tracked title (added while the chapter page was bot-blocked)
 // used to get a source link with NO sourceMangaId, and listMangaChapters threw "The
 // source link cannot be refreshed" on every background update forever. It now recovers

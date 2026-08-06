@@ -112,10 +112,16 @@ export const suggestionsHandlers: HandlerMap = {
                 return cache.suggestions
             }
 
-            if (!inflightCompute) {
-                inflightCompute = computeAndCache(cache).finally(() => {
-                    inflightCompute = null
+            // A force must always run a FRESH compute reflecting the current library. If a
+            // non-force background revalidate is in flight it was computed from the PRE-change
+            // snapshot, so force starts (and adopts) a new compute rather than reusing it. The
+            // .finally guard only nulls out the promise that is still current, so a stale
+            // revalidate resolving later can't clobber a newer inflight compute.
+            if (!inflightCompute || request.force) {
+                const thisPromise = computeAndCache(cache).finally(() => {
+                    if (inflightCompute === thisPromise) inflightCompute = null
                 })
+                inflightCompute = thisPromise
             }
             // Stale-while-revalidate: if we hold ANY cached list and the caller didn't
             // force a refresh, return it instantly and let the (slow, AniList-rate-limited)
