@@ -307,6 +307,10 @@
             name
                 .replace(/[\\/:*?"<>|]/g, "_")
                 .replace(/\s+/g, " ")
+                // Strip C0/C1 control chars (NUL and friends) that \s didn't cover, so
+                // they can't reach browser.downloads.download({filename}). Runs after the
+                // \s collapse so tab/newline still become a single visible space.
+                .replace(/[\u0000-\u001f\u007f-\u009f]/g, "")
                 .trim() || "untitled"
         )
     }

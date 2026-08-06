@@ -12,14 +12,21 @@ import { flatten } from "./updates-failure-log"
 const TOKEN_PATTERNS: readonly RegExp[] = [
     /gh[pousr]_[A-Za-z0-9]{20,}/g, // GitHub PAT (ghp_/gho_/ghu_/ghs_/ghr_)
     /github_pat_[A-Za-z0-9_]{20,}/g, // fine-grained GitHub PAT
-    /\bBearer\s+[A-Za-z0-9._~+/=-]{10,}/gi // Authorization: Bearer <token>
+    /\bBearer\s+[A-Za-z0-9._~+/=-]{10,}/gi, // Authorization: Bearer <token>
+    /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g // bare JWT (header.payload.signature)
 ]
 
 function redact(text: string, secrets: readonly string[]): string {
     let out = text
     for (const secret of secrets) {
-        // Only redact non-trivial values so a blank/short config field can't blank the log.
-        if (secret && secret.length >= 4) out = out.split(secret).join("[redacted]")
+        // The log text is flattened (zero-width chars stripped, whitespace collapsed)
+        // before it reaches here, so a secret carrying a U+200B or a double space no
+        // longer matches the raw value literally. Redact both the raw secret and its
+        // flattened form so an encoded variant can't slip past the literal split/join.
+        for (const variant of new Set([secret, flatten(secret)])) {
+            // Only redact non-trivial values so a blank/short config field can't blank the log.
+            if (variant && variant.length >= 4) out = out.split(variant).join("[redacted]")
+        }
     }
     for (const pattern of TOKEN_PATTERNS) out = out.replace(pattern, "[redacted]")
     return out

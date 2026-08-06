@@ -1446,8 +1446,10 @@
     function isValidUrl(value: string | undefined | null): value is string {
         if (!value) return false
         try {
-            new URL(value)
-            return true
+            // Require an http(s) scheme: new URL() also accepts javascript:/data:/blob:,
+            // and these values flow to browser.tabs.create as source-controlled input.
+            const protocol = new URL(value).protocol
+            return protocol === "http:" || protocol === "https:"
         } catch {
             return false
         }
