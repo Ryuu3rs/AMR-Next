@@ -86,6 +86,28 @@ describe("manganatoAdapter.listChapters", () => {
     })
 })
 
+describe("manganatoAdapter.resolveGenres", () => {
+    it("scopes genres to the story-info block, ignoring the site-wide nav menu", async () => {
+        const html = `<!DOCTYPE html><html><body>
+<nav class="navbar"><a href="https://chapmanganato.to/genre-2">Adventure</a><a href="https://chapmanganato.to/genre-7">Comedy</a></nav>
+<div class="story-info-right">
+  <h1>Solo Leveling</h1>
+  <a href="https://chapmanganato.to/genre-23">Action</a>
+  <a href="https://chapmanganato.to/genre-12">Fantasy</a>
+</div>
+<ul class="row-content-chapter">
+  <li><a href="https://chapmanganato.to/${MANGA_ID}/chapter-1">Chapter 1</a></li>
+</ul>
+<footer><a href="https://chapmanganato.to/genre-99">Romance</a></footer>
+</body></html>`
+        const context = createContext({ [MANGA_PATH]: html }, [])
+
+        const genres = await manganatoAdapter.resolveGenres!({ sourceMangaId: MANGA_ID }, context)
+
+        expect(genres).toEqual(["Action", "Fantasy"])
+    })
+})
+
 describe("manganatoAdapter.resolveCover", () => {
     it("returns og:image cover from manga page", async () => {
         const context = createContext({ [MANGA_PATH]: mangaHtml }, [])

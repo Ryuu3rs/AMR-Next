@@ -116,7 +116,17 @@ function extractTitle(html: string, fallbackId: string): string {
 }
 
 function extractGenres(html: string): string[] {
-    const anchors = [...html.matchAll(/<a\b[^>]*\bhref="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi)]
+    // Real manganato renders this title's genres in the story-info table's "Genres :" row;
+    // that value cell is the only place the title's own genres live. Scope to it (with a
+    // story-info panel fallback) so the site-wide nav GENRES menu - also built from
+    // /genre- anchors - can't bleed in. Href filtering alone is not enough.
+    const genreRow = html.match(/table-label[^>]*>\s*Genres[\s\S]*?<td[^>]*\btable-value\b[^>]*>([\s\S]*?)<\/td>/i)
+    const storyInfo = html.match(
+        /\bclass=["'][^"']*\b(?:panel-story-info|story-info-right)\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i
+    )
+    const scope = (genreRow && captureGroup(genreRow, 1)) || (storyInfo && captureGroup(storyInfo, 1)) || ""
+    if (!scope) return []
+    const anchors = [...scope.matchAll(/<a\b[^>]*\bhref="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi)]
     const out: string[] = []
     const seen = new Set<string>()
     for (const a of anchors) {

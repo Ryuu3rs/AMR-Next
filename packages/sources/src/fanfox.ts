@@ -143,9 +143,11 @@ function extractSearchResults(html: string, sourceId: string, origin: string): S
         const slug = captureGroup(m, 1)
         const inner = captureGroup(m, 2) ?? ""
         if (!slug || seen.has(slug)) continue
-        seen.add(slug)
         const title = decodeHtml(inner.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "))
+        // Don't mark the slug seen until a real title is accepted: an empty-text cover
+        // anchor appears before the title anchor and would otherwise consume the slug.
         if (title.length < 2) continue
+        seen.add(slug)
         const imgM = inner.match(/\bsrc="(https?:\/\/[^"]+)"/)
         out.push({
             sourceId,

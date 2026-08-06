@@ -93,6 +93,30 @@ describe("comix listChapters", () => {
         expect(chapters[56]?.sortKey).toBe(57)
     })
 
+    it("emits a genuine Chapter 0 when the SSR exposes its URL", async () => {
+        const requests: string[] = []
+        const context = createContext(
+            {
+                [MANGA_PATH]: initialDataHtml({
+                    title: "Lord of Goblins",
+                    latestChapter: 3,
+                    firstChapterUrl: `/title/${SLUG}/6219258-chapter-0`,
+                    latestChapterUrl: `/title/${SLUG}/6219300-chapter-3`
+                })
+            },
+            requests
+        )
+
+        const chapters = await comixAdapter.listChapters!(listInput(), context)
+
+        // Chapter 0 must survive as sortKey 0 (and sort before Chapter 1), not be dropped
+        // by a synthesis loop that starts at 1.
+        expect(chapters.map(c => c.sortKey)).toEqual([0, 1, 2, 3])
+        const zero = chapters[0]
+        expect(zero?.sortKey).toBe(0)
+        expect(zero?.url).toBe(`${ORIGIN}/title/${SLUG}/6219258-chapter-0`)
+    })
+
     it("emits a fractional latest chapter that Math.floor would otherwise drop", async () => {
         const requests: string[] = []
         const context = createContext(
