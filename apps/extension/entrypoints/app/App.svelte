@@ -649,6 +649,9 @@
             homepage?: string
         }>
     >([])
+    // Sources excluded from aggregate search (Home search + mirror finder). Mirrors
+    // settings.searchDisabledSourceIds and is updated optimistically on toggle.
+    let searchDisabledSourceIds = $state<string[]>([])
     let checkingUpdates = $state(false)
     let detailManga = $state<LibraryManga | null>(null)
     let detailCommunityStats = $state<{ avgRating: number | null; ratingCount: number; readerCount: number } | null>(
@@ -1360,6 +1363,7 @@
             updateIntervalSelection = settings.updateIntervalHours
             noGapSelection = settings.noGapContinuous
             autoPauseDays = settings.autoPauseDays ?? 0
+            searchDisabledSourceIds = settings.searchDisabledSourceIds ?? []
             // stats:get scans the whole progress/history tables and isn't needed to paint
             // the library - fetch it in the background instead of blocking the grid on it.
             void sendRuntimeMessage<typeof stats>({ type: "stats:get" }).then(result => {
@@ -1417,6 +1421,7 @@
         updateIntervalSelection = settings.updateIntervalHours
         noGapSelection = settings.noGapContinuous
         autoPauseDays = settings.autoPauseDays ?? 0
+        searchDisabledSourceIds = settings.searchDisabledSourceIds ?? []
         void sendRuntimeMessage<typeof stats>({ type: "stats:get" }).then(result => {
             stats = result
         })
@@ -2726,6 +2731,29 @@
     function openSourceSite(src: { homepage?: string; domains: string[] }) {
         const url = src.homepage ?? (src.domains[0] ? `https://${src.domains[0]}` : undefined)
         if (url) void browser.tabs.create({ url })
+    }
+
+    const searchDisabledSet = $derived(new Set(searchDisabledSourceIds))
+    const searchCapableSources = $derived(sourcesList.filter(s => s.canSearch))
+    const searchEnabledCount = $derived(searchCapableSources.filter(s => !searchDisabledSet.has(s.id)).length)
+
+    async function toggleSourceSearch(src: { id: string }) {
+        const next = searchDisabledSet.has(src.id)
+            ? searchDisabledSourceIds.filter(id => id !== src.id)
+            : [...searchDisabledSourceIds, src.id]
+        searchDisabledSourceIds = next
+        await updateSetting({ searchDisabledSourceIds: next })
+    }
+
+    async function enableAllSearch() {
+        searchDisabledSourceIds = []
+        await updateSetting({ searchDisabledSourceIds: [] })
+    }
+
+    async function disableAllSearch() {
+        const next = searchCapableSources.map(s => s.id)
+        searchDisabledSourceIds = next
+        await updateSetting({ searchDisabledSourceIds: next })
     }
 
     // Display-only ordering for the Sources page - registration order in
@@ -4216,19 +4244,32 @@
                         {pinging ? "Checking…" : "Re-check sites"}
                     </button>
                 </div>
+                {#if searchCapableSources.length > 0}
+                    <div class="source-search-bar">
+                        <span class="source-search-summary muted">
+                            Searching {searchEnabledCount} of {searchCapableSources.length} sources
+                        </span>
+                        <span class="source-search-actions">
+                            <button type="button" class="btn-outline btn-sm" onclick={() => void enableAllSearch()}>
+                                Enable all
+                            </button>
+                            <button type="button" class="btn-outline btn-sm" onclick={() => void disableAllSearch()}>
+                                Disable all
+                            </button>
+                        </span>
+                    </div>
+                {/if}
                 <p class="muted search-hint">
-                    Click a site to open it in a new tab. The dot shows reachability: green = live, yellow = bot-gated
-                    (chapters still load via tab), red = unreachable, grey = not checked yet.
+                    Open a site in a new tab, or toggle Search to pick which sources aggregate queries hit. The dot
+                    shows reachability: green = live, yellow = bot-gated (chapters still load via tab), red =
+                    unreachable, grey = not checked yet.
                 </p>
                 <div class="adapter-grid">
                     {#each sourcesListAlpha as src}
                         {@const pingStatus = pingState.get(src.id)}
                         {@const count = sourceTitleCounts.get(src.id) ?? 0}
-                        <button
-                            type="button"
-                            class="adapter-chip"
-                            onclick={() => openSourceSite(src)}
-                            title={`Open ${src.name}`}>
+                        {@const searchOn = !searchDisabledSet.has(src.id)}
+                        <div class="adapter-chip">
                             <span class="adapter-head">
                                 <span
                                     class="status-dot"
@@ -4248,13 +4289,34 @@
                                 {src.capabilities.join(", ")}{#if src.canSearch}
                                     · search{/if}
                             </span>
-                            <span class="adapter-footer">
-                                <span class="adapter-open">Open site ↗</span>
+                            <div class="adapter-footer">
+                                <button
+                                    type="button"
+                                    class="adapter-open"
+                                    onclick={() => openSourceSite(src)}
+                                    title={`Open ${src.name}`}>
+                                    Open site ↗
+                                </button>
                                 {#if count > 0}
                                     <span class="adapter-count">{count} title{count !== 1 ? "s" : ""}</span>
                                 {/if}
-                            </span>
-                        </button>
+                            </div>
+                            {#if src.canSearch}
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    class="search-toggle"
+                                    class:on={searchOn}
+                                    aria-checked={searchOn}
+                                    aria-label={`Search ${src.name}`}
+                                    onclick={() => void toggleSourceSearch(src)}>
+                                    <span class="search-toggle-track"><span class="search-toggle-thumb"></span></span>
+                                    <span class="search-toggle-label">Search {searchOn ? "on" : "off"}</span>
+                                </button>
+                            {:else}
+                                <span class="adapter-nosearch muted">No search</span>
+                            {/if}
+                        </div>
                     {/each}
                 </div>
             {/if}

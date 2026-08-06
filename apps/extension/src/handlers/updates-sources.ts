@@ -673,7 +673,9 @@ export const updatesSourcesHandlers: HandlerMap = {
         return await checkSourcePermission()
     },
     "manga:search": async request => {
-        return await searchManga(request.query)
+        const settings = await getSettings()
+        const excluded = new Set(settings.searchDisabledSourceIds)
+        return await searchManga(request.query, excluded)
     },
     "manga:chapters": async request => {
         const settings = await getSettings()

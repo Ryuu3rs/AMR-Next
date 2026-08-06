@@ -346,11 +346,19 @@ const SEARCH_RACE_TIMEOUT_MS: Record<string, number> = { mangahub: 12_000 }
 // granted host permission fail their origin check and are skipped (allSettled).
 // sourceHealth is intentionally NOT used here - a source can be flagged dead for
 // chapter fetching but still have a working search endpoint.
-export async function searchManga(query: string): Promise<SourceSearchResult[]> {
+export async function searchManga(
+    query: string,
+    excludeSourceIds?: ReadonlySet<string>
+): Promise<SourceSearchResult[]> {
     const searchStartedAt = Date.now()
     const searchable = sourceRegistry
         .list()
-        .filter(adapter => !!adapter.search && shouldIncludeInSearch(adapter.manifest.id))
+        .filter(
+            adapter =>
+                !!adapter.search &&
+                !excludeSourceIds?.has(adapter.manifest.id) &&
+                shouldIncludeInSearch(adapter.manifest.id)
+        )
     const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
         Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))])
     const settled = await Promise.allSettled(
@@ -393,9 +401,12 @@ export function searchMangaStreaming(
     query: string,
     onPartial: (results: SourceSearchResult[], sourceId: string) => void,
     onDone: () => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    excludeSourceIds?: ReadonlySet<string>
 ): void {
-    const searchable = sourceRegistry.list().filter(adapter => !!adapter.search)
+    const searchable = sourceRegistry
+        .list()
+        .filter(adapter => !!adapter.search && !excludeSourceIds?.has(adapter.manifest.id))
     if (searchable.length === 0) {
         if (!signal?.aborted) onDone()
         return
