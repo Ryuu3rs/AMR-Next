@@ -22,9 +22,22 @@ export function hasNewerChapters(manga: LibraryManga): boolean {
     return !!(manga.latestChapterId && manga.lastReadChapterId && manga.latestChapterId !== manga.lastReadChapterId)
 }
 
+// Whether the latest available chapter is actually known. A title cannot be "caught
+// up" (completed) against an unknown latest: an AniList-imported Dropped/Paused title
+// carries read progress but no source yet, so latest is absent - reporting it as
+// completed would erase the explicit dropped/paused. Only a finite latestChapterNumber
+// or a non-empty latestChapterId counts as a known latest.
+export function hasKnownLatest(m: LibraryManga): boolean {
+    return (
+        (typeof m.latestChapterNumber === "number" && Number.isFinite(m.latestChapterNumber)) ||
+        (typeof m.latestChapterId === "string" && m.latestChapterId.length > 0)
+    )
+}
+
 export function statusOf(m: LibraryManga): LibraryStatus {
     if (neverRead(m)) return "unread"
-    return hasNewerChapters(m) ? "reading" : "completed"
+    if (hasKnownLatest(m) && !hasNewerChapters(m)) return "completed"
+    return "reading"
 }
 
 // The effective status shown in the library: the derived reading/completed/unread of
@@ -41,8 +54,10 @@ export type ReadingStatus = "unread" | "reading" | "paused" | "dropped" | "compl
 // read is older than the window pauses on its own without an explicit override.
 export function effectiveReadingStatus(m: LibraryManga, opts: { autoPauseDays: number; now: number }): ReadingStatus {
     const hasRead = !neverRead(m)
-    // 1. Local completion overrides everything, including a stored paused/dropped.
-    if (hasRead && !hasNewerChapters(m)) return "completed"
+    // 1. Local completion overrides everything, including a stored paused/dropped -
+    // but only when the latest is actually known; a read title whose latest is unknown
+    // is not "caught up" and must fall through so a stored dropped/paused is honoured.
+    if (hasRead && hasKnownLatest(m) && !hasNewerChapters(m)) return "completed"
     // 2. Explicit dropped.
     if (m.readingStatus === "dropped") return "dropped"
     // 3. Paused: explicit override, or inactive past the auto-pause window.

@@ -3,6 +3,7 @@ import type { LibraryManga } from "./database"
 import {
     neverRead,
     hasNewerChapters,
+    hasKnownLatest,
     statusOf,
     readChapterLabel,
     effectiveReadingStatus,
@@ -74,6 +75,21 @@ describe("reading-status", () => {
         expect(hasNewerChapters(m)).toBe(false)
         expect(statusOf(m)).toBe("completed")
     })
+
+    // A read title whose latest is unknown (e.g. an AniList import with no source
+    // linked yet) is NOT caught up - it must not be reported completed.
+    it("does not mark a read title with unknown latest completed", () => {
+        const m = manga({ lastReadChapterNumber: 5 })
+        expect(hasKnownLatest(m)).toBe(false)
+        expect(statusOf(m)).toBe("reading")
+    })
+
+    it("treats a finite latestChapterNumber or non-empty latestChapterId as known latest", () => {
+        expect(hasKnownLatest(manga({ latestChapterNumber: 3 }))).toBe(true)
+        expect(hasKnownLatest(manga({ latestChapterId: "c3" }))).toBe(true)
+        expect(hasKnownLatest(manga({ latestChapterId: "" }))).toBe(false)
+        expect(hasKnownLatest(manga({}))).toBe(false)
+    })
 })
 
 describe("effectiveReadingStatus", () => {
@@ -134,6 +150,33 @@ describe("effectiveReadingStatus", () => {
             latestChapterNumber: 20,
             lastReadChapterId: "c20",
             latestChapterId: "c20"
+        })
+        expect(effectiveReadingStatus(m, opts)).toBe("completed")
+    })
+
+    // A read title whose latest is unknown is not "caught up": completion must not
+    // fire, so a stored dropped/paused is honoured and the bare case reads "reading".
+    it("honours a stored dropped for a read title with unknown latest", () => {
+        const m = manga({ readingStatus: "dropped", lastReadChapterNumber: 5 })
+        expect(effectiveReadingStatus(m, opts)).toBe("dropped")
+    })
+
+    it("honours a stored paused for a read title with unknown latest", () => {
+        const m = manga({ readingStatus: "paused", lastReadChapterNumber: 5 })
+        expect(effectiveReadingStatus(m, opts)).toBe("paused")
+    })
+
+    it("reads a read title with unknown latest and no override as reading, not completed", () => {
+        const m = manga({ lastReadChapterNumber: 5 })
+        expect(effectiveReadingStatus(m, opts)).toBe("reading")
+    })
+
+    it("still marks a read title with known latest and caught up as completed", () => {
+        const m = manga({
+            lastReadChapterId: "c9",
+            lastReadChapterNumber: 9,
+            latestChapterId: "c9",
+            latestChapterNumber: 9
         })
         expect(effectiveReadingStatus(m, opts)).toBe("completed")
     })

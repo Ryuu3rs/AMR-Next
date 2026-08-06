@@ -2416,7 +2416,12 @@
         )
     }
 
-    const unreadPool = $derived(library.filter(m => statusOf(m) !== "completed" && !m.onHold))
+    const unreadPool = $derived(
+        library.filter(m => {
+            const status = effectiveReadingStatus(m, { autoPauseDays, now: Date.now() })
+            return status !== "completed" && status !== "paused" && status !== "dropped" && !m.onHold
+        })
+    )
     function surpriseMe() {
         const pool = unreadPool.length > 0 ? unreadPool : library
         if (pool.length === 0) return
@@ -3822,7 +3827,7 @@
                 <div class="update-groups">
                     {#each pagedUpdates as manga (manga.id)}
                         {@const open = expandedUpdates.has(manga.id)}
-                        {@const neverRead = !manga.lastReadChapterId}
+                        {@const titleNeverRead = neverRead(manga)}
                         {@const chapters = updatesNewChapters[manga.id]}
                         <div class="update-group" class:open>
                             <button type="button" class="update-group-head" onclick={() => toggleUpdate(manga.id)}>
@@ -3838,7 +3843,7 @@
                                     <span class="muted update-when"
                                         >{new Date(manga.updatedAt).toLocaleDateString()}</span>
                                 </div>
-                                {#if neverRead}
+                                {#if titleNeverRead}
                                     <span class="badge-unread">Unread</span>
                                 {:else if manga.latestChapterNumber != null && manga.lastReadChapterNumber != null}
                                     <span class="badge-new">
