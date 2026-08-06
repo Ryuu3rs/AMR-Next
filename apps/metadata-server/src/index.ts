@@ -92,8 +92,13 @@ app.get("/metadata/by-anilist/:id", async c => {
         return c.json({ result: null })
     }
     if (resolved) {
+        // This route is public and unauthenticated, and the caller controls `id`. Writing via
+        // upsert here would let an anonymous caller whose AniList title normalizes to an
+        // existing catalog row repoint that row's anilist_id/cover/status for the full TTL,
+        // bypassing the METADATA_ADMIN_TOKEN gate on /metadata/link. Insert-only: the
+        // first-seen title is still cached, but an existing row is never overwritten.
         const norm = resolved.title ? normalizeTitle(resolved.title) : `anilist:${id}`
-        store.upsertMetadata({ ...resolved, normalizedTitle: norm, source: "anilist" })
+        store.insertIfAbsentMetadata({ ...resolved, normalizedTitle: norm, source: "anilist" })
         return c.json(resolved)
     }
 

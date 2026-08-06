@@ -147,6 +147,33 @@ export function createDb(path: string = defaultPath()) {
         })
     }
 
+    // Public, unauthenticated read paths cache a first-seen title but MUST NOT repoint an
+    // existing shared-catalog row - otherwise an anonymous caller whose AniList id normalizes
+    // to a known title could overwrite that row's anilist_id/cover/status, the same
+    // shared-catalog write that /metadata/link gates behind METADATA_ADMIN_TOKEN. Insert only;
+    // do nothing when a row for this normalized title already exists.
+    const insertIfAbsent = db.prepare(
+        `INSERT INTO title_metadata
+            (normalized_title, anilist_id, mal_id, title, status, cover_url, genres, tags, format, source, fetched_at)
+         VALUES (@normalized_title, @anilist_id, @mal_id, @title, @status, @cover_url, @genres, @tags, @format, @source, unixepoch())
+         ON CONFLICT (normalized_title) DO NOTHING`
+    )
+
+    function insertIfAbsentMetadata(row: MetadataRow): void {
+        insertIfAbsent.run({
+            normalized_title: row.normalizedTitle,
+            anilist_id: row.anilistId ?? null,
+            mal_id: row.malId ?? null,
+            title: row.title ?? null,
+            status: row.status ?? "unknown",
+            cover_url: row.coverUrl ?? null,
+            genres: JSON.stringify(row.genres ?? []),
+            tags: JSON.stringify(row.tags ?? []),
+            format: row.isOneshot ? "ONE_SHOT" : null,
+            source: row.source
+        })
+    }
+
     // A no-match must never destroy an existing good row: insert a fresh no-match only
     // when nothing is cached, and refresh the timestamp only when the existing row is
     // ALREADY a no-match. A previously-resolved title (source 'anilist'/'manual') is
@@ -162,7 +189,7 @@ export function createDb(path: string = defaultPath()) {
         noMatch.run({ norm })
     }
 
-    return { db, getByNormalizedTitle, getByAnilistId, upsertMetadata, markNoMatch }
+    return { db, getByNormalizedTitle, getByAnilistId, upsertMetadata, insertIfAbsentMetadata, markNoMatch }
 }
 
 export function isStale(fetched_at: number, now: number = Math.floor(Date.now() / 1000)): boolean {

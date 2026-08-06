@@ -4,6 +4,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createDb } from "./db.ts"
+import { normalizeTitle } from "./normalize.ts"
 import { resolveFromAniList } from "./anilist.ts"
 import { resolveFromJikan, mapJikanManga } from "./jikan.ts"
 
@@ -28,6 +29,71 @@ test("markNoMatch creates a no-match only when nothing is cached", () => {
     const { getByNormalizedTitle, markNoMatch } = createDb(":memory:")
     markNoMatch("unknown title")
     assert.equal(getByNormalizedTitle("unknown title")?.source, "none")
+})
+
+// --- db-level: the public insert-only path never repoints an existing catalog row ---
+test("insertIfAbsentMetadata caches a first-seen title but never overwrites an existing row", () => {
+    const { getByNormalizedTitle, upsertMetadata, insertIfAbsentMetadata } = createDb(":memory:")
+
+    // First-seen title still gets cached by the public path.
+    insertIfAbsentMetadata({ normalizedTitle: "fresh title", anilistId: 111, title: "Fresh", source: "anilist" })
+    assert.equal(getByNormalizedTitle("fresh title")?.result.anilistId, 111)
+
+    // A legit resolved row (as /link or /resolve would write) must survive an insert-if-absent
+    // for the same normalized title - the stored anilist_id is unchanged.
+    upsertMetadata({ normalizedTitle: "berserk", anilistId: 30002, title: "Berserk", source: "anilist" })
+    insertIfAbsentMetadata({ normalizedTitle: "berserk", anilistId: 999999, title: "Berserk", source: "anilist" })
+    const hit = getByNormalizedTitle("berserk")
+    assert.equal(hit?.result.anilistId, 30002)
+    assert.equal(hit?.source, "anilist")
+})
+
+// --- route-level: an unauth /by-anilist whose title collides with a cached row does NOT
+//     repoint that row's anilist_id (bypass of the /link admin gate) ---
+test("unauth /by-anilist does not repoint an existing catalog row (SECURITY)", async () => {
+    process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "amr-meta-"))
+    const { app } = await import("./index.ts")
+    const { getDb } = await import("./db.ts")
+    const store = getDb()
+
+    const norm = normalizeTitle("Berserk")
+    store.upsertMetadata({
+        normalizedTitle: norm,
+        anilistId: 30002,
+        title: "Berserk",
+        status: "ongoing",
+        coverUrl: "https://legit/cover.jpg",
+        source: "anilist"
+    })
+
+    // Attacker's AniList id 999999 resolves to a title that normalizes to the cached "berserk".
+    const realFetch = globalThis.fetch
+    globalThis.fetch = async () =>
+        new Response(
+            JSON.stringify({
+                data: {
+                    Media: {
+                        id: 999999,
+                        title: { english: "Berserk" },
+                        status: "CANCELLED",
+                        coverImage: { large: "https://evil/x.jpg" }
+                    }
+                }
+            }),
+            { status: 200 }
+        )
+    try {
+        const res = await app.request("/metadata/by-anilist/999999")
+        assert.equal(res.status, 200)
+    } finally {
+        globalThis.fetch = realFetch
+    }
+
+    // The legit row is untouched: id still 30002, not repointed to 999999.
+    const hit = store.getByNormalizedTitle(norm)
+    assert.equal(hit?.result.anilistId, 30002)
+    assert.equal(hit?.result.coverUrl, "https://legit/cover.jpg")
+    assert.equal(hit?.result.status, "ongoing")
 })
 
 // --- anilist-level: throw on transient, null only on genuine no-match (Bug 1) ---

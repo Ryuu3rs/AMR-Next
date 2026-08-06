@@ -47,6 +47,24 @@ describe("matchReadChapterByUrl", () => {
         expect(matchReadChapterByUrl(chapters, undefined)).toBeUndefined()
         expect(matchReadChapterByUrl(chapters, "https://x.com/chapter/999")).toBeUndefined()
     })
+
+    it("distinguishes Webtoons chapters by episode_no, not the shared 'viewer' segment", () => {
+        // Every Webtoons chapter URL is .../viewer?title_no=..&episode_no=N, so the
+        // path segment "viewer" is identical across chapters. Tokenizing on the path
+        // used to make every chapter collapse to "viewer" and match the first one.
+        const chapters = [
+            { id: "ep1", url: "https://www.webtoons.com/en/.../ep-1/viewer?title_no=95&episode_no=1", sortKey: 1 },
+            { id: "ep2", url: "https://www.webtoons.com/en/.../ep-2/viewer?title_no=95&episode_no=2", sortKey: 2 }
+        ]
+        // Stored ep-2 URL (param order differs) must resolve to ep-2, not ep-1.
+        expect(
+            matchReadChapterByUrl(chapters, "https://www.webtoons.com/en/.../viewer?episode_no=2&title_no=95")?.id
+        ).toBe("ep2")
+        // An episode not present returns undefined rather than a false first-chapter match.
+        expect(
+            matchReadChapterByUrl(chapters, "https://www.webtoons.com/en/.../viewer?episode_no=7&title_no=95")
+        ).toBeUndefined()
+    })
 })
 
 describe("matchReadChapterId", () => {

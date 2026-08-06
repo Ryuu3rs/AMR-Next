@@ -13,6 +13,8 @@ const {
     deleteMediaListEntryMock,
     getViewerNameMock,
     getViewerMangaListMock,
+    getKnownMembershipMock,
+    setKnownMembershipMock,
     resolveMetadataMock,
     configureAniListAlarmMock,
     getSettingsMock
@@ -26,6 +28,8 @@ const {
     deleteMediaListEntryMock: vi.fn(),
     getViewerNameMock: vi.fn(),
     getViewerMangaListMock: vi.fn(),
+    getKnownMembershipMock: vi.fn(),
+    setKnownMembershipMock: vi.fn(),
     resolveMetadataMock: vi.fn(),
     configureAniListAlarmMock: vi.fn(),
     getSettingsMock: vi.fn()
@@ -41,7 +45,9 @@ vi.mock("../anilist", () => ({
     getViewerMangaList: getViewerMangaListMock,
     getMediaListEntryId: getMediaListEntryIdMock,
     saveMediaStatus: saveMediaStatusMock,
-    deleteMediaListEntry: deleteMediaListEntryMock
+    deleteMediaListEntry: deleteMediaListEntryMock,
+    getKnownMembership: getKnownMembershipMock,
+    setKnownMembership: setKnownMembershipMock
 }))
 vi.mock("../metadata", () => ({ resolveMetadata: resolveMetadataMock }))
 vi.mock("../settings", () => ({ getSettings: getSettingsMock }))
@@ -74,6 +80,10 @@ beforeEach(async () => {
     deleteMediaListEntryMock.mockReset()
     getViewerNameMock.mockReset()
     getViewerMangaListMock.mockReset()
+    getKnownMembershipMock.mockReset()
+    getKnownMembershipMock.mockResolvedValue([])
+    setKnownMembershipMock.mockReset()
+    setKnownMembershipMock.mockResolvedValue(undefined)
     resolveMetadataMock.mockReset()
     getSettingsMock.mockReset()
     getSettingsMock.mockResolvedValue({ anilistImportPaused: true, anilistImportDropped: true })
@@ -168,6 +178,23 @@ describe("runAniListSync", () => {
         const result = await runAniListSync()
 
         expect(saveMediaStatusMock).not.toHaveBeenCalled()
+        expect(result.added).toBe(0)
+    })
+
+    it("pushes a read-to-Ch0.5 title as progress, never PLANNING (floored 0 is still read)", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        // Read only to 0.5 -> Math.floor is 0, but the title is read, not unread.
+        await db.manga.put(makeManga({ id: "r0", anilistId: 42, lastReadChapterNumber: 0.5 }))
+        getViewerProgressMock.mockResolvedValue(undefined)
+        saveViewerProgressMock.mockResolvedValue(0)
+        getMediaListEntryIdMock.mockResolvedValue(undefined)
+        getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }])
+
+        const result = await runAniListSync()
+
+        expect(saveMediaStatusMock).not.toHaveBeenCalled() // never treated as PLANNING
+        expect(saveViewerProgressMock).toHaveBeenCalledWith("t", 42, 0)
         expect(result.added).toBe(0)
     })
 })
@@ -318,11 +345,12 @@ describe("anilist:import", () => {
 })
 
 describe("runAniListSync reconcile (removed on AniList)", () => {
-    it("drops a read local title missing from the remote list, only with membership sync on", async () => {
+    it("drops a read title that was in prior known membership and is now absent, membership sync on", async () => {
         const { runAniListSync } = await import("./anilist")
         getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
-        // read + has anilistId, but not present in the remote list below.
+        // read + has anilistId, the user HAD it on AniList (known membership), now gone.
         await db.manga.put(makeManga({ id: "gone", anilistId: 500, lastReadChapterNumber: 12 }))
+        getKnownMembershipMock.mockResolvedValue([500])
         getViewerProgressMock.mockResolvedValue(12)
         getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }])
 
@@ -331,10 +359,55 @@ describe("runAniListSync reconcile (removed on AniList)", () => {
         expect((await db.manga.get("gone"))?.readingStatus).toBe("dropped")
     })
 
-    it("leaves an unread orphan untouched (never auto-drops what was never read)", async () => {
+    it("first sync (empty known membership) drops nothing even when a read title is absent remotely", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        await db.manga.put(makeManga({ id: "gone", anilistId: 500, lastReadChapterNumber: 12 }))
+        getKnownMembershipMock.mockResolvedValue([]) // nothing known yet
+        getViewerProgressMock.mockResolvedValue(0)
+        saveViewerProgressMock.mockResolvedValue(12)
+        getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }])
+
+        await runAniListSync()
+
+        expect((await db.manga.get("gone"))?.readingStatus).toBeUndefined()
+    })
+
+    it("does not drop an enrichment-only id that was never in known membership", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        // 500 has an anilistId (stamped by metadata enrichment) but the user never tracked
+        // it on AniList: it is absent from the remote list AND from prior known membership.
+        await db.manga.put(makeManga({ id: "enriched", anilistId: 500, lastReadChapterNumber: 12 }))
+        getKnownMembershipMock.mockResolvedValue([888]) // known, but a different title
+        getViewerProgressMock.mockResolvedValue(12)
+        getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }])
+
+        await runAniListSync()
+
+        expect((await db.manga.get("enriched"))?.readingStatus).toBeUndefined()
+    })
+
+    it("does not re-push a genuine removal (skips the push so it is not re-created)", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        await db.manga.put(makeManga({ id: "gone", anilistId: 500, lastReadChapterNumber: 12 }))
+        getKnownMembershipMock.mockResolvedValue([500])
+        getViewerProgressMock.mockResolvedValue(0)
+        getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }])
+
+        await runAniListSync()
+
+        expect((await db.manga.get("gone"))?.readingStatus).toBe("dropped")
+        expect(saveViewerProgressMock).not.toHaveBeenCalled()
+        expect(getViewerProgressMock).not.toHaveBeenCalled()
+    })
+
+    it("leaves an unread orphan untouched even when in known membership", async () => {
         const { runAniListSync } = await import("./anilist")
         getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
         await db.manga.put(makeManga({ id: "unread-orphan", anilistId: 501 }))
+        getKnownMembershipMock.mockResolvedValue([501])
         getMediaListEntryIdMock.mockResolvedValue(1) // already on list, so no add
         getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }])
 
@@ -362,6 +435,7 @@ describe("runAniListSync reconcile (removed on AniList)", () => {
             makeManga({ id: "a", anilistId: 500, lastReadChapterNumber: 12 }),
             makeManga({ id: "b", anilistId: 501, lastReadChapterNumber: 3 })
         ])
+        getKnownMembershipMock.mockResolvedValue([500, 501])
         getViewerProgressMock.mockResolvedValue(0)
         getViewerMangaListMock.mockResolvedValue([]) // empty == indistinguishable from failure
 
@@ -369,24 +443,30 @@ describe("runAniListSync reconcile (removed on AniList)", () => {
 
         expect((await db.manga.get("a"))?.readingStatus).toBeUndefined()
         expect((await db.manga.get("b"))?.readingStatus).toBeUndefined()
+        // A soft-failed (empty) remote must not overwrite the known membership.
+        expect(setKnownMembershipMock).not.toHaveBeenCalled()
     })
 
     it("drops nothing when the remote fetch THROWS", async () => {
         const { runAniListSync } = await import("./anilist")
         getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
         await db.manga.put(makeManga({ id: "gone", anilistId: 500, lastReadChapterNumber: 12 }))
+        getKnownMembershipMock.mockResolvedValue([500])
         getViewerProgressMock.mockResolvedValue(12)
         getViewerMangaListMock.mockRejectedValue(new Error("AniList API 429"))
 
         await runAniListSync()
 
         expect((await db.manga.get("gone"))?.readingStatus).toBeUndefined()
+        // A failed remote must not overwrite the known membership.
+        expect(setKnownMembershipMock).not.toHaveBeenCalled()
     })
 
-    it("does not drop a read pre-existing title still on the remote list even if its push errored", async () => {
+    it("does not drop a read title still on the remote list even if its push errored", async () => {
         const { runAniListSync } = await import("./anilist")
         getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
         await db.manga.put(makeManga({ id: "kept", anilistId: 500, lastReadChapterNumber: 12 }))
+        getKnownMembershipMock.mockResolvedValue([500])
         // The push for this title fails (rate limit) this run...
         getViewerProgressMock.mockRejectedValue(new Error("AniList API 429"))
         // ...but it is present in the up-front remote snapshot, so it must not be dropped.
@@ -397,33 +477,25 @@ describe("runAniListSync reconcile (removed on AniList)", () => {
         expect((await db.manga.get("kept"))?.readingStatus).toBeUndefined()
     })
 
-    it("drops a read pre-existing title absent from a NON-EMPTY remote list", async () => {
+    it("persists the next known membership as the remote list unioned with what was pushed", async () => {
         const { runAniListSync } = await import("./anilist")
         getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
-        await db.manga.put(makeManga({ id: "gone", anilistId: 500, lastReadChapterNumber: 12 }))
-        getViewerProgressMock.mockResolvedValue(12)
-        getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }])
-
-        await runAniListSync()
-
-        expect((await db.manga.get("gone"))?.readingStatus).toBe("dropped")
-    })
-
-    it("never drops a title whose anilistId was resolved THIS run (no pre-existing link)", async () => {
-        const { runAniListSync } = await import("./anilist")
-        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
-        // No anilistId to begin with - it gets guessed during this run and is absent remotely.
-        await db.manga.put(makeManga({ id: "guessed", title: "Solo Leveling", lastReadChapterNumber: 4 }))
-        resolveMetadataMock.mockResolvedValue({ anilistId: 777 })
+        // A read title (id 500) newly pushed, plus an unread cached title (id 55) added.
+        await db.manga.bulkPut([
+            makeManga({ id: "read", anilistId: 500, lastReadChapterNumber: 12 }),
+            makeManga({ id: "unread", anilistId: 55 })
+        ])
+        getKnownMembershipMock.mockResolvedValue([])
         getViewerProgressMock.mockResolvedValue(undefined)
-        saveViewerProgressMock.mockResolvedValue(4)
-        getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }]) // non-empty, 777 absent
+        saveViewerProgressMock.mockResolvedValue(12)
+        getMediaListEntryIdMock.mockResolvedValue(undefined)
+        getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }]) // remote had an unrelated title
 
         await runAniListSync()
 
-        const stored = await db.manga.get("guessed")
-        expect(stored?.anilistId).toBe(777) // id was still cached
-        expect(stored?.readingStatus).toBeUndefined() // but never auto-dropped
+        expect(setKnownMembershipMock).toHaveBeenCalledTimes(1)
+        const persisted = new Set(setKnownMembershipMock.mock.calls[0]![0] as number[])
+        expect(persisted).toEqual(new Set([999, 500, 55]))
     })
 })
 

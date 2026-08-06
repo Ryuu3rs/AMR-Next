@@ -211,7 +211,17 @@ export function getMangaStats(mangaTitle: string): {
     const u = db.prepare("SELECT COUNT(DISTINCT user_id) as cnt FROM events WHERE manga_title = ?").get(mangaTitle) as {
         cnt: number
     }
-    return { avgRating: r.avg, ratingCount: r.cnt, readerCount: u.cnt }
+    // Apply the same k-anonymity floor the recommenders use. This endpoint is public and
+    // unauthenticated, so exposing an exact avgRating for a lone rater discloses that one
+    // user's private rating, and a sub-floor readerCount discloses a single user's presence.
+    // Below the floor, suppress the precise values (indistinguishable from "no data").
+    const enoughRaters = r.cnt >= MIN_DISTINCT_READERS
+    const enoughReaders = u.cnt >= MIN_DISTINCT_READERS
+    return {
+        avgRating: enoughRaters ? r.avg : null,
+        ratingCount: enoughRaters ? r.cnt : 0,
+        readerCount: enoughReaders ? u.cnt : 0
+    }
 }
 
 export function getTopRated(): Array<{ title: string; avgRating: number; ratingCount: number }> {
@@ -247,9 +257,11 @@ export function getCommunityStats(): {
         .prepare(
             `SELECT manga_title as title, source_id as sourceId, COUNT(DISTINCT user_id) as count
             FROM events WHERE date >= ? AND date <= ?
-            GROUP BY manga_title ORDER BY count DESC LIMIT 5`
+            GROUP BY manga_title
+            HAVING COUNT(DISTINCT user_id) >= ?
+            ORDER BY count DESC LIMIT 5`
         )
-        .all(start, end) as Array<{ title: string; sourceId: string; count: number }>
+        .all(start, end, MIN_DISTINCT_READERS) as Array<{ title: string; sourceId: string; count: number }>
 
     const topGenres = db
         .prepare(
