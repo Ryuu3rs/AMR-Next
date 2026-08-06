@@ -230,6 +230,59 @@ describe("weebCentralAdapter.listChapters - Episode-labeled webtoon series (0.NN
     })
 })
 
+// The keyword-less bare-number fallback used to fire on ANY label, so a label like
+// "New Year 2024 Special" yielded 2024 (a year embedded in prose), poisoning the sortKey.
+// The fallback must only fire when the whole trimmed label IS a standalone number.
+describe("weebCentralAdapter.listChapters - bare-number fallback must not grab an embedded year", () => {
+    const bareFallbackSeriesId = "01J76XYE23859ZWDP7BJ520BARE"
+    const ulid = (c: string) => c.repeat(26)
+    const SPECIAL = ulid("A")
+    const BARE = ulid("B")
+    const EPISODE = ulid("C")
+    const row = (id: string, label: string) =>
+        `<a href="/chapters/${id}" class="flex-1"><span class="grow flex"><span class="">${label}</span></span></a>`
+    // Newest-first document order (as the live site lists it).
+    const bareFallbackHtml = [row(BARE, "246"), row(SPECIAL, "New Year 2024 Special"), row(EPISODE, "Episode 17")].join(
+        "\n"
+    )
+
+    const stubManga = {
+        manga: {
+            id: `weebcentral:manga:${bareFallbackSeriesId}`,
+            title: "Fallback Test",
+            normalizedTitle: "fallback test",
+            authors: [] as string[],
+            status: "unknown" as const,
+            addedAt: 0,
+            updatedAt: 0
+        },
+        sourceId: "weebcentral",
+        sourceMangaId: bareFallbackSeriesId,
+        url: `${ORIGIN}/series/${bareFallbackSeriesId}`
+    }
+    const run = () => {
+        const ctx = makeContext({
+            [`${ORIGIN}/series/${bareFallbackSeriesId}/full-chapter-list`]: bareFallbackHtml
+        })
+        return adapter.listChapters({ manga: stubManga }, ctx as never)
+    }
+
+    it("does not parse the embedded year from 'New Year 2024 Special'", async () => {
+        const chapters = await run()
+        const special = chapters.find(c => c.sourceChapterId === SPECIAL)!
+        // Unnumbered -> interpolated between its real neighbours (Episode 17 and Chapter 246),
+        // never the year 2024.
+        expect(special.sortKey).not.toBe(2024)
+        expect(special.sortKey).toBeLessThan(246)
+    })
+
+    it("still resolves a standalone bare number (246 -> 246) and keyword labels", async () => {
+        const chapters = await run()
+        expect(chapters.find(c => c.sourceChapterId === BARE)!.sortKey).toBe(246)
+        expect(chapters.find(c => c.sourceChapterId === EPISODE)!.sortKey).toBe(17)
+    })
+})
+
 describe("weebCentralAdapter.resolveChapter", () => {
     it("returns pages from the images endpoint", async () => {
         const ctx = makeContext({

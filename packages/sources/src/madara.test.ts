@@ -190,6 +190,47 @@ describe("createMadaraAdapter", () => {
         expect(result.chapter.title).not.toBe("Chapter 1")
     })
 
+    // Regression: Madara slugs "Chapter 10.5" as ch-10-5 / chapter-10-5 (DASH decimal).
+    // The number regex must accept the dash and normalize it to a dot so 10.5 does not
+    // collapse to 10 and collide with Chapter 10.
+    it("parses a dash-decimal chapter slug (ch-10-5 -> 10.5) for a chapterPrefix adapter", async () => {
+        const url = "https://test-madara.example/series/cool-manga/ch-10-5/"
+        const context = createContext({ "/series/cool-manga/ch-10-5/": chapterHtml })
+        const result = await adapter.resolveChapter({ url: new URL(url) }, context)
+        expect(result.chapter.sortKey).toBe(10.5)
+        expect(result.chapter.title).toBe("Chapter 10.5")
+    })
+
+    it("parses a dash-decimal chapter slug (chapter-10-5 -> 10.5) for a volumePath adapter", async () => {
+        const volAdapter = createMadaraAdapter({
+            id: "testvoldec",
+            name: "Test Vol Dec",
+            origin: "https://test-madara.example",
+            domains: ["test-madara.example"],
+            volumePath: true
+        })
+        const url = "https://test-madara.example/manga/cool-manga/chapter-10-5/"
+        const context = createContext({ "/manga/cool-manga/chapter-10-5/": chapterHtml })
+        const result = await volAdapter.resolveChapter({ url: new URL(url) }, context)
+        expect(result.chapter.sortKey).toBe(10.5)
+        expect(result.chapter.title).toBe("Chapter 10.5")
+    })
+
+    it("still parses a plain integer chapter slug (chapter-11 -> 11)", async () => {
+        const volAdapter = createMadaraAdapter({
+            id: "testvolint",
+            name: "Test Vol Int",
+            origin: "https://test-madara.example",
+            domains: ["test-madara.example"],
+            volumePath: true
+        })
+        const url = "https://test-madara.example/manga/cool-manga/chapter-11/"
+        const context = createContext({ "/manga/cool-manga/chapter-11/": chapterHtml })
+        const result = await volAdapter.resolveChapter({ url: new URL(url) }, context)
+        expect(result.chapter.sortKey).toBe(11)
+        expect(result.chapter.title).toBe("Chapter 11")
+    })
+
     it("resolves a chapter via Strategy 0 (id=image-N, src first)", async () => {
         const context = createContext({ "/series/cool-manga/ch-12/": chapterHtml })
         const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)

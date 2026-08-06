@@ -170,4 +170,33 @@ describe("asuraScansAdapter.resolveChapter", () => {
         expect(result.chapter.sortKey).toBe(157)
         expect(result.chapter.mangaId).toBe(result.manga.manga.id)
     })
+
+    // Regression: when the og:title is a bare "Chapter N" (no series name before it),
+    // stripChapterSuffix leaves "Chapter 12" because it only strips a chapter marker that
+    // has text in front of it. That must not become the stored title - fall back to the slug.
+    it("falls back to the slug when the og:title is a bare 'Chapter N'", async () => {
+        const slug = "the-great-hero-abc12345"
+        const num = "12"
+        const html = `<html><head><meta property="og:title" content="Chapter 12 - Asura Scans"/></head><body></body></html>`
+        const requests: string[] = []
+        const context = createContext({ [`/comics/${slug}/chapter/${num}`]: html }, requests)
+        const result = await asuraScansAdapter.resolveChapter(
+            { url: new URL(`https://asurascans.com/comics/${slug}/chapter/${num}`) },
+            context
+        )
+        expect(result.manga.manga.title).toBe("The Great Hero")
+    })
+
+    it("keeps a real title that legitimately ends in a number", async () => {
+        const slug = "solo-leveling-1a2b3c4d"
+        const num = "12"
+        const html = `<html><head><meta property="og:title" content="Solo Leveling 2 - Asura Scans"/></head><body></body></html>`
+        const requests: string[] = []
+        const context = createContext({ [`/comics/${slug}/chapter/${num}`]: html }, requests)
+        const result = await asuraScansAdapter.resolveChapter(
+            { url: new URL(`https://asurascans.com/comics/${slug}/chapter/${num}`) },
+            context
+        )
+        expect(result.manga.manga.title).toBe("Solo Leveling 2")
+    })
 })

@@ -103,20 +103,27 @@ function stripChapterSuffix(title: string): string {
     return title.replace(/\s+chapter\s+\d+(?:[.-]\d+)?\s*$/i, "").trim()
 }
 
+// True when the title is nothing but a bare "Chapter N" marker (e.g. an og:title of
+// "Chapter 12" from a series whose real name lives only in the slug). Such a title
+// must NOT become the stored library title - fall back to the slug instead.
+function isBareChapterTitle(title: string): boolean {
+    return /^chapter\s+\d+(?:[.-]\d+)?$/i.test(title.trim())
+}
+
 function extractTitle(html: string, slug: string): string {
     const og =
         html.match(/<meta\b[^>]*\bproperty=["']og:title["'][^>]*\bcontent=["']([^"']+)["']/i) ??
         html.match(/<meta\b[^>]*\bcontent=["']([^"']+)["'][^>]*\bproperty=["']og:title["']/i)
     if (og?.[1]) {
         const t = stripChapterSuffix(og[1].split(/\s+[-|]\s+/)[0]?.trim() ?? "")
-        if (t) return t
+        if (t && !isBareChapterTitle(t)) return t
     }
     const raw = html
         .match(/<title>([^<]+)<\/title>/i)?.[1]
         ?.split(/\s+[-|]\s+/)[0]
         ?.trim()
     const t = raw ? stripChapterSuffix(raw) : ""
-    if (t) return t
+    if (t && !isBareChapterTitle(t)) return t
     return titleFromSlug(slug)
 }
 
