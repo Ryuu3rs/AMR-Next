@@ -927,6 +927,17 @@ export async function saveResolvedChapter(input: {
             ...(existing?.readingDirection !== undefined ? { readingDirection: existing.readingDirection } : {}),
             ...(existing?.pageFit !== undefined ? { pageFit: existing.pageFit } : {}),
             ...(existing?.noGapContinuous !== undefined ? { noGapContinuous: existing.noGapContinuous } : {}),
+            // Enrichment / sort fields that live only on LibraryManga (the incoming source
+            // MangaRecord can't carry them): preserve them so a re-capture doesn't break
+            // AniList linkage, re-trigger metadata enrichment, or lose the recently-updated
+            // sort timestamp.
+            ...(existing?.anilistId !== undefined ? { anilistId: existing.anilistId } : {}),
+            ...(existing?.genres !== undefined ? { genres: existing.genres } : {}),
+            ...(existing?.metadataUpdatedAt !== undefined ? { metadataUpdatedAt: existing.metadataUpdatedAt } : {}),
+            ...(existing?.latestChapterAt !== undefined ? { latestChapterAt: existing.latestChapterAt } : {}),
+            ...(existing?.chapterNumberingUnreliable !== undefined
+                ? { chapterNumberingUnreliable: existing.chapterNumberingUnreliable }
+                : {}),
             // rating lives in MangaRecord - prefer existing if the source didn't supply one
             ...(!input.manga.rating && existing?.rating !== undefined ? { rating: existing.rating } : {})
         }
