@@ -117,6 +117,14 @@ export const suggestionsHandlers: HandlerMap = {
                     inflightCompute = null
                 })
             }
+            // Stale-while-revalidate: if we hold ANY cached list and the caller didn't
+            // force a refresh, return it instantly and let the (slow, AniList-rate-limited)
+            // recompute finish in the background - the fresh list is served on the next
+            // request. Only a cold start (no cache) or an explicit force waits for it.
+            if (cache && !request.force) {
+                void inflightCompute.catch(() => {})
+                return cache.suggestions
+            }
             return await inflightCompute
         } catch (error) {
             console.warn("[AMR] Suggestions computation failed", error)
