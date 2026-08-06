@@ -81,6 +81,28 @@ describe("saveResolvedChapter", () => {
         expect(await db.chapters.get(chapter.id)).toBeDefined()
         expect(await db.sourceLinks.get(manga.id)).toBeDefined()
     })
+
+    it("preserves enrichment and sort fields across a re-capture", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await db.manga.update(manga.id, {
+            anilistId: 12345,
+            genres: ["Action", "Drama"],
+            metadataUpdatedAt: 1_700_000_000_000,
+            latestChapterAt: 1_700_000_500_000,
+            chapterNumberingUnreliable: true
+        })
+
+        // A routine re-read hands saveResolvedChapter a plain source MangaRecord that
+        // carries none of these fields - they must survive rather than be dropped.
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+
+        const stored = await db.manga.get(manga.id)
+        expect(stored?.anilistId).toBe(12345)
+        expect(stored?.genres).toEqual(["Action", "Drama"])
+        expect(stored?.metadataUpdatedAt).toBe(1_700_000_000_000)
+        expect(stored?.latestChapterAt).toBe(1_700_000_500_000)
+        expect(stored?.chapterNumberingUnreliable).toBe(true)
+    })
 })
 
 describe("saveProgress", () => {
