@@ -340,7 +340,7 @@ describe("library:switch", () => {
         expect(stored?.lastReadChapterNumber).toBe(185)
     })
 
-    it("does not re-point lastReadChapterId when switching to mangahub (numbering not comparable)", async () => {
+    it("clears the stale lastReadChapterId (keeps the number) when switching to mangahub (numbering not comparable)", async () => {
         const libraryManga: LibraryManga = {
             ...manga,
             sourceId: "mangadex",
@@ -376,7 +376,11 @@ describe("library:switch", () => {
         )
 
         const stored = await db.manga.get(manga.id)
-        expect(stored?.lastReadChapterId).toBe("mangadex:chapter:old-50")
+        // The old id pointed at a mangadex chapter row that switchMangaSource deletes,
+        // so keeping it would dangle and break chapter:resume. It's cleared; the read
+        // position survives as the number (recovered later if numbering becomes comparable).
+        expect(stored?.lastReadChapterId).toBeUndefined()
+        expect(stored?.lastReadChapterNumber).toBe(50)
     })
 
     it("threads a bounded timeoutMs/maxRetries override into listChaptersForSource, not the ~46s default", async () => {
