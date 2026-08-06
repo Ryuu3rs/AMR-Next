@@ -82,4 +82,29 @@ describe("formatDiagnosticLog", () => {
         )
         expect(out).not.toContain("abc-secret-123")
     })
+
+    // Regression: the line is flattened (zero-width stripped, whitespace collapsed) before
+    // redaction, so an encoded secret no longer matched the raw value literally and leaked.
+    it("redacts a known secret even when the log field carried a zero-width char", () => {
+        const secret = "community-user-name-42"
+        // The captured message embeds a U+200B inside the username; flatten() strips it,
+        // so redaction must match the flattened secret, not just the raw value.
+        const out = formatDiagnosticLog([entry({ message: `sync failed for community-user-​name-42` })], meta([secret]))
+        expect(out).not.toContain("name-42")
+        expect(out).toContain("[redacted]")
+    })
+
+    it("redacts a known secret even when a double space slips into the log field", () => {
+        const secret = "community user name"
+        const out = formatDiagnosticLog([entry({ message: `owner is community  user name here` })], meta([secret]))
+        expect(out).not.toContain("community user name")
+        expect(out).toContain("[redacted]")
+    })
+
+    it("redacts a bare JWT even when not passed as a known secret", () => {
+        const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+        const out = formatDiagnosticLog([entry({ message: `token refresh returned ${jwt}` })], meta())
+        expect(out).not.toContain(jwt)
+        expect(out).toContain("[redacted]")
+    })
 })
