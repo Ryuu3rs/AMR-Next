@@ -242,7 +242,8 @@ describe("settings:update", () => {
             ctx
         )
 
-        expect(alarmsClear).toHaveBeenCalledWith("check-manga-updates")
+        // ensureAlarm reconfigures by create() (which overwrites an existing alarm of
+        // the same name with the new period) - no separate clear() call is needed.
         expect(alarmsCreate).toHaveBeenCalledWith("check-manga-updates", { periodInMinutes: 6 * 60 })
     })
 

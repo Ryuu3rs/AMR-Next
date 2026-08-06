@@ -34,6 +34,29 @@ let updateCheckAborted = false
 let genreBackfillRunning = false
 let genreBackfillAborted = false
 
+// Persistent "an extension update is waiting to be applied" latch. Set from
+// background.ts's onUpdateAvailable and read by the long background loops below.
+// abortLongRunningTasks() only stops a task that is CURRENTLY running; if the update
+// arrives while the worker is idle, the next alarm-driven checkUpdates/backfill would
+// otherwise start a fresh multi-minute loop and keep the worker busy, re-deferring the
+// update indefinitely. This latch makes both loops early-return so the worker idles and
+// the browser applies the pending update. Persisted (storage.local, not a module
+// boolean) so it survives a service-worker restart between onUpdateAvailable and the
+// update landing; cleared on the next onStartup/onInstalled once the new version runs.
+const UPDATE_PENDING_KEY = "extensionUpdatePending"
+
+export async function markUpdatePending(): Promise<void> {
+    await browser.storage.local.set({ [UPDATE_PENDING_KEY]: true })
+}
+
+export async function clearUpdatePending(): Promise<void> {
+    await browser.storage.local.remove(UPDATE_PENDING_KEY)
+}
+
+async function isUpdatePending(): Promise<boolean> {
+    return Boolean((await browser.storage.local.get(UPDATE_PENDING_KEY))[UPDATE_PENDING_KEY])
+}
+
 // How long to wait before the metadata pass re-tries a title it already checked, so a
 // permanent no-match (or a source with no genres) isn't re-queried every startup.
 const META_RETRY_MS = 7 * 24 * 60 * 60 * 1000
@@ -105,9 +128,16 @@ export async function clearStaleUpdateProgress(): Promise<void> {
 
 export async function checkUpdates(sourceId?: string) {
     if (updateCheckRunning) return
+    // An extension update is waiting to be applied - idle so the browser can apply it
+    // instead of starting a multi-minute loop that keeps the worker busy (Bug 22).
+    if (await isUpdatePending()) return
     updateCheckRunning = true
     updateCheckAborted = false
     const startedAt = Date.now()
+    // Hoisted out of the try so the catch below can still write an accurate terminal
+    // progress record after an unexpected mid-loop throw (Bug 8).
+    let done = 0
+    let total = 0
     try {
         let manga: LibraryManga[]
         let language: string
@@ -143,8 +173,7 @@ export async function checkUpdates(sourceId?: string) {
         let checked = 0
         let updated = 0
         let failed = 0
-        let done = 0
-        const total = manga.length
+        total = manga.length
         const errors: Array<{ mangaId: string; title: string; message: string }> = []
         // Titles that gained a new chapter this run, for the end-of-run notification.
         const updatedTitles: string[] = []
@@ -299,6 +328,20 @@ export async function checkUpdates(sourceId?: string) {
         // advanced. Best-effort - never blocks or throws into the caller.
         if (!sourceId && !updateCheckAborted) void notifyNewChapters(updatedTitles)
         return status
+    } catch (error) {
+        // A throw escaped the per-title try/catch - e.g. db.sourceLinks.get(item.id) or
+        // writeProgress() rejecting on a transient IndexedDB failure, both of which sit
+        // outside the per-title try. Without this, the persisted updateProgress stays
+        // { running: true } forever (only a fresh check's writeProgress flips it back),
+        // blocking every future updates:check with alreadyRunning until the 15-minute
+        // stale timeout. Persist a terminal not-running record on this exit path too, and
+        // swallow the error so an alarm-driven `void checkUpdates()` is not an unhandled
+        // rejection (Bug 8).
+        console.error("[AMR] Update check aborted by an unexpected error", error)
+        await browser.storage.local
+            .set({ updateProgress: { running: false, done, total, startedAt } satisfies UpdateProgress })
+            .catch(() => {})
+        return
     } finally {
         updateCheckRunning = false
         updateCheckAborted = false
@@ -414,6 +457,9 @@ export async function checkExtensionUpdate(force = false): Promise<void> {
 
 export async function backfillMangaGenres(): Promise<void> {
     if (genreBackfillRunning) return
+    // Same pending-update latch as checkUpdates: idle so the browser can apply a waiting
+    // extension update rather than starting a long rate-limited loop (Bug 22).
+    if (await isUpdatePending()) return
     genreBackfillRunning = true
     genreBackfillAborted = false
     try {
