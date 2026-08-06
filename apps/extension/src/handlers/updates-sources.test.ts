@@ -1285,3 +1285,72 @@ describe("checkExtensionUpdate", () => {
         vi.unstubAllGlobals()
     })
 })
+
+// Bug 8: the per-title db.sourceLinks.get(item.id) and writeProgress(item.title) sit
+// OUTSIDE the per-title try, and checkUpdates' outer finally only reset the in-memory
+// updateCheckRunning guard - not the PERSISTED updateProgress. A transient IndexedDB
+// rejection there left updateProgress.running: true, blocking every future updates:check
+// with alreadyRunning until the 15-minute stale timeout.
+describe("checkUpdates mid-loop throw leaves persisted progress not-running (Bug 8)", () => {
+    it("resets updateProgress.running to false when db.sourceLinks.get rejects mid-loop", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-1" })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id))
+
+        vi.spyOn(db.sourceLinks, "get").mockRejectedValueOnce(new Error("idb exploded"))
+
+        await expect(checkUpdates()).resolves.toBeUndefined()
+
+        const progress = storageLocal.store.get("updateProgress") as { running: boolean }
+        expect(progress.running).toBe(false)
+    })
+})
+
+// Bug 22: an extension update that arrives while the worker is idle sets a persistent
+// latch; the next alarm-driven checkUpdates/backfillMangaGenres must early-return so the
+// worker stays idle and the browser applies the update, instead of starting a fresh
+// multi-minute loop that re-defers it.
+describe("pending-update latch (Bug 22)", () => {
+    it("checkUpdates early-returns without touching the library when an update is pending", async () => {
+        const { checkUpdates, markUpdatePending } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-1" })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id))
+        listMangaChaptersMock.mockResolvedValue([])
+
+        await markUpdatePending()
+        await checkUpdates()
+
+        expect(listMangaChaptersMock).not.toHaveBeenCalled()
+    })
+
+    it("backfillMangaGenres early-returns when an update is pending", async () => {
+        const { backfillMangaGenres, markUpdatePending } = await import("./updates-sources")
+
+        await db.manga.put(makeManga({ id: "m-1", mangaUrl: "https://mangadex.org/title/a", genres: [] }))
+        resolveGenresForMock.mockResolvedValue(["Action"])
+
+        await markUpdatePending()
+        await backfillMangaGenres()
+
+        expect(resolveGenresForMock).not.toHaveBeenCalled()
+    })
+
+    it("clearUpdatePending re-enables the checks", async () => {
+        const { checkUpdates, markUpdatePending, clearUpdatePending } = await import("./updates-sources")
+
+        const manga = makeManga({ id: "m-1" })
+        await db.manga.put(manga)
+        await db.sourceLinks.put(makeLink(manga.id))
+        listMangaChaptersMock.mockResolvedValue([])
+
+        await markUpdatePending()
+        await clearUpdatePending()
+        await checkUpdates()
+
+        expect(listMangaChaptersMock).toHaveBeenCalledTimes(1)
+    })
+})

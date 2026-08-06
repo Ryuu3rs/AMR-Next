@@ -26,19 +26,21 @@ import {
     anilistAlarmName,
     extensionUpdateAlarmName,
     backupAlarmName,
-    EXTENSION_UPDATE_INTERVAL_HOURS,
     configureUpdateAlarm,
     configureSyncAlarm,
     configureCommunityAlarm,
     configureAniListAlarm,
-    configureBackupAlarm
+    configureBackupAlarm,
+    configureExtensionUpdateAlarm
 } from "../src/background/alarms"
 import {
     checkUpdates,
     checkExtensionUpdate,
     backfillMangaGenres,
     clearStaleUpdateProgress,
-    abortLongRunningTasks
+    abortLongRunningTasks,
+    markUpdatePending,
+    clearUpdatePending
 } from "../src/handlers/updates-sources"
 import { runCommunitySync } from "../src/handlers/community"
 import { runAniListSync, abortAniListSync } from "../src/handlers/anilist"
@@ -60,28 +62,42 @@ export default defineBackground(() => {
     // apply the update avoids yanking active work; onStartup's clearStaleUpdateProgress
     // then resets any progress record the killed check left behind.
     browser.runtime.onUpdateAvailable.addListener(() => {
+        // Latch first (persistent), then abort. abortLongRunningTasks only stops a task
+        // that is running RIGHT NOW; the latch also blocks the NEXT alarm-driven check or
+        // backfill from starting, so an update that arrives while idle isn't re-deferred
+        // by a fresh long loop. Cleared on the next onStartup/onInstalled.
+        void markUpdatePending()
         abortLongRunningTasks()
         abortAniListSync()
     })
 
     browser.runtime.onInstalled.addListener(details => {
-        // Snapshot the library the first time a new version runs, so a bad update (or a
-        // migration/sync that goes wrong afterwards) is always recoverable from Data ->
-        // Restore. The browser can't run our code BEFORE it swaps in the new version, so
-        // this first-run snapshot is the earliest safe point.
-        if (details.reason === "update") void createBackup("pre-update")
+        // The new version is now running, so any pending-update latch has served its
+        // purpose - clear it before the backfill reads it, or a leftover flag would skip
+        // the backfill forever.
         void clearStaleUpdateProgress()
         void configureUpdateAlarm()
         void configureSyncAlarm()
         void configureCommunityAlarm()
         void configureAniListAlarm()
         void getSettings().then(settings => configureBackupAlarm(settings.autoBackup))
-        void browser.alarms.create(extensionUpdateAlarmName, {
-            periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
-        })
+        void configureExtensionUpdateAlarm()
         // force=true: bypass 24h throttle and clear stale banner on every install/update
         void checkExtensionUpdate(true)
-        void backfillMangaGenres()
+        if (details.reason === "update") {
+            // Snapshot the library the first time a new version runs, so a bad update (or
+            // a migration/sync that goes wrong afterwards) is always recoverable from
+            // Data -> Restore. The browser can't run our code BEFORE it swaps in the new
+            // version, so this first-run snapshot is the earliest safe point. Chain the
+            // genre backfill AFTER the snapshot resolves so the backfill's writes don't
+            // race the snapshot's read of the same tables (Bug 23).
+            void createBackup("pre-update")
+                .catch(() => {})
+                .then(() => clearUpdatePending())
+                .then(() => backfillMangaGenres())
+        } else {
+            void clearUpdatePending().then(() => backfillMangaGenres())
+        }
     })
 
     // Re-arm alarms on browser startup in case they were cleared (profile wipe,
@@ -95,18 +111,20 @@ export default defineBackground(() => {
         void configureCommunityAlarm()
         void configureAniListAlarm()
         void getSettings().then(settings => configureBackupAlarm(settings.autoBackup))
-        void browser.alarms.create(extensionUpdateAlarmName, {
-            periodInMinutes: EXTENSION_UPDATE_INTERVAL_HOURS * 60
-        })
+        void configureExtensionUpdateAlarm()
         void checkExtensionUpdate()
-        void backfillMangaGenres()
+        // Clear any stale pending-update latch before the backfill reads it (the update
+        // applied, or was abandoned when the browser restarted), so a leftover flag can't
+        // skip the backfill forever.
+        void clearUpdatePending().then(() => backfillMangaGenres())
         // Clear any "ADD" badge left stuck by a capture whose clear-timeout never ran
         // because the worker was suspended.
         void clearAddedBadge()
     })
 
     browser.alarms.onAlarm.addListener(alarm => {
-        if (alarm.name === updateAlarmName) void checkUpdates()
+        if (alarm.name === updateAlarmName)
+            void checkUpdates().catch(error => console.error("[AMR] Scheduled update check crashed", error))
         if (alarm.name === communityAlarmName) void runCommunitySync()
         if (alarm.name === syncAlarmName) void autoPush()
         if (alarm.name === anilistAlarmName) void runAniListSync()
@@ -116,10 +134,28 @@ export default defineBackground(() => {
     })
 
     // Clicking a "new chapters" notification opens the library so the user can jump in.
+    // Focus an existing dashboard tab instead of stacking up a fresh one on every click
+    // (mirrors the reader's goToApp existing-tab logic).
     browser.notifications.onClicked.addListener(id => {
         if (id !== NEW_CHAPTERS_NOTIFICATION_ID) return
-        void browser.tabs.create({ url: browser.runtime.getURL("/app.html") })
-        void browser.notifications.clear(id)
+        void (async () => {
+            const appUrl = browser.runtime.getURL("/app.html")
+            try {
+                const existing = await browser.tabs.query({ url: `${appUrl}*` })
+                const existingTab = existing.find(t => t.id !== undefined)
+                if (existingTab?.id !== undefined) {
+                    await browser.tabs.update(existingTab.id, { active: true })
+                    if (existingTab.windowId !== undefined) {
+                        await browser.windows.update(existingTab.windowId, { focused: true })
+                    }
+                } else {
+                    await browser.tabs.create({ url: appUrl })
+                }
+            } catch {
+                await browser.tabs.create({ url: appUrl }).catch(() => {})
+            }
+            await browser.notifications.clear(id)
+        })()
     })
 
     const onUpdatedHandler = (
