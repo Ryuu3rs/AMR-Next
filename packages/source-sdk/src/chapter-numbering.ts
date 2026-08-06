@@ -57,19 +57,38 @@ export function assignListSortKeys<T>(
     const chronological = order === "newest-first" ? indices.reverse() : indices
 
     const sortKeys = new Array<number>(items.length)
-    let lastRealKey = 0
+    let lastRealKey: number | undefined = undefined
     let unparsedRun = 0
+    // Unnumbered entries seen BEFORE the first real chapter can't interpolate off a
+    // preceding key, so they're held until the first real key is known and then
+    // placed just below it. A `lastRealKey + n/1000` here would put a Prologue ABOVE
+    // Chapter 0 (0.001 > 0); a negative epsilon off the first real key keeps it below.
+    const leading: number[] = []
     for (const index of chronological) {
         const number = getNumber(items[index] as T)
-        if (number !== undefined) {
+        if (number !== undefined && Number.isFinite(number)) {
+            if (lastRealKey === undefined && leading.length > 0) {
+                const n = leading.length
+                leading.forEach((idx, j) => {
+                    sortKeys[idx] = number - (n - j) / 1000
+                })
+                leading.length = 0
+            }
             sortKeys[index] = number
             lastRealKey = number
             unparsedRun = 0
+        } else if (lastRealKey === undefined) {
+            leading.push(index)
         } else {
             unparsedRun += 1
             sortKeys[index] = lastRealKey + unparsedRun / 1000
         }
     }
+    // No real chapter ever appeared: fall back to a strictly increasing 0.001, 0.002…
+    // run so nothing collapses to a bare 0.
+    leading.forEach((idx, j) => {
+        sortKeys[idx] = (j + 1) / 1000
+    })
     return sortKeys
 }
 

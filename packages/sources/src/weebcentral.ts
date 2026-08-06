@@ -62,7 +62,7 @@ function extractChapterId(url: URL): string | undefined {
 function chapterNumberFromText(text: string): number | undefined {
     const marked = text.match(/\b(?:chapter|chap|ch|episode|ep)\b\.?\s*#?\s*(\d+(?:[.-]\d+)?)/i)
     if (marked?.[1] !== undefined) return parseChapterNumber(marked[1].replace("-", "."))
-    const bare = text.match(/\b(\d+(?:\.\d+)?)\b/)
+    const bare = text.trim().match(/^(\d+(?:\.\d+)?)$/)
     return bare?.[1] !== undefined ? parseChapterNumber(bare[1]) : undefined
 }
 

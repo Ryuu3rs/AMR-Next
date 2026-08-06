@@ -414,7 +414,7 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
     const volumeSegment = config.volumePath ? "(?:vol(?:ume)?[-_][^/]+/)?" : ""
     const chapterRe = new RegExp(`^/${escapedPath}/([^/]+)/${volumeSegment}(${escapedPrefix}[^/]+)(?:/|$)`)
     const mangaRe = new RegExp(`^/${escapedPath}/([^/]+)/?$`)
-    const chapterNumberRe = new RegExp(`${escapedPrefix}-(\\d+(?:\\.\\d+)?)`, "i")
+    const chapterNumberRe = new RegExp(`${escapedPrefix}-(\\d+(?:[.-]\\d+)?)`, "i")
 
     const browserHeaders = {
         "User-Agent":
@@ -449,7 +449,7 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
     // real Chapter 1 and let the `?? UNNUMBERED_SORT_KEY` sentinel below never fire.
     function extractChapterNumber(chapterSlug: string): string | undefined {
         const match = chapterSlug.match(chapterNumberRe)
-        return match ? captureGroup(match, 1) : undefined
+        return match ? captureGroup(match, 1)?.replace("-", ".") : undefined
     }
 
     async function fetchAjaxImages(html: string, context: SourceContext): Promise<{ urls: string[]; debug: string }> {

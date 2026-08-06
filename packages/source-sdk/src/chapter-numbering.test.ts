@@ -96,6 +96,37 @@ describe("assignListSortKeys", () => {
         expect(keys.every(k => k > 0)).toBe(true)
     })
 
+    it("sorts a leading unnumbered entry BELOW a first real Chapter 0 (negative epsilon)", () => {
+        // oldest-first: <Prologue>, 0, 1. The prologue precedes the first real chapter, which
+        // is 0 - it must sort below 0, not at 0.001 (which would put it above Chapter 0).
+        const items: (number | undefined)[] = [undefined, 0, 1]
+        const keys = assignListSortKeys(items, num, "oldest-first")
+        expect(keys[0]!).toBeLessThan(0)
+        expect(keys[1]).toBe(0)
+        expect(keys[2]).toBe(1)
+    })
+
+    it("keeps a leading unnumbered entry below a first real chapter >= 1", () => {
+        const items: (number | undefined)[] = [undefined, 1, 2]
+        const keys = assignListSortKeys(items, num, "oldest-first")
+        expect(keys[0]!).toBeLessThan(1)
+        expect(keys[1]).toBe(1)
+        expect(keys[2]).toBe(2)
+    })
+
+    it("treats a non-finite getNumber result (NaN/Infinity) as unnumbered, never a sortKey", () => {
+        for (const bad of [Number.NaN, Number.POSITIVE_INFINITY]) {
+            const items: (number | undefined)[] = [1, bad as unknown as number, 3]
+            const keys = assignListSortKeys(items, x => x, "oldest-first")
+            expect(keys.every(k => Number.isFinite(k))).toBe(true)
+            expect(keys[0]).toBe(1)
+            // the poisoned entry interpolates off Chapter 1, and Chapter 3 stays real.
+            expect(keys[1]!).toBeGreaterThan(1)
+            expect(keys[1]!).toBeLessThan(3)
+            expect(keys[2]).toBe(3)
+        }
+    })
+
     it("handles a single numbered item", () => {
         expect(assignListSortKeys([7], num, "oldest-first")).toEqual([7])
     })
