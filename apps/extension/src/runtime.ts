@@ -215,6 +215,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
             updateIntervalHours: z.union([z.literal(0), z.literal(6), z.literal(12), z.literal(24)]).optional(),
             notifyNewChapters: z.boolean().optional(),
             autoBackup: z.boolean().optional(),
+            searchDisabledSourceIds: z.array(z.string()).optional(),
             autoPauseDays: z.number().int().min(0).max(3650).optional(),
             anilistImportPaused: z.boolean().optional(),
             anilistImportDropped: z.boolean().optional()

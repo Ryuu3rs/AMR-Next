@@ -170,28 +170,33 @@ export default defineBackground(() => {
             activeController?.abort()
             const controller = new AbortController()
             activeController = controller
-            const searchable = sourceRegistry.list().filter(a => !!a.search)
-            port.postMessage({ type: "start", total: searchable.length })
-            searchMangaStreaming(
-                msg.query,
-                (results, sourceId) => {
-                    if (controller.signal.aborted) return
-                    try {
-                        port.postMessage({ type: "partial", results, sourceId })
-                    } catch {
-                        // port may have disconnected
-                    }
-                },
-                () => {
-                    if (controller.signal.aborted) return
-                    try {
-                        port.postMessage({ type: "done" })
-                    } catch {
-                        // port may have disconnected
-                    }
-                },
-                controller.signal
-            )
+            void getSettings().then(settings => {
+                if (controller.signal.aborted) return
+                const excluded = new Set(settings.searchDisabledSourceIds)
+                const searchable = sourceRegistry.list().filter(a => !!a.search && !excluded.has(a.manifest.id))
+                port.postMessage({ type: "start", total: searchable.length })
+                searchMangaStreaming(
+                    msg.query,
+                    (results, sourceId) => {
+                        if (controller.signal.aborted) return
+                        try {
+                            port.postMessage({ type: "partial", results, sourceId })
+                        } catch {
+                            // port may have disconnected
+                        }
+                    },
+                    () => {
+                        if (controller.signal.aborted) return
+                        try {
+                            port.postMessage({ type: "done" })
+                        } catch {
+                            // port may have disconnected
+                        }
+                    },
+                    controller.signal,
+                    excluded
+                )
+            })
         })
         port.onDisconnect.addListener(() => {
             activeController?.abort()
