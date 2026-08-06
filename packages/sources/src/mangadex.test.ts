@@ -107,6 +107,63 @@ describe("mangadexAdapter", () => {
         expect(requests[0]).toContain("translatedLanguage%5B%5D=en")
     })
 
+    it("keeps the NEWEST chapters when a series exceeds MAX_CHAPTERS", async () => {
+        const TOTAL = 600
+        const requests: string[] = []
+        // Faithful oldest-first feed: offset N yields chapters N+1..N+limit (the real
+        // API's order[chapter]=asc). The adapter must page from the tail to keep 101..600.
+        const fetch: FetchFunction = async url => {
+            requests.push(url)
+            const parsed = new URL(url)
+            const offset = Number(parsed.searchParams.get("offset") ?? "0")
+            const limit = Number(parsed.searchParams.get("limit") ?? "100")
+            const data = []
+            for (let n = offset + 1; n <= Math.min(offset + limit, TOTAL); n++) {
+                data.push({
+                    id: `chapter-${n}`,
+                    type: "chapter",
+                    attributes: { chapter: String(n), title: null, translatedLanguage: "en" }
+                })
+            }
+            const body = { result: "ok", data, limit, offset, total: TOTAL }
+            return { ok: true, status: 200, text: async () => JSON.stringify(body) }
+        }
+        const context: SourceContext = {
+            request: createBoundedRequestClient({
+                fetch,
+                allowedOrigins: ["https://api.mangadex.org"],
+                maxRequests: 20,
+                maxResponseBytes: 1_000_000,
+                timeoutMs: 1000
+            }),
+            now: () => 1_700_000_000_000,
+            logger: { debug: () => undefined, warn: () => undefined }
+        }
+        const manga = {
+            manga: {
+                id: `mangadex:manga:${MANGA_ID}`,
+                title: "Long Series",
+                normalizedTitle: "long series",
+                authors: [],
+                status: "ongoing" as const,
+                addedAt: 0,
+                updatedAt: 0
+            },
+            sourceId: "mangadex",
+            sourceMangaId: MANGA_ID,
+            url: `https://mangadex.org/title/${MANGA_ID}`
+        }
+
+        const chapters = await mangadexAdapter.listChapters({ manga, languages: ["en"] }, context)
+
+        // The 500 NEWEST chapters (101..600), returned in ascending sortKey order.
+        expect(chapters).toHaveLength(500)
+        expect(chapters[0]?.sortKey).toBe(101)
+        expect(chapters[chapters.length - 1]?.sortKey).toBe(600)
+        expect(chapters.some(c => c.sortKey === 600)).toBe(true)
+        expect(chapters.some(c => c.sortKey === 1)).toBe(false)
+    })
+
     it("resolves chapter pages from the at-home manifest", async () => {
         const requests: string[] = []
         const context = createContext(

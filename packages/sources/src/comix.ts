@@ -238,6 +238,9 @@ export const comixAdapter: SourceAdapter = {
                 language: "en"
             })
         }
+        // A genuine Chapter 0 only exists when the SSR actually exposed its URL; the
+        // synthesis loop below starts at 1, so emit 0 up front when it is known.
+        if (known.has(0)) emit(0)
         for (let n = 1; n <= total; n++) emit(n)
         // Math.floor drops a fractional latest (e.g. 57.5), so the newest chapter - and any
         // mid-series .5 - would never be emitted. Append the true latest past the integer

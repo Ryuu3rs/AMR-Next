@@ -1,4 +1,9 @@
-import { createBoundedRequestClient, type FetchFunction, type SourceContext } from "@amr/source-sdk"
+import {
+    createBoundedRequestClient,
+    UNNUMBERED_SORT_KEY,
+    type FetchFunction,
+    type SourceContext
+} from "@amr/source-sdk"
 import { describe, expect, it } from "vitest"
 import {
     CHAPTER_PATH,
@@ -94,6 +99,24 @@ describe("mgekoAdapter.listChapters", () => {
 
         const chapters = await mgekoAdapter.listChapters({ manga, limit: 500 }, context)
         expect(chapters).toHaveLength(0)
+    })
+
+    it("maps a -chapter- slug with no numeric token to UNNUMBERED_SORT_KEY, not 1", async () => {
+        const html = `<ul class="chapter-list">
+  <li><a href="/reader/en/${MANGA_SLUG}-chapter-extra-eng-li/">Extra</a></li>
+  <li><a href="/reader/en/${MANGA_SLUG}-chapter-1-eng-li/">Chapter 1</a></li>
+</ul>`
+        const requests: string[] = []
+        const context = createContext({ [MANGA_PATH]: html }, requests)
+        const manga = makeMangaStub(MANGA_SLUG)
+
+        const chapters = await mgekoAdapter.listChapters({ manga, limit: 500 }, context)
+        const extra = chapters.find(c => c.sourceChapterId === `${MANGA_SLUG}-chapter-extra-eng-li`)
+        const one = chapters.find(c => c.sourceChapterId === `${MANGA_SLUG}-chapter-1-eng-li`)
+
+        expect(one!.sortKey).toBe(1)
+        expect(extra!.sortKey).toBe(UNNUMBERED_SORT_KEY)
+        expect(extra!.sortKey).not.toBe(1)
     })
 })
 

@@ -320,12 +320,18 @@ export const mangadexAdapter: SourceAdapter = {
 
         const requestedLimit = Math.min(Math.max(input.limit ?? MAX_CHAPTERS, 1), MAX_CHAPTERS)
         const chapters: SourceChapter[] = []
+        // The feed is ordered oldest-first. For a series longer than the cap we must keep
+        // the NEWEST chapters, not the oldest - so once the first response reveals the
+        // total, jump the offset to the tail window (total - cap) and page forward from
+        // there. Paging by number order keeps dedup/language/rating handling unchanged.
+        let baseOffset = 0
+        let tailResolved = false
 
         while (chapters.length < requestedLimit) {
             const pageLimit = Math.min(PAGE_SIZE, requestedLimit - chapters.length)
             const url = new URL(`/manga/${input.manga.sourceMangaId}/feed`, API_ORIGIN)
             url.searchParams.set("limit", String(pageLimit))
-            url.searchParams.set("offset", String(chapters.length))
+            url.searchParams.set("offset", String(baseOffset + chapters.length))
             url.searchParams.set("order[chapter]", "asc")
             for (const language of input.languages ?? []) {
                 url.searchParams.append("translatedLanguage[]", language)
@@ -335,6 +341,16 @@ export const mangadexAdapter: SourceAdapter = {
             }
 
             const response = await context.request.getJson(url, chapterFeedSchema)
+
+            if (!tailResolved) {
+                tailResolved = true
+                if (response.total > requestedLimit) {
+                    // Discard this probe page and re-page from the newest window.
+                    baseOffset = response.total - requestedLimit
+                    continue
+                }
+            }
+
             chapters.push(...response.data.map(chapter => mapChapter(chapter, input.manga.sourceMangaId)))
 
             if (response.data.length === 0 || response.offset + response.data.length >= response.total) {

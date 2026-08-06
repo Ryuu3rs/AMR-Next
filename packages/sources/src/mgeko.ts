@@ -41,7 +41,7 @@ function extractMangaSlug(url: URL): string | undefined {
 }
 
 // Parse slug like "manga-title-chapter-52-eng-li" into parts
-function parseChapterSlug(slug: string): { mangaSlug: string; chapterNumber: string; mangaTitle: string } {
+function parseChapterSlug(slug: string): { mangaSlug: string; chapterNumber: string | undefined; mangaTitle: string } {
     const chapterMatch = slug.match(/^(.*)-chapter-(\d+(?:-\d+)?)(?:-|$)/)
     if (chapterMatch) {
         const mangaSlug = chapterMatch[1] ?? slug
@@ -50,7 +50,12 @@ function parseChapterSlug(slug: string): { mangaSlug: string; chapterNumber: str
         const mangaTitle = mangaSlug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
         return { mangaSlug, chapterNumber, mangaTitle }
     }
-    return { mangaSlug: slug, chapterNumber: "1", mangaTitle: slug.replace(/-/g, " ") }
+    // A "-chapter-" slug with no numeric token (e.g. "...-chapter-extra-...") is
+    // unnumbered: leave chapterNumber undefined so the caller maps it to
+    // UNNUMBERED_SORT_KEY instead of fabricating "1" and colliding with real Chapter 1.
+    const mangaSlug = slug.replace(/-chapter-.*$/i, "") || slug
+    const mangaTitle = mangaSlug.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+    return { mangaSlug, chapterNumber: undefined, mangaTitle }
 }
 
 function captureGroup(match: RegExpMatchArray, index: number): string | undefined {
@@ -139,7 +144,7 @@ function extractChapterList(html: string, mangaSlug: string): SourceChapter[] {
             mangaId,
             sourceId: SOURCE_ID,
             sourceChapterId: chapterSlug,
-            title: `Chapter ${chapterNumber}`,
+            title: chapterNumber ? `Chapter ${chapterNumber}` : "Chapter",
             url: `${ORIGIN}/reader/en/${chapterSlug}/`,
             sortKey: parseChapterNumber(chapterNumber) ?? UNNUMBERED_SORT_KEY,
             language: "en"
@@ -381,7 +386,7 @@ export const mgekoAdapter: SourceAdapter = {
             mangaId,
             sourceId: SOURCE_ID,
             sourceChapterId: chapterSlug,
-            title: `Chapter ${chapterNumber}`,
+            title: chapterNumber ? `Chapter ${chapterNumber}` : "Chapter",
             url: input.url.toString(),
             sortKey: parseChapterNumber(chapterNumber) ?? UNNUMBERED_SORT_KEY,
             language: "en"
