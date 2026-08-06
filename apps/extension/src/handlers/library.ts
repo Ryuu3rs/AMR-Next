@@ -1,5 +1,5 @@
 import type { ChapterRecord, MangaRecord, SourceLinkRecord } from "@amr/contracts"
-import { SourceError, UNNUMBERED_SORT_KEY } from "@amr/source-sdk"
+import { SourceError, UNNUMBERED_SORT_KEY, latestNumberedChapter } from "@amr/source-sdk"
 import { sourceRegistry } from "@amr/sources"
 import {
     db,
@@ -911,7 +911,14 @@ export const libraryHandlers: HandlerMap = {
                 if (!linked) return
                 const chapters = await listChaptersForSource(linked, sourceId, sourceMangaId, request.mangaUrl)
                 if (chapters.length === 0) return
-                const latest = chapters.reduce((cur, ch) => (ch.sortKey > (cur?.sortKey ?? -1) ? ch : cur), chapters[0])
+                // Prefer the highest NUMBERED chapter so an unnumbered chapter
+                // (sortKey === UNNUMBERED_SORT_KEY / Infinity) can't win the pick and
+                // leave latestChapterId/sourceUrl pointing at it while the finite-guarded
+                // latestChapterNumber stays unset. Fall back to the raw reduce only when
+                // nothing is numbered.
+                const latest =
+                    latestNumberedChapter(chapters) ??
+                    chapters.reduce((cur, ch) => (ch.sortKey > (cur?.sortKey ?? -1) ? ch : cur), chapters[0])
                 await saveLinkedChapters(
                     request.mangaId,
                     chapters,
@@ -972,10 +979,16 @@ export const libraryHandlers: HandlerMap = {
         const switchAdapter = sourceRegistry.get(request.sourceId)
         const hasPages = switchAdapter?.manifest.capabilities.includes("pages") ?? true
         if (chapters.length === 0 && hasPages) throw new SourceError("invalid-response", "No chapters on that mirror")
-        const latest = chapters.reduce(
-            (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
-            chapters[0]
-        )
+        // Prefer the highest NUMBERED chapter so an unnumbered chapter (sortKey ===
+        // UNNUMBERED_SORT_KEY / Infinity) can't win the pick and leave latestChapterId/
+        // sourceUrl pointing at it while the finite-guarded latestChapterNumber stays
+        // unset. Fall back to the raw reduce only when nothing is numbered.
+        const latest =
+            latestNumberedChapter(chapters) ??
+            chapters.reduce(
+                (current, chapter) => (chapter.sortKey > (current?.sortKey ?? -1) ? chapter : current),
+                chapters[0]
+            )
         // MangaHub numbers chapters by its own internal sequential URL slug
         // (chapter-N), which can diverge from the numbering other sources use for
         // the same manga. This handler never touches the existing
@@ -1005,6 +1018,14 @@ export const libraryHandlers: HandlerMap = {
             !remappedReadChapterId && existing.lastReadChapterNumber === undefined && existing.lastReadChapterId
                 ? matchReadChapterByUrl(chapters, (await db.chapters.get(existing.lastReadChapterId))?.url)
                 : undefined
+        // The old lastReadChapterId points at a row switchMangaSource is about to delete.
+        // When we couldn't remap OR recover it onto the new mirror (e.g. the new mirror's
+        // lowest chapter is above the read position, or a mangahub switch skips the remap),
+        // leaving it in place would dangle the id at a deleted row and break chapter:resume.
+        // Explicitly clear it so it never points at a dead row - lastReadChapterNumber (the
+        // source-independent read position) is deliberately left untouched.
+        const clearDanglingReadId =
+            existing.lastReadChapterId !== undefined && !remappedReadChapterId && !recoveredReadChapter
         // Old mirror's chapters are stale by definition after switching source -
         // switchMangaSource drops them (any row whose sourceId isn't the new one)
         // before writing the new mirror's, so chapter:siblings never interleaves
@@ -1026,6 +1047,7 @@ export const libraryHandlers: HandlerMap = {
                               : {})
                       }
                     : {}),
+                ...(clearDanglingReadId ? { lastReadChapterId: undefined } : {}),
                 ...(latest
                     ? {
                           sourceUrl: latest.url,

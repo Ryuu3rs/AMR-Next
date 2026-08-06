@@ -26,6 +26,7 @@ import {
     saveProgress,
     saveResolvedChapter,
     seedDatabase,
+    switchMangaSource,
     trackExternalChapter
 } from "./database"
 import type { LibraryManga, PageBookmark } from "./database"
@@ -1575,6 +1576,26 @@ describe("pre-import backups (Bug 4)", () => {
         expect(afterUpdate).not.toBe(afterAdd)
     })
 
+    it("libraryChangeSignature flips on a metadata-only change that does NOT bump updatedAt", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        const before = await libraryChangeSignature()
+
+        // Enrichment path (backfillMangaGenres / refreshExternalMangaMetadata) writes
+        // genres/status via a bare db.manga.update that deliberately never bumps
+        // updatedAt (so the recently-updated sort doesn't jump). count + max(updatedAt)
+        // are therefore unchanged - only the folded metadata hash catches this.
+        await db.manga.update(manga.id, { genres: ["Action", "Fantasy"], status: "completed" })
+        const afterMeta = await libraryChangeSignature()
+        expect(afterMeta).not.toBe(before)
+
+        // A cover-only change is likewise caught.
+        const afterMetaCover = await (async () => {
+            await db.manga.update(manga.id, { coverUrl: "https://example.com/cover.jpg" })
+            return libraryChangeSignature()
+        })()
+        expect(afterMetaCover).not.toBe(afterMeta)
+    })
+
     it("restoreBackup re-imports the snapshot and itself snapshots a pre-restore backup first", async () => {
         await saveResolvedChapter({ manga, chapter, sourceLink })
         await createBackup("pre-import")
@@ -2706,6 +2727,189 @@ describe("database version 9 migration (Infinity latestChapterNumber repair)", (
 
         const noNumber = await db.manga.get("no-number-manga")
         expect(noNumber?.latestChapterNumber).toBeUndefined()
+    })
+})
+
+// v11 extends the v9 repair sweep to lastReadChapterNumber. v9 only deleted a
+// non-finite latestChapterNumber, so a row with a persisted Infinity in
+// lastReadChapterNumber (from a pre-guard cross-source merge or a bad import) never
+// self-heals: saveProgress's ratchet gates on `reported >= lastReadChapterNumber`,
+// and `>= Infinity` is always false, freezing the read position. Seeds a physical v10
+// database directly (pre-fix install), reopens the real singleton so Dexie runs the
+// declared v11 .upgrade(), then confirms a subsequent read advances the position.
+describe("database version 11 migration (Infinity lastReadChapterNumber repair)", () => {
+    it("deletes a non-finite lastReadChapterNumber, keeps finite values (incl. Chapter 0), and unfreezes reading", async () => {
+        db.close()
+        await Dexie.delete("all-mangas-reader")
+
+        const v10Manga = [
+            {
+                id: "frozen-manga",
+                title: "Frozen Manga",
+                normalizedTitle: "frozen manga",
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/frozen",
+                addedAt: 1,
+                updatedAt: 1,
+                lastReadChapterId: "mangadex:chapter:frozen-old",
+                lastReadChapterNumber: Number.POSITIVE_INFINITY,
+                latestChapterNumber: Number.POSITIVE_INFINITY
+            },
+            {
+                id: "healthy-read-manga",
+                title: "Healthy Read Manga",
+                normalizedTitle: "healthy read manga",
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/healthy",
+                addedAt: 2,
+                updatedAt: 2,
+                lastReadChapterNumber: 7
+            },
+            {
+                id: "chapter-zero-read-manga",
+                title: "Chapter Zero Read Manga",
+                normalizedTitle: "chapter zero read manga",
+                authors: [],
+                status: "ongoing",
+                sourceId: "mangadex",
+                sourceUrl: "https://mangadex.org/chapter/zero",
+                addedAt: 3,
+                updatedAt: 3,
+                lastReadChapterNumber: 0
+            }
+        ]
+
+        const legacy = new Dexie("all-mangas-reader")
+        legacy.version(10).stores({
+            manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+            sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+            chapters: "id, mangaId, sourceId, sortKey, url",
+            progress: "chapterId, mangaId, updatedAt, completed",
+            historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+            downloads: "chapterId, mangaId, downloadedAt",
+            covers: "mangaId",
+            pageBookmarks: "id, mangaId, chapterId, addedAt",
+            analyticsEvents: "++id, event, ts, sourceId",
+            backups: "++id, createdAt, reason",
+            logs: "++id, ts, level"
+        })
+        await legacy.open()
+        await legacy.table("manga").bulkAdd(v10Manga)
+        legacy.close()
+
+        // Reopening the real singleton re-runs Dexie's declared version chain against
+        // the physical v10 database just seeded above, executing the real v11 .upgrade().
+        await db.open()
+
+        const frozen = await db.manga.get("frozen-manga")
+        expect(frozen).toBeDefined()
+        expect("lastReadChapterNumber" in (frozen as Record<string, unknown>)).toBe(false)
+        expect("latestChapterNumber" in (frozen as Record<string, unknown>)).toBe(false)
+
+        const healthy = await db.manga.get("healthy-read-manga")
+        expect(healthy?.lastReadChapterNumber).toBe(7)
+
+        const chapterZero = await db.manga.get("chapter-zero-read-manga")
+        expect(chapterZero?.lastReadChapterNumber).toBe(0)
+
+        // The read position is no longer frozen: a real read of Ch 42 now advances the
+        // ratchet, which the Infinity value would have blocked (42 >= Infinity is false).
+        const ch42: ChapterRecord = {
+            id: "mangadex:chapter:frozen-42",
+            mangaId: "frozen-manga",
+            sourceId: "mangadex",
+            title: "Chapter 42",
+            url: "https://mangadex.org/chapter/frozen-42",
+            sortKey: 42
+        }
+        await db.chapters.put(ch42)
+        await saveProgress({
+            mangaId: "frozen-manga",
+            chapterId: ch42.id,
+            pageIndex: 9,
+            pageCount: 10,
+            completed: true,
+            updatedAt: 5_000
+        })
+
+        const advanced = await db.manga.get("frozen-manga")
+        expect(advanced?.lastReadChapterNumber).toBe(42)
+        expect(advanced?.lastReadChapterId).toBe(ch42.id)
+    })
+})
+
+// library:switch clears a dangling lastReadChapterId (Bug 7). When the read position
+// can't be remapped onto the new mirror, the handler passes lastReadChapterId:
+// undefined in the patch so switchMangaSource clears it - otherwise the old id would
+// keep pointing at the old-source chapter row this same call deletes, breaking
+// chapter:resume. lastReadChapterNumber (the source-independent position) is preserved.
+describe("switchMangaSource clears a dangling lastReadChapterId (Bug 7)", () => {
+    it("drops old-source chapters and clears lastReadChapterId when the patch passes undefined, keeping lastReadChapterNumber", async () => {
+        const m: LibraryManga = {
+            ...manga,
+            id: "switch:manga:1",
+            sourceId: "old-source",
+            sourceUrl: "https://old.example/chapter/9",
+            lastReadChapterId: "old-source:chapter:9",
+            lastReadChapterNumber: 9
+        }
+        const oldChapter: ChapterRecord = {
+            id: "old-source:chapter:9",
+            mangaId: m.id,
+            sourceId: "old-source",
+            title: "Chapter 9",
+            url: "https://old.example/chapter/9",
+            sortKey: 9
+        }
+        await db.manga.put(m)
+        await db.chapters.put(oldChapter)
+
+        const newChapter: ChapterRecord = {
+            id: "new-source:chapter:20",
+            mangaId: m.id,
+            sourceId: "new-source",
+            title: "Chapter 20",
+            url: "https://new.example/chapter/20",
+            sortKey: 20
+        }
+
+        await switchMangaSource({
+            mangaId: m.id,
+            sourceId: "new-source",
+            chapters: [newChapter],
+            mangaPatch: {
+                sourceId: "new-source",
+                mangaUrl: "https://new.example/title",
+                sourceUrl: newChapter.url,
+                latestChapterId: newChapter.id,
+                latestChapterNumber: 20,
+                // Bug 7: the read position (Ch 9) is below the new mirror's lowest
+                // chapter (Ch 20), so it can't be remapped - the handler clears the id.
+                lastReadChapterId: undefined,
+                updatedAt: Date.now()
+            } as unknown as Partial<LibraryManga>,
+            numberingUnreliable: false,
+            sourceLink: {
+                mangaId: m.id,
+                sourceId: "new-source",
+                url: "https://new.example/title",
+                addedAt: m.addedAt,
+                updatedAt: Date.now()
+            }
+        })
+
+        // Old-source chapter row is gone, so the old id would dangle if not cleared.
+        expect(await db.chapters.get(oldChapter.id)).toBeUndefined()
+
+        const switched = await db.manga.get(m.id)
+        expect(switched?.lastReadChapterId).toBeUndefined()
+        // The source-independent read position survives the switch.
+        expect(switched?.lastReadChapterNumber).toBe(9)
+        expect(switched?.latestChapterId).toBe(newChapter.id)
     })
 })
 

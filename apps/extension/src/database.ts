@@ -327,6 +327,42 @@ export class AmrDatabase extends Dexie {
             backups: "++id, createdAt, reason",
             logs: "++id, ts, level"
         })
+        // v11: extend the v9 repair sweep to lastReadChapterNumber. v9 only deleted a
+        // non-finite latestChapterNumber; a row that had persisted Infinity in
+        // lastReadChapterNumber (from a pre-guard cross-source merge or a bad import)
+        // never self-heals, because saveProgress's ratchet gates on
+        // `reported >= lastReadChapterNumber` and `>= Infinity` is always false - the
+        // read position freezes and the title counts as an inflated completedSeries.
+        // Delete the poisoned field entirely (never zero it - 0 is a genuine Chapter 0)
+        // so the next real read re-establishes a finite position. Re-sweep
+        // latestChapterNumber too, defensively, in case a row slipped past v9.
+        this.version(11)
+            .stores({
+                manga: "id, normalizedTitle, sourceId, addedAt, updatedAt",
+                sourceLinks: "mangaId, sourceId, sourceMangaId, updatedAt",
+                chapters: "id, mangaId, sourceId, sortKey, url",
+                progress: "chapterId, mangaId, updatedAt, completed",
+                historyEvents: "++id, mangaId, chapterId, type, occurredAt",
+                downloads: "chapterId, mangaId, downloadedAt",
+                covers: "mangaId",
+                pageBookmarks: "id, mangaId, chapterId, addedAt",
+                analyticsEvents: "++id, event, ts, sourceId",
+                backups: "++id, createdAt, reason",
+                logs: "++id, ts, level"
+            })
+            .upgrade(async tx => {
+                await tx
+                    .table("manga")
+                    .toCollection()
+                    .modify(m => {
+                        if (m.lastReadChapterNumber !== undefined && !Number.isFinite(m.lastReadChapterNumber)) {
+                            delete m.lastReadChapterNumber
+                        }
+                        if (m.latestChapterNumber !== undefined && !Number.isFinite(m.latestChapterNumber)) {
+                            delete m.latestChapterNumber
+                        }
+                    })
+            })
         // Choke-point tripwire for the same leak class: a future unguarded aggregation
         // site now fails loudly (throws, so a unit test catches it) instead of silently
         // persisting a sentinel that corrupts backups. Deleting the field (undefined)
@@ -1988,10 +2024,28 @@ export async function createBackup(reason: LibraryBackup["reason"]): Promise<num
 // manga count catches additions/removals; the max updatedAt catches in-place edits
 // and update-check advances. Returns "0:0" for an empty library.
 export async function libraryChangeSignature(): Promise<string> {
-    const count = await db.manga.count()
-    if (count === 0) return "0:0"
-    const newest = await db.manga.orderBy("updatedAt").last()
-    return `${count}:${newest?.updatedAt ?? 0}`
+    const all = await db.manga.toArray()
+    if (all.length === 0) return "0:0"
+    let maxUpdatedAt = 0
+    let maxMetadataUpdatedAt = 0
+    let hash = 0
+    for (const m of all) {
+        if (m.updatedAt > maxUpdatedAt) maxUpdatedAt = m.updatedAt
+        if (m.metadataUpdatedAt !== undefined && m.metadataUpdatedAt > maxMetadataUpdatedAt) {
+            maxMetadataUpdatedAt = m.metadataUpdatedAt
+        }
+        // Fold a cheap rolling hash of the enrichable metadata so a metadata-only change
+        // (genres/covers/status/title/nsfw via updateManga, which deliberately does NOT
+        // bump updatedAt - the library:list sort keys off updatedAt) still flips the
+        // signature and earns a fresh auto restore-point.
+        const meta = `${m.id} ${m.title} ${m.status ?? ""} ${m.coverUrl ?? ""} ${(m.genres ?? []).join(",")} ${(
+            m.categories ?? []
+        ).join(",")} ${m.nsfw ? 1 : 0}`
+        for (let i = 0; i < meta.length; i++) {
+            hash = (Math.imul(31, hash) + meta.charCodeAt(i)) | 0
+        }
+    }
+    return `${all.length}:${maxUpdatedAt}:${maxMetadataUpdatedAt}:${hash >>> 0}`
 }
 
 export async function listBackups(): Promise<BackupSummary[]> {
