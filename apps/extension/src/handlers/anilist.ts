@@ -122,6 +122,30 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
             )
             .toArray()
 
+        // Reconcile snapshot, captured BEFORE the push loop resolves or guesses any ids.
+        // - preexistingAniListIds: only ids the user genuinely already had linked are ever
+        //   eligible to be auto-dropped. An id resolved/guessed this run must never count.
+        // - remoteIds: the AniList list fetched ONCE, up front. Fetching before the push
+        //   means a genuinely-removed title is seen as absent even though saveViewerProgress
+        //   re-creates it during the push. A throwing OR empty remote is indistinguishable
+        //   from a soft failure, so reconcile is skipped entirely (both stay undefined) -
+        //   never drop anything on an empty/failed remote.
+        let preexistingAniListIds: Set<number> | undefined
+        let remoteIds: Set<number> | undefined
+        if (membership) {
+            try {
+                const remote = await getViewerMangaList(token)
+                if (remote.length > 0) {
+                    remoteIds = new Set(remote.map(e => e.anilistId))
+                    preexistingAniListIds = new Set(
+                        mangas.filter(m => m.anilistId !== undefined).map(m => m.anilistId as number)
+                    )
+                }
+            } catch (error) {
+                console.warn("[AMR] AniList reconcile: remote fetch failed, skipping reconcile", error)
+            }
+        }
+
         for (const manga of mangas) {
             if (anilistSyncAborted) break
 
@@ -178,19 +202,23 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
             await new Promise<void>(r => setTimeout(r, 1300))
         }
         // Reconcile removals: a title still in the library but no longer on the user's
-        // AniList list is treated as dropped IF they've read it (local read progress is
-        // real signal the title was tracked, not junk). An unread local title is left
-        // untouched - never delete, never tag. Gated on membership sync, the same flag
-        // that authorizes AniList-driven membership changes. Skipped on abort.
-        if (membership && !anilistSyncAborted) {
+        // AniList list is treated as dropped IF (1) its id was ALREADY linked before this
+        // run (preexistingAniListIds - never an id resolved/guessed this run, which the user
+        // never chose to track) and (2) they've read it (local read progress is real signal
+        // the title was tracked, not junk). An unread local title is left untouched - never
+        // delete, never tag. This runs independently of push success: a title whose push
+        // failed this run is still safe to evaluate because removal is judged against the
+        // up-front remote snapshot, not against what the push happened to write. remoteIds
+        // is undefined when the remote fetch threw or came back empty, so reconcile is
+        // skipped there. Gated on membership sync and skipped on abort.
+        if (membership && !anilistSyncAborted && remoteIds !== undefined && preexistingAniListIds !== undefined) {
             try {
-                const remote = await getViewerMangaList(token)
-                const remoteIds = new Set(remote.map(e => e.anilistId))
-                const orphaned = await db.manga
-                    .filter(m => m.anilistId !== undefined && !remoteIds.has(m.anilistId))
-                    .toArray()
-                for (const m of orphaned) {
-                    if (m.readingStatus === "dropped" || neverRead(m)) continue
+                const locals = await db.manga.toArray()
+                for (const m of locals) {
+                    if (m.anilistId === undefined) continue
+                    if (!preexistingAniListIds.has(m.anilistId)) continue
+                    if (remoteIds.has(m.anilistId)) continue
+                    if (m.onHold || neverRead(m) || m.readingStatus === "dropped") continue
                     await updateManga(m.id, { readingStatus: "dropped" } as Partial<LibraryManga>)
                 }
             } catch (error) {

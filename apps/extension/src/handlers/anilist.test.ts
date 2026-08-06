@@ -354,6 +354,77 @@ describe("runAniListSync reconcile (removed on AniList)", () => {
         expect(getViewerMangaListMock).not.toHaveBeenCalled()
         expect((await db.manga.get("gone"))?.readingStatus).toBeUndefined()
     })
+
+    it("drops nothing when the remote list comes back EMPTY (soft-failure guard)", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        await db.manga.bulkPut([
+            makeManga({ id: "a", anilistId: 500, lastReadChapterNumber: 12 }),
+            makeManga({ id: "b", anilistId: 501, lastReadChapterNumber: 3 })
+        ])
+        getViewerProgressMock.mockResolvedValue(0)
+        getViewerMangaListMock.mockResolvedValue([]) // empty == indistinguishable from failure
+
+        await runAniListSync()
+
+        expect((await db.manga.get("a"))?.readingStatus).toBeUndefined()
+        expect((await db.manga.get("b"))?.readingStatus).toBeUndefined()
+    })
+
+    it("drops nothing when the remote fetch THROWS", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        await db.manga.put(makeManga({ id: "gone", anilistId: 500, lastReadChapterNumber: 12 }))
+        getViewerProgressMock.mockResolvedValue(12)
+        getViewerMangaListMock.mockRejectedValue(new Error("AniList API 429"))
+
+        await runAniListSync()
+
+        expect((await db.manga.get("gone"))?.readingStatus).toBeUndefined()
+    })
+
+    it("does not drop a read pre-existing title still on the remote list even if its push errored", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        await db.manga.put(makeManga({ id: "kept", anilistId: 500, lastReadChapterNumber: 12 }))
+        // The push for this title fails (rate limit) this run...
+        getViewerProgressMock.mockRejectedValue(new Error("AniList API 429"))
+        // ...but it is present in the up-front remote snapshot, so it must not be dropped.
+        getViewerMangaListMock.mockResolvedValue([{ anilistId: 500 }])
+
+        await runAniListSync()
+
+        expect((await db.manga.get("kept"))?.readingStatus).toBeUndefined()
+    })
+
+    it("drops a read pre-existing title absent from a NON-EMPTY remote list", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        await db.manga.put(makeManga({ id: "gone", anilistId: 500, lastReadChapterNumber: 12 }))
+        getViewerProgressMock.mockResolvedValue(12)
+        getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }])
+
+        await runAniListSync()
+
+        expect((await db.manga.get("gone"))?.readingStatus).toBe("dropped")
+    })
+
+    it("never drops a title whose anilistId was resolved THIS run (no pre-existing link)", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({ token: "t", autoSync: false, syncMembership: true })
+        // No anilistId to begin with - it gets guessed during this run and is absent remotely.
+        await db.manga.put(makeManga({ id: "guessed", title: "Solo Leveling", lastReadChapterNumber: 4 }))
+        resolveMetadataMock.mockResolvedValue({ anilistId: 777 })
+        getViewerProgressMock.mockResolvedValue(undefined)
+        saveViewerProgressMock.mockResolvedValue(4)
+        getViewerMangaListMock.mockResolvedValue([{ anilistId: 999 }]) // non-empty, 777 absent
+
+        await runAniListSync()
+
+        const stored = await db.manga.get("guessed")
+        expect(stored?.anilistId).toBe(777) // id was still cached
+        expect(stored?.readingStatus).toBeUndefined() // but never auto-dropped
+    })
 })
 
 describe("bughunt regressions", () => {
