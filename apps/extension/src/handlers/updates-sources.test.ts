@@ -604,7 +604,7 @@ describe("repairMangahubChapterNumbers one-shot poisoned-library sweep", () => {
 
         await repairMangahubChapterNumbers()
         expect(listChaptersForSourceMock).toHaveBeenCalledTimes(1)
-        expect(storageLocal.store.get("mangahubChapterRepairDone")).toBe(true)
+        expect(storageLocal.store.get("mangahubChapterRepairDone2")).toBe(true)
 
         listChaptersForSourceMock.mockClear()
         await repairMangahubChapterNumbers()
@@ -627,7 +627,7 @@ describe("repairMangahubChapterNumbers one-shot poisoned-library sweep", () => {
 
         await expect(repairMangahubChapterNumbers()).resolves.toBeUndefined()
 
-        expect(storageLocal.store.get("mangahubChapterRepairDone")).toBe(true)
+        expect(storageLocal.store.get("mangahubChapterRepairDone2")).toBe(true)
         // The failed title's poisoned number is left as-is - best-effort, not a retry loop.
         const stillPoisoned = await db.manga.get(poisoned.id)
         expect(stillPoisoned?.latestChapterNumber).toBe(2650711)
@@ -671,7 +671,7 @@ describe("repairMangahubChapterNumbers one-shot poisoned-library sweep", () => {
         expect(await db.manga.get(poisoned.id)).toBeUndefined()
         // The sweep still completes and sets the flag - a race on one title doesn't
         // abort the rest of the (empty, in this case) loop.
-        expect(storageLocal.store.get("mangahubChapterRepairDone")).toBe(true)
+        expect(storageLocal.store.get("mangahubChapterRepairDone2")).toBe(true)
     })
 })
 
@@ -735,7 +735,7 @@ describe("repairMangahubChapterNumbers initial-query failure (Fix 8)", () => {
 
         await expect(repairMangahubChapterNumbers()).resolves.toBeUndefined()
 
-        expect(storageLocal.store.get("mangahubChapterRepairDone")).toBeUndefined()
+        expect(storageLocal.store.get("mangahubChapterRepairDone2")).toBeUndefined()
         expect(listChaptersForSourceMock).not.toHaveBeenCalled()
         whereSpy.mockRestore()
 
@@ -763,7 +763,7 @@ describe("repairMangahubChapterNumbers initial-query failure (Fix 8)", () => {
         await repairMangahubChapterNumbers()
 
         expect(listChaptersForSourceMock).toHaveBeenCalledTimes(1)
-        expect(storageLocal.store.get("mangahubChapterRepairDone")).toBe(true)
+        expect(storageLocal.store.get("mangahubChapterRepairDone2")).toBe(true)
     })
 })
 

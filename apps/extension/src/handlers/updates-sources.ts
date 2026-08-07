@@ -348,7 +348,10 @@ export async function checkUpdates(sourceId?: string) {
     }
 }
 
-const MANGAHUB_CHAPTER_REPAIR_FLAG = "mangahubChapterRepairDone"
+// Bumped to v2: the original sweep only healed a poisoned latestChapterNumber. v2 also
+// heals a poisoned lastReadChapterNumber (set by the pre-fix trackExternalChapter from a
+// MangaHub internal-id URL), so it must re-run once for users the v1 sweep already marked done.
+const MANGAHUB_CHAPTER_REPAIR_FLAG = "mangahubChapterRepairDone2"
 
 // One-time repair sweep for libraries poisoned by the pre-fix extractChapters bug
 // (MangaHub's id-slug "alternate version" chapter anchors getting ingested as real
@@ -376,7 +379,11 @@ export async function repairMangahubChapterNumbers(): Promise<void> {
         poisoned = await db.manga
             .where("sourceId")
             .equals("mangahub")
-            .filter(m => (m.latestChapterNumber ?? 0) >= MANGAHUB_INTERNAL_ID_MIN)
+            .filter(
+                m =>
+                    (m.latestChapterNumber ?? 0) >= MANGAHUB_INTERNAL_ID_MIN ||
+                    (m.lastReadChapterNumber ?? 0) >= MANGAHUB_INTERNAL_ID_MIN
+            )
             .toArray()
     } catch (error) {
         console.error("[AMR] MangaHub chapter repair sweep failed to run", error)

@@ -1999,6 +1999,32 @@ describe("trackExternalChapter", () => {
         expect(link?.sourceMangaId).toBe("solo-leveling")
     })
 
+    it("does not treat a MangaHub internal-id chapter URL as a real chapter number", async () => {
+        // MangaHub URLs are /chapter/{slug}/chapter-{N} where N can be an internal id
+        // (>= 100_000). Parsing it verbatim poisoned the row title/sortKey and the manga's
+        // lastReadChapterNumber, showing garbage numbers on the Updates page.
+        const result = await trackExternalChapter({
+            url: "https://mangahub.io/chapter/solo-leveling_105/chapter-2650123",
+            sourceId: "mangahub",
+            mangaInfo: { sourceMangaId: "solo-leveling", mangaUrl: "https://mangahub.io/manga/solo-leveling" }
+        })
+
+        expect(result.chapterNumber).toBeNull()
+        const chapter = await db.chapters.get(`${result.mangaId}:ext:chapter-2650123`)
+        expect(chapter?.sortKey).not.toBe(2650123)
+        expect(Number.isFinite(chapter?.sortKey ?? Infinity)).toBe(false)
+        const manga = await db.manga.get(result.mangaId)
+        expect(manga?.lastReadChapterNumber).toBeUndefined()
+
+        // A below-threshold number is still a real chapter number (regression guard).
+        const real = await trackExternalChapter({
+            url: "https://mangahub.io/chapter/solo-leveling/chapter-42",
+            sourceId: "mangahub",
+            mangaInfo: { sourceMangaId: "solo-leveling", mangaUrl: "https://mangahub.io/manga/solo-leveling" }
+        })
+        expect(real.chapterNumber).toBe(42)
+    })
+
     it("backfills sourceMangaId onto a fallback-matched legacy record (manga + link) when mangaInfo is now available", async () => {
         // Legacy fallback-created record: id derived from a bare slug, and NO sourceMangaId
         // on either the manga or its link. A later capture that DOES carry mangaInfo (the
