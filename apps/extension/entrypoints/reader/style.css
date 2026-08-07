@@ -192,8 +192,18 @@ main.fit-original .page img {
 }
 
 main.fit-original .page {
-    justify-content: safe center;
+    /* Center the page even at original size. Plain `center` (not `safe center`, which
+       left-aligns anything wider than the viewport) keeps a narrow page centered; a
+       page wider than the viewport still scrolls to both edges via overflow-x on
+       modern Chromium/Firefox. */
+    justify-content: center;
     overflow-x: auto;
+}
+
+/* Original-size images center within their own scroll box regardless of the flex
+   overflow quirk, so a wide page isn't pinned to the left edge. */
+main.fit-original .page img {
+    margin-inline: auto;
 }
 
 main.single {
