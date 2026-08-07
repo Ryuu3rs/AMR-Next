@@ -61,6 +61,10 @@ const BASE_SOURCE_ORIGINS = [
     // OlympusStaff - Next.js SSR; images in standard src, full reader works
     "https://olympustaff.com/*",
     "https://www.olympustaff.com/*",
+    // MangaK - server-rendered Next.js; page images load as <img> from rotating
+    // rx.*.org CDN subdomains (obfuscated/rotating host, not a stable match pattern
+    // and not needed for <img> rendering), so only the site origin is registered.
+    "https://mangak.io/*",
     // FanFox / MangaHere family - chapter images JS-only (panel nav works via
     // listChapters); fanfox.net's covers come from fmcdn.mfcdn.net, folded in
     // automatically via the fanfox config's imageOrigins (see fanfox-sites.ts).
