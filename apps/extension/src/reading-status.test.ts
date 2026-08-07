@@ -33,7 +33,7 @@ describe("reading-status", () => {
     // A MangaDex oneshot: single chapter has sortKey Infinity, so only the *Id
     // fields are stored. The old number-only renderers wrongly printed "Unread".
     it("labels a read but unnumbered oneshot as Read, not Unread", () => {
-        const m = manga({ lastReadChapterId: "one", latestChapterId: "one" })
+        const m = manga({ lastReadChapterId: "one", latestChapterId: "one", status: "completed" })
         expect(neverRead(m)).toBe(false)
         expect(hasNewerChapters(m)).toBe(false)
         expect(statusOf(m)).toBe("completed")
@@ -46,10 +46,40 @@ describe("reading-status", () => {
             lastReadChapterId: "c15",
             lastReadChapterNumber: 15,
             latestChapterId: "c15",
-            latestChapterNumber: 15
+            latestChapterNumber: 15,
+            status: "completed"
         })
         expect(statusOf(m)).toBe("completed")
         expect(hasNewerChapters(m)).toBe(false)
+    })
+
+    // Caught up on an ONGOING series is "reading" (up to date), not completed - this is
+    // what keeps a just-mark-read title in the default Ongoing view instead of vanishing.
+    it("marks a caught-up ONGOING title reading, not completed", () => {
+        const m = manga({
+            lastReadChapterId: "c15",
+            lastReadChapterNumber: 15,
+            latestChapterId: "c15",
+            latestChapterNumber: 15,
+            status: "ongoing"
+        })
+        expect(statusOf(m)).toBe("reading")
+        const eff = effectiveReadingStatus(m, { autoPauseDays: 0, now: NOW })
+        expect(eff).toBe("reading")
+        expect(isOngoing(eff)).toBe(true)
+    })
+
+    // A freshly mark-read externally-tracked title has status "unknown" until enrichment
+    // runs - it must stay reading (visible in Ongoing), not derive as completed.
+    it("marks a caught-up unknown-status title reading, not completed", () => {
+        const m = manga({
+            lastReadChapterId: "c1",
+            lastReadChapterNumber: 1,
+            latestChapterId: "c1",
+            latestChapterNumber: 1,
+            status: "unknown"
+        })
+        expect(statusOf(m)).toBe("reading")
     })
 
     it("marks a title with newer chapters reading", () => {
@@ -70,7 +100,8 @@ describe("reading-status", () => {
             lastReadChapterId: "old-source-c15",
             lastReadChapterNumber: 15,
             latestChapterId: "new-source-c15",
-            latestChapterNumber: 15
+            latestChapterNumber: 15,
+            status: "completed"
         })
         expect(hasNewerChapters(m)).toBe(false)
         expect(statusOf(m)).toBe("completed")
@@ -109,7 +140,8 @@ describe("effectiveReadingStatus", () => {
             lastReadChapterId: "c15",
             lastReadChapterNumber: 15,
             latestChapterId: "c15",
-            latestChapterNumber: 15
+            latestChapterNumber: 15,
+            status: "completed"
         })
         expect(effectiveReadingStatus(m, opts)).toBe("completed")
     })
@@ -138,7 +170,8 @@ describe("effectiveReadingStatus", () => {
             lastReadChapterNumber: 20,
             latestChapterNumber: 20,
             lastReadChapterId: "c20",
-            latestChapterId: "c20"
+            latestChapterId: "c20",
+            status: "completed"
         })
         expect(effectiveReadingStatus(m, opts)).toBe("completed")
     })
@@ -149,7 +182,8 @@ describe("effectiveReadingStatus", () => {
             lastReadChapterNumber: 20,
             latestChapterNumber: 20,
             lastReadChapterId: "c20",
-            latestChapterId: "c20"
+            latestChapterId: "c20",
+            status: "completed"
         })
         expect(effectiveReadingStatus(m, opts)).toBe("completed")
     })
@@ -176,7 +210,8 @@ describe("effectiveReadingStatus", () => {
             lastReadChapterId: "c9",
             lastReadChapterNumber: 9,
             latestChapterId: "c9",
-            latestChapterNumber: 9
+            latestChapterNumber: 9,
+            status: "completed"
         })
         expect(effectiveReadingStatus(m, opts)).toBe("completed")
     })
@@ -227,6 +262,7 @@ describe("effectiveReadingStatus", () => {
                 lastReadChapterNumber: 9,
                 latestChapterId: "c9",
                 latestChapterNumber: 9,
+                status: "completed",
                 lastReadAt: NOW - 999 * 86_400_000
             })
             expect(effectiveReadingStatus(m, { autoPauseDays: 30, now: NOW })).toBe("completed")

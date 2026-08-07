@@ -34,9 +34,18 @@ export function hasKnownLatest(m: LibraryManga): boolean {
     )
 }
 
+// A series is "finished" (no more chapters coming) only when its publication status
+// says so. Being caught up on an ONGOING series means you're up to date and still
+// actively reading it - not "completed". This is what keeps a just-mark-read title (or
+// any caught-up ongoing series) in the default "Ongoing" view instead of vanishing
+// into "Completed" the moment the chapter list is populated.
+export function seriesFinished(m: LibraryManga): boolean {
+    return m.status === "completed" || m.status === "cancelled"
+}
+
 export function statusOf(m: LibraryManga): LibraryStatus {
     if (neverRead(m)) return "unread"
-    if (hasKnownLatest(m) && !hasNewerChapters(m)) return "completed"
+    if (hasKnownLatest(m) && !hasNewerChapters(m) && seriesFinished(m)) return "completed"
     return "reading"
 }
 
@@ -54,10 +63,13 @@ export type ReadingStatus = "unread" | "reading" | "paused" | "dropped" | "compl
 // read is older than the window pauses on its own without an explicit override.
 export function effectiveReadingStatus(m: LibraryManga, opts: { autoPauseDays: number; now: number }): ReadingStatus {
     const hasRead = !neverRead(m)
-    // 1. Local completion overrides everything, including a stored paused/dropped -
-    // but only when the latest is actually known; a read title whose latest is unknown
-    // is not "caught up" and must fall through so a stored dropped/paused is honoured.
-    if (hasRead && hasKnownLatest(m) && !hasNewerChapters(m)) return "completed"
+    // 1. Local completion overrides everything, including a stored paused/dropped - but
+    // only when the latest is known AND the series itself is finished. Being caught up on
+    // an ONGOING series is "up to date / reading", not "completed" (matches the requested
+    // rule: completed = finished series AND read to the latest). A read title whose latest
+    // is unknown, or an ongoing one, falls through so a stored dropped/paused is honoured
+    // and the title stays in the Ongoing view.
+    if (hasRead && hasKnownLatest(m) && !hasNewerChapters(m) && seriesFinished(m)) return "completed"
     // 2. Explicit dropped.
     if (m.readingStatus === "dropped") return "dropped"
     // 3. Paused: explicit override, or inactive past the auto-pause window.
