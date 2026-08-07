@@ -2626,8 +2626,8 @@
         const el = suggestionsSentinel
         if (!el) return
         const observer = new IntersectionObserver(entries => {
-            if (entries.some(e => e.isIntersecting) && suggestionsShown < suggestions.length) {
-                suggestionsShown = Math.min(suggestionsShown + SUGGESTIONS_PAGE, suggestions.length)
+            if (entries.some(e => e.isIntersecting) && suggestionsShown < restSuggestionsCount) {
+                suggestionsShown = Math.min(suggestionsShown + SUGGESTIONS_PAGE, restSuggestionsCount)
             }
         })
         observer.observe(el)
@@ -2645,6 +2645,37 @@
         if (s.genres && s.genres.length > 0) return `Matches genres you read: ${s.genres.slice(0, 2).join(", ")}`
         return "Recommended for you"
     }
+    // Library-derived genre profile for the Stats tab and the Suggestions podium. Each
+    // title contributes once per distinct genre (case-insensitive); the first-seen casing
+    // is kept for display, and up to three owning titles are collected as examples.
+    const genreBreakdown = $derived.by(() => {
+        const counts = new Map<string, { name: string; count: number; titles: string[] }>()
+        for (const m of library) {
+            const seen = new Set<string>()
+            for (const genre of m.genres ?? []) {
+                const key = genre.toLocaleLowerCase("en")
+                if (seen.has(key)) continue
+                seen.add(key)
+                const entry = counts.get(key)
+                if (entry) {
+                    entry.count += 1
+                    if (entry.titles.length < 3) entry.titles.push(m.title)
+                } else {
+                    counts.set(key, { name: genre, count: 1, titles: [m.title] })
+                }
+            }
+        }
+        return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    })
+    // The user's strongest genres, used to highlight matched-genre chips on the podium.
+    const topGenreKeys = $derived(new Set(genreBreakdown.slice(0, 10).map(g => g.name.toLocaleLowerCase("en"))))
+    function matchedGenres(s: Suggestion): string[] {
+        if (!s.genres) return []
+        return s.genres.filter(g => topGenreKeys.has(g.toLocaleLowerCase("en"))).slice(0, 3)
+    }
+    // Suggestions past the top-3 podium feed the paginated grid; keep its lazy-load slice
+    // counting against this so the podium picks are never duplicated below.
+    const restSuggestionsCount = $derived(Math.max(0, suggestions.length - 3))
     async function executeClear(scope: "history" | "all") {
         clearWorking = true
         try {
@@ -3246,9 +3277,11 @@
                         : "No suggestions yet. Add a few titles to your library so we can learn what you like."}
                 </p>
             {:else}
-                <div class="poster-grid">
-                    {#each suggestions.slice(0, suggestionsShown) as s (s.anilistId)}
-                        <article>
+                <h2 class="podium-heading">Top picks for you</h2>
+                <div class="podium">
+                    {#each suggestions.slice(0, 3) as s, i (s.anilistId)}
+                        {@const matched = matchedGenres(s)}
+                        <article class="podium-item" class:podium-first={i === 0}>
                             <div class="poster-wrap">
                                 <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
                                     {#if s.coverUrl}<img
@@ -3257,6 +3290,8 @@
                                             loading="lazy"
                                             decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span
                                         >{/if}
+                                    <span class="podium-rank podium-rank-{i + 1}"
+                                        >{i === 0 ? "1st" : i === 1 ? "2nd" : "3rd"}</span>
                                     {#if s.community}
                                         <div class="poster-badges">
                                             <span class="updated-chip">Readers also read</span>
@@ -3265,23 +3300,63 @@
                                 </button>
                             </div>
                             <p class="poster-title">{s.title}</p>
-                            <p class="poster-sub muted">{suggestionWhy(s)}</p>
+                            {#if s.reasons.length > 0}
+                                <p class="poster-sub muted">Because you read {s.reasons.slice(0, 2).join(", ")}</p>
+                            {:else if matched.length === 0}
+                                <p class="poster-sub muted">Popular with readers like you</p>
+                            {/if}
+                            {#if matched.length > 0}
+                                <div class="podium-chips">
+                                    {#each matched as g}<span class="genre-chip">{g}</span>{/each}
+                                </div>
+                            {/if}
                             <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}>
                                 Find on a source
                             </button>
                         </article>
                     {/each}
                 </div>
-                {#if suggestionsShown < suggestions.length}
-                    <div bind:this={suggestionsSentinel} class="suggestions-sentinel">
-                        <button
-                            type="button"
-                            class="btn-sm"
-                            onclick={() =>
-                                (suggestionsShown = Math.min(suggestionsShown + SUGGESTIONS_PAGE, suggestions.length))}>
-                            Load more ({suggestions.length - suggestionsShown} remaining)
-                        </button>
+                {#if restSuggestionsCount > 0}
+                    <div class="poster-grid">
+                        {#each suggestions.slice(3, 3 + suggestionsShown) as s (s.anilistId)}
+                            <article>
+                                <div class="poster-wrap">
+                                    <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
+                                        {#if s.coverUrl}<img
+                                                src={s.coverUrl}
+                                                alt={s.title}
+                                                loading="lazy"
+                                                decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span
+                                            >{/if}
+                                        {#if s.community}
+                                            <div class="poster-badges">
+                                                <span class="updated-chip">Readers also read</span>
+                                            </div>
+                                        {/if}
+                                    </button>
+                                </div>
+                                <p class="poster-title">{s.title}</p>
+                                <p class="poster-sub muted">{suggestionWhy(s)}</p>
+                                <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}>
+                                    Find on a source
+                                </button>
+                            </article>
+                        {/each}
                     </div>
+                    {#if suggestionsShown < restSuggestionsCount}
+                        <div bind:this={suggestionsSentinel} class="suggestions-sentinel">
+                            <button
+                                type="button"
+                                class="btn-sm"
+                                onclick={() =>
+                                    (suggestionsShown = Math.min(
+                                        suggestionsShown + SUGGESTIONS_PAGE,
+                                        restSuggestionsCount
+                                    ))}>
+                                Load more ({restSuggestionsCount - suggestionsShown} remaining)
+                            </button>
+                        </div>
+                    {/if}
                 {/if}
                 {#if communitySuggestions.length > 0}
                     <h2 style="margin-top:8px">Readers also read</h2>
@@ -4035,6 +4110,32 @@
                     <div class="goal-bar"><div class="goal-fill" style="width:{pct}%"></div></div>
                 </div>
             {/if}
+            <p class="shelf-label" style="margin-top:24px">Top genres</p>
+            {#if genreBreakdown.length === 0}
+                <p class="muted">Genres fill in as titles are enriched.</p>
+            {:else}
+                {@const topCount = genreBreakdown[0]?.count ?? 1}
+                <div class="insights-genre-grid">
+                    {#each genreBreakdown.slice(0, 10) as g, i}
+                        <div class="genre-entry">
+                            <div class="genre-bar-row">
+                                <span class="genre-label">{g.name}</span>
+                                <div class="genre-bar-track">
+                                    <div
+                                        class="genre-bar-fill"
+                                        style="width:{topCount > 0 ? Math.round((g.count / topCount) * 100) : 0}%">
+                                    </div>
+                                </div>
+                                <span class="genre-count muted">{g.count}</span>
+                            </div>
+                            {#if i < 5}
+                                <p class="genre-examples muted">{g.titles.join(", ")}</p>
+                            {/if}
+                        </div>
+                    {/each}
+                </div>
+            {/if}
+
             <p class="shelf-label" style="margin-top:24px">Reading activity</p>
             <ActivityHeatmap data={activity} />
 
