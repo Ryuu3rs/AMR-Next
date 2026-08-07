@@ -3387,118 +3387,137 @@
         {:else if activeSection === "Library"}
             <div class="page-head">
                 <h1>Library</h1>
-                <div class="library-controls">
-                    <select aria-label="Sort library" bind:value={librarySort} onchange={persistLibrarySort}>
-                        <option value="recent-read">Recently read</option>
-                        <option value="recently-updated">Recently updated</option>
-                        <option value="recent-added">Recently added</option>
-                        <option value="title">Title (A-Z)</option>
-                        <option value="latest-chapter">Latest chapter</option>
-                    </select>
-                    {#if allCategories.length > 0}
-                        <select aria-label="Filter by tag" bind:value={categoryFilter}>
-                            <option value="">All tags</option>
-                            {#each allCategories as cat}
-                                <option value={cat}>{cat}</option>
-                            {/each}
-                        </select>
-                        <button
-                            type="button"
-                            class="btn-sm"
-                            class:active={manageTags}
-                            aria-pressed={manageTags}
-                            onclick={() => (manageTags = !manageTags)}>Manage tags</button>
-                    {/if}
-                    {#if allGenres.length > 0}
-                        <select aria-label="Filter by genre" bind:value={genreFilter}>
-                            <option value="">All genres</option>
-                            {#each allGenres as genre}
-                                <option value={genre}>{genre}</option>
-                            {/each}
-                        </select>
-                    {/if}
-                    <button
-                        type="button"
-                        class="btn-sm"
-                        onclick={() => void backfillCovers()}
-                        disabled={refreshingCovers || !hasPermission}
-                        title={hasPermission ? "Fetch missing covers" : "Grant source access first"}>
-                        {refreshingCovers
-                            ? coverProgress
-                                ? `Fetching… ${coverProgress.done}/${coverProgress.total}`
-                                : "Fetching…"
-                            : "Refresh covers"}
-                    </button>
-                    <button
-                        type="button"
-                        class="btn-sm btn-outline"
-                        title="Search all sources for better matches for every manga in your library"
-                        onclick={() => {
-                            libScanIds = library.filter(m => !m.manualTracking).map(m => m.id)
-                            activeSection = "Data"
-                        }}>
-                        Find better sources
-                    </button>
-                    <button
-                        type="button"
-                        class="btn-sm"
-                        onclick={() => (selectMode ? clearSelection() : (selectMode = true))}>
-                        {selectMode ? "Cancel" : "Select"}
-                    </button>
-                    {#if duplicateGroups.length > 0}
-                        <button type="button" class="btn-sm" onclick={() => (showDuplicates = !showDuplicates)}>
-                            Duplicates ({duplicateGroups.length})
-                        </button>
-                    {/if}
-                    <button
-                        type="button"
-                        class="btn-sm"
-                        title="Open a random unread title"
-                        disabled={library.length === 0}
-                        onclick={surpriseMe}>🎲 Surprise me</button>
-                    <div class="view-toggle">
-                        <button
-                            type="button"
-                            class="btn-sm"
-                            class:active={libraryView === "grid"}
-                            onclick={() => (libraryView = "grid")}>Grid</button>
-                        <button
-                            type="button"
-                            class="btn-sm"
-                            class:active={libraryView === "list"}
-                            onclick={() => (libraryView = "list")}>List</button>
-                    </div>
-                    <input bind:value={query} aria-label="Search library" placeholder="Search titles..." />
-                </div>
             </div>
-            <div class="filter-bar">
-                <div class="filter-chips">
-                    {#each LIBRARY_FILTERS as f}
+            <div class="library-toolbar">
+                <div class="toolbar-row toolbar-primary">
+                    <input
+                        class="toolbar-search"
+                        bind:value={query}
+                        aria-label="Search library"
+                        placeholder="Search titles..." />
+                    <div class="toolbar-group toolbar-primary-end">
+                        <div class="view-toggle">
+                            <button
+                                type="button"
+                                class="btn-sm"
+                                class:active={libraryView === "grid"}
+                                onclick={() => (libraryView = "grid")}>Grid</button>
+                            <button
+                                type="button"
+                                class="btn-sm"
+                                class:active={libraryView === "list"}
+                                onclick={() => (libraryView = "list")}>List</button>
+                        </div>
+                        <select aria-label="Sort library" bind:value={librarySort} onchange={persistLibrarySort}>
+                            <option value="recent-read">Recently read</option>
+                            <option value="recently-updated">Recently updated</option>
+                            <option value="recent-added">Recently added</option>
+                            <option value="title">Title (A-Z)</option>
+                            <option value="latest-chapter">Latest chapter</option>
+                        </select>
+                        <label class="page-size">
+                            <span class="muted">Per page</span>
+                            <select aria-label="Items per page" bind:value={libraryPageSize}>
+                                {#each [10, 15, 20, 50, 100] as n}
+                                    <option value={n}>{n}</option>
+                                {/each}
+                            </select>
+                        </label>
+                    </div>
+                </div>
+                <div class="toolbar-row toolbar-filter-row">
+                    <div class="filter-chips">
+                        {#each LIBRARY_FILTERS as f}
+                            <button
+                                type="button"
+                                class="chip"
+                                class:active={libraryFilter === f}
+                                onclick={() => (libraryFilter = f)}>
+                                {f === "all" ? "All" : f === "on-hold" ? "On Hold" : f[0]?.toUpperCase() + f.slice(1)}
+                            </button>
+                        {/each}
+                    </div>
+                    <div class="toolbar-group toolbar-narrow">
+                        {#if allCategories.length > 0}
+                            <select aria-label="Filter by tag" bind:value={categoryFilter}>
+                                <option value="">All tags</option>
+                                {#each allCategories as cat}
+                                    <option value={cat}>{cat}</option>
+                                {/each}
+                            </select>
+                        {/if}
+                        {#if allGenres.length > 0}
+                            <select aria-label="Filter by genre" bind:value={genreFilter}>
+                                <option value="">All genres</option>
+                                {#each allGenres as genre}
+                                    <option value={genre}>{genre}</option>
+                                {/each}
+                            </select>
+                        {/if}
                         <button
                             type="button"
-                            class="chip"
-                            class:active={libraryFilter === f}
-                            onclick={() => (libraryFilter = f)}>
-                            {f === "all" ? "All" : f === "on-hold" ? "On Hold" : f[0]?.toUpperCase() + f.slice(1)}
+                            class="btn-sm filter-toggle"
+                            class:active={showFiltersPanel || advancedFilterCount > 0}
+                            onclick={() => (showFiltersPanel = !showFiltersPanel)}
+                            aria-expanded={showFiltersPanel}>
+                            Filters{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""}
                         </button>
-                    {/each}
+                    </div>
                 </div>
-                <button
-                    type="button"
-                    class="btn-sm filter-toggle"
-                    class:active={showFiltersPanel || advancedFilterCount > 0}
-                    onclick={() => (showFiltersPanel = !showFiltersPanel)}
-                    aria-expanded={showFiltersPanel}>
-                    Filters{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""}
-                </button>
-                <label class="page-size">
-                    <span class="muted">Per page</span>
-                    <select aria-label="Items per page" bind:value={libraryPageSize}>
-                        {#each [10, 15, 20, 50, 100] as n}
-                            <option value={n}>{n}</option>
-                        {/each}
-                    </select>
-                </label>
+                <div class="toolbar-row toolbar-action-row">
+                    <div class="toolbar-group toolbar-actions">
+                        {#if allCategories.length > 0}
+                            <button
+                                type="button"
+                                class="btn-sm btn-outline"
+                                class:active={manageTags}
+                                aria-pressed={manageTags}
+                                onclick={() => (manageTags = !manageTags)}>Manage tags</button>
+                        {/if}
+                        <button
+                            type="button"
+                            class="btn-sm btn-outline"
+                            onclick={() => void backfillCovers()}
+                            disabled={refreshingCovers || !hasPermission}
+                            title={hasPermission ? "Fetch missing covers" : "Grant source access first"}>
+                            {refreshingCovers
+                                ? coverProgress
+                                    ? `Fetching… ${coverProgress.done}/${coverProgress.total}`
+                                    : "Fetching…"
+                                : "Refresh covers"}
+                        </button>
+                        <button
+                            type="button"
+                            class="btn-sm btn-outline"
+                            title="Search all sources for better matches for every manga in your library"
+                            onclick={() => {
+                                libScanIds = library.filter(m => !m.manualTracking).map(m => m.id)
+                                activeSection = "Data"
+                            }}>
+                            Find better sources
+                        </button>
+                        <button
+                            type="button"
+                            class="btn-sm btn-outline"
+                            onclick={() => (selectMode ? clearSelection() : (selectMode = true))}>
+                            {selectMode ? "Cancel" : "Select"}
+                        </button>
+                        {#if duplicateGroups.length > 0}
+                            <button
+                                type="button"
+                                class="btn-sm btn-outline"
+                                onclick={() => (showDuplicates = !showDuplicates)}>
+                                Duplicates ({duplicateGroups.length})
+                            </button>
+                        {/if}
+                        <button
+                            type="button"
+                            class="btn-sm btn-outline"
+                            title="Open a random unread title"
+                            disabled={library.length === 0}
+                            onclick={surpriseMe}>🎲 Surprise me</button>
+                    </div>
+                </div>
             </div>
             {#if showFiltersPanel}
                 <div class="filters-panel">
@@ -5539,7 +5558,7 @@
                                 NSFW (blur cover)
                             </label>
                         </div>
-                        <div>
+                        <div class="detail-ch-col">
                             <div class="detail-ch-row">
                                 <label class="menu-num">
                                     Read ch
