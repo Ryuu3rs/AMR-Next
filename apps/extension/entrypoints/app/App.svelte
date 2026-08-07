@@ -2584,9 +2584,16 @@
     let suggestionsLoading = $state(false)
     let suggestionsFailed = $state(false)
     const communitySuggestions = $derived(suggestions.filter(s => s.community))
+    // The cached handler hands back up to ~60 items at once; rendering every card (and
+    // firing every cover fetch) up front makes the tab feel slow. Grow a visible slice
+    // instead, one page at a time as the user scrolls to the end.
+    const SUGGESTIONS_PAGE = 12
+    let suggestionsShown = $state(SUGGESTIONS_PAGE)
+    let suggestionsSentinel = $state<HTMLElement>()
     async function loadSuggestions(force: boolean) {
         suggestionsLoading = true
         suggestionsFailed = false
+        suggestionsShown = SUGGESTIONS_PAGE
         try {
             suggestions = await sendRuntimeMessage<Suggestion[]>({
                 type: "suggestions:get",
@@ -2611,6 +2618,20 @@
         } else {
             suggestionsRequestedForVisit = false
         }
+    })
+    $effect(() => {
+        // Reveal the next page when the end-of-list sentinel scrolls into view. The effect
+        // re-runs whenever the sentinel is (re)mounted; once every item is shown the
+        // sentinel is removed from the DOM and this cleanup tears the observer down.
+        const el = suggestionsSentinel
+        if (!el) return
+        const observer = new IntersectionObserver(entries => {
+            if (entries.some(e => e.isIntersecting) && suggestionsShown < suggestions.length) {
+                suggestionsShown = Math.min(suggestionsShown + SUGGESTIONS_PAGE, suggestions.length)
+            }
+        })
+        observer.observe(el)
+        return () => observer.disconnect()
     })
     // Send the user to the global search prefilled with a suggestion's title so they can
     // add it from whichever mirror carries it.
@@ -3226,12 +3247,15 @@
                 </p>
             {:else}
                 <div class="poster-grid">
-                    {#each suggestions as s (s.anilistId)}
+                    {#each suggestions.slice(0, suggestionsShown) as s (s.anilistId)}
                         <article>
                             <div class="poster-wrap">
                                 <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
-                                    {#if s.coverUrl}<img src={s.coverUrl} alt={s.title} />{:else}<span
-                                            class="cover-initial">{s.title[0]}</span
+                                    {#if s.coverUrl}<img
+                                            src={s.coverUrl}
+                                            alt={s.title}
+                                            loading="lazy"
+                                            decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span
                                         >{/if}
                                     {#if s.community}
                                         <div class="poster-badges">
@@ -3248,6 +3272,17 @@
                         </article>
                     {/each}
                 </div>
+                {#if suggestionsShown < suggestions.length}
+                    <div bind:this={suggestionsSentinel} class="suggestions-sentinel">
+                        <button
+                            type="button"
+                            class="btn-sm"
+                            onclick={() =>
+                                (suggestionsShown = Math.min(suggestionsShown + SUGGESTIONS_PAGE, suggestions.length))}>
+                            Load more ({suggestions.length - suggestionsShown} remaining)
+                        </button>
+                    </div>
+                {/if}
                 {#if communitySuggestions.length > 0}
                     <h2 style="margin-top:8px">Readers also read</h2>
                     <p class="muted">Popular with readers who share your library.</p>
@@ -3256,8 +3291,11 @@
                             <article>
                                 <div class="poster-wrap">
                                     <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
-                                        {#if s.coverUrl}<img src={s.coverUrl} alt={s.title} />{:else}<span
-                                                class="cover-initial">{s.title[0]}</span
+                                        {#if s.coverUrl}<img
+                                                src={s.coverUrl}
+                                                alt={s.title}
+                                                loading="lazy"
+                                                decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span
                                             >{/if}
                                     </button>
                                 </div>

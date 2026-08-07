@@ -303,6 +303,12 @@ button:disabled {
     margin-bottom: 36px;
 }
 
+.suggestions-sentinel {
+    display: flex;
+    justify-content: center;
+    margin: 4px 0 32px;
+}
+
 .poster-grid article {
     position: relative;
     display: grid;
