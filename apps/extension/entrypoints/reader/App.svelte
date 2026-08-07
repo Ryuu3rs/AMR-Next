@@ -873,6 +873,24 @@
                 return
             }
         }
+        // Transient failure (a rate-limited burst of parallel loads, or a flaky
+        // rotating image host like mangak's rx.*.org) - retry a couple of times with a
+        // short backoff before giving up, so a page doesn't strand on its "Page N" alt
+        // text. Re-assigning src forces a fresh request. onload clears the counter.
+        const retries = Number(img.dataset.retries ?? "0")
+        if (retries < 2) {
+            img.dataset.retries = String(retries + 1)
+            const src = img.src
+            setTimeout(
+                () => {
+                    if (!img.isConnected) return
+                    img.src = ""
+                    img.src = src
+                },
+                500 * (retries + 1)
+            )
+            return
+        }
         console.warn("[AMR reader] Image load failed:", img.src)
         if (!failedPages.has(pageIndex)) {
             const next = new Set(failedPages)
@@ -1318,6 +1336,7 @@
                     onerror={e => handleImageError(e, p)}
                     onload={e => {
                         delete (e.currentTarget as HTMLImageElement).dataset.didFallback
+                        delete (e.currentTarget as HTMLImageElement).dataset.retries
                         clearPageError(p)
                         recordProgress(currentPage)
                     }} />
@@ -1338,6 +1357,7 @@
                         onerror={e => handleImageError(e, p)}
                         onload={e => {
                             delete (e.currentTarget as HTMLImageElement).dataset.didFallback
+                            delete (e.currentTarget as HTMLImageElement).dataset.retries
                             clearPageError(p)
                             recordContinuousProgress(p)
                         }} />
@@ -1360,6 +1380,7 @@
                     onerror={e => handleImageError(e, index)}
                     onload={e => {
                         delete (e.currentTarget as HTMLImageElement).dataset.didFallback
+                        delete (e.currentTarget as HTMLImageElement).dataset.retries
                         clearPageError(index)
                         recordContinuousProgress(index)
                     }} />
