@@ -79,6 +79,7 @@ const allowedRequiredHosts = [
     "https://mangadistrict.com/*",
     "https://mangahere.cc/*",
     "https://mangahub.io/*",
+    "https://mangak.io/*",
     "https://mangakatana.com/*",
     "https://mangasushi.org/*",
     "https://manhuatop.org/*",

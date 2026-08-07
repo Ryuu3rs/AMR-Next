@@ -171,5 +171,10 @@
         "seriesUrl": "https://flamecomics.xyz/series/1",
         "expectTitle": "Solo Leveling",
         "note": "Next.js app; series are numeric ids, data in __NEXT_DATA__; images on cdn.flamecomics.xyz"
+    },
+    "mangak": {
+        "seriesUrl": "https://mangak.io/semantic-error",
+        "expectTitle": "Semantic Error",
+        "note": "server-rendered Next.js; series at /{slug}, chapters at /{slug}/chapter-{N}; page images on rotating rx.*.org CDN"
     }
 }
