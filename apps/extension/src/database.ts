@@ -1208,6 +1208,12 @@ export async function applyUpdateCheckResult(input: {
 // manga still existing (a concurrent remove/merge during the network fetch must
 // stick). Returns false when the manga was gone, so the caller skips its
 // publishLive. purgeStaleMangahub is injected for the same circular-import reason.
+// MangaHub chapter URLs are /chapter/{slug}/chapter-{N} where N is frequently an internal
+// id at or above this floor, not the real chapter number. The adapter derives the true
+// number from the page's visible span (see INTERNAL_ID_MIN in packages/sources/src/mangahub.ts);
+// trackExternalChapter and the repair sweep use this to reject an internal-id-sized number.
+const MANGAHUB_INTERNAL_ID_MIN = 100_000
+
 export async function repairMangahubChapters(input: {
     mangaId: string
     chapters: ChapterRecord[]
@@ -1215,14 +1221,32 @@ export async function repairMangahubChapters(input: {
     purgeStaleMangahub: (freshChapterIds: Set<string>) => Promise<void>
 }): Promise<boolean> {
     return db.transaction("rw", db.chapters, db.manga, async () => {
-        if ((await db.manga.get(input.mangaId)) === undefined) return false
+        const existing = await db.manga.get(input.mangaId)
+        if (existing === undefined) return false
         await db.chapters.bulkPut(input.chapters)
         await input.purgeStaleMangahub(new Set(input.chapters.map(c => c.id)))
+        // A pre-fix trackExternalChapter stored an internal id (>= floor) as
+        // lastReadChapterNumber - it can't be a real read position (real chapters never
+        // reach the floor), and left as-is it freezes the ratchet and shows a garbage
+        // number on the Updates page. Clear it (and the ext id it points at) so the
+        // position re-derives from the next real read.
         if (input.latest) {
             await db.manga.update(input.mangaId, {
                 latestChapterId: input.latest.id,
                 sourceUrl: input.latest.url,
                 ...(Number.isFinite(input.latest.sortKey) ? { latestChapterNumber: input.latest.sortKey } : {}),
+                updatedAt: Date.now()
+            })
+        }
+        // Clear a poisoned lastReadChapterNumber (an internal id the pre-fix trackExternalChapter
+        // stored) so the ratchet unfreezes and the Updates page stops showing a garbage number;
+        // the position re-derives from the next real read. Uses the untyped table so `undefined`
+        // clears the field (the typed db.manga.update rejects undefined under
+        // exactOptionalPropertyTypes) - same idiom as the coverUrl clear in the v-migration above.
+        if ((existing.lastReadChapterNumber ?? 0) >= MANGAHUB_INTERNAL_ID_MIN) {
+            await db.table("manga").update(input.mangaId, {
+                lastReadChapterNumber: undefined,
+                lastReadChapterId: undefined,
                 updatedAt: Date.now()
             })
         }
@@ -1346,7 +1370,17 @@ export async function trackExternalChapter(input: {
         const numberMatch =
             input.url.match(/chapter[-_ ]?(\d+(?:\.\d+)?)/i) ??
             input.url.match(/[?&](?:episode|chapter|ep|ch)(?:[-_]?no)?=(\d+(?:\.\d+)?)/i)
-        const number = numberMatch?.[1] !== undefined ? Number(numberMatch[1]) : undefined
+        const parsedNumber = numberMatch?.[1] !== undefined ? Number(numberMatch[1]) : undefined
+        // MangaHub chapter URLs are /chapter/{slug}/chapter-{N} where N is frequently an
+        // internal id (>= 100_000), not the real chapter number. Parsing it verbatim here
+        // poisoned the chapter row's title/sortKey AND (via saveProgress) lastReadChapterNumber -
+        // the "Updates page shows wrong chapter numbers for MangaHub" bug. Mirror the adapter's
+        // INTERNAL_ID_MIN guard (packages/sources/src/mangahub.ts) and drop an internal-id-sized
+        // number so the row stays unnumbered until the adapter's update-check fills the real one.
+        const number =
+            parsedNumber !== undefined && input.sourceId === "mangahub" && parsedNumber >= MANGAHUB_INTERNAL_ID_MIN
+                ? undefined
+                : parsedNumber
 
         // When caller supplies series-level info, try direct ID lookup first - finds the manga
         // even if it was previously added via resolveChapter (which uses a different code path).
