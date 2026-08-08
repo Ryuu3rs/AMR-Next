@@ -21,7 +21,7 @@ import {
     type EventRow
 } from "./db.js"
 import { computeUnlocked } from "./achievements.js"
-import { validateUsername } from "@amr/normalize"
+import { validateUsername } from "./username.js"
 
 export const app = new Hono()
 
