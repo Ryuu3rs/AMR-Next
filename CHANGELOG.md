@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.19.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.18.0...v0.19.0) (2026-08-08)
+
+
+### Features
+
+* **anilist:** import titles by romaji first so mirror search matches more sources ([91396fa](https://github.com/Ryuu3rs/AMR-Next/commit/91396fa4a1c241c77940df2f262445dd6e5862e4))
+* **backup:** daily automatic restore point with partitioned retention ([0b6f6a0](https://github.com/Ryuu3rs/AMR-Next/commit/0b6f6a01f6516acad7fca2e270d80691cd6b3b7c))
+* **community:** reserved-name blocklist + emoji-safe username validation ([1c384f6](https://github.com/Ryuu3rs/AMR-Next/commit/1c384f638a448c76d11d192bf1633928b82ee2ef))
+* **insights:** Stats genre breakdown + Suggestions top-3 podium from the library genre profile ([3492eec](https://github.com/Ryuu3rs/AMR-Next/commit/3492eeca73426463f6c29749c82aafa3e27267f0))
+* **library:** persist sort, cap suggestions, auto-backup on update ([ed6f063](https://github.com/Ryuu3rs/AMR-Next/commit/ed6f063952d8db90b0d9871bcef96966c177c90c))
+* **library:** reading-status filters, per-title status control, auto-pause + import settings ([46aef94](https://github.com/Ryuu3rs/AMR-Next/commit/46aef9438ebda243e87f3a2375a72c91e7439fd3))
+* **library:** reading-status model (paused/dropped/planning), AniList status mapping, auto-pause, sync reconcile ([70a9c92](https://github.com/Ryuu3rs/AMR-Next/commit/70a9c9246b67282e01ed0149139c45d81790e956))
+* **reader:** seamless 0-gap spread toggle, fit-height clip, top-bar autohide hotkey ([7430af5](https://github.com/Ryuu3rs/AMR-Next/commit/7430af552e741d14c86e8302c65fe6cb3f6c6de3))
+* **reader:** Strip/Single/Double view control, scrollable double spreads, page nav ([f2b8d5d](https://github.com/Ryuu3rs/AMR-Next/commit/f2b8d5dfb90067ca4b738967b712e39ae2c7b105))
+* **reader:** tighten the double-page spread and add a first-page offset ([84cbbda](https://github.com/Ryuu3rs/AMR-Next/commit/84cbbda5d9d613ee636a45ec839947e99580756a))
+* **search:** add library:add so primary click adds any source unread ([0db5688](https://github.com/Ryuu3rs/AMR-Next/commit/0db56888c87bc24bb28b58d2f8519b02773209c1))
+* **search:** per-source search toggle on Sources tab (preferred mirrors) ([0357774](https://github.com/Ryuu3rs/AMR-Next/commit/03577743694d8e76bbaa5ff0fe9ace7f99720183))
+* **search:** primary click adds result to library, modifier-click opens site ([7cecd8b](https://github.com/Ryuu3rs/AMR-Next/commit/7cecd8b459a34cddbce2283308b3c5f09ea4d951))
+* **sources:** add GD Scans (Madara) with optional volume-path chapter URLs ([2efeab6](https://github.com/Ryuu3rs/AMR-Next/commit/2efeab61084607bf469f2a3c639c3921a88b7c97))
+* **sources:** add mangak.io adapter (Next.js SSR: search + chapter list + reader scrape) ([86c3404](https://github.com/Ryuu3rs/AMR-Next/commit/86c3404a5b97a7849011c4c9eaf08a3139c2b57f))
+* **sources:** alias tritinia.com to recover old-domain imports ([83dc229](https://github.com/Ryuu3rs/AMR-Next/commit/83dc22956948bb6759dc4d557fe0454523989505))
+
+
+### Bug Fixes
+
+* **anilist:** make sync reconcile safe (up-front fetch, empty-guard, pre-existing-id snapshot) so it never mass-drops the library ([8d4e8b6](https://github.com/Ryuu3rs/AMR-Next/commit/8d4e8b6cca10ccaf6f357e61a0d544d52105c335))
+* **anilist:** track known-membership across syncs so reconcile only drops genuine removals, never enrichment-stamped titles ([47d6726](https://github.com/Ryuu3rs/AMR-Next/commit/47d6726e0cb94163c27252b2c601dce247a79fe0))
+* **asura:** strip 'Chapter N' suffix from resolved series title ([568e9e8](https://github.com/Ryuu3rs/AMR-Next/commit/568e9e85ac709e1f9d243b85bacd608e99f6fed5))
+* **background:** reset stuck update-progress on throw; update-pending latch; ensureAlarm no period-reset; focus existing dashboard tab ([1cb21aa](https://github.com/Ryuu3rs/AMR-Next/commit/1cb21aaf1c121f0e866e4ca585a83f063ca60749))
+* **capture:** mark-read adds a distinct library entry per title ([7f7fd05](https://github.com/Ryuu3rs/AMR-Next/commit/7f7fd05f79f3ad2d4bb775d3419fa33523e73542))
+* **community-server:** vendor username rules so the isolated Docker build resolves ([5d3162f](https://github.com/Ryuu3rs/AMR-Next/commit/5d3162fad5feaa484b59ff5306c62ef6c7f08cec))
+* **db:** preserve anilistId/genres/metadataUpdatedAt/latestChapterAt on chapter recapture ([7c74241](https://github.com/Ryuu3rs/AMR-Next/commit/7c742418acfb6dbc867a39e6e007439ddb4150ff))
+* **db:** v11 heals Infinity lastReadChapterNumber; guard latest-chapter pick; clear dangling read id on switch; backup signature covers metadata ([755c872](https://github.com/Ryuu3rs/AMR-Next/commit/755c872652c0d27bdfc60d62ba81fa423fd484a0))
+* **insights:** emphasize 1st podium pick with an accent ring instead of scale (no overlap) ([a403e6c](https://github.com/Ryuu3rs/AMR-Next/commit/a403e6c5a5a05159b5b5f235d924b0d597d917c9))
+* **library:** Completed requires a finished series (caught-up ongoing stays reading) so mark-read titles stay visible in Ongoing ([a5393c5](https://github.com/Ryuu3rs/AMR-Next/commit/a5393c5a1ecb203d31bb15c9aece039ea5bce479))
+* **library:** don't mark read titles Completed when latest is unknown; status-aware Surprise Me + updates badge ([1d11914](https://github.com/Ryuu3rs/AMR-Next/commit/1d11914343cfa70999ddb8e65f00c0a10d6f45e8))
+* **mangahub:** reject internal-id chapter numbers in external-track + heal poisoned lastReadChapterNumber so Updates shows real numbers ([827958b](https://github.com/Ryuu3rs/AMR-Next/commit/827958b728a2e48b3d448c8fb39f5cfb03455dd1))
+* **reader:** center image at original page-fit (center + margin-auto, not safe-center) ([d543202](https://github.com/Ryuu3rs/AMR-Next/commit/d543202602748a1c3ed58354fc79e0a66b64d71f))
+* **reader:** retry a failed page image (backoff) before stranding it on alt text ([6bceff7](https://github.com/Ryuu3rs/AMR-Next/commit/6bceff755b5dbfd6f18ef75298b025b3864d203d))
+* **search:** honor per-source race timeout in streaming; force refreshes suggestions; validate library:add input ([1f31380](https://github.com/Ryuu3rs/AMR-Next/commit/1f3138006c8c686ea3a79c0ca581c91c214101fc))
+* **search:** raise bulk-search race timeout to 10s so it stops missing sources a manual search finds ([b0c3593](https://github.com/Ryuu3rs/AMR-Next/commit/b0c3593444e37dd4970e208c5b45668c4b9ed4ff))
+* **search:** unicode-aware matchesQuery + normalizeTitle (NFC/strip); chapterIdToken uses query key for webtoons ([5c26458](https://github.com/Ryuu3rs/AMR-Next/commit/5c264581b67422a1499dc1d2f71065546c361c07))
+* **security:** redact encoded secrets + JWTs in diag log; http(s)-only url guard; strip control chars from cbz filename ([1b10c70](https://github.com/Ryuu3rs/AMR-Next/commit/1b10c700fe289ef164892d8b7c301bb803b20ce8))
+* **sources:** dash-decimal chapters, weebcentral year misparse, asura bare-chapter title, sortkey edge cases ([1d64bb0](https://github.com/Ryuu3rs/AMR-Next/commit/1d64bb0f3035cfbdbd5e2c8b00b62b971ecc875a))
+* **sources:** mangadex newest-500, comix chapter-0, fanfox search dupe-slug, manganato genre scoping, mgeko unnumbered ([b6e0d48](https://github.com/Ryuu3rs/AMR-Next/commit/b6e0d48824d919c441a267d6e3cf00f907671339))
+* **tritinia:** use ch- chapter prefix so reader resolves chapter URLs ([115768b](https://github.com/Ryuu3rs/AMR-Next/commit/115768b59cc4460966bd0c4458e1a786c849c2e6))
+* **weebcentral:** parse Episode-labeled chapters so numbers stop collapsing to 0.NNN ([2b59073](https://github.com/Ryuu3rs/AMR-Next/commit/2b590738757bfc3f61ed9df0806ad436bb7fe06d))
+
+
+### Performance Improvements
+
+* **suggestions:** paginated infinite-scroll render + lazy cover images ([aa6a505](https://github.com/Ryuu3rs/AMR-Next/commit/aa6a5052ea5e153aa8d8d9fec89606aabb2e6f7b))
+* **suggestions:** serve cached list instantly and revalidate in the background ([82720ec](https://github.com/Ryuu3rs/AMR-Next/commit/82720ec4c46575ebeedd5b443d26a1792dc4149c))
+
 ## [0.18.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.17.0...v0.18.0) (2026-08-04)
 
 
