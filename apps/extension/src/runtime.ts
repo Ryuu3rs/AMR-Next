@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { validateUsername } from "@amr/normalize"
 
 export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("library:list") }),
@@ -181,11 +182,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("community:status") }),
     z.object({
         type: z.literal("community:register"),
-        username: z
-            .string()
-            .min(2)
-            .max(30)
-            .regex(/^[a-zA-Z0-9_-]+$/)
+        username: z.string().refine(v => validateUsername(v).ok, "invalid username")
     }),
     z.object({ type: z.literal("community:toggle"), enabled: z.boolean() }),
     z.object({ type: z.literal("community:sync") }),

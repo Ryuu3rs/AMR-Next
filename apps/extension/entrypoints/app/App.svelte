@@ -5327,7 +5327,7 @@
                                     Registered as <strong>{communityProfile.username}</strong>. Your reading data syncs
                                     hourly.
                                 {:else}
-                                    Choose a display name for the leaderboard. Letters, numbers, _ and - only.
+                                    Choose a display name for the leaderboard. Letters, numbers, emoji, _ and - allowed.
                                 {/if}
                             </p>
                         </div>

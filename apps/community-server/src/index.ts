@@ -21,8 +21,9 @@ import {
     type EventRow
 } from "./db.js"
 import { computeUnlocked } from "./achievements.js"
+import { validateUsername } from "@amr/normalize"
 
-const app = new Hono()
+export const app = new Hono()
 
 app.use("/*", cors({ origin: "*", allowMethods: ["GET", "POST"], allowHeaders: ["Content-Type"] }))
 
@@ -97,10 +98,12 @@ app.post("/register", async c => {
         return c.json({ error: "Too many requests" }, 429)
     }
     const body = await c.req.json<{ username?: string }>().catch(() => ({}))
-    const username = (body.username ?? "").trim()
-    if (!username || !/^[a-zA-Z0-9_-]{2,30}$/.test(username)) {
-        return c.json({ error: "Username must be 2-30 chars: letters, numbers, _ and -" }, 400)
-    }
+    const result = validateUsername(body.username ?? "")
+    if (!result.ok) return c.json({ error: result.reason }, 400)
+    const username = result.value
+    // Uniqueness stays ASCII-casefold (COLLATE NOCASE): "Ryuu"/"ryuu" collide, but full
+    // unicode-lookalike dedup (confusables, NFKC folding) is out of scope - it would need a
+    // schema migration to add a normalized-key column, which we are not doing here.
     if (getUserByUsername(username)) return c.json({ error: "Username already taken" }, 409)
     const userId = randomUUID()
     createUser(userId, username)
