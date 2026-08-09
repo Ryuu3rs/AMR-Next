@@ -132,6 +132,17 @@ describe("mapMediaListEntry", () => {
         expect(mapMediaListEntry({ media: { id: 1 } }).listStatus).toBeUndefined()
     })
 
+    it("preserves the raw list status and a positive chapter total", () => {
+        const mapped = mapMediaListEntry({ status: "COMPLETED", media: { id: 1, chapters: 120 } })
+        expect(mapped.rawListStatus).toBe("COMPLETED")
+        expect(mapped.totalChapters).toBe(120)
+        // null / zero / missing totals do not produce a total.
+        expect(mapMediaListEntry({ media: { id: 1, chapters: null } }).totalChapters).toBeUndefined()
+        expect(mapMediaListEntry({ media: { id: 1, chapters: 0 } }).totalChapters).toBeUndefined()
+        expect(mapMediaListEntry({ media: { id: 1 } }).totalChapters).toBeUndefined()
+        expect(mapMediaListEntry({ media: { id: 1 } }).rawListStatus).toBeUndefined()
+    })
+
     it("carries anilistId, genres, and progress; defaults a missing progress to 0", () => {
         const mapped = mapMediaListEntry({
             progress: 12,
