@@ -18,7 +18,10 @@ vi.mock("../sources", () => ({
     resolveChapterUrl: (...args: unknown[]) => resolveChapterUrlMock(...args),
     resolveChapterFromHtml: (...args: unknown[]) => resolveChapterFromHtmlMock(...args),
     listChaptersBySource: (...args: unknown[]) => listChaptersBySourceMock(...args),
-    resolveMangaMetadata: (...args: unknown[]) => resolveMangaMetadataMock(...args)
+    resolveMangaMetadata: (...args: unknown[]) => resolveMangaMetadataMock(...args),
+    // Passthrough: these tests use untagged chapters, for which the real filter is a
+    // no-op anyway (chaptersForLanguage keeps untagged chapters).
+    chaptersForLanguage: <T>(chapters: T[]) => chapters
 }))
 
 const fetchChapterHtmlViaTabMock = vi.fn()
@@ -30,6 +33,9 @@ const getSettingsMock = vi.fn()
 vi.mock("../settings", () => ({
     getSettings: (...args: unknown[]) => getSettingsMock(...args)
 }))
+// Default so handlers that read settings.language (chapter:siblings, reader:chapters)
+// always get an object; individual tests override with their own resolved value.
+getSettingsMock.mockResolvedValue({ language: "en" })
 
 // captureChapter now publishes to the live bus on a successful capture (see
 // background/capture.ts) - stub it out here since these tests only stub

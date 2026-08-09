@@ -23,6 +23,7 @@ import {
     type LibraryManga
 } from "../database"
 import {
+    chaptersForLanguage,
     findSource,
     listChaptersBySource,
     listChaptersForSource,
@@ -31,6 +32,7 @@ import {
     resolveCoverFor,
     resolveMangaUrl
 } from "../sources"
+import { getSettings } from "../settings"
 import { isBotBlocked } from "../background/capture"
 import { scheduleChapterListRefresh } from "../background/chapter-cache"
 import { fetchCoverBlob } from "../background/covers"
@@ -1248,11 +1250,15 @@ export const libraryHandlers: HandlerMap = {
         if (!manga) return { current: null, next: null, prev: null }
         const current = manga.lastReadChapterNumber ?? null
 
+        // Prev/Next steps within the user's preferred language on a multi-language source
+        // (chaptersForLanguage keeps untagged chapters and falls back to the full list
+        // when none match - see its doc in sources.ts).
+        const { language } = await getSettings()
         const pickAdjacent = (chapters: ChapterRecord[]) => {
             let next: ChapterRecord | null = null
             let prev: ChapterRecord | null = null
             let maxSortKey = -Infinity
-            for (const chapter of chapters) {
+            for (const chapter of chaptersForLanguage(chapters, language)) {
                 if (chapter.sortKey > maxSortKey) maxSortKey = chapter.sortKey
                 if (current === null) {
                     if (!next || chapter.sortKey < next.sortKey) next = chapter

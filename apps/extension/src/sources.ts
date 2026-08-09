@@ -436,6 +436,21 @@ export function searchMangaStreaming(
 
 export type MangaSearchResult = SourceSearchResult
 
+// Filter a chapter list to a preferred language for reader listing + prev/next
+// navigation. Chapters with no language tag are always kept (single-language scrape
+// sources don't distinguish, so their untagged chapters must survive). If NOTHING
+// matches the preferred language - e.g. a source that tags everything "en" while the
+// user prefers "fr", or a title only translated in another language - fall back to the
+// full list so the reader is never stranded with an empty chapter list.
+export function chaptersForLanguage<T extends { language?: string | undefined }>(
+    chapters: T[],
+    language: string | undefined
+): T[] {
+    if (!language) return chapters
+    const matched = chapters.filter(c => !c.language || c.language === language)
+    return matched.length > 0 ? matched : chapters
+}
+
 // Fetch MangaDex chapters for the Home search chapter-list panel.
 // Routes through the bounded request client via the MangaDex adapter (fixes I3).
 export async function getMangaChapters(mangaId: string, language = "en") {

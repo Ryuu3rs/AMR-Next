@@ -77,6 +77,34 @@ describe("matchesQuery", () => {
     })
 })
 
+describe("chaptersForLanguage", () => {
+    const ch = (id: string, language?: string) => (language === undefined ? { id } : { id, language })
+
+    it("keeps only the preferred language when the source tags languages", async () => {
+        const { chaptersForLanguage } = await import("./sources")
+        const list = [ch("a", "en"), ch("b", "pt"), ch("c", "en"), ch("d", "id")]
+        expect(chaptersForLanguage(list, "en").map(c => c.id)).toEqual(["a", "c"])
+    })
+
+    it("always keeps untagged chapters (single-language scrape sources)", async () => {
+        const { chaptersForLanguage } = await import("./sources")
+        const list = [ch("a"), ch("b"), ch("c")]
+        expect(chaptersForLanguage(list, "fr").map(c => c.id)).toEqual(["a", "b", "c"])
+    })
+
+    it("falls back to the full list when nothing matches the preferred language", async () => {
+        const { chaptersForLanguage } = await import("./sources")
+        const list = [ch("a", "en"), ch("b", "en")]
+        expect(chaptersForLanguage(list, "fr").map(c => c.id)).toEqual(["a", "b"])
+    })
+
+    it("returns the list unchanged when no language is set", async () => {
+        const { chaptersForLanguage } = await import("./sources")
+        const list = [ch("a", "en"), ch("b", "pt")]
+        expect(chaptersForLanguage(list, "").map(c => c.id)).toEqual(["a", "b"])
+    })
+})
+
 describe("searchManga result filtering", () => {
     it("drops results whose title doesn't contain every query token", async () => {
         listMock = () => [

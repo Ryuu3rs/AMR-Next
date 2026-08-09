@@ -18,6 +18,12 @@ vi.mock("../sources", async () => {
     }
 })
 
+// getSettings reads browser.storage, which isn't stubbed here - mock it so chapter:adjacent
+// (which reads settings.language for language-aware prev/next) doesn't touch the browser global.
+vi.mock("../settings", () => ({
+    getSettings: vi.fn().mockResolvedValue({ language: "en" })
+}))
+
 vi.mock("../background/covers", () => ({
     fetchCoverBlob: vi.fn()
 }))
