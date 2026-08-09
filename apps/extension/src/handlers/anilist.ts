@@ -52,15 +52,26 @@ export async function runAniListImport(): Promise<AniListImportResult> {
             const title = entry.title.trim()
             if (!title || entry.anilistId <= 0) continue
             // Respect the import-status opt-outs: when the user turned off importing
-            // paused/dropped titles, skip those AniList entries entirely.
+            // paused/dropped/planning titles, skip those AniList entries entirely.
             if (entry.listStatus === "paused" && !settings.anilistImportPaused) continue
             if (entry.listStatus === "dropped" && !settings.anilistImportDropped) continue
+            if (entry.listStatus === "planning" && !settings.anilistImportPlanning) continue
+            // A COMPLETED AniList entry with a real chapter total is imported as a finished,
+            // caught-up title (status completed + latest = lastRead = the integer total) so it
+            // derives "completed" (reading-status.ts) instead of landing in Reading - and so a
+            // trailing .5 chapter on a mirror can't drag it back. No mirror search: the AniList
+            // total is the source of truth, and the count stays an integer. When AniList has no
+            // total (chapters null, common for ongoing) we fall through to the normal import so
+            // the title stays in Reading until the user attaches a mirror.
+            // Narrows to a number in the completed branch below (satisfies
+            // exactOptionalPropertyTypes: a plain boolean flag would not).
+            const completedTotal = entry.rawListStatus === "COMPLETED" ? entry.totalChapters : undefined
             candidates.push({
                 id: `anilist:manga:${entry.anilistId}`,
                 title,
                 normalizedTitle: normalizeTitle(title),
                 authors: [],
-                status: entry.status,
+                status: completedTotal !== undefined ? "completed" : entry.status,
                 addedAt: now,
                 updatedAt: now,
                 anilistId: entry.anilistId,
@@ -69,8 +80,16 @@ export async function runAniListImport(): Promise<AniListImportResult> {
                 manualTracking: true,
                 ...(entry.coverUrl ? { coverUrl: entry.coverUrl } : {}),
                 ...(entry.genres.length > 0 ? { genres: entry.genres } : {}),
-                ...(entry.progress > 0 ? { lastReadChapterNumber: entry.progress } : {}),
-                ...(entry.listStatus ? { readingStatus: entry.listStatus } : {})
+                ...(completedTotal !== undefined
+                    ? {
+                          latestChapterNumber: completedTotal,
+                          latestChapterAt: now,
+                          lastReadChapterNumber: completedTotal
+                      }
+                    : {
+                          ...(entry.progress > 0 ? { lastReadChapterNumber: entry.progress } : {}),
+                          ...(entry.listStatus ? { readingStatus: entry.listStatus } : {})
+                      })
             })
         } catch (error) {
             console.warn("[AMR] AniList import: skipping a malformed entry", error)

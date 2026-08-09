@@ -86,7 +86,11 @@ beforeEach(async () => {
     setKnownMembershipMock.mockResolvedValue(undefined)
     resolveMetadataMock.mockReset()
     getSettingsMock.mockReset()
-    getSettingsMock.mockResolvedValue({ anilistImportPaused: true, anilistImportDropped: true })
+    getSettingsMock.mockResolvedValue({
+        anilistImportPaused: true,
+        anilistImportDropped: true,
+        anilistImportPlanning: true
+    })
     // Make the inter-title rate-limit delay instant.
     vi.stubGlobal("setTimeout", (fn: () => void) => {
         fn()
@@ -326,7 +330,11 @@ describe("anilist:import", () => {
 
     it("skips paused/dropped entries when those import options are off", async () => {
         const { runAniListImport } = await import("./anilist")
-        getSettingsMock.mockResolvedValue({ anilistImportPaused: false, anilistImportDropped: false })
+        getSettingsMock.mockResolvedValue({
+            anilistImportPaused: false,
+            anilistImportDropped: false,
+            anilistImportPlanning: true
+        })
         getViewerMangaListMock.mockResolvedValue([
             entry({ anilistId: 20, title: "Paused", listStatus: "paused" }),
             entry({ anilistId: 21, title: "Dropped", listStatus: "dropped" }),
@@ -341,6 +349,67 @@ describe("anilist:import", () => {
         expect(await db.manga.get("anilist:manga:21")).toBeUndefined()
         expect((await db.manga.get("anilist:manga:22"))?.readingStatus).toBe("planning")
         expect(await db.manga.get("anilist:manga:23")).toBeDefined()
+    })
+
+    it("skips planning entries when the planning import option is off", async () => {
+        const { runAniListImport } = await import("./anilist")
+        getSettingsMock.mockResolvedValue({
+            anilistImportPaused: true,
+            anilistImportDropped: true,
+            anilistImportPlanning: false
+        })
+        getViewerMangaListMock.mockResolvedValue([
+            entry({ anilistId: 30, title: "Planning", listStatus: "planning" }),
+            entry({ anilistId: 31, title: "Reading" })
+        ])
+
+        const result = await runAniListImport()
+
+        expect(result.imported).toBe(1)
+        expect(await db.manga.get("anilist:manga:30")).toBeUndefined()
+        expect(await db.manga.get("anilist:manga:31")).toBeDefined()
+    })
+
+    it("imports a COMPLETED entry with a real total as a completed, caught-up title", async () => {
+        const { runAniListImport } = await import("./anilist")
+        getViewerMangaListMock.mockResolvedValue([
+            entry({
+                anilistId: 40,
+                title: "Finished Series",
+                status: "ongoing", // media status is ignored; the list status forces completed
+                rawListStatus: "COMPLETED",
+                totalChapters: 100,
+                progress: 90
+            })
+        ])
+
+        await runAniListImport()
+
+        const created = await db.manga.get("anilist:manga:40")
+        expect(created?.status).toBe("completed")
+        expect(created?.latestChapterNumber).toBe(100)
+        expect(created?.lastReadChapterNumber).toBe(100)
+        expect(created?.readingStatus).toBeUndefined()
+    })
+
+    it("leaves a COMPLETED entry with no known total as a normal (reading) import", async () => {
+        const { runAniListImport } = await import("./anilist")
+        getViewerMangaListMock.mockResolvedValue([
+            entry({
+                anilistId: 41,
+                title: "Finished But Untotalled",
+                status: "completed",
+                rawListStatus: "COMPLETED",
+                progress: 12
+                // no totalChapters
+            })
+        ])
+
+        await runAniListImport()
+
+        const created = await db.manga.get("anilist:manga:41")
+        expect(created?.latestChapterNumber).toBeUndefined()
+        expect(created?.lastReadChapterNumber).toBe(12)
     })
 })
 

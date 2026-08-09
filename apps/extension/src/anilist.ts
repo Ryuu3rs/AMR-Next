@@ -148,6 +148,14 @@ export type AniListListEntry = {
     // COMPLETED / REPEATING stay undefined because our reading/completed status is
     // derived from read progress, not stored (see reading-status.ts).
     listStatus?: "paused" | "dropped" | "planning"
+    // The raw MediaListStatus (CURRENT/PLANNING/COMPLETED/DROPPED/PAUSED/REPEATING),
+    // preserved so import can special-case COMPLETED and membership status-sync can
+    // reconcile every state - things the narrowed listStatus above deliberately drops.
+    rawListStatus?: string
+    // media.chapters: the total chapter count AniList knows for a finished series (null
+    // for ongoing/unknown). Used to complete an imported COMPLETED title against a real
+    // integer total instead of searching a mirror.
+    totalChapters?: number
 }
 
 type RawMediaListEntry = {
@@ -160,6 +168,7 @@ type RawMediaListEntry = {
         title?: { romaji?: string | null; english?: string | null; native?: string | null } | null
         coverImage?: { extraLarge?: string | null; large?: string | null } | null
         status?: string | null
+        chapters?: number | null
         genres?: (string | null)[] | null
     } | null
 }
@@ -207,6 +216,10 @@ export function mapMediaListEntry(raw: RawMediaListEntry): AniListListEntry {
     const title = media.title?.romaji ?? media.title?.english ?? media.title?.native ?? ""
     const coverUrl = media.coverImage?.extraLarge ?? media.coverImage?.large ?? undefined
     const genres = (media.genres ?? []).filter((g): g is string => typeof g === "string" && g.length > 0)
+    const totalChapters =
+        typeof media.chapters === "number" && Number.isFinite(media.chapters) && media.chapters > 0
+            ? media.chapters
+            : undefined
     return {
         anilistId: media.id ?? 0,
         title,
@@ -214,7 +227,9 @@ export function mapMediaListEntry(raw: RawMediaListEntry): AniListListEntry {
         status: mapMediaStatus(media.status),
         genres,
         progress: typeof raw.progress === "number" && Number.isFinite(raw.progress) ? raw.progress : 0,
-        ...(listStatus ? { listStatus } : {})
+        ...(listStatus ? { listStatus } : {}),
+        ...(typeof raw.status === "string" && raw.status ? { rawListStatus: raw.status } : {}),
+        ...(totalChapters !== undefined ? { totalChapters } : {})
     }
 }
 
@@ -240,6 +255,7 @@ export async function getViewerMangaList(token: string): Promise<AniListListEntr
                             title { romaji english native }
                             coverImage { extraLarge large }
                             status
+                            chapters
                             genres
                         }
                     }

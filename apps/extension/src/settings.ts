@@ -26,6 +26,9 @@ export type AppSettings = {
     // there (default true). When false, those entries are skipped on import.
     anilistImportPaused: boolean
     anilistImportDropped: boolean
+    // Include PLANNING entries on import (default false - a first import stays focused on
+    // what you actually read; enable to pull your plan-to-read list in too).
+    anilistImportPlanning: boolean
     // Source ids the user toggled OFF for search on the Sources tab. Aggregate search
     // (manga:search + the streaming Home search) skips these so a big library isn't
     // querying every adapter every time. Empty = search all (default).
@@ -53,6 +56,7 @@ export const defaultSettings: AppSettings = {
     autoPauseDays: 0,
     anilistImportPaused: true,
     anilistImportDropped: true,
+    anilistImportPlanning: false,
     searchDisabledSourceIds: []
 }
 
