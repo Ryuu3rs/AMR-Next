@@ -7,7 +7,10 @@ import {
     saveViewerProgress,
     getViewerName,
     getViewerMangaList,
-    mapMediaListEntry
+    mapMediaListEntry,
+    resolveStatusSync,
+    localStatusToAniList,
+    aniListStatusToLocal
 } from "./anilist"
 
 function stubStorage() {
@@ -41,10 +44,29 @@ describe("AniList config store", () => {
         expect(c.autoSync).toBe(true)
     })
 
+    it("maps local status kinds to AniList statuses and back", () => {
+        expect(localStatusToAniList("completed")).toBe("COMPLETED")
+        expect(localStatusToAniList("dropped")).toBe("DROPPED")
+        expect(localStatusToAniList("paused")).toBe("PAUSED")
+        expect(localStatusToAniList("planning")).toBe("PLANNING")
+        expect(localStatusToAniList("reading")).toBe("CURRENT")
+        expect(aniListStatusToLocal("PAUSED")).toEqual({ readingStatus: "paused", completed: false })
+        expect(aniListStatusToLocal("COMPLETED")).toEqual({ readingStatus: null, completed: true })
+        expect(aniListStatusToLocal("CURRENT")).toEqual({ readingStatus: null, completed: false })
+        expect(aniListStatusToLocal("REPEATING")).toEqual({ readingStatus: null, completed: false })
+    })
+
     it("never exposes the token in the status view", async () => {
         await setAniListConfig({ token: "secret", autoSync: true, lastSyncAt: 123 })
         const status = await getAniListStatus()
-        expect(status).toEqual({ hasToken: true, autoSync: true, syncMembership: false, lastSyncAt: 123 })
+        expect(status).toEqual({
+            hasToken: true,
+            autoSync: true,
+            syncMembership: false,
+            statusPush: false,
+            statusPull: false,
+            lastSyncAt: 123
+        })
         expect(JSON.stringify(status)).not.toContain("secret")
     })
 })
@@ -88,6 +110,79 @@ describe("AniList authed API", () => {
     it("throws on a non-ok response", async () => {
         vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }))
         await expect(getViewerName("bad")).rejects.toThrow(/401/)
+    })
+})
+
+describe("resolveStatusSync", () => {
+    it("returns none when local and remote already agree", () => {
+        expect(
+            resolveStatusSync({
+                local: { kind: "paused", ts: 5 },
+                remote: { status: "PAUSED", ts: 9 },
+                push: true,
+                pull: true
+            })
+        ).toEqual({ action: "none" })
+    })
+
+    it("push-only always pushes the local status", () => {
+        expect(
+            resolveStatusSync({
+                local: { kind: "dropped", ts: 1 },
+                remote: { status: "CURRENT", ts: 999 },
+                push: true,
+                pull: false
+            })
+        ).toEqual({ action: "push", status: "DROPPED" })
+    })
+
+    it("pull-only always applies the remote status", () => {
+        expect(
+            resolveStatusSync({
+                local: { kind: "reading", ts: 999 },
+                remote: { status: "PAUSED", ts: 1 },
+                push: false,
+                pull: true
+            })
+        ).toEqual({ action: "pullLocal", status: "PAUSED" })
+    })
+
+    it("pull-only with no remote entry does nothing", () => {
+        expect(
+            resolveStatusSync({ local: { kind: "reading", ts: 1 }, remote: { ts: 0 }, push: false, pull: true })
+        ).toEqual({ action: "none" })
+    })
+
+    it("both directions: the more recently changed side wins", () => {
+        // Local changed more recently -> push local up.
+        expect(
+            resolveStatusSync({
+                local: { kind: "dropped", ts: 100 },
+                remote: { status: "CURRENT", ts: 50 },
+                push: true,
+                pull: true
+            })
+        ).toEqual({ action: "push", status: "DROPPED" })
+        // Remote changed more recently -> pull remote down.
+        expect(
+            resolveStatusSync({
+                local: { kind: "reading", ts: 50 },
+                remote: { status: "DROPPED", ts: 100 },
+                push: true,
+                pull: true
+            })
+        ).toEqual({ action: "pullLocal", status: "DROPPED" })
+    })
+
+    it("does nothing when neither direction is enabled", () => {
+        expect(
+            resolveStatusSync({
+                local: { kind: "paused", ts: 1 },
+                remote: { status: "CURRENT", ts: 1 },
+                push: false,
+                pull: false
+            })
+        ).toEqual({ action: "none" })
     })
 })
 

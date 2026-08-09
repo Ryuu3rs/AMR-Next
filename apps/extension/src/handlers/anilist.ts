@@ -1,7 +1,7 @@
 import { normalizeTitle } from "@amr/normalize"
 import { addImportedManga, db, updateManga, type LibraryManga } from "../database"
 import { getSettings } from "../settings"
-import { neverRead } from "../reading-status"
+import { neverRead, hasKnownLatest, hasNewerChapters, seriesFinished } from "../reading-status"
 import {
     getAniListConfig,
     setAniListConfig,
@@ -10,11 +10,15 @@ import {
     getViewerProgress,
     saveViewerProgress,
     getViewerMangaList,
+    getViewerListEntry,
     getMediaListEntryId,
     saveMediaStatus,
     deleteMediaListEntry,
     getKnownMembership,
-    setKnownMembership
+    setKnownMembership,
+    resolveStatusSync,
+    aniListStatusToLocal,
+    type SyncStatusKind
 } from "../anilist"
 import { resolveMetadata } from "../metadata"
 import { configureAniListAlarm } from "../background/alarms"
@@ -29,7 +33,29 @@ export function abortAniListSync(): void {
     if (anilistSyncRunning) anilistSyncAborted = true
 }
 
-export type AniListSyncResult = { pushed: number; added: number; checked: number; skipped: number }
+export type AniListSyncResult = {
+    pushed: number
+    added: number
+    checked: number
+    skipped: number
+    statusPushed: number
+    statusPulled: number
+}
+
+// The library reading-status a title should sync to AniList: explicit paused/dropped/
+// planning overrides, else derived completed (finished + caught up) / reading. "unread"
+// (never opened) is excluded - membership sync handles the PLANNING add for those. Mirrors
+// effectiveReadingStatus but deliberately ignores the inactivity auto-pause, which is a
+// local convenience the user never asked to push to AniList.
+function localStatusKind(m: LibraryManga): SyncStatusKind | "unread" {
+    if (m.readingStatus === "dropped") return "dropped"
+    if (m.readingStatus === "paused") return "paused"
+    const hasRead = !neverRead(m)
+    if (hasRead && hasKnownLatest(m) && !hasNewerChapters(m) && seriesFinished(m)) return "completed"
+    if (m.readingStatus === "planning" && !hasRead) return "planning"
+    if (hasRead) return "reading"
+    return "unread"
+}
 
 export type AniListImportResult = { imported: number; skipped: number; total: number }
 
@@ -121,25 +147,34 @@ export async function removeFromAniList(anilistId: number | undefined): Promise<
 // well under AniList's 90/min budget (two calls per title). Re-entrancy-latched and
 // abort-aware like the other background loops.
 export async function runAniListSync(): Promise<AniListSyncResult> {
-    if (anilistSyncRunning) return { pushed: 0, added: 0, checked: 0, skipped: 0 }
+    if (anilistSyncRunning) return { pushed: 0, added: 0, checked: 0, skipped: 0, statusPushed: 0, statusPulled: 0 }
     anilistSyncRunning = true
     anilistSyncAborted = false
     let pushed = 0
     let added = 0
     let checked = 0
     let skipped = 0
+    let statusPushed = 0
+    let statusPulled = 0
     try {
         const config = await getAniListConfig()
         if (!config.token) throw new Error("No AniList token configured")
         const token = config.token
         const membership = config.syncMembership
+        const wantStatusSync = Boolean(config.statusPush || config.statusPull)
 
         // Read titles always push progress. With membership sync on, unread titles that
         // already have a cached AniList id are added to the list (as PLANNING) too - we
-        // don't resolve every library title here to keep the request budget bounded.
+        // don't resolve every library title here to keep the request budget bounded. With
+        // status sync on, any title carrying an AniList id is in scope so its status can be
+        // reconciled even if it has no read progress (e.g. a dropped-before-reading title).
         const mangas = await db.manga
             .filter(
-                m => !m.onHold && (m.lastReadChapterNumber !== undefined || (membership && m.anilistId !== undefined))
+                m =>
+                    !m.onHold &&
+                    (m.lastReadChapterNumber !== undefined ||
+                        (membership && m.anilistId !== undefined) ||
+                        (wantStatusSync && m.anilistId !== undefined))
             )
             .toArray()
 
@@ -252,6 +287,74 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
             await new Promise<void>(r => setTimeout(r, 1300))
         }
 
+        // Second pass: bidirectional reading-status reconcile. Isolated from the progress/
+        // membership loop above so that well-tested path is untouched, and only runs when
+        // the user opted into pushing and/or pulling status. Per title: compare the local
+        // status to the AniList entry's; with both directions on, the more recently changed
+        // side wins (last-writer). A pulled COMPLETED completes the local title against the
+        // AniList chapter total, mirroring the import rule (skipped when no total is known).
+        if (wantStatusSync && !anilistSyncAborted) {
+            const nowMs = Date.now()
+            for (const manga of mangas) {
+                if (anilistSyncAborted) break
+                const anilistId = manga.anilistId
+                if (anilistId === undefined) continue
+                if (genuineRemovals !== undefined && genuineRemovals.has(anilistId)) continue
+                const kind = localStatusKind(manga)
+                if (kind === "unread") continue
+                try {
+                    const entry = await getViewerListEntry(token, anilistId)
+                    const decision = resolveStatusSync({
+                        local: {
+                            kind,
+                            ts: manga.readingStatusUpdatedAt ?? manga.lastReadAt ?? manga.updatedAt ?? 0
+                        },
+                        remote: {
+                            ...(entry?.status ? { status: entry.status } : {}),
+                            ts: entry?.updatedAt !== undefined ? entry.updatedAt * 1000 : 0
+                        },
+                        push: Boolean(config.statusPush),
+                        pull: Boolean(config.statusPull)
+                    })
+                    if (decision.action === "push") {
+                        await saveMediaStatus(token, anilistId, decision.status)
+                        statusPushed++
+                    } else if (decision.action === "pullLocal") {
+                        const local = aniListStatusToLocal(decision.status)
+                        if (local.completed) {
+                            // Only complete when AniList knows the total (same rule as import).
+                            if (entry?.totalChapters !== undefined) {
+                                await db.table("manga").update(manga.id, {
+                                    status: "completed",
+                                    latestChapterNumber: entry.totalChapters,
+                                    latestChapterAt: nowMs,
+                                    lastReadChapterNumber: entry.totalChapters,
+                                    readingStatus: undefined,
+                                    readingStatusUpdatedAt: nowMs,
+                                    updatedAt: nowMs
+                                })
+                                statusPulled++
+                            }
+                        } else {
+                            // A cleared override (null) needs the untyped update path -
+                            // exactOptionalPropertyTypes rejects readingStatus: undefined in a
+                            // typed Partial<LibraryManga>.
+                            await db.table("manga").update(manga.id, {
+                                readingStatus: local.readingStatus ?? undefined,
+                                readingStatusUpdatedAt: nowMs,
+                                updatedAt: nowMs
+                            })
+                            statusPulled++
+                        }
+                    }
+                } catch {
+                    // Transient - leave it for the next run.
+                }
+                await new Promise<void>(r => setTimeout(r, 1300))
+            }
+            if (statusPulled > 0) publishLive(["library"], [])
+        }
+
         // Persist the membership known as of this completed sync: the current remote list
         // unioned with everything the push just added, so the next run can tell a real
         // removal from a title the user never tracked. Only when the remote fetch actually
@@ -267,7 +370,7 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
         // (pending extension update) processed only part of the library, so stamping
         // lastSyncAt would mislabel a partial push as a full sync.
         if (!anilistSyncAborted) await setAniListConfig({ lastSyncAt: Date.now() })
-        return { pushed, added, checked, skipped }
+        return { pushed, added, checked, skipped, statusPushed, statusPulled }
     } finally {
         anilistSyncRunning = false
         anilistSyncAborted = false
@@ -301,6 +404,8 @@ export const anilistHandlers: HandlerMap = {
             hasToken: Boolean(next.token),
             autoSync: next.autoSync,
             syncMembership: next.syncMembership,
+            statusPush: next.statusPush ?? false,
+            statusPull: next.statusPull ?? false,
             ...(viewerName ? { viewerName } : {}),
             ...(next.lastSyncAt ? { lastSyncAt: next.lastSyncAt } : {})
         }

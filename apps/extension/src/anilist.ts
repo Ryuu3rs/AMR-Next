@@ -16,6 +16,13 @@ export type AniListConfig = {
     // PLANNING) and delete a title's list entry when it's removed from the library.
     // Off by default - it mutates the user's AniList list, not just progress.
     syncMembership: boolean
+    // Bidirectional reading-status sync (part of membership sync). statusPush mirrors a
+    // local paused/dropped/planning/completed onto the AniList entry; statusPull applies
+    // the AniList entry's status back onto the library. With both on, the more recently
+    // changed side wins (readingStatusUpdatedAt vs the entry's updatedAt). Both off by
+    // default - like syncMembership they mutate state beyond plain progress.
+    statusPush?: boolean
+    statusPull?: boolean
     lastSyncAt?: number
     // The anilistIds the user has actually had on their AniList list, carried across
     // syncs. Reconcile treats a title as a genuine removal ONLY when its id is in this
@@ -53,6 +60,8 @@ export async function getAniListStatus(): Promise<{
     hasToken: boolean
     autoSync: boolean
     syncMembership: boolean
+    statusPush: boolean
+    statusPull: boolean
     lastSyncAt?: number
 }> {
     const c = await getAniListConfig()
@@ -60,6 +69,8 @@ export async function getAniListStatus(): Promise<{
         hasToken: Boolean(c.token),
         autoSync: c.autoSync,
         syncMembership: c.syncMembership,
+        statusPush: c.statusPush ?? false,
+        statusPull: c.statusPull ?? false,
         ...(c.lastSyncAt ? { lastSyncAt: c.lastSyncAt } : {})
     }
 }
@@ -90,6 +101,118 @@ export async function getViewerProgress(token: string, mediaId: number): Promise
         { mediaId }
     )
     return data.Media?.mediaListEntry?.progress ?? undefined
+}
+
+// The user's full list entry for a media: progress, list status, and when the entry was
+// last changed (updatedAt, epoch SECONDS) - plus the media's total chapter count, so a
+// pulled COMPLETED can complete the local title against a real integer. undefined when the
+// user has no entry for this title. One query powers the whole bidirectional status sync.
+export async function getViewerListEntry(
+    token: string,
+    mediaId: number
+): Promise<{ progress: number; status?: string; updatedAt?: number; totalChapters?: number } | undefined> {
+    const data = await anilistFetch<{
+        Media: {
+            chapters?: number | null
+            mediaListEntry: { progress?: number | null; status?: string | null; updatedAt?: number | null } | null
+        } | null
+    }>(
+        token,
+        `query ($mediaId: Int) {
+            Media(id: $mediaId, type: MANGA) {
+                chapters
+                mediaListEntry { progress status updatedAt }
+            }
+        }`,
+        { mediaId }
+    )
+    const entry = data.Media?.mediaListEntry
+    if (!entry) return undefined
+    const totalChapters =
+        typeof data.Media?.chapters === "number" && Number.isFinite(data.Media.chapters) && data.Media.chapters > 0
+            ? data.Media.chapters
+            : undefined
+    return {
+        progress: typeof entry.progress === "number" && Number.isFinite(entry.progress) ? entry.progress : 0,
+        ...(typeof entry.status === "string" && entry.status ? { status: entry.status } : {}),
+        ...(typeof entry.updatedAt === "number" && Number.isFinite(entry.updatedAt)
+            ? { updatedAt: entry.updatedAt }
+            : {}),
+        ...(totalChapters !== undefined ? { totalChapters } : {})
+    }
+}
+
+// The library reading-status states that participate in bidirectional status sync.
+// "unread" is excluded (membership sync handles the PLANNING add for never-opened titles).
+export type SyncStatusKind = "reading" | "completed" | "paused" | "dropped" | "planning"
+
+// Local reading-status -> AniList MediaListStatus.
+export function localStatusToAniList(kind: SyncStatusKind): string {
+    switch (kind) {
+        case "completed":
+            return "COMPLETED"
+        case "dropped":
+            return "DROPPED"
+        case "paused":
+            return "PAUSED"
+        case "planning":
+            return "PLANNING"
+        default:
+            return "CURRENT"
+    }
+}
+
+// AniList MediaListStatus -> the local change to apply on a pull. `readingStatus: null`
+// clears the explicit override so the title derives reading/completed from progress.
+// `completed: true` means "complete the local title against the AniList total" (the caller
+// only does so when a total is known, otherwise it leaves the title alone).
+export function aniListStatusToLocal(status: string): {
+    readingStatus: "paused" | "dropped" | "planning" | null
+    completed: boolean
+} {
+    switch (status) {
+        case "PAUSED":
+            return { readingStatus: "paused", completed: false }
+        case "DROPPED":
+            return { readingStatus: "dropped", completed: false }
+        case "PLANNING":
+            return { readingStatus: "planning", completed: false }
+        case "COMPLETED":
+            return { readingStatus: null, completed: true }
+        default:
+            // CURRENT / REPEATING: actively reading -> no override.
+            return { readingStatus: null, completed: false }
+    }
+}
+
+export type StatusSyncDecision =
+    | { action: "none" }
+    | { action: "push"; status: string }
+    | { action: "pullLocal"; status: string }
+
+// Pure last-writer resolution for one title's status. No network. `local.ts` is the local
+// change time (readingStatusUpdatedAt / lastReadAt), `remote.ts` the AniList entry's
+// updatedAt - both epoch ms. When both directions are enabled the more recent change wins;
+// with a single direction that side always wins. Returns "none" when the two already agree.
+export function resolveStatusSync(input: {
+    local: { kind: SyncStatusKind; ts: number }
+    remote: { status?: string; ts: number }
+    push: boolean
+    pull: boolean
+}): StatusSyncDecision {
+    const localAsAniList = localStatusToAniList(input.local.kind)
+    if (localAsAniList === input.remote.status) return { action: "none" }
+    let dir: "push" | "pull" | undefined
+    if (input.push && input.pull) dir = input.local.ts >= input.remote.ts ? "push" : "pull"
+    else if (input.push) dir = "push"
+    else if (input.pull) dir = "pull"
+    if (dir === "push") return { action: "push", status: localAsAniList }
+    if (dir === "pull") {
+        // Nothing to pull if the user has no entry / no status remotely.
+        if (!input.remote.status) return { action: "none" }
+        return { action: "pullLocal", status: input.remote.status }
+    }
+    return { action: "none" }
 }
 
 // Sets absolute chapter progress on the user's list entry (creating it if absent).

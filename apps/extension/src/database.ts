@@ -48,6 +48,10 @@ export type LibraryManga = MangaRecord & {
     // automatically when the user reads a chapter (saveProgress un-pauses/un-drops).
     // Non-indexed, so no Dexie schema/version change is needed - same as onHold/manualTracking.
     readingStatus?: "paused" | "dropped" | "planning"
+    // When readingStatus (or a status-changing local action) last changed, in epoch ms.
+    // The last-writer tiebreak for bidirectional AniList status sync: compared against the
+    // remote list entry's updatedAt so neither side clobbers a newer change. Non-indexed.
+    readingStatusUpdatedAt?: number
     // User categories / labels for filtering the library.
     categories?: string[]
     // User-flagged adult content (covers blurred when the blur setting is on).

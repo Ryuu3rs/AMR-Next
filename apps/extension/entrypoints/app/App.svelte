@@ -36,6 +36,8 @@
         hasToken: boolean
         autoSync: boolean
         syncMembership: boolean
+        statusPush?: boolean
+        statusPull?: boolean
         lastSyncAt?: number
         viewerName?: string
     }
@@ -1265,6 +1267,18 @@
             })
         } catch (cause) {
             anilistMessage = cause instanceof Error ? cause.message : "Could not update membership sync."
+            if (anilistStatus) anilistStatus = { ...anilistStatus }
+        }
+    }
+
+    async function toggleAniListStatusSync(dir: "statusPush" | "statusPull", on: boolean) {
+        try {
+            anilistStatus = await sendRuntimeMessage<AniListStatus>({
+                type: "anilist:config",
+                config: { [dir]: on }
+            })
+        } catch (cause) {
+            anilistMessage = cause instanceof Error ? cause.message : "Could not update status sync."
             if (anilistStatus) anilistStatus = { ...anilistStatus }
         }
     }
@@ -4992,6 +5006,40 @@
                             checked={anilistStatus?.syncMembership ?? false}
                             disabled={!anilistStatus?.hasToken}
                             onchange={e => void toggleAniListMembership(e.currentTarget.checked)} />
+                        <span class="track"></span>
+                    </label>
+                </div>
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Push status to AniList</p>
+                        <p class="muted">
+                            When you mark a title paused, dropped, planning, or completed here, set the same status on
+                            its AniList entry.
+                        </p>
+                    </div>
+                    <label class="toggle">
+                        <input
+                            type="checkbox"
+                            checked={anilistStatus?.statusPush ?? false}
+                            disabled={!anilistStatus?.hasToken}
+                            onchange={e => void toggleAniListStatusSync("statusPush", e.currentTarget.checked)} />
+                        <span class="track"></span>
+                    </label>
+                </div>
+                <div class="data-row">
+                    <div>
+                        <p class="row-label">Pull status from AniList</p>
+                        <p class="muted">
+                            Apply the status you set on AniList back onto your library here. With both push and pull on,
+                            the side you changed most recently wins.
+                        </p>
+                    </div>
+                    <label class="toggle">
+                        <input
+                            type="checkbox"
+                            checked={anilistStatus?.statusPull ?? false}
+                            disabled={!anilistStatus?.hasToken}
+                            onchange={e => void toggleAniListStatusSync("statusPull", e.currentTarget.checked)} />
                         <span class="track"></span>
                     </label>
                 </div>

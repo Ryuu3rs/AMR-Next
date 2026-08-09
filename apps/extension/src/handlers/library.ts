@@ -395,8 +395,11 @@ export const libraryHandlers: HandlerMap = {
     // Manual reading-status override for the non-derivable states (paused/dropped/
     // planning). null clears it, restoring the derived reading/completed/unread status.
     "library:status": async request => {
+        // Stamp the change time so bidirectional AniList status sync can last-writer-wins
+        // against the remote entry's updatedAt.
         await updateManga(request.mangaId, {
-            readingStatus: request.status ?? undefined
+            readingStatus: request.status ?? undefined,
+            readingStatusUpdatedAt: Date.now()
         } as Partial<LibraryManga>)
         return null
     },

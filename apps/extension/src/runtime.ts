@@ -117,7 +117,9 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         config: z.object({
             token: z.string().optional(),
             autoSync: z.boolean().optional(),
-            syncMembership: z.boolean().optional()
+            syncMembership: z.boolean().optional(),
+            statusPush: z.boolean().optional(),
+            statusPull: z.boolean().optional()
         })
     }),
     z.object({ type: z.literal("anilist:sync") }),
