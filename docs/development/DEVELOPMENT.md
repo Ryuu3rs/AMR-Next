@@ -1,6 +1,6 @@
 # Development Guide
 
-Last updated: 2026-06-09
+Last updated: 2026-08-09
 
 ## Requirements
 
@@ -14,6 +14,10 @@ Last updated: 2026-06-09
 ```powershell
 npm install
 ```
+
+## Environment
+
+Copy `apps/extension/.env.example` to `apps/extension/.env` and set `VITE_COMMUNITY_API_ORIGIN` (builds need it; CI injects the same value from a repository variable). `VITE_METADATA_API_ORIGIN` is optional - when unset the extension resolves metadata via AniList directly.
 
 ## Run
 
@@ -32,19 +36,25 @@ npm run build:firefox
 ## Validate
 
 ```powershell
+npm run check        # format:check + lint + typecheck + both builds + tests (the CI gate)
 npm run typecheck
 npm run test
-npm run check
+npm run health:sources   # probe registered sources for dead/hijacked/migrated sites
 ```
 
 ## Structure
 
 - `apps/extension`: extension entrypoints and application code
+- `apps/community-server`: opt-in community stats API (Hono + SQLite)
+- `apps/metadata-server`: metadata catalog service (optional, not currently deployed)
 - `packages/contracts`: domain contracts
+- `packages/normalize`: shared title normalization
 - `packages/source-sdk`: adapter interfaces and parsing support
 - `packages/sources`: source implementations
 - `packages/test-fixtures`: deterministic source fixtures
-- `tooling/browser-tests`: browser installation and end-to-end tests
+- `tooling/browser-tests`: manifest policy gate and browser tests
+- `tooling/source-health`: live health probe for registered sources (`npm run health:sources`)
+- `tooling/source-probe`: candidate-site triage tool (`npm run probe -w @amr/source-probe`)
 - `archive`: preserved previous implementations
 
 ## Archive Policy

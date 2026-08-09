@@ -37,9 +37,7 @@ honours a `429` `Retry-After` header.
 
 ## Deploying
 
-Mirrors `apps/community-server`: built from the `Dockerfile` and deployed via
-Coolify behind Traefik. `docker-compose.yml` publishes the service at
-`amr-meta.weeb.ltd` with a persistent volume at `/opt/amr-metadata/data`.
+Not currently deployed - the extension ships without `VITE_METADATA_API_ORIGIN` set and resolves metadata via AniList directly. To self-host: build from the `Dockerfile` (a `docker-compose.yml` with a persistent `/data` volume is included), put it behind TLS, then set `VITE_METADATA_API_ORIGIN` in `apps/extension/.env` so the extension queries it first.
 
 ## Development
 

@@ -1,7 +1,7 @@
 # Android (Firefox)
 
 AMR-Next runs on **Firefox for Android** using the same `firefox-mv3` build shipped for
-desktop Firefox — there is no separate Android package. The dashboard, reader, and popup
+desktop Firefox - there is no separate Android package. The dashboard, reader, and popup
 have had a responsive pass for narrow (phone) viewports, so the UI is usable one-handed
 at ~360px wide.
 
@@ -16,9 +16,8 @@ at ~360px wide.
 
 Pick whichever option fits how you got the build:
 
-1. **AMO-signed XPI (recommended).** When an AMO-signed release is available, open its
-   AMO listing in Firefox for Android and tap **Add to Firefox**. This is the only path
-   that survives a browser restart.
+1. **AMO-signed XPI (recommended).** Open the AMR-Next AMO listing in Firefox for Android
+   and tap **Add to Firefox**. This is the only path that survives a browser restart.
 2. **Add-on Collection.** If the signed XPI is published through a Firefox Add-on
    Collection, add the collection under Firefox **Settings → Advanced → Custom Add-on
    collection**, then install AMR-Next from the **Add-ons** menu.
@@ -33,11 +32,10 @@ fetch from the manga sites you read.
 
 ## Known limitations
 
-- **Fullscreen** is unreliable on mobile Firefox — the reader's fullscreen/immersive
+- **Fullscreen** is unreliable on mobile Firefox - the reader's fullscreen/immersive
   toggle may be ignored or only hide part of the browser chrome. Auto-hide-on-scroll
   still works.
-- **Offline / blob download** is not yet implemented, so chapters cannot be saved for
-  offline reading on the device.
+- **Offline downloads** exist in the extension, but have not been verified on Android Firefox - treat on-device offline reading as untested.
 - Temporary (remote-debug) installs do not persist across browser restarts.
 
 ## Testing checklist

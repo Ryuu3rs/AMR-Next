@@ -1,11 +1,10 @@
 # AMR Technical Architecture
 
-Last updated: 2026-06-09
+Last updated: 2026-08-09
 
 ## Scope
 
-This architecture covers the local Firefox and Chromium extension only. Hosted
-services are deferred.
+This architecture covers the Firefox and Chromium extension plus two workspace Node services: `apps/community-server` (opt-in community stats API, self-hosted) and `apps/metadata-server` (metadata catalog, built but not currently deployed). All reading data stays local to the browser.
 
 ## Entry Points
 
@@ -15,7 +14,8 @@ WXT generates browser-specific manifests and bundles:
 - popup
 - full application page
 - reader page
-- source-aware content scripts
+
+There are no declared content scripts; supported-site detection runs in the background over the tabs API, and the on-page chapter prompt is injected on demand with `browser.scripting.executeScript`.
 
 The extension uses Manifest V3. Firefox-specific manifest values are generated only for
 Firefox builds.
@@ -31,22 +31,14 @@ Firefox builds.
 - progress
 - bookmarks
 - history
-- achievements
+- reading status
 - source health
 
 Domain code imports no browser or Svelte APIs.
 
 ### Application Services
 
-- `LibraryService`
-- `SearchService`
-- `ReaderService`
-- `UpdateService`
-- `HistoryService`
-- `AchievementService`
-- `DiagnosticsService`
-
-Services depend on repository and source adapter interfaces.
+Background logic is organised as typed message handler maps in `apps/extension/src/handlers/` (library, reader, updates-sources, anilist, community, suggestions, downloads-bookmarks-analytics), dispatched by `src/background/dispatch.ts`.
 
 ### Platform
 
@@ -77,41 +69,9 @@ sites directly.
 
 ## Source SDK
 
-```ts
-interface SourceAdapter {
-    manifest: SourceManifest
-    match(url: URL): SourcePageMatch
-    search(input: SearchInput, context: SourceContext): Promise<SearchResult[]>
-    resolveManga(input: ResolveMangaInput, context: SourceContext): Promise<SourceManga>
-    listChapters(input: ListChaptersInput, context: SourceContext): Promise<SourceChapter[]>
-    resolveChapter(input: ResolveChapterInput, context: SourceContext): Promise<ResolvedChapter>
-}
-```
+An adapter has a `manifest`, a synchronous `match(url)` that returns `"chapter" | "manga" | "none"`, optional `search` and `resolveCover` methods, and three required async methods: `resolveManga`, `listChapters`, `resolveChapter`. `SourceContext` provides the bounded request client, `now()`, and a logger. See `packages/source-sdk/src/types.ts` and [SOURCE_ADAPTERS.md](SOURCE_ADAPTERS.md) for the full contract.
 
-`SourceManifest` contains:
-
-- stable ID
-- display name
-- domains
-- languages
-- capabilities
-- request rate limit
-- optional permissions
-- optional reviewed network rules
-- fixture version
-
-`SourceContext` provides:
-
-- bounded request client
-- HTML parser
-- JSON validator
-- safe script-literal parser
-- clock
-- logger
-- optional current-page snapshot
-
-Adapters cannot access storage, Svelte state, runtime messages, or arbitrary browser
-APIs.
+Adapters cannot access storage, Svelte state, runtime messages, or arbitrary browser APIs.
 
 ## Generic Source Templates
 
@@ -132,28 +92,28 @@ cookie access, or remote code.
 
 1. Background receives a tab URL.
 2. Source registry checks domain and URL patterns.
-3. Unmatched tabs receive no content script.
-4. Matched tabs receive a minimal source detector.
-5. Confirmed manga or chapter metadata is resolved.
-6. Chapter visits upsert the local library when auto-add is enabled.
-7. Reader opens as an extension-owned page.
+3. Unmatched tabs get nothing; matched tabs get a one-shot injected chapter prompt (no persistent content script).
+4. Confirmed manga or chapter metadata is resolved.
+5. Chapter visits upsert the local library when auto-add is enabled.
+6. Reader opens as an extension-owned page.
 
 The original website DOM remains intact.
 
 ## Storage
 
-Dexie tables:
+Dexie tables (v11):
 
 - `manga`
 - `sourceLinks`
 - `chapters`
 - `progress`
-- `bookmarks`
 - `historyEvents`
-- `achievementState`
-- `updateJobs`
-- `sourceHealth`
-- `migrationState`
+- `downloads`
+- `covers`
+- `pageBookmarks`
+- `analyticsEvents`
+- `backups`
+- `logs`
 
 Preferences use `browser.storage.local`.
 
@@ -167,24 +127,17 @@ Rules:
 - versioned migrations
 - versioned import and export envelopes
 
+## Reading Status
+
+`unread`, `reading`, `paused`, `dropped`, `planning`, `completed`. Completed is derived (series finished and read to the latest known chapter); paused, dropped, and planning are explicit user overrides; an optional auto-pause window pauses titles with no reads for N days. Local activity wins: reading a chapter clears an override.
+
+## AniList Sync
+
+Token-based connect. Imports the user's AniList list (per-status opt-outs), pushes local progress without ever lowering the remote count, reconciles statuses in both directions, and optionally mirrors list membership (adding unread titles as planning, removing deleted ones).
+
 ## Runtime Messages
 
-Message areas:
-
-- `app:*`
-- `library:*`
-- `source:*`
-- `reader:*`
-- `updates:*`
-- `diagnostics:*`
-
-Every request has:
-
-- schema version
-- request ID
-- validated payload
-- validated sender
-- typed success or error response
+Handlers are organised by colon-namespaced prefixes (e.g. `chapter:download`, `downloads:list`, `manga:search`, `community:register`, `extension-update:download`). Each handler receives a typed, validated payload and sender, and returns a typed success or error response.
 
 There is no generic dispatcher that executes arbitrary method names.
 
@@ -236,31 +189,9 @@ extension fetch path.
 
 There is no permanent background loop.
 
-## Achievements
+## Community (opt-in)
 
-Local events:
-
-- manga added
-- chapter started
-- page changed
-- chapter completed
-- status changed
-- bookmark added
-- reading day completed
-
-Definitions contain:
-
-- ID
-- title
-- description
-- icon
-- points
-- hidden state
-- progress reducer
-- unlock predicate
-- version
-
-Achievement data remains local.
+Off by default. When enabled, the extension syncs anonymous reading events to the community API which computes achievements, a weekly leaderboard, star ratings, recommendations, and trending. Nothing is uploaded unless the user opts in - the username is anonymous and auto-registered, and no personal data or email is collected.
 
 ## GitHub Release Check
 
@@ -272,7 +203,7 @@ The extension may request the latest GitHub Release metadata:
 - release notes summary
 
 The response is validated and cached. The extension may notify the user and open the
-release page. It never downloads, installs, or executes release code.
+release page. It never downloads, installs, or executes release code. An in-app Download update action saves the browser-matching release zip to the Downloads folder via `browser.downloads`; installation stays manual.
 
 ## Boundaries
 

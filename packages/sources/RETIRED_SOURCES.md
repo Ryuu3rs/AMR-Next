@@ -5,9 +5,10 @@ Sources are commented out (not deleted) so they can be re-enabled with a one-lin
 ## Re-enabling a retired source
 
 1. Uncomment the config line in its `*-sites.ts` file (or `index.ts` for standalone adapters)
-2. Uncomment the permission origins in `apps/extension/src/permissions.ts`
-3. Run `npm run build && npm run build:firefox` from `apps/extension/`
-4. Test a live chapter and a search before shipping
+2. Standalone adapters only: uncomment the origin(s) in `apps/extension/src/permissions.ts` (family config rows derive origins automatically)
+3. Re-add the origin(s) to `allowedOptionalHosts` in `tooling/browser-tests/src/manifest-policy.test.js`, keeping the array alphabetically sorted - the deepEqual gate fails the build otherwise
+4. Run `npm run build && npm run build:firefox` from the repo root
+5. Test a live chapter and a search before shipping
 
 ---
 
