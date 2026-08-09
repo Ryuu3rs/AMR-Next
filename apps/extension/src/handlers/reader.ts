@@ -8,7 +8,15 @@ import {
     trackExternalChapter,
     updateManga
 } from "../database"
-import { findSource, getSourceById, listChaptersBySource, resolveChapterFromHtml, resolveChapterUrl } from "../sources"
+import {
+    chaptersForLanguage,
+    findSource,
+    getSourceById,
+    listChaptersBySource,
+    resolveChapterFromHtml,
+    resolveChapterUrl
+} from "../sources"
+import { getSettings } from "../settings"
 import {
     ensureChapterListRefreshed,
     mineAndCacheEpisodesFromHtml,
@@ -129,7 +137,15 @@ export const readerHandlers: HandlerMap = {
         if (!chRecord) return { prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null }
         const manga = await db.manga.get(chRecord.mangaId)
         if (!manga) return { prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null }
-        const siblings = await db.chapters.where("mangaId").equals(chRecord.mangaId).sortBy("sortKey")
+        const all = await db.chapters.where("mangaId").equals(chRecord.mangaId).sortBy("sortKey")
+        // Step prev/next within the user's preferred language, so on a multi-language
+        // source (MangaDex serves the same chapter in several languages) "next" lands on
+        // the next chapter in that language instead of a different translation. If the
+        // chapter currently open isn't in that language (the user deliberately opened
+        // another one), navigate the full list so they're never stranded.
+        const { language } = await getSettings()
+        const filtered = chaptersForLanguage(all, language)
+        const siblings = filtered.some(c => c.id === chRecord.id) ? filtered : all
         const idx = siblings.findIndex(c => c.id === chRecord.id)
         const prev = idx > 0 ? siblings[idx - 1] : null
         const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null
@@ -142,9 +158,13 @@ export const readerHandlers: HandlerMap = {
     },
 
     "reader:chapters": async request => {
+        // The chapter dropdown shows only the user's preferred language on a
+        // multi-language source; chaptersForLanguage keeps untagged chapters and falls
+        // back to the full list when nothing matches (see its doc in sources.ts).
+        const { language } = await getSettings()
         const fromCache = async () => {
             const cached = await db.chapters.where("mangaId").equals(request.mangaId).sortBy("sortKey")
-            return cached.map(c => ({ url: c.url, sortKey: c.sortKey, title: c.title }))
+            return chaptersForLanguage(cached, language).map(c => ({ url: c.url, sortKey: c.sortKey, title: c.title }))
         }
 
         const source = getSourceById(request.sourceId)
@@ -182,7 +202,7 @@ export const readerHandlers: HandlerMap = {
             if (chapters.length <= 2) return await fromCache()
             await putChapters(chapters)
             publishLive(["chapters"], [request.mangaId])
-            return chapters
+            return chaptersForLanguage(chapters, language)
                 .map(c => ({ url: c.url, sortKey: c.sortKey, title: c.title }))
                 .sort((a, b) => a.sortKey - b.sortKey)
         } catch {
