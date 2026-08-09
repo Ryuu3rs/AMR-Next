@@ -1,14 +1,14 @@
 # Source Adapter Authoring Guide
 
 How to add a new manga source (a single site, or a whole template family) to
-AMR-Next. Read this before writing any adapter code — most new sources are a
+AMR-Next. Read this before writing any adapter code - most new sources are a
 **config row**, not new code.
 
 Key files referenced throughout:
 
 - Contract: `packages/source-sdk/src/types.ts`, errors in `packages/source-sdk/src/errors.ts`
-- Config-driven factories: `packages/sources/src/madara.ts`, `mangastream.ts`, `mangabuddy.ts`
-- Their config registries: `packages/sources/src/madara-sites.ts`, `mangastream-sites.ts`, `mangabuddy-sites.ts`
+- Config-driven factories: `packages/sources/src/madara.ts`, `mangastream.ts`, `mangabuddy.ts`, `fanfox.ts`
+- Their config registries: `packages/sources/src/madara-sites.ts`, `mangastream-sites.ts`, `mangabuddy-sites.ts`, `fanfox-sites.ts`
 - Bespoke example: `packages/sources/src/mangadex.ts`
 - Registration: `packages/sources/src/index.ts`
 - Extension wiring: `apps/extension/src/permissions.ts`, `apps/extension/src/sources.ts`
@@ -25,13 +25,13 @@ optional.
 
 | Member                       | Sync? | Job                                                                                                                                                                                                                                                 |
 | ---------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `manifest`                   | —     | Static `SourceManifest`: `id`, `name`, `domains[]`, `languages[]`, `capabilities[]` (`"chapters"` / `"manga"` / `"pages"`), `requestRateLimit`, `fixtureVersion`.                                                                                   |
+| `manifest`                   | -     | Static `SourceManifest`: `id`, `name`, `domains[]`, `languages[]`, `capabilities[]` (`"chapters"` / `"manga"` / `"pages"`), `requestRateLimit`, `fixtureVersion`.                                                                                   |
 | `match(url)`                 | yes   | Classify a URL as `"chapter"`, `"manga"`, or `"none"`. Must be cheap and pure (regex over `url.pathname` after a domain check). Drives source detection in the popup and `findSource`.                                                              |
 | `resolveManga(input, ctx)`   | no    | Given `{ url? , sourceMangaId? }`, return a `SourceManga` (the `MangaRecord` plus `sourceId`, `sourceMangaId`, canonical `url`).                                                                                                                    |
 | `listChapters(input, ctx)`   | no    | Given `{ manga, languages?, limit? }`, return `SourceChapter[]` sorted ascending by `sortKey`. Honor `limit` (take the last N).                                                                                                                     |
 | `resolveChapter(input, ctx)` | no    | Given `{ url? , sourceChapterId? }`, fetch the chapter page and return `ResolvedChapter` = `{ manga, chapter, pages }`, where `pages` is `{ id, url }[]` of image URLs in reading order.                                                            |
 | `resolveCover?(input, ctx)`  | no    | Optional. Return just the cover image URL for a series (by `sourceMangaId` and/or `url`). Used to backfill covers for library entries added by reading a chapter. Should **return `undefined`** on failure, never throw.                            |
-| `search?(query, ctx)`        | no    | Optional. Return `SourceSearchResult[]`. Adapters that can't search omit it entirely. Aggregated across all sources by `searchManga` — must **swallow errors and return `[]`**, since sources without granted host permission are expected to fail. |
+| `search?(query, ctx)`        | no    | Optional. Return `SourceSearchResult[]`. Adapters that can't search omit it entirely. Aggregated across all sources by `searchManga` - must **swallow errors and return `[]`**, since sources without granted host permission are expected to fail. |
 
 ### Identity and shape conventions
 
@@ -59,30 +59,31 @@ type SourceContext = {
 
 `request` is a **bounded** client (`createBoundedRequestClient`): it enforces an
 origin allowlist, a max request count, a response-byte cap, and a timeout. You
-**cannot** fetch an origin that isn't wired into the allowlist (see §3) — the
+**cannot** fetch an origin that isn't wired into the allowlist (see §3) - the
 request throws. `getJson` validates against a Zod schema; use it for JSON APIs
 (see MangaDex). For HTML sources use `getText` / `postForm` and parse with
 regex. `postJson` sends a real `application/json` request body (validated
-against a Zod schema on the way back) — use it instead of `postForm` when an
+against a Zod schema on the way back) - use it instead of `postForm` when an
 API rejects form-urlencoded bodies (see Kagane's integrity/manifest handshake).
 
 ---
 
 ## 2. Two ways to add a source
 
-### (a) Config row over an existing factory — the default
+### (a) Config row over an existing factory - the default
 
 If the probe (`§4`) detects a known template, you add **one object** to the
 relevant `*-sites.ts` file. No new code, no new tests beyond an optional
 fixture.
 
-The three factories and their config shapes:
+The four factories and their config shapes:
 
-| Template                     | Factory                    | Config type         | Default URL scheme                                          |
-| ---------------------------- | -------------------------- | ------------------- | ----------------------------------------------------------- |
-| Madara (WP `wp-manga` theme) | `createMadaraAdapter`      | `MadaraConfig`      | `/manga/<slug>/chapter-N/`                                  |
-| MangaStream / `ts` theme     | `createMangaStreamAdapter` | `MangaStreamConfig` | `/manga/<slug>/`, chapters at root: `/<...chapter...>/`     |
-| MangaBuddy reader            | `createMangaBuddyAdapter`  | `MangaBuddyConfig`  | `/<slug>` (or `/manga/<slug>`), chapter `/<slug>/chapter-N` |
+| Template                     | Factory                     | Config type          | Default URL scheme                                                                                           |
+| ---------------------------- | --------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Madara (WP `wp-manga` theme) | `createMadaraAdapter`       | `MadaraConfig`       | `/manga/<slug>/chapter-N/`                                                                                   |
+| MangaStream / `ts` theme     | `createMangaStreamAdapter`  | `MangaStreamConfig`  | `/manga/<slug>/`, chapters at root: `/<...chapter...>/`                                                      |
+| MangaBuddy reader            | `createMangaBuddyAdapter`   | `MangaBuddyConfig`   | `/<slug>` (or `/manga/<slug>`), chapter `/<slug>/chapter-N`                                                  |
+| FanFox / MangaHere family    | `createFanfoxFamilyAdapter` | `FanfoxFamilyConfig` | `/manga/<slug>/` - images are JS-loaded, so `resolveChapter` returns empty pages (tracking + prev/next only) |
 
 A Madara row, added to the `SITES` array in
 `packages/sources/src/madara-sites.ts`:
@@ -91,13 +92,13 @@ A Madara row, added to the `SITES` array in
 { id: "freakscans", name: "Freak Scans", origin: "https://freakscans.com", domains: ["freakscans.com"] }
 ```
 
-Config knobs (all three share `id`, `name`, `origin`, `domains`, optional
+Config knobs (all four share `id`, `name`, `origin`, `domains`, optional
 `language`, optional `rateLimit`):
 
-- **Madara** adds `mangaPath` (URL base segment, default `"manga"`) and
-  `chapterPrefix` (chapter slug prefix, default `"chapter"` → `chapter-12`).
+- **Madara** adds `mangaPath` (URL base segment, default `"manga"`), `chapterPrefix` (default `"chapter"` -> `chapter-12`; Tritinia uses `"ch"`), `volumePath` (accept a `/volume-x/` segment between slug and chapter, used by GD Scans), `preferSrcAttribute` (read `src` before `data-src` for anti-scrape sites), and `capabilities` (set `["chapters"]` for ad-gated sites - tracking works, the reader shows open-on-site).
 - **MangaStream** adds `mangaPath` (default `"manga"`).
 - **MangaBuddy** adds `mangaPath` (default `"manga"`).
+- All families accept `imageOrigins` - extra origin patterns for a cover/page-image CDN on a different host (e.g. `*://*.manhwatop.com/*`). The `*-sites.ts` `*Origins` exports fold these in automatically, so the CDN host gets a host permission without touching `permissions.ts`.
 
 `id` must be unique across the whole registry. `domains` is the host
 allowlist that `match` checks via `matchesSourceDomain`; include `www.` and any
@@ -105,20 +106,20 @@ apex/sub variants the site actually serves (see Phoenix Scans, which lists both
 `phoenixscans.com` and `www.phoenixscans.com`).
 
 Each `*-sites.ts` file maps its `SITES` array into both the adapter list and the
-origin list it exports — `madaraAdapters` / `madaraOrigins`,
+origin list it exports - `madaraAdapters` / `madaraOrigins`,
 `mangaStreamAdapters` / `mangaStreamOrigins`,
 `mangaBuddyAdapters` / `mangaBuddyOrigins`. Adding the row automatically extends
 both, so the origin wiring in §3 picks it up with no extra edit **except** the
 manifest-policy test.
 
-### (b) Bespoke adapter — when no template fits
+### (b) Bespoke adapter - when no template fits
 
 If the site has a JSON API, a non-WordPress structure, or anti-scrape that needs
 bespoke handling, write a standalone adapter mirroring
 `packages/sources/src/mangadex.ts`. Steps:
 
 1. Create `packages/sources/src/<source>.ts` exporting a `SourceAdapter`
-   (a const object — MangaDex — or a factory if you expect mirrors).
+   (a const object - MangaDex - or a factory if you expect mirrors).
 2. Define constants: `SOURCE_ID`, origins, a URL/ID pattern (MangaDex uses a
    UUID regex), `MAX_CHAPTERS`, page size.
 3. For JSON APIs, declare **Zod schemas** for every response and fetch with
@@ -136,10 +137,10 @@ bespoke handling, write a standalone adapter mirroring
 ## 3. End-to-end wiring checklist
 
 When adding a site or family, touch these in order. **The manifest-policy test
-is a hard build gate — skipping it fails CI.**
+is a hard build gate - skipping it fails CI.**
 
 1. **Register the adapter** in `packages/sources/src/index.ts`.
-    - Config row: nothing to do — it flows in via `madaraAdapters` /
+    - Config row: nothing to do - it flows in via `madaraAdapters` /
       `mangaStreamAdapters` / `mangaBuddyAdapters`, already spread into
       `sourceAdapters`.
     - Bespoke: `import` it, add to the `sourceAdapters` array, and re-`export` it.
@@ -163,11 +164,11 @@ is a hard build gate — skipping it fails CI.**
    `allowedOptionalHosts` in
    `tooling/browser-tests/src/manifest-policy.test.js`. This array is asserted
    `deepEqual` against the built manifest's `optional_host_permissions`, **after
-   a `.sort()`** — so insert each origin in its correct sorted position and keep
+   a `.sort()`** - so insert each origin in its correct sorted position and keep
    the array alphabetically sorted. Any added origin not listed here (or any
    stale entry) **fails the build**. Add the same `https://<host>/*` strings you
    put in `SOURCE_ORIGINS`, including every `domains` variant (e.g. both
-   `phoenixscans.com` and `www.phoenixscans.com`).
+   `phoenixscans.com` and `www.phoenixscans.com`). This includes any `imageOrigins` patterns - every origin the config contributes must appear in `allowedOptionalHosts`.
 
 6. **Fixture tests.** Add `packages/sources/src/<source>.test.ts` mirroring the
    existing ones. The pattern (see `madara.test.ts`): instantiate the adapter,
@@ -193,19 +194,19 @@ It reads `tooling/source-probe/candidates.json` (add your candidate as a row:
 and writes `output/report.{json,md}`. See `tooling/source-probe/probe.mjs` for
 the signature regexes and `REPORT.md` for a sample run.
 
-**Verdict policy** (score 0–5, starts at 5 and subtracts for friction):
+**Verdict policy** (score 0-5, starts at 5 and subtracts for friction):
 
-- **green (≥4)** — reachable, no/weak anti-scrape. If it also matches a known
+- **green (≥4)** - reachable, no/weak anti-scrape. If it also matches a known
   template (`madara` / `mangastream` / `mangabuddy` in `cmsDetected`), it's a
   **config row**. Add it to the matching `*-sites.ts`.
-- **yellow (2–3)** — soft Cloudflare, captcha, or DDoS-Guard. Revisit later with
+- **yellow (2-3)** - soft Cloudflare, captcha, or DDoS-Guard. Revisit later with
   a content-script / cookie strategy; do not add a plain config row.
-- **red (≤1)** — hard Cloudflare/Turnstile challenge, 4xx, or unreachable.
+- **red (≤1)** - hard Cloudflare/Turnstile challenge, 4xx, or unreachable.
   **Skip.** A server-side `fetch` adapter cannot pass the challenge; prefer
   Suwayomi-style handling instead of an adapter.
 
 Cloudflare/Turnstile/captcha each cost −3, DDoS-Guard −2; a matched template or
-image hints each add +1. The probe is a hint, not a guarantee — always confirm a
+image hints each add +1. The probe is a hint, not a guarantee - always confirm a
 live chapter resolves before relying on a green site.
 
 ---
@@ -214,7 +215,7 @@ live chapter resolves before relying on a green site.
 
 These are encoded in the factories; match them when writing bespoke code.
 
-- **Madara — read `src` before `data-src`.** Anti-scrape Madara sites put the
+- **Madara - read `src` before `data-src`.** Anti-scrape Madara sites put the
   _real_ URL in `src` and junk (a data-URI or thumbnail) in `data-src`. The
   `id="image-N"` strategy in `extractImagesFromHtml`
   (`madara.ts`) reads `src` first. Other Madara strategies (`wp-manga-chapter-img`,
@@ -223,17 +224,17 @@ These are encoded in the factories; match them when writing bespoke code.
   (`admin-ajax.php?action=manga_get_chapter_img_list`, using a scraped
   `chapter_id` + nonce) to bypass the static-HTML data-src traps, then falls back
   to HTML. Reject WordPress thumbnail suffixes (`-150x150.`).
-- **MangaStream — the `ts_reader` blob.** `extractStreamImages` (`mangastream.ts`)
+- **MangaStream - the `ts_reader` blob.** `extractStreamImages` (`mangastream.ts`)
   parses the `ts_reader.run({ ... sources:[{ images:[] }] })` JSON first, then
   falls back to `<img>` tags inside `#readerarea`.
-- **MangaBuddy / mgeko — JS var arrays.** `extractBuddyImages`
+- **MangaBuddy / mgeko - JS var arrays.** `extractBuddyImages`
   (`mangabuddy.ts`) reads a JS variable (`chapImages` / `chapterImages` /
   `images`) holding a JSON array or comma-separated string, then falls back to
   `#chapter-images` / `.chapter-content` containers, then to any CDN-pattern
   `<img>`. mgeko (`mgeko.ts`) likewise parses a JS array, tolerating
   single-quoted strings by swapping quotes before `JSON.parse`.
 - **Scope to the reading container.** Always narrow the HTML to the reading
-  region before scanning `<img>` tags — Madara scopes to `.reading-content`
+  region before scanning `<img>` tags - Madara scopes to `.reading-content`
   (gallery-dl-confirmed to exclude sidebar/header junk), MangaStream to
   `#readerarea`, MangaBuddy to `#chapter-images` / `.chapter-content`. Unscoped
   scans pull in ads and UI chrome.
@@ -254,13 +255,13 @@ These are encoded in the factories; match them when writing bespoke code.
 - **`matchesSourceDomain` before any path regex.** Every `match`/slug helper
   domain-checks the hostname first so foreign URLs classify as `"none"`.
 - **Graceful throws with a short diagnostic.** When extraction yields nothing,
-  throw `new SourceError("invalid-response", ...)` with a compact diagnostic —
+  throw `new SourceError("invalid-response", ...)` with a compact diagnostic -
   the factories include the body length and a Cloudflare flag, e.g.
   `No images found [html:1234b cf=false]`. Use `"invalid-input"` for a missing/
   bad input and `"unsupported-url"` when a URL doesn't match this source. Error
   codes live in `packages/source-sdk/src/errors.ts`.
 - **Optional methods fail soft.** `resolveCover` returns `undefined` and
-  `search` returns `[]` on any error — they must never reject, because both are
+  `search` returns `[]` on any error - they must never reject, because both are
   called best-effort across many sources (cover backfill, aggregate search).
 - **Rate limits.** Default `{ requests: 3, intervalMs: 1000 }` for the
   HTML factories, higher for JSON APIs (MangaDex uses 5/1000). Tune per site via

@@ -46,8 +46,7 @@ Releases are automated with [release-please](https://github.com/googleapis/relea
 1. Land PRs to `main` with conventional titles.
 2. release-please maintains a **Release PR** that bumps the version in
    `package.json` and updates `CHANGELOG.md` from the commit history.
-3. Merging that Release PR tags `vX.Y.Z` and the same workflow builds, checksums,
-   (optionally) signs the Firefox add-on, and uploads the artifacts to the release.
+3. Merging that Release PR tags `vX.Y.Z`; the workflow builds both browsers, runs the full check gate, and uploads the Chrome and Firefox zips plus checksums. A separate `amo-submit` job, behind a manual approval on the `amo` GitHub Environment, signs the Firefox build and attaches the `.xpi`. See RELEASING.md.
 
 Versioning is single-version semver across the monorepo. While pre-1.0, minor bumps
 may contain breaking changes. Firefox AMO signing runs only when the `AMO_JWT_ISSUER`

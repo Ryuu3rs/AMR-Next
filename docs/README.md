@@ -6,6 +6,8 @@
 - [Source Adapter Authoring Guide](architecture/SOURCE_ADAPTERS.md)
 - [Development Guide](development/DEVELOPMENT.md)
 - [Image Extraction Techniques](IMAGE_EXTRACTION_TECHNIQUES.md)
+- [Releasing](../RELEASING.md)
+- [Metadata Server](../apps/metadata-server/README.md)
 
 ## User Guides
 

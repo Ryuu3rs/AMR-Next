@@ -20,21 +20,24 @@ for backup sync.
 - Manual / "Do Not Scan" titles with hand-set chapter counts (for dead or hard-to-scrape sources)
 - Automatic + per-source update checks, with failures surfaced in the UI
 - **Reading-time estimate** (total + this week) and **activity heatmap** showing daily chapter completion
+- **Reading statuses** - reading / paused / dropped / planning / completed, with optional auto-pause after a configurable number of inactive days
+- **AniList sync** - connect with a token to import your list, push read progress (never lowers your AniList count), and sync statuses both ways
 
 **Sources & discovery**
 
 - Multi-source search across every supported site at once, showing each mirror's latest hosted chapter
 - **Source health indicator** (green/red/grey dots showing live/unreachable/unchecked)
 - **Search skips recently-confirmed-dead sources** within 24h
-- "Check mirrors" — find which supported sites carry a title, freshest first
+- "Check mirrors" - find which supported sites carry a title, freshest first
 - Re-link a title to a new source/mirror without losing progress
-- Generic, config-driven adapters for the **Madara**, **MangaStream/ts**, and **MangaBuddy** WordPress theme families (adding a site is usually a config row, not new code), plus dedicated adapters for MangaDex, MangaPark, and Mgeko
+- Generic, config-driven adapters for the **Madara**, **MangaStream/ts**, **MangaBuddy**, and **FanFox** site families (adding a site is usually a config row, not new code), plus dedicated adapters for MangaDex, Kagane, WeebCentral, Webtoons, and a dozen more
 - **Automatic cover fetching cached as data URLs** to bypass referer-blocking on source CDNs
 - **Per-title genre suggestions** extracted from source pages (one-click bulk-add to tags)
 
 **Reader**
 
-- Continuous and single-page modes, LTR / RTL / vertical (webtoon) direction
+- **Strip, Single, and Double view modes** (continuous vertical, paged, two-page spreads), LTR / RTL direction
+- Chapter list and prev/next honour your preferred language on multi-language sources
 - Page-fit modes, page-number overlay, configurable preload
 - **Next/Prev chapter nav** resolved from the source + **mark-read-to-latest**
 - **Graceful fallback:** when a source's images won't load (anti-scrape, spoiler pages, CDN blocks), open the chapter on the source site while still recording progress
@@ -46,13 +49,20 @@ for backup sync.
 - Human-readable JSON import/export
 - Optional GitHub Gist sync (token stored locally; private gists)
 
+**Community (opt-in)**
+
+- Off by default. Opt in to sync anonymous reading events to the community API for achievements, star ratings, recommendations, trending titles, and a weekly leaderboard
+- Anonymous auto-generated username; no account, email, or personal data
+
 ## Repository layout
 
-- `apps/extension/` — the WXT + Svelte 5 extension (MV3)
-- `packages/` — shared contracts, the source SDK, and source adapters
-- `tooling/` — browser tests and the source-probe triage tool
-- `docs/` — architecture and development docs (see [docs/README.md](docs/README.md))
-- `archive/` — previous implementations (not built)
+- `apps/extension/` - the WXT + Svelte 5 extension (MV3)
+- `apps/community-server/` - opt-in community stats API (Hono + SQLite, self-hosted)
+- `apps/metadata-server/` - optional metadata catalog service (not currently deployed)
+- `packages/` - shared contracts, the source SDK, and source adapters
+- `tooling/` - browser tests and the source-probe triage tool
+- `docs/` - architecture and development docs (see [docs/README.md](docs/README.md))
+- `archive/` - previous implementations (not built)
 
 ## Installing (end users)
 
@@ -63,26 +73,26 @@ Download the latest release from the [Releases page](https://github.com/Ryuu3rs/
 1. Download `amrextension-X.X.X-firefox.xpi`
 2. Open Firefox and go to `about:addons`
 3. Click the gear icon → **Install Add-on From File…**
-4. Select the `.xpi` file — Firefox will prompt you to confirm
+4. Select the `.xpi` file - Firefox will prompt you to confirm
 5. Open the AMR panel and grant source access when prompted
 
-> **Note:** Unsigned extensions can only be permanently installed in Firefox Developer Edition or Nightly. In regular Firefox, the `.xpi` installs as a temporary add-on (cleared on restart) unless it has been signed by Mozilla. A signed release will be submitted to AMO once the extension is ready for public listing.
+> Releases are submitted to Mozilla (AMO) for signing automatically. Install the signed `.xpi` attached to the GitHub release, or install from the AMO listing.
 
 ### Firefox for Android
 
-Firefox for Android supports the same `.xpi`. Once a signed AMO listing exists, install directly from the add-on page in Firefox for Android. For local testing, use remote debugging via `about:debugging` on a connected desktop — see [docs/ANDROID.md](docs/ANDROID.md).
+Firefox for Android supports the same `.xpi`. Install the signed release from the AMO listing in Firefox for Android. For local testing, use remote debugging via `about:debugging` on a connected desktop - see [docs/ANDROID.md](docs/ANDROID.md).
 
 ### Chrome / Chromium / Edge / Brave
 
 Chrome no longer allows installing packed extensions from outside the Web Store (Google removed that in 2018). Until the extension is published on the Chrome Web Store, manual install requires developer mode:
 
-1. Download `amrextension-X.X.X-chrome.zip` and **unzip it** to a permanent folder (don't delete it — Chrome loads it live from that folder)
+1. Download `amrextension-X.X.X-chrome.zip` and **unzip it** to a permanent folder (don't delete it - Chrome loads it live from that folder)
 2. Open `chrome://extensions` (or `edge://extensions` / `brave://extensions`)
 3. Enable **Developer mode** (toggle, top-right)
 4. Click **Load unpacked** and select the unzipped folder
 5. Open the AMR panel and grant source access when prompted
 
-> The extension stays loaded as long as the folder exists. If you move or delete the folder it will stop working — just re-load it from the new location.
+> The extension stays loaded as long as the folder exists. If you move or delete the folder it will stop working - just re-load it from the new location.
 
 ---
 
@@ -118,7 +128,7 @@ Build output is generated under `apps/extension/.output/`.
 ## Validate
 
 ```powershell
-npm run check        # format, typecheck, build (both), then tests
+npm run check        # format check, lint, typecheck, build (both browsers), tests
 ```
 
 ## Loading a build manually
@@ -149,21 +159,21 @@ Firefox restarts, so the signed XPI is the only persistent option. See
 
 Built-in adapters cover:
 
-- **MangaDex** — full API, multi-language
-- **MangaPark** — chapter and series browsing
-- **MangaBuddy / MangaPuma / MangaMirror** — shared theme adapter
-- **Mgeko** — Mgeko and mirrors
-- **Madara family** — dozens of WordPress Madara sites (config-driven)
-- **MangaStream / ts family** — additional WordPress template family
+- **MangaDex** - full API, multi-language
+- **Kagane** - JSON API with an integrity/manifest handshake
+- **WeebCentral, Dynasty Scans, Asura Scans, Webtoons, MangaHub, MangaKatana, Flame Comics, MangaFreak, Comix, OlympusStaff, MangaRead, Mgeko, mangak.io** - dedicated adapters
+- **Madara family** - config-driven WordPress Madara sites (GD Scans, Tritinia Scans, ManhuaUS, MgRead, NatoManga, and more)
+- **MangaStream / ts family** - Thunder Scans, Kappa Beast, Spider Scans
+- **FanFox / MangaHere** - chapter tracking and navigation (pages open on the site)
 
 Add a new site in the appropriate family by adding a single config row in `packages/sources/src/`. See [docs/architecture/SOURCE_ADAPTERS.md](docs/architecture/SOURCE_ADAPTERS.md).
 
 ## Contributing
 
 1. Fork → branch from `main` → open a PR
-2. Run `npm run check` (format + typecheck + build + tests) before submitting
+2. Run `npm run check` (format check + lint + typecheck + both builds + tests) before submitting
 3. Adapters: one file per site family, config-driven where possible
-4. Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, etc.) — releases are automated from commit messages
+4. Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `chore:`, etc.) - releases are automated from commit messages
 
 ## Source triage
 
@@ -177,9 +187,7 @@ npm run probe -w @amr/source-probe
 
 ## Releases
 
-Published as GitHub Releases with Chrome zip, Firefox `.xpi`, and a sources archive.
-The extension periodically checks GitHub for newer versions but never downloads or
-executes update code automatically — it only notifies you in the panel.
+Releases are automated with release-please (see RELEASING.md). Each GitHub release carries the Chrome and Firefox zips plus SHA256SUMS.txt; the AMO-signed Firefox .xpi is attached automatically once Mozilla approves the submission. The extension periodically checks GitHub for newer versions and offers an in-app "Download update" button that saves the matching zip to your Downloads folder - it never installs or executes update code automatically.
 
 ## Documentation
 
