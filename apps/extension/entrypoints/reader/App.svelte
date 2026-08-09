@@ -8,7 +8,7 @@
     import { spreadView } from "../../src/reader-spread"
 
     type ReadingDirection = "ltr" | "rtl" | "vertical"
-    type PageFit = "width" | "height" | "contain" | "original"
+    type PageFit = "width" | "height" | "contain" | "original" | "actual"
 
     let chapter = $state<ResolvedChapter | undefined>()
     let error = $state("")
@@ -25,6 +25,8 @@
     let pageFit = $state<PageFit>("width")
     let showPageNumber = $state(true)
     let noGapContinuous = $state(false)
+    // Gap in px between the two pages of a Double-page spread (from settings; seamless forces 0).
+    let spreadGapPx = $state(8)
     // Per-series "Webtoon view" override: null = no override (inherits the global
     // default), true/false = explicit per-series value saved via library:reading-prefs.
     let noGapOverride = $state<boolean | null>(null)
@@ -589,11 +591,17 @@
         const view = spreadView(currentPage, effectiveSpread, effectiveOffset, chapter.pages.length)
         const start = view.indices[0]!
         const target = dir === "next" ? view.nextStart : view.prevStart
-        if (target !== start) recordProgress(target)
+        if (target !== start) {
+            recordProgress(target)
+            // Start each freshly-flipped page at the top so a tall (Actual size) page is read
+            // from its beginning rather than wherever the previous page was scrolled to.
+            if (effectiveMode === "single") window.scrollTo({ top: 0 })
+        }
     }
 
     function toggleZoom() {
-        fitOverride = fitOverride ? null : "original"
+        // Zoom to true native resolution (Actual size), not the height-capped Original.
+        fitOverride = fitOverride ? null : "actual"
     }
 
     // A6: fullscreen + immersive (auto-hide chrome on scroll-down).
@@ -614,8 +622,16 @@
     let lastWheel = 0
     function onWheel(event: WheelEvent) {
         if (effectiveMode !== "single" || !chapter) return
-        if (document.documentElement.scrollHeight > window.innerHeight + 4) return
         if (Math.abs(event.deltaY) < 10) return
+        // A page taller than the window scrolls first (Actual size / big pages); only flip
+        // once the user is at the top/bottom edge, so "scroll then flip" reads naturally.
+        const doc = document.documentElement
+        if (doc.scrollHeight > window.innerHeight + 4) {
+            const atBottom = window.scrollY + window.innerHeight >= doc.scrollHeight - 2
+            const atTop = window.scrollY <= 0
+            if (event.deltaY > 0 && !atBottom) return
+            if (event.deltaY < 0 && !atTop) return
+        }
         const now = Date.now()
         if (now - lastWheel < 250) return
         lastWheel = now
@@ -724,6 +740,7 @@
                         pageFit: PageFit
                         showPageNumber: boolean
                         noGapContinuous: boolean
+                        spreadGapPx: number
                         preloadPages: number
                     }>({ type: "settings:get" }),
                     browser.storage.local
@@ -749,6 +766,7 @@
                         : settings.readingDirection)
                 pageFit = libraryManga?.pageFit ?? settings.pageFit
                 showPageNumber = settings.showPageNumber
+                spreadGapPx = settings.spreadGapPx ?? 8
                 noGapDefault = settings.noGapContinuous
                 noGapOverride = libraryManga?.noGapContinuous ?? null
                 noGapContinuous = libraryManga?.noGapContinuous ?? settings.noGapContinuous
@@ -984,21 +1002,13 @@
             return
         }
         if (effectiveMode !== "single") return
-        // Snaps to offset-aware boundaries; nextStart/prevStart equal the current start
-        // at the ends, so forward never re-shows the final page and backward stays aligned.
-        const view = spreadView(currentPage, effectiveSpread, effectiveOffset, chapter.pages.length)
-        const start = view.indices[0]!
-        const next = () => {
-            if (view.nextStart !== start) recordProgress(view.nextStart)
-        }
-        const prev = () => {
-            if (view.prevStart !== start) recordProgress(view.prevStart)
-        }
+        // pageNav snaps to offset-aware boundaries (forward never re-shows the final page,
+        // backward stays aligned) and resets scroll to the top of each flipped page.
         const key = event.key.toLowerCase()
-        if (key === "j") next()
-        else if (key === "k") prev()
-        else if (event.key === "ArrowRight") (direction === "rtl" ? prev : next)()
-        else if (event.key === "ArrowLeft") (direction === "rtl" ? next : prev)()
+        if (key === "j") pageNav("next")
+        else if (key === "k") pageNav("prev")
+        else if (event.key === "ArrowRight") pageNav(direction === "rtl" ? "prev" : "next")
+        else if (event.key === "ArrowLeft") pageNav(direction === "rtl" ? "next" : "prev")
     }}
     onscroll={onScroll}
     onwheel={onWheel}
@@ -1268,7 +1278,8 @@
 <main
     class:single={effectiveMode === "single"}
     class:no-gap={effectiveMode === "continuous" && noGapContinuous}
-    class="fit-{effectivePageFit} dir-{direction}">
+    class="fit-{effectivePageFit} dir-{direction}"
+    style="--spread-gap: {spreadGapPx}px">
     {#if chapter && !error && !resolving && zeroPages}
         <div class="mirror-banner">
             <span>No reader pages available - open on site and use the AMR sidebar to navigate.</span>

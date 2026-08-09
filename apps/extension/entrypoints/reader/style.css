@@ -146,6 +146,10 @@ main {
     justify-items: center;
     gap: 8px;
     padding: 8px;
+    /* Never let a page tip the whole document into a horizontal scroll. A wide page pans
+       within its own .page box (overflow-x on the fit-original / fit-actual .page rules)
+       instead, so this only kills the stray body-level x-scrollbar seen in paged modes. */
+    overflow-x: hidden;
 }
 
 main.no-gap {
@@ -231,7 +235,8 @@ main.single.fit-original .page img {
 main .page.spread {
     flex-wrap: nowrap;
     justify-content: center;
-    gap: 2px;
+    /* Customizable gutter between the two pages (Settings -> spreadGapPx). Seamless forces 0. */
+    gap: var(--spread-gap, 8px);
     align-items: center;
     width: 100%;
 }
@@ -275,6 +280,34 @@ main.dir-rtl .page.spread.seamless img {
 }
 main.dir-rtl .page.spread.seamless img:last-child {
     object-position: right center;
+}
+
+/* Actual size: render every page at its native pixel resolution, never scaled down to the
+   window. This is the "read hi-res at full resolution" option and what double-click zoom
+   uses. A page taller than the viewport scrolls the document (start-aligned so it reads
+   from the top); a page wider than the viewport pans within its own .page box. Unlike
+   fit-original it is NOT capped in the paged Single/Double views. Placed last so it wins
+   over the earlier fit-mode and spread rules by source order and specificity. */
+main.fit-actual .page {
+    justify-content: center;
+    overflow-x: auto;
+}
+main.fit-actual .page img {
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    margin-inline: auto;
+}
+main.single.fit-actual {
+    align-items: start;
+}
+main.fit-actual .page.spread {
+    overflow-x: auto;
+}
+main.fit-actual .page.spread img {
+    max-width: none;
+    max-height: none;
 }
 
 .page-num {
