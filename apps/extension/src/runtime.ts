@@ -133,6 +133,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("updates:check"), sourceId: z.string().optional() }),
     z.object({ type: z.literal("updates:get") }),
     z.object({ type: z.literal("extension-update:check"), force: z.boolean().optional() }),
+    z.object({ type: z.literal("extension-update:download") }),
     z.object({ type: z.literal("updates:new-chapters"), mangaId: z.string().min(1) }),
     z.object({ type: z.literal("page:current") }),
     z.object({ type: z.literal("page:capture"), url: z.url() }),
@@ -215,7 +216,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
             searchDisabledSourceIds: z.array(z.string()).optional(),
             autoPauseDays: z.number().int().min(0).max(3650).optional(),
             anilistImportPaused: z.boolean().optional(),
-            anilistImportDropped: z.boolean().optional()
+            anilistImportDropped: z.boolean().optional(),
+            anilistImportPlanning: z.boolean().optional()
         })
     })
 ])

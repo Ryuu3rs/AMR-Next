@@ -1150,6 +1150,7 @@ button:disabled {
 .update-banner {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     padding: 8px 14px;
     margin-bottom: 16px;
@@ -1161,6 +1162,13 @@ button:disabled {
 
 .update-banner span {
     flex: 1;
+}
+
+.update-banner .update-hint {
+    flex-basis: 100%;
+    flex-grow: 1;
+    color: var(--text-muted, #9aa5b1);
+    font-size: 0.82rem;
 }
 
 .restore-banner {

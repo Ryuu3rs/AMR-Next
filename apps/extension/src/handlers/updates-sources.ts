@@ -444,16 +444,28 @@ export async function checkExtensionUpdate(force = false): Promise<void> {
             headers: { Accept: "application/vnd.github.v3+json" }
         })
         if (!response.ok) return
-        const json = (await response.json()) as { tag_name?: string; html_url?: string }
+        const json = (await response.json()) as {
+            tag_name?: string
+            html_url?: string
+            assets?: { name?: string; browser_download_url?: string }[]
+        }
         const latestVersion = (json.tag_name ?? "").replace(/^v/, "")
         const releaseUrl = json.html_url ?? ""
         if (!latestVersion) return
         const currentVersion = browser.runtime.getManifest().version
+        // Pick the release asset that matches THIS build's browser (assets are named
+        // amrextension-<v>-chrome.zip / -firefox.zip) so the in-app "Download update"
+        // button grabs the right one without the user hunting on GitHub. Edge and any
+        // other Chromium build take the chrome zip.
+        const wantSuffix = import.meta.env.BROWSER === "firefox" ? "-firefox.zip" : "-chrome.zip"
+        const asset = (json.assets ?? []).find(a => typeof a.name === "string" && a.name.endsWith(wantSuffix))
         await browser.storage.local.set({
             extensionUpdate: {
                 available: isNewerVersion(latestVersion, currentVersion),
                 latestVersion,
                 releaseUrl,
+                downloadUrl: asset?.browser_download_url ?? "",
+                downloadName: asset?.name ?? "",
                 checkedAt: Date.now()
             }
         })
@@ -641,9 +653,30 @@ export const updatesSourcesHandlers: HandlerMap = {
         const stored = await browser.storage.local.get("extensionUpdate")
         return (
             (stored["extensionUpdate"] as
-                | { available: boolean; latestVersion: string; releaseUrl: string }
+                | {
+                      available: boolean
+                      latestVersion: string
+                      releaseUrl: string
+                      downloadUrl?: string
+                      downloadName?: string
+                  }
                 | undefined) ?? null
         )
+    },
+    "extension-update:download": async () => {
+        // Download the browser-matching release zip (resolved during the update check)
+        // into the user's Downloads folder. This is the closest MV3 gets to a self-update:
+        // an extension cannot install a package into itself, so the final "load unpacked /
+        // drag into about:addons" step stays manual. Firefox users who installed from AMO
+        // get real auto-update instead and never need this.
+        const stored = (await browser.storage.local.get("extensionUpdate"))["extensionUpdate"] as
+            | { downloadUrl?: string; downloadName?: string }
+            | undefined
+        const url = stored?.downloadUrl
+        if (!url) return { started: false as const, filename: "" }
+        const filename = stored?.downloadName || url.split("/").pop() || "amrextension.zip"
+        await browser.downloads.download({ url, filename })
+        return { started: true as const, filename }
     },
     "sources:list": async () => {
         return sourceRegistry.list().map(adapter => ({

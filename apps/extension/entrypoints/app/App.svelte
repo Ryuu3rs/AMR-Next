@@ -577,7 +577,30 @@
     let reconcileIds = $state<string[]>([])
     let libScanIds = $state<string[]>([])
     const currentVersion = browser.runtime.getManifest().version
-    let extensionUpdate = $state<{ available: boolean; latestVersion: string; releaseUrl: string } | null>(null)
+    let extensionUpdate = $state<{
+        available: boolean
+        latestVersion: string
+        releaseUrl: string
+        downloadUrl?: string
+        downloadName?: string
+    } | null>(null)
+    let updateDownloadHint = $state<string | null>(null)
+    const isFirefoxBuild = import.meta.env.BROWSER === "firefox"
+
+    async function downloadUpdate() {
+        try {
+            const res = await sendRuntimeMessage<{ started: boolean; filename: string }>({
+                type: "extension-update:download"
+            })
+            updateDownloadHint = res.started
+                ? isFirefoxBuild
+                    ? `Downloaded ${res.filename}. Open about:addons → gear → Install Add-on From File to load it (or update from AMO).`
+                    : `Downloaded ${res.filename}. Open chrome://extensions, enable Developer mode, and drag the unzipped folder in.`
+                : "No matching download found for this release - use View release."
+        } catch {
+            updateDownloadHint = "Download failed - use View release instead."
+        }
+    }
     let updateBannerDismissed = $state(false)
     let checkingExtUpdate = $state(false)
     let updateStatus = $state<{
@@ -2893,15 +2916,23 @@
         {#if extensionUpdate?.available && !updateBannerDismissed}
             <div class="update-banner" role="alert">
                 <span>AMR <strong>v{extensionUpdate.latestVersion}</strong> is available.</span>
+                {#if extensionUpdate.downloadUrl}
+                    <button type="button" class="btn-sm" onclick={() => void downloadUpdate()}>
+                        Download {isFirefoxBuild ? "Firefox" : "Chrome"} build
+                    </button>
+                {/if}
                 <button
                     type="button"
-                    class="btn-sm"
+                    class="btn-outline btn-sm"
                     onclick={() => void browser.tabs.create({ url: extensionUpdate!.releaseUrl })}>
                     View release ↗
                 </button>
                 <button type="button" class="btn-outline btn-sm" onclick={() => (updateBannerDismissed = true)}>
                     Dismiss
                 </button>
+                {#if updateDownloadHint}
+                    <span class="update-hint">{updateDownloadHint}</span>
+                {/if}
             </div>
         {/if}
 
@@ -5014,6 +5045,14 @@
                                         onchange={e =>
                                             void updateSetting({ anilistImportDropped: e.currentTarget.checked })} />
                                     Import dropped titles
+                                </label>
+                                <label class="menu-toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings?.anilistImportPlanning ?? false}
+                                        onchange={e =>
+                                            void updateSetting({ anilistImportPlanning: e.currentTarget.checked })} />
+                                    Import planning titles
                                 </label>
                             </div>
                         </div>
