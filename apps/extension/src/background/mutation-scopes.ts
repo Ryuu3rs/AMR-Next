@@ -121,6 +121,7 @@ export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<Runt
     "updates:check",
     "updates:get",
     "extension-update:check",
+    "extension-update:download",
     "updates:new-chapters",
     "page:current",
     "page:capture",
