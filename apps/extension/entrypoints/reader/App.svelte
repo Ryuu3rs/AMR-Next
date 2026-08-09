@@ -5,7 +5,7 @@
     import { sendRuntimeMessage } from "../../src/runtime"
     import { subscribeLive } from "../../src/live"
     import { createProgressReporter } from "../../src/throttle"
-    import { spreadRows, spreadView } from "../../src/reader-spread"
+    import { spreadView } from "../../src/reader-spread"
 
     type ReadingDirection = "ltr" | "rtl" | "vertical"
     type PageFit = "width" | "height" | "contain" | "original"
@@ -541,28 +541,31 @@
         }
     }
 
-    // Vertical (webtoon) direction always scrolls continuously.
-    const effectiveMode = $derived(direction === "vertical" ? "continuous" : mode)
-    // Two-page spread is a continuous side-by-side scroll; it never applies to the paged
-    // single view or to vertical direction.
-    const effectiveSpread = $derived(effectiveMode === "continuous" && direction !== "vertical" && spread === 2 ? 2 : 1)
+    // A two-page spread applies whenever the user picked it, except in vertical (webtoon)
+    // direction which always scrolls as a single strip.
+    const effectiveSpread = $derived(direction !== "vertical" && spread === 2 ? 2 : 1)
+    // Vertical always scrolls continuously. A two-page spread is a PAGED flip view (Double:
+    // turn two pages at a time with the arrow keys / wheel), so force paged mode whenever
+    // spread is 2 - this also migrates 0.19's scroll-based double onto the flip view.
+    const effectiveMode = $derived(direction === "vertical" ? "continuous" : effectiveSpread === 2 ? "single" : mode)
     const effectiveOffset = $derived(effectiveSpread === 2 && spreadOffset)
     const effectiveSeamless = $derived(effectiveSpread === 2 && spreadSeamless)
-    // The single labelled 3-way view control: Strip (continuous 1-up), Single (paged 1-up),
-    // Double (continuous 2-up spreads).
+    // The single labelled 3-way view control: Strip (continuous 1-up scroll), Single (paged
+    // 1-up flip), Double (paged 2-up flip). Direction (LTR/RTL) sets which way pages turn.
     type ViewMode = "strip" | "single" | "double"
     const viewMode = $derived<ViewMode>(
-        effectiveMode === "single" ? "single" : effectiveSpread === 2 ? "double" : "strip"
+        effectiveSpread === 2 ? "double" : effectiveMode === "single" ? "single" : "strip"
     )
 
     function setView(v: ViewMode) {
         if (v === "strip") void Promise.all([setMode("continuous"), setSpread(1)])
         else if (v === "single") void Promise.all([setMode("single"), setSpread(1)])
-        else void Promise.all([setMode("continuous"), setSpread(2)])
+        // Double is a paged 2-up flip view (not a scroll), so it uses the single/paged mode.
+        else void Promise.all([setMode("single"), setSpread(2)])
     }
 
-    // The page indices shown in the current paged (single) view. In double the rows come
-    // from spreadRows instead. RTL ordering is handled in CSS (row-reverse).
+    // The page indices shown in the current paged view: one for Single, two for Double.
+    // RTL page order within a spread is handled in CSS (row-reverse on main.dir-rtl).
     const spreadIndices = $derived(
         spreadView(currentPage, effectiveSpread, effectiveOffset, chapter?.pages.length ?? 0).indices
     )
@@ -601,6 +604,22 @@
         } catch {
             // ignore (denied / unsupported)
         }
+    }
+
+    // Wheel-to-flip for the paged views (Single + Double). Only acts when the page fits the
+    // viewport - if the current page/spread is taller than the window (zoomed / original
+    // fit), the native scroll wins so the user can still pan a big page. Throttled so one
+    // wheel gesture turns exactly one page/spread. Direction is handled by pageNav via
+    // spreadView (down = next in reading order, up = previous), so RTL just works.
+    let lastWheel = 0
+    function onWheel(event: WheelEvent) {
+        if (effectiveMode !== "single" || !chapter) return
+        if (document.documentElement.scrollHeight > window.innerHeight + 4) return
+        if (Math.abs(event.deltaY) < 10) return
+        const now = Date.now()
+        if (now - lastWheel < 250) return
+        lastWheel = now
+        pageNav(event.deltaY > 0 ? "next" : "prev")
     }
 
     let lastScroll = 0
@@ -982,6 +1001,7 @@
         else if (event.key === "ArrowLeft") (direction === "rtl" ? next : prev)()
     }}
     onscroll={onScroll}
+    onwheel={onWheel}
     onmousemove={event => {
         if (chromeHidden && event.clientY < 60) chromeHidden = false
     }}
@@ -1042,7 +1062,7 @@
                     title="Next chapter"
                     onclick={() => goToChapter(nextUrl)}>Next ›</button>
             {/if}
-            {#if viewMode === "single"}
+            {#if viewMode === "single" || viewMode === "double"}
                 <button
                     type="button"
                     class="btn-sm nav-page"
@@ -1052,7 +1072,7 @@
                     onclick={() => pageNav("prev")}>◀</button>
             {/if}
             <span class="page-count">{currentPage + 1} / {chapter.pages.length}</span>
-            {#if viewMode === "single"}
+            {#if viewMode === "single" || viewMode === "double"}
                 <button
                     type="button"
                     class="btn-sm nav-page"
@@ -1084,7 +1104,7 @@
                     disabled={direction === "vertical"}
                     title={direction === "vertical"
                         ? "Vertical direction always scrolls as a strip"
-                        : "Double: two-page spreads, scrolling"}
+                        : "Double: two-page spreads, flip with arrows or the wheel"}
                     onclick={() => setView("double")}>Double</button>
             </div>
             <button
@@ -1327,7 +1347,10 @@
     {:else if !chapter}
         <section class="message"><p>No chapter loaded.</p></section>
     {:else if effectiveMode === "single" && !imagesBroken}
-        <div class="page">
+        <div
+            class="page"
+            class:spread={spreadIndices.length > 1}
+            class:seamless={effectiveSeamless && spreadIndices.length > 1}>
             {#each spreadIndices as p (p)}
                 <img
                     src={pageSrcs[p]}
@@ -1345,30 +1368,6 @@
                 <span class="page-num">{spreadIndices[0]! + 1} / {chapter.pages.length}</span>
             {/if}
         </div>
-    {:else if effectiveSpread === 2 && direction !== "vertical" && !imagesBroken}
-        {#each spreadRows(chapter.pages.length, 2, effectiveOffset) as row (row[0])}
-            <div class="page spread" class:seamless={effectiveSeamless && row.length > 1}>
-                {#each row as p (p)}
-                    <img
-                        src={pageSrcs[p]}
-                        alt={`Page ${p + 1}`}
-                        loading={p < preloadPages ? "eager" : "lazy"}
-                        ondblclick={toggleZoom}
-                        onerror={e => handleImageError(e, p)}
-                        onload={e => {
-                            delete (e.currentTarget as HTMLImageElement).dataset.didFallback
-                            delete (e.currentTarget as HTMLImageElement).dataset.retries
-                            clearPageError(p)
-                            recordContinuousProgress(p)
-                        }} />
-                {/each}
-                {#if showPageNumber}
-                    <span class="page-num">
-                        {row.length > 1 ? `${row[0]! + 1}-${row[1]! + 1}` : `${row[0]! + 1}`} / {chapter.pages.length}
-                    </span>
-                {/if}
-            </div>
-        {/each}
     {:else if !imagesBroken}
         {#each pageSrcs as src, index}
             <div class="page">
