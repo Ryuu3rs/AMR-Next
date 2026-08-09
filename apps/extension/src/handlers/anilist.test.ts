@@ -9,6 +9,7 @@ const {
     getViewerProgressMock,
     saveViewerProgressMock,
     getMediaListEntryIdMock,
+    getViewerListEntryMock,
     saveMediaStatusMock,
     deleteMediaListEntryMock,
     getViewerNameMock,
@@ -24,6 +25,7 @@ const {
     getViewerProgressMock: vi.fn(),
     saveViewerProgressMock: vi.fn(),
     getMediaListEntryIdMock: vi.fn(),
+    getViewerListEntryMock: vi.fn(),
     saveMediaStatusMock: vi.fn(),
     deleteMediaListEntryMock: vi.fn(),
     getViewerNameMock: vi.fn(),
@@ -35,20 +37,29 @@ const {
     getSettingsMock: vi.fn()
 }))
 
-vi.mock("../anilist", () => ({
-    getAniListConfig: getAniListConfigMock,
-    setAniListConfig: setAniListConfigMock,
-    getAniListStatus: vi.fn(),
-    getViewerName: getViewerNameMock,
-    getViewerProgress: getViewerProgressMock,
-    saveViewerProgress: saveViewerProgressMock,
-    getViewerMangaList: getViewerMangaListMock,
-    getMediaListEntryId: getMediaListEntryIdMock,
-    saveMediaStatus: saveMediaStatusMock,
-    deleteMediaListEntry: deleteMediaListEntryMock,
-    getKnownMembership: getKnownMembershipMock,
-    setKnownMembership: setKnownMembershipMock
-}))
+// Keep the pure status-mapping helpers real (they carry the reconcile decision logic);
+// only the network functions are mocked.
+vi.mock("../anilist", async () => {
+    const actual = await vi.importActual<typeof import("../anilist")>("../anilist")
+    return {
+        getAniListConfig: getAniListConfigMock,
+        setAniListConfig: setAniListConfigMock,
+        getAniListStatus: vi.fn(),
+        getViewerName: getViewerNameMock,
+        getViewerProgress: getViewerProgressMock,
+        saveViewerProgress: saveViewerProgressMock,
+        getViewerMangaList: getViewerMangaListMock,
+        getViewerListEntry: getViewerListEntryMock,
+        getMediaListEntryId: getMediaListEntryIdMock,
+        saveMediaStatus: saveMediaStatusMock,
+        deleteMediaListEntry: deleteMediaListEntryMock,
+        getKnownMembership: getKnownMembershipMock,
+        setKnownMembership: setKnownMembershipMock,
+        resolveStatusSync: actual.resolveStatusSync,
+        localStatusToAniList: actual.localStatusToAniList,
+        aniListStatusToLocal: actual.aniListStatusToLocal
+    }
+})
 vi.mock("../metadata", () => ({ resolveMetadata: resolveMetadataMock }))
 vi.mock("../settings", () => ({ getSettings: getSettingsMock }))
 vi.mock("../background/alarms", () => ({ configureAniListAlarm: configureAniListAlarmMock }))
@@ -76,6 +87,7 @@ beforeEach(async () => {
     getViewerProgressMock.mockReset()
     saveViewerProgressMock.mockReset()
     getMediaListEntryIdMock.mockReset()
+    getViewerListEntryMock.mockReset()
     saveMediaStatusMock.mockReset()
     deleteMediaListEntryMock.mockReset()
     getViewerNameMock.mockReset()
@@ -410,6 +422,88 @@ describe("anilist:import", () => {
         const created = await db.manga.get("anilist:manga:41")
         expect(created?.latestChapterNumber).toBeUndefined()
         expect(created?.lastReadChapterNumber).toBe(12)
+    })
+})
+
+describe("runAniListSync bidirectional status sync", () => {
+    it("pushes a local dropped status to AniList when statusPush is on", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({
+            token: "t",
+            autoSync: false,
+            syncMembership: false,
+            statusPush: true,
+            statusPull: false
+        })
+        await db.manga.add(
+            makeManga({
+                id: "m1",
+                anilistId: 55,
+                lastReadChapterNumber: 3,
+                readingStatus: "dropped",
+                readingStatusUpdatedAt: 1000
+            })
+        )
+        getViewerProgressMock.mockResolvedValue(3) // equal progress -> no progress push
+        getViewerListEntryMock.mockResolvedValue({ progress: 3, status: "CURRENT", updatedAt: 1 })
+
+        const res = await runAniListSync()
+
+        expect(saveMediaStatusMock).toHaveBeenCalledWith("t", 55, "DROPPED")
+        expect(res.statusPushed).toBe(1)
+    })
+
+    it("pulls an AniList paused status onto the library when statusPull is on", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({
+            token: "t",
+            autoSync: false,
+            syncMembership: false,
+            statusPush: false,
+            statusPull: true
+        })
+        await db.manga.add(makeManga({ id: "m2", anilistId: 66, lastReadChapterNumber: 5, readingStatusUpdatedAt: 1 }))
+        getViewerProgressMock.mockResolvedValue(5)
+        getViewerListEntryMock.mockResolvedValue({ progress: 5, status: "PAUSED", updatedAt: 9999 })
+
+        const res = await runAniListSync()
+
+        expect((await db.manga.get("m2"))?.readingStatus).toBe("paused")
+        expect(res.statusPulled).toBe(1)
+    })
+
+    it("completes a title when AniList reports COMPLETED with a known total (pull)", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({
+            token: "t",
+            autoSync: false,
+            syncMembership: false,
+            statusPush: false,
+            statusPull: true
+        })
+        await db.manga.add(makeManga({ id: "m3", anilistId: 77, status: "ongoing", lastReadChapterNumber: 40 }))
+        getViewerProgressMock.mockResolvedValue(40)
+        getViewerListEntryMock.mockResolvedValue({ progress: 40, status: "COMPLETED", updatedAt: 5, totalChapters: 50 })
+
+        await runAniListSync()
+
+        const updated = await db.manga.get("m3")
+        expect(updated?.status).toBe("completed")
+        expect(updated?.latestChapterNumber).toBe(50)
+        expect(updated?.lastReadChapterNumber).toBe(50)
+    })
+
+    it("does not run the status pass when both directions are off (default)", async () => {
+        const { runAniListSync } = await import("./anilist")
+        await db.manga.add(makeManga({ id: "m4", anilistId: 88, lastReadChapterNumber: 2, readingStatus: "dropped" }))
+        getViewerProgressMock.mockResolvedValue(2)
+        getViewerListEntryMock.mockResolvedValue({ progress: 2, status: "CURRENT", updatedAt: 1 })
+
+        const res = await runAniListSync()
+
+        expect(getViewerListEntryMock).not.toHaveBeenCalled()
+        expect(res.statusPushed).toBe(0)
+        expect(res.statusPulled).toBe(0)
     })
 })
 
