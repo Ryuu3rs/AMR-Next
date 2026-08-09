@@ -1773,7 +1773,7 @@
     }
 
     async function setReadingPageFit(manga: LibraryManga, raw: string) {
-        const value = raw === "" ? null : (raw as "width" | "height" | "contain" | "original")
+        const value = raw === "" ? null : (raw as "width" | "height" | "contain" | "original" | "actual")
         try {
             await sendRuntimeMessage({ type: "library:reading-prefs", mangaId: manga.id, pageFit: value })
             const apply = (m: LibraryManga): LibraryManga => {
@@ -5216,12 +5216,13 @@
                         value={settings?.pageFit ?? "width"}
                         onchange={e =>
                             void updateSetting({
-                                pageFit: e.currentTarget.value as "width" | "height" | "contain" | "original"
+                                pageFit: e.currentTarget.value as "width" | "height" | "contain" | "original" | "actual"
                             })}>
                         <option value="width">Fit width</option>
                         <option value="height">Fit height</option>
                         <option value="contain">Fit screen</option>
                         <option value="original">Original size</option>
+                        <option value="actual">Actual size (native resolution)</option>
                     </select>
                 </div>
                 <div class="settings-row">
@@ -5236,6 +5237,23 @@
                             onchange={e => void updateSetting({ showPageNumber: e.currentTarget.checked })} />
                         <span class="track"></span>
                     </label>
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Double-page gap</p>
+                        <p class="muted">
+                            Space between the two pages in Double-page mode: {settings?.spreadGapPx ?? 8}px. Seamless
+                            spreads ignore this.
+                        </p>
+                    </div>
+                    <input
+                        type="range"
+                        min="0"
+                        max="40"
+                        step="1"
+                        aria-label="Double-page gap in pixels"
+                        value={settings?.spreadGapPx ?? 8}
+                        onchange={e => void updateSetting({ spreadGapPx: Number(e.currentTarget.value) })} />
                 </div>
                 <div class="settings-row">
                     <div>
@@ -5749,6 +5767,7 @@
                                 <option value="height">Fit height</option>
                                 <option value="contain">Contain</option>
                                 <option value="original">Original size</option>
+                                <option value="actual">Actual size</option>
                             </select>
                         </label>
                     </div>

@@ -1,5 +1,5 @@
 export type ReadingDirection = "ltr" | "rtl" | "vertical"
-export type PageFit = "width" | "height" | "contain" | "original"
+export type PageFit = "width" | "height" | "contain" | "original" | "actual"
 
 export type OpenChapterIn = "reader" | "browser"
 
@@ -10,6 +10,8 @@ export type AppSettings = {
     pageFit: PageFit
     showPageNumber: boolean
     noGapContinuous: boolean
+    // Gap in px between the two pages of a Double-page spread (0-40). Seamless mode forces 0.
+    spreadGapPx: number
     preloadPages: number
     openChapterIn: OpenChapterIn
     theme: "dark" | "light" | "system"
@@ -44,6 +46,7 @@ export const defaultSettings: AppSettings = {
     pageFit: "width",
     showPageNumber: true,
     noGapContinuous: false,
+    spreadGapPx: 8,
     preloadPages: 3,
     openChapterIn: "reader",
     theme: "dark",
