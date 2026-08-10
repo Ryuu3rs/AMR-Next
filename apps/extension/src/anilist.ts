@@ -110,10 +110,14 @@ export async function getViewerProgress(token: string, mediaId: number): Promise
 export async function getViewerListEntry(
     token: string,
     mediaId: number
-): Promise<{ progress: number; status?: string; updatedAt?: number; totalChapters?: number } | undefined> {
+): Promise<
+    | { progress: number; status?: string; updatedAt?: number; totalChapters?: number; seriesFinished?: boolean }
+    | undefined
+> {
     const data = await anilistFetch<{
         Media: {
             chapters?: number | null
+            status?: string | null
             mediaListEntry: { progress?: number | null; status?: string | null; updatedAt?: number | null } | null
         } | null
     }>(
@@ -121,6 +125,7 @@ export async function getViewerListEntry(
         `query ($mediaId: Int) {
             Media(id: $mediaId, type: MANGA) {
                 chapters
+                status
                 mediaListEntry { progress status updatedAt }
             }
         }`,
@@ -132,8 +137,13 @@ export async function getViewerListEntry(
         typeof data.Media?.chapters === "number" && Number.isFinite(data.Media.chapters) && data.Media.chapters > 0
             ? data.Media.chapters
             : undefined
+    // Publication finished per AniList (FINISHED/CANCELLED) - a pulled COMPLETED only completes
+    // the local title when the SERIES is actually finished, never from list-status alone (S7).
+    const pub = mapMediaStatus(data.Media?.status)
+    const seriesFinished = pub === "completed" || pub === "cancelled"
     return {
         progress: typeof entry.progress === "number" && Number.isFinite(entry.progress) ? entry.progress : 0,
+        seriesFinished,
         ...(typeof entry.status === "string" && entry.status ? { status: entry.status } : {}),
         ...(typeof entry.updatedAt === "number" && Number.isFinite(entry.updatedAt)
             ? { updatedAt: entry.updatedAt }
@@ -279,6 +289,13 @@ export type AniListListEntry = {
     // for ongoing/unknown). Used to complete an imported COMPLETED title against a real
     // integer total instead of searching a mirror.
     totalChapters?: number
+    // media.format (MANGA/NOVEL/LIGHT_NOVEL/ONE_SHOT/...). Import skips novels: AniList's
+    // type:MANGA bucket includes light novels, which have no manga mirror to search.
+    format?: string
+    // media.isAdult - import sets the library nsfw (blur-cover) flag from it.
+    nsfw?: boolean
+    // Story / Art / Story & Art staff names, in relevance order. Populated from media.staff.
+    authors?: string[]
 }
 
 type RawMediaListEntry = {
@@ -292,8 +309,33 @@ type RawMediaListEntry = {
         coverImage?: { extraLarge?: string | null; large?: string | null } | null
         status?: string | null
         chapters?: number | null
+        format?: string | null
+        isAdult?: boolean | null
         genres?: (string | null)[] | null
+        staff?: StaffConnection | null
     } | null
+}
+
+type StaffConnection = {
+    edges?: ({ role?: string | null; node?: { name?: { full?: string | null } | null } | null } | null)[] | null
+}
+
+// AniList staff roles that count as an "author" for our purposes. Matches "Story", "Art",
+// "Story & Art" case-insensitively, tolerating trailing qualifiers like "Art (Ch. 1-10)".
+const AUTHOR_ROLE_RE = /^\s*(story\s*&\s*art|story|art)\b/i
+
+function mapStaffToAuthors(staff: StaffConnection | null | undefined): string[] {
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const edge of staff?.edges ?? []) {
+        if (!edge || !AUTHOR_ROLE_RE.test(edge.role ?? "")) continue
+        const name = edge.node?.name?.full
+        if (typeof name === "string" && name.trim() && !seen.has(name)) {
+            seen.add(name)
+            out.push(name.trim())
+        }
+    }
+    return out
 }
 
 // AniList Media.status (MANGA) -> our publication-status enum. Mirrors mapStatus in
@@ -343,6 +385,7 @@ export function mapMediaListEntry(raw: RawMediaListEntry): AniListListEntry {
         typeof media.chapters === "number" && Number.isFinite(media.chapters) && media.chapters > 0
             ? media.chapters
             : undefined
+    const authors = mapStaffToAuthors(media.staff)
     return {
         anilistId: media.id ?? 0,
         title,
@@ -352,7 +395,10 @@ export function mapMediaListEntry(raw: RawMediaListEntry): AniListListEntry {
         progress: typeof raw.progress === "number" && Number.isFinite(raw.progress) ? raw.progress : 0,
         ...(listStatus ? { listStatus } : {}),
         ...(typeof raw.status === "string" && raw.status ? { rawListStatus: raw.status } : {}),
-        ...(totalChapters !== undefined ? { totalChapters } : {})
+        ...(totalChapters !== undefined ? { totalChapters } : {}),
+        ...(typeof media.format === "string" && media.format ? { format: media.format } : {}),
+        ...(media.isAdult ? { nsfw: true } : {}),
+        ...(authors.length > 0 ? { authors } : {})
     }
 }
 
@@ -379,7 +425,12 @@ export async function getViewerMangaList(token: string): Promise<AniListListEntr
                             coverImage { extraLarge large }
                             status
                             chapters
+                            format
+                            isAdult
                             genres
+                            staff(sort: RELEVANCE, perPage: 8) {
+                                edges { role node { name { full } } }
+                            }
                         }
                     }
                 }

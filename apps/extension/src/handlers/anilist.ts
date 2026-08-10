@@ -82,21 +82,27 @@ export async function runAniListImport(): Promise<AniListImportResult> {
             if (entry.listStatus === "paused" && !settings.anilistImportPaused) continue
             if (entry.listStatus === "dropped" && !settings.anilistImportDropped) continue
             if (entry.listStatus === "planning" && !settings.anilistImportPlanning) continue
-            // A COMPLETED AniList entry with a real chapter total is imported as a finished,
-            // caught-up title (status completed + latest = lastRead = the integer total) so it
-            // derives "completed" (reading-status.ts) instead of landing in Reading - and so a
-            // trailing .5 chapter on a mirror can't drag it back. No mirror search: the AniList
-            // total is the source of truth, and the count stays an integer. When AniList has no
-            // total (chapters null, common for ongoing) we fall through to the normal import so
-            // the title stays in Reading until the user attaches a mirror.
+            // Skip light novels: AniList's type:MANGA bucket includes NOVEL / LIGHT_NOVEL,
+            // which have no manga mirror to attach, so importing them only creates broken
+            // "needs a source" entries that trigger fruitless searches (S9). ONE_SHOT stays.
+            if (entry.format === "NOVEL" || entry.format === "LIGHT_NOVEL") continue
+            // A COMPLETED AniList entry is imported as a finished, caught-up title (status
+            // completed + latest = lastRead = the integer total) so it derives "completed"
+            // (reading-status.ts) instead of landing in Reading - but ONLY when the SERIES is
+            // actually finished per AniList publication status, never from the user's list
+            // status alone. A still-ongoing series the user marked "completed" on their list
+            // must not be stamped publication-finished (S7); it falls through to the normal
+            // import. Also requires a real chapter total (no mirror search needed).
             // Narrows to a number in the completed branch below (satisfies
             // exactOptionalPropertyTypes: a plain boolean flag would not).
-            const completedTotal = entry.rawListStatus === "COMPLETED" ? entry.totalChapters : undefined
+            const seriesIsFinished = entry.status === "completed" || entry.status === "cancelled"
+            const completedTotal =
+                entry.rawListStatus === "COMPLETED" && seriesIsFinished ? entry.totalChapters : undefined
             candidates.push({
                 id: `anilist:manga:${entry.anilistId}`,
                 title,
                 normalizedTitle: normalizeTitle(title),
-                authors: [],
+                authors: entry.authors ?? [],
                 status: completedTotal !== undefined ? "completed" : entry.status,
                 addedAt: now,
                 updatedAt: now,
@@ -104,6 +110,7 @@ export async function runAniListImport(): Promise<AniListImportResult> {
                 sourceId: "anilist.co",
                 sourceUrl: `https://anilist.co/manga/${entry.anilistId}`,
                 manualTracking: true,
+                ...(entry.nsfw ? { nsfw: true } : {}),
                 ...(entry.coverUrl ? { coverUrl: entry.coverUrl } : {}),
                 ...(entry.genres.length > 0 ? { genres: entry.genres } : {}),
                 ...(completedTotal !== undefined
@@ -322,8 +329,10 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
                     } else if (decision.action === "pullLocal") {
                         const local = aniListStatusToLocal(decision.status)
                         if (local.completed) {
-                            // Only complete when AniList knows the total (same rule as import).
-                            if (entry?.totalChapters !== undefined) {
+                            // Only complete when the SERIES is actually finished per AniList AND
+                            // a real total is known - never stamp publication-finished from the
+                            // user's list status alone (S7, same rule as import).
+                            if (entry?.totalChapters !== undefined && entry.seriesFinished) {
                                 await db.table("manga").update(manga.id, {
                                     status: "completed",
                                     latestChapterNumber: entry.totalChapters,
