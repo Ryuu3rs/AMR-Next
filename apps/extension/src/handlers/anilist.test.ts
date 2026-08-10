@@ -382,13 +382,13 @@ describe("anilist:import", () => {
         expect(await db.manga.get("anilist:manga:31")).toBeDefined()
     })
 
-    it("imports a COMPLETED entry with a real total as a completed, caught-up title", async () => {
+    it("imports a COMPLETED entry as completed only when the SERIES is finished + has a total", async () => {
         const { runAniListImport } = await import("./anilist")
         getViewerMangaListMock.mockResolvedValue([
             entry({
                 anilistId: 40,
                 title: "Finished Series",
-                status: "ongoing", // media status is ignored; the list status forces completed
+                status: "completed", // publication finished - required to stamp completed (S7)
                 rawListStatus: "COMPLETED",
                 totalChapters: 100,
                 progress: 90
@@ -402,6 +402,53 @@ describe("anilist:import", () => {
         expect(created?.latestChapterNumber).toBe(100)
         expect(created?.lastReadChapterNumber).toBe(100)
         expect(created?.readingStatus).toBeUndefined()
+    })
+
+    it("does NOT stamp completed for a still-ongoing series the user list-completed (S7)", async () => {
+        const { runAniListImport } = await import("./anilist")
+        getViewerMangaListMock.mockResolvedValue([
+            entry({
+                anilistId: 42,
+                title: "Ongoing But List-Completed",
+                status: "ongoing", // publication still ongoing - must NOT become completed
+                rawListStatus: "COMPLETED",
+                totalChapters: 100,
+                progress: 90
+            })
+        ])
+
+        await runAniListImport()
+
+        const created = await db.manga.get("anilist:manga:42")
+        expect(created?.status).toBe("ongoing")
+        expect(created?.latestChapterNumber).toBeUndefined()
+        expect(created?.lastReadChapterNumber).toBe(90)
+    })
+
+    it("skips light novel entries on import (S9)", async () => {
+        const { runAniListImport } = await import("./anilist")
+        getViewerMangaListMock.mockResolvedValue([
+            entry({ anilistId: 43, title: "A Light Novel", format: "LIGHT_NOVEL" }),
+            entry({ anilistId: 44, title: "A Real Manga", format: "MANGA" })
+        ])
+
+        await runAniListImport()
+
+        expect(await db.manga.get("anilist:manga:43")).toBeUndefined()
+        expect(await db.manga.get("anilist:manga:44")).toBeDefined()
+    })
+
+    it("sets nsfw and authors from the AniList entry on import (S9/S10)", async () => {
+        const { runAniListImport } = await import("./anilist")
+        getViewerMangaListMock.mockResolvedValue([
+            entry({ anilistId: 45, title: "Adult With Authors", nsfw: true, authors: ["Story Writer", "Art Drawer"] })
+        ])
+
+        await runAniListImport()
+
+        const created = await db.manga.get("anilist:manga:45")
+        expect(created?.nsfw).toBe(true)
+        expect(created?.authors).toEqual(["Story Writer", "Art Drawer"])
     })
 
     it("leaves a COMPLETED entry with no known total as a normal (reading) import", async () => {
@@ -483,7 +530,13 @@ describe("runAniListSync bidirectional status sync", () => {
         })
         await db.manga.add(makeManga({ id: "m3", anilistId: 77, status: "ongoing", lastReadChapterNumber: 40 }))
         getViewerProgressMock.mockResolvedValue(40)
-        getViewerListEntryMock.mockResolvedValue({ progress: 40, status: "COMPLETED", updatedAt: 5, totalChapters: 50 })
+        getViewerListEntryMock.mockResolvedValue({
+            progress: 40,
+            status: "COMPLETED",
+            updatedAt: 5,
+            totalChapters: 50,
+            seriesFinished: true
+        })
 
         await runAniListSync()
 

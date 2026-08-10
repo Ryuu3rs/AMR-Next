@@ -238,6 +238,32 @@ describe("mapMediaListEntry", () => {
         expect(mapMediaListEntry({ media: { id: 1 } }).rawListStatus).toBeUndefined()
     })
 
+    it("maps format, isAdult -> nsfw, and Story/Art staff -> authors", () => {
+        const mapped = mapMediaListEntry({
+            media: {
+                id: 1,
+                format: "LIGHT_NOVEL",
+                isAdult: true,
+                staff: {
+                    edges: [
+                        { role: "Story & Art", node: { name: { full: "Solo Creator" } } },
+                        { role: "Story", node: { name: { full: "Writer San" } } },
+                        { role: "Art (Ch. 1-10)", node: { name: { full: "Artist San" } } },
+                        { role: "Translator", node: { name: { full: "Not An Author" } } }
+                    ]
+                }
+            }
+        })
+        expect(mapped.format).toBe("LIGHT_NOVEL")
+        expect(mapped.nsfw).toBe(true)
+        expect(mapped.authors).toEqual(["Solo Creator", "Writer San", "Artist San"])
+        // No adult flag / no staff -> fields omitted.
+        const plain = mapMediaListEntry({ media: { id: 2 } })
+        expect(plain.nsfw).toBeUndefined()
+        expect(plain.authors).toBeUndefined()
+        expect(plain.format).toBeUndefined()
+    })
+
     it("carries anilistId, genres, and progress; defaults a missing progress to 0", () => {
         const mapped = mapMediaListEntry({
             progress: 12,

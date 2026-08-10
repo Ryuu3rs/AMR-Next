@@ -5533,6 +5533,9 @@
             <div class="detail-body">
                 <h2>{detailManga.title}</h2>
                 <p class="muted">{detailManga.sourceId} · {detailManga.status}</p>
+                {#if detailManga.authors && detailManga.authors.length > 0}
+                    <p class="muted">by {detailManga.authors.join(", ")}</p>
+                {/if}
                 <p class="detail-meta">
                     {readChapterLabel(detailManga, "Read ch")}{#if detailManga.latestChapterNumber !== undefined}
                         · latest ch {detailManga.latestChapterNumber}{/if}
