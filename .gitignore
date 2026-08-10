@@ -69,6 +69,16 @@ docs/product/
 docs/future/
 docs/operations/
 
-# Planning / handoff docs - local only, not for the public repo
+# Planning / handoff / one-off docs - local only, not for the public repo. Also the
+# AI-assistant config (CLAUDE.md), the release runbook (folded into CONTRIBUTING + the
+# release skill), the archived legacy source, and one-off technique/release notes. These
+# are kept on disk but never tracked. NOTE: gitignore does not untrack an already-committed
+# file - use `git rm --cached` once to drop it, after which this keeps it out.
 PLAN-*.md
 HANDOFF-*.md
+RELEASE_NOTES_v*.md
+CLAUDE.md
+RELEASING.md
+docs/IMAGE_EXTRACTION_TECHNIQUES.md
+/archive/
+/docs/archive/

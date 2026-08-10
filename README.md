@@ -187,7 +187,7 @@ npm run probe -w @amr/source-probe
 
 ## Releases
 
-Releases are automated with release-please (see RELEASING.md). Each GitHub release carries the Chrome and Firefox zips plus SHA256SUMS.txt; the AMO-signed Firefox .xpi is attached automatically once Mozilla approves the submission. The extension periodically checks GitHub for newer versions and offers an in-app "Download update" button that saves the matching zip to your Downloads folder - it never installs or executes update code automatically.
+Releases are automated with release-please (see [CONTRIBUTING.md](CONTRIBUTING.md)). Each GitHub release carries the Chrome and Firefox zips plus SHA256SUMS.txt; the AMO-signed Firefox .xpi is attached automatically once Mozilla approves the submission. The extension periodically checks GitHub for newer versions and offers an in-app "Download update" button that saves the matching zip to your Downloads folder - it never installs or executes update code automatically.
 
 ## Documentation
 
