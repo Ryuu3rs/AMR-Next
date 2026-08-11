@@ -33,7 +33,27 @@ function looksLikeChallengePage(html: string): boolean {
 async function extractHtml(tabId: number): Promise<string> {
     const results = await browser.scripting.executeScript({
         target: { tabId },
-        func: () => document.documentElement.outerHTML
+        func: () => {
+            // Lazy-loading readers keep the real image URL on a data-* attribute until
+            // each <img> scrolls into view, so an un-scrolled outerHTML snapshot only has
+            // real src on the initial preload window. Fill any empty/placeholder src from
+            // those data-* attrs so the snapshot carries every page. Best-effort only.
+            try {
+                const placeholder = /^\s*$|^data:|1x1|blank|spacer|placeholder|loading/i
+                for (const img of Array.from(document.querySelectorAll("img"))) {
+                    const src = img.getAttribute("src")
+                    if (src && !placeholder.test(src)) continue
+                    const lazy =
+                        img.getAttribute("data-src") ??
+                        img.getAttribute("data-original") ??
+                        img.getAttribute("data-lazy-src")
+                    if (lazy) img.setAttribute("src", lazy)
+                }
+            } catch {
+                // Snapshot whatever is present rather than failing the whole fetch.
+            }
+            return document.documentElement.outerHTML
+        }
     })
     const html = results[0]?.result
     return typeof html === "string" ? html : ""

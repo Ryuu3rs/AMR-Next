@@ -224,25 +224,35 @@ function extractChapters(html: string, mangaId: string, expectedSlug: string): S
 }
 
 // Chapter page images - extracted after tab render (JS-driven reader).
-// MangaHub renders <img> tags with src pointing to their CDN (mhcdn.net / mghcdn.com).
+// MangaHub renders <img> tags whose CDN URL (mhcdn.net / mghcdn.com / imgx.mghubcdn.com)
+// may live on any of several attributes: the lazy-loader leaves the real URL on data-src
+// (or data-original / data-lazy-src / srcset) until each image scrolls into view, so a
+// single un-scrolled snapshot has real src only on the initial preload window. Walk every
+// <img> in document order and take the first CDN URL it carries across all those attrs.
+const CDN_URL_RE = /(https?:\/\/[^"'\s]*(?:mhcdn|mghcdn|mghubcdn)[^"'\s]+)/i
+
 function extractImages(html: string): string[] {
     const urls: string[] = []
     const seen = new Set<string>()
-    // Primary: src on img elements in the reader
-    for (const m of html.matchAll(/<img\b[^>]+src="(https?:\/\/[^"]*(?:mhcdn|mghcdn)[^"]+)"/gi)) {
-        const u = captureGroup(m, 1)
-        if (u && !seen.has(u)) {
-            seen.add(u)
-            urls.push(u)
-        }
-    }
-    if (urls.length > 0) return urls
-    // Fallback: any data-src with cdn patterns
-    for (const m of html.matchAll(/<img\b[^>]+data-src="(https?:\/\/[^"]*(?:mhcdn|mghcdn)[^"]+)"/gi)) {
-        const u = captureGroup(m, 1)
-        if (u && !seen.has(u)) {
-            seen.add(u)
-            urls.push(u)
+    for (const tag of html.matchAll(/<img\b[^>]*>/gi)) {
+        const el = tag[0]
+        const candidates = [
+            /\bsrc="([^"]+)"/i,
+            /\bdata-src="([^"]+)"/i,
+            /\bdata-original="([^"]+)"/i,
+            /\bdata-lazy-src="([^"]+)"/i,
+            /\bsrcset="([^",\s]+)/i
+        ]
+        for (const re of candidates) {
+            const attr = el.match(re)
+            const value = attr ? captureGroup(attr, 1) : undefined
+            const cdn = value?.match(CDN_URL_RE)
+            const u = cdn ? captureGroup(cdn, 1) : undefined
+            if (u && !seen.has(u)) {
+                seen.add(u)
+                urls.push(u)
+                break
+            }
         }
     }
     return urls
