@@ -1315,7 +1315,9 @@ export const libraryHandlers: HandlerMap = {
                     manga,
                     manga.sourceId,
                     manga.sourceMangaId ?? "",
-                    manga.mangaUrl ?? manga.sourceUrl
+                    manga.mangaUrl ?? manga.sourceUrl,
+                    undefined,
+                    language ? [language] : undefined
                 )
                 if (chapters.length > 0) {
                     await putChapters(chapters)
