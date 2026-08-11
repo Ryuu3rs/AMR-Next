@@ -299,6 +299,27 @@ describe("mangahubAdapter.resolveChapter", () => {
             mangahubAdapter.resolveChapter!({ url: new URL(CHAPTER_HIGH_SLUGNUM_URL) }, context)
         ).rejects.toMatchObject({ code: "invalid-response" })
     })
+
+    it("collects lazy pages via data-src and the imgx.mghubcdn.com CDN host, not just eager src", async () => {
+        const path = "/chapter/hero-returns/chapter-7"
+        const html =
+            `<!doctype html><html><head><title>Hero Returns Chapter 7</title>` +
+            `<meta property="og:title" content="Hero Returns Chapter 7"/></head><body>` +
+            `<img src="data:image/gif;base64,placeholder" data-src="https://imgx.mghubcdn.com/mh/hero-returns/7/1.webp"/>` +
+            `<img data-src="https://imgx.mghubcdn.com/mh/hero-returns/7/2.webp"/>` +
+            `<img src="https://imgx.mghubcdn.com/mh/hero-returns/7/3.webp"/>` +
+            `</body></html>`
+        const requests: string[] = []
+        const context = createContext({ [path]: html }, requests)
+
+        const result = await mangahubAdapter.resolveChapter!({ url: new URL(`https://mangahub.io${path}`) }, context)
+
+        expect(result.pages.map(p => p.url)).toEqual([
+            "https://imgx.mghubcdn.com/mh/hero-returns/7/1.webp",
+            "https://imgx.mghubcdn.com/mh/hero-returns/7/2.webp",
+            "https://imgx.mghubcdn.com/mh/hero-returns/7/3.webp"
+        ])
+    })
 })
 
 describe("mangahubAdapter.resolveCover", () => {
