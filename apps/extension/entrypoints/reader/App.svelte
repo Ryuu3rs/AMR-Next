@@ -1040,7 +1040,12 @@
                     {/each}
                 </select>
                 {#if currentIndex >= 0}
-                    <span>Chapter {currentIndex + 1} of {siblings.length}</span>
+                    {@const cur = siblings[currentIndex]}
+                    <span>
+                        {cur && Number.isFinite(cur.sortKey)
+                            ? `Chapter ${cur.sortKey}`
+                            : `Chapter ${currentIndex + 1} of ${siblings.length}`}
+                    </span>
                 {/if}
             {:else}
                 <span>{chapter.chapter.title}</span>

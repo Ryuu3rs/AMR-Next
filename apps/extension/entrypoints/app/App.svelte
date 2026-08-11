@@ -3739,7 +3739,7 @@
                                     <div class="poster-badges">
                                         {#if manga.manualTracking}<span class="manual-chip">Manual</span>{/if}
                                         {#if !isSeedData(manga) && hasNewerChapters(manga)}
-                                            <span class="new-chip">Unread</span>
+                                            <span class="new-chip">New ch</span>
                                         {/if}
                                         {#if isRecentlyAdded(manga)}<span class="added-chip">New</span>{/if}
                                         {#if isRecentlyUpdated(manga)}<span class="updated-chip">Updated</span>{/if}
@@ -3838,7 +3838,7 @@
                                 {#if (!isSeedData(manga) && hasNewerChapters(manga)) || isRecentlyAdded(manga) || isRecentlyUpdated(manga)}
                                     <div class="list-badges">
                                         {#if !isSeedData(manga) && hasNewerChapters(manga)}
-                                            <span class="list-badge badge-unread">Unread</span>
+                                            <span class="list-badge badge-unread">New ch</span>
                                         {/if}
                                         {#if isRecentlyAdded(manga)}<span class="list-badge badge-added">New</span>{/if}
                                         {#if isRecentlyUpdated(manga)}<span class="list-badge badge-updated"
