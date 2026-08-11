@@ -138,14 +138,30 @@ export const readerHandlers: HandlerMap = {
         const manga = await db.manga.get(chRecord.mangaId)
         if (!manga) return { prevUrl: null, nextUrl: null, mangaTitle: null, chapterTitle: null }
         const all = await db.chapters.where("mangaId").equals(chRecord.mangaId).sortBy("sortKey")
-        // Step prev/next within the user's preferred language, so on a multi-language
-        // source (MangaDex serves the same chapter in several languages) "next" lands on
-        // the next chapter in that language instead of a different translation. If the
-        // chapter currently open isn't in that language (the user deliberately opened
-        // another one), navigate the full list so they're never stranded.
+        // Step prev/next within a single language so on a multi-language source (MangaDex
+        // serves the same chapter in several languages) "next" lands on the next chapter in
+        // that language, never a different translation. Prefer the user's language; if the
+        // open chapter isn't in it (they deliberately opened another), stay within THAT
+        // chapter's own language rather than the full cross-language list.
         const { language } = await getSettings()
-        const filtered = chaptersForLanguage(all, language)
-        const siblings = filtered.some(c => c.id === chRecord.id) ? filtered : all
+        const preferred = chaptersForLanguage(all, language)
+        const inPreferred = preferred.some(c => c.id === chRecord.id)
+        const sameLanguage = all.filter(c => (c.language ?? "") === (chRecord.language ?? ""))
+        const scoped = inPreferred ? preferred : sameLanguage.length > 0 ? sameLanguage : all
+        // Dedupe by chapter number so a leftover duplicate upload of the same number (legacy
+        // data from before the adapter deduped) is never a prev/next target; the currently
+        // open row always wins for its own number.
+        const byNumber = new Map<number, (typeof scoped)[number]>()
+        const unnumbered: typeof scoped = []
+        for (const chapter of scoped) {
+            if (!Number.isFinite(chapter.sortKey)) {
+                unnumbered.push(chapter)
+                continue
+            }
+            const current = byNumber.get(chapter.sortKey)
+            if (!current || chapter.id === chRecord.id) byNumber.set(chapter.sortKey, chapter)
+        }
+        const siblings = [...byNumber.values(), ...unnumbered].sort((a, b) => a.sortKey - b.sortKey)
         const idx = siblings.findIndex(c => c.id === chRecord.id)
         const prev = idx > 0 ? siblings[idx - 1] : null
         const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null
