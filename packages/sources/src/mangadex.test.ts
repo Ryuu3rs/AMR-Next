@@ -164,6 +164,83 @@ describe("mangadexAdapter", () => {
         expect(chapters.some(c => c.sortKey === 1)).toBe(false)
     })
 
+    it("collapses duplicate chapter numbers to one row, preferring language then newest", async () => {
+        const data = [
+            {
+                id: "c1-pt",
+                type: "chapter",
+                attributes: {
+                    chapter: "1",
+                    title: null,
+                    translatedLanguage: "pt-br",
+                    readableAt: "2024-02-01T00:00:00Z"
+                }
+            },
+            {
+                id: "c1-en",
+                type: "chapter",
+                attributes: { chapter: "1", title: null, translatedLanguage: "en", readableAt: "2024-01-01T00:00:00Z" }
+            },
+            {
+                id: "c2-en-old",
+                type: "chapter",
+                attributes: { chapter: "2", title: null, translatedLanguage: "en", readableAt: "2024-01-01T00:00:00Z" }
+            },
+            {
+                id: "c2-en-new",
+                type: "chapter",
+                attributes: { chapter: "2", title: null, translatedLanguage: "en", readableAt: "2024-03-01T00:00:00Z" }
+            }
+        ]
+        // The mock ignores the language filter and returns every upload, so the adapter's
+        // own dedup (not the feed query) is what must collapse them.
+        const fetch: FetchFunction = async url => {
+            const parsed = new URL(url)
+            const offset = Number(parsed.searchParams.get("offset") ?? "0")
+            const body = {
+                result: "ok",
+                data: offset === 0 ? data : [],
+                limit: 100,
+                offset,
+                total: data.length
+            }
+            return { ok: true, status: 200, text: async () => JSON.stringify(body) }
+        }
+        const context: SourceContext = {
+            request: createBoundedRequestClient({
+                fetch,
+                allowedOrigins: ["https://api.mangadex.org"],
+                maxRequests: 20,
+                maxResponseBytes: 1_000_000,
+                timeoutMs: 1000
+            }),
+            now: () => 1_700_000_000_000,
+            logger: { debug: () => undefined, warn: () => undefined }
+        }
+        const manga = {
+            manga: {
+                id: `mangadex:manga:${MANGA_ID}`,
+                title: "Dup Series",
+                normalizedTitle: "dup series",
+                authors: [],
+                status: "ongoing" as const,
+                addedAt: 0,
+                updatedAt: 0
+            },
+            sourceId: "mangadex",
+            sourceMangaId: MANGA_ID,
+            url: `https://mangadex.org/title/${MANGA_ID}`
+        }
+
+        const chapters = await mangadexAdapter.listChapters({ manga, languages: ["en"] }, context)
+
+        expect(chapters).toHaveLength(2)
+        // Preferred language (en) wins over a newer pt-br upload of the same number.
+        expect(chapters.find(c => c.sortKey === 1)?.id).toBe("mangadex:chapter:c1-en")
+        // Same language: the most recently readable upload wins.
+        expect(chapters.find(c => c.sortKey === 2)?.id).toBe("mangadex:chapter:c2-en-new")
+    })
+
     it("resolves chapter pages from the at-home manifest", async () => {
         const requests: string[] = []
         const context = createContext(

@@ -486,13 +486,14 @@ export async function listChaptersForSource(
     sourceId: string,
     sourceMangaId: string,
     mangaUrl: string,
-    overrides?: { timeoutMs?: number; maxRetries?: number }
+    overrides?: { timeoutMs?: number; maxRetries?: number },
+    languages?: string[]
 ) {
     const source = sourceRegistry.get(sourceId)
     if (!source) throw new Error("That source is not supported")
     const sourceManga: SourceManga = { manga, sourceId, sourceMangaId, url: mangaUrl }
     const chapters = await source.listChapters(
-        { manga: sourceManga, limit: 500 },
+        { manga: sourceManga, limit: 500, ...(languages && languages.length > 0 ? { languages } : {}) },
         createSourceContext(source.manifest.id, source.manifest.requestRateLimit, overrides)
     )
     diag.info("chapters", `listed ${chapters.length} chapters for ${sourceId}`, { sourceMangaId })
@@ -501,7 +502,12 @@ export async function listChaptersForSource(
 
 // List chapters for a source/manga that may not be in the library (used by the
 // reader for prev/next navigation).
-export async function listChaptersBySource(sourceId: string, sourceMangaId: string, mangaUrl: string) {
+export async function listChaptersBySource(
+    sourceId: string,
+    sourceMangaId: string,
+    mangaUrl: string,
+    languages?: string[]
+) {
     const source = sourceRegistry.get(sourceId)
     if (!source) throw new Error("That source is not supported")
     const stub: MangaRecord = {
@@ -515,7 +521,7 @@ export async function listChaptersBySource(sourceId: string, sourceMangaId: stri
     }
     const sourceManga: SourceManga = { manga: stub, sourceId, sourceMangaId, url: mangaUrl }
     const chapters = await source.listChapters(
-        { manga: sourceManga, limit: 500 },
+        { manga: sourceManga, limit: 500, ...(languages && languages.length > 0 ? { languages } : {}) },
         createSourceContext(source.manifest.id, source.manifest.requestRateLimit)
     )
     diag.info("chapters", `listed ${chapters.length} chapters for ${sourceId}`, { sourceMangaId })

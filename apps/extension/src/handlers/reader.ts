@@ -196,7 +196,12 @@ export const readerHandlers: HandlerMap = {
         }
 
         try {
-            const chapters = await listChaptersBySource(request.sourceId, request.sourceMangaId, request.mangaUrl)
+            const chapters = await listChaptersBySource(
+                request.sourceId,
+                request.sourceMangaId,
+                request.mangaUrl,
+                language ? [language] : undefined
+            )
             // A list that's just the 2-3 paginate prev/next links isn't useful - fall
             // back to whatever's cached rather than showing a broken nav with 1-2 items.
             if (chapters.length <= 2) return await fromCache()

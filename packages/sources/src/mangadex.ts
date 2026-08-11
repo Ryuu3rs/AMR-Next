@@ -179,6 +179,43 @@ function mapManga(data: z.infer<typeof mangaSchema>, now: number): SourceManga {
     }
 }
 
+// MangaDex serves one row per (chapter-number x language x scanlation group), so a
+// 41-chapter series can return 200+ feed rows. Collapse to ONE row per chapter number so
+// the library count, reader nav, and updates feed all see 41, not 227. Winner per number:
+// the preferred language first, then the most recently readable, then the lexicographically
+// smallest id as a DETERMINISTIC tiebreak - stable across refreshes so a title's
+// lastReadChapterId keeps pointing at the same row. Unnumbered/oneshot rows are never
+// collapsed (each is kept by its own id).
+function dedupeByChapterNumber(
+    raw: z.infer<typeof chapterSchema>[],
+    preferredLanguage: string | undefined
+): z.infer<typeof chapterSchema>[] {
+    const readableOf = (c: z.infer<typeof chapterSchema>) => c.attributes.readableAt ?? c.attributes.publishAt ?? ""
+    const isBetter = (candidate: z.infer<typeof chapterSchema>, current: z.infer<typeof chapterSchema>): boolean => {
+        if (preferredLanguage) {
+            const candPref = candidate.attributes.translatedLanguage === preferredLanguage
+            const curPref = current.attributes.translatedLanguage === preferredLanguage
+            if (candPref !== curPref) return candPref
+        }
+        const candReadable = readableOf(candidate)
+        const curReadable = readableOf(current)
+        if (candReadable !== curReadable) return candReadable > curReadable
+        return candidate.id < current.id
+    }
+    const byNumber = new Map<string, z.infer<typeof chapterSchema>>()
+    const unnumbered: z.infer<typeof chapterSchema>[] = []
+    for (const chapter of raw) {
+        const number = chapter.attributes.chapter?.trim()
+        if (!number) {
+            unnumbered.push(chapter)
+            continue
+        }
+        const current = byNumber.get(number)
+        if (!current || isBetter(chapter, current)) byNumber.set(number, chapter)
+    }
+    return [...byNumber.values(), ...unnumbered]
+}
+
 function mapChapter(data: z.infer<typeof chapterSchema>, mangaId: string): SourceChapter {
     const number = data.attributes.chapter?.trim()
     const subtitle = data.attributes.title?.trim()
@@ -319,46 +356,53 @@ export const mangadexAdapter: SourceAdapter = {
         }
 
         const requestedLimit = Math.min(Math.max(input.limit ?? MAX_CHAPTERS, 1), MAX_CHAPTERS)
-        const chapters: SourceChapter[] = []
-        // The feed is ordered oldest-first. For a series longer than the cap we must keep
-        // the NEWEST chapters, not the oldest - so once the first response reveals the
-        // total, jump the offset to the tail window (total - cap) and page forward from
-        // there. Paging by number order keeps dedup/language/rating handling unchanged.
-        let baseOffset = 0
-        let tailResolved = false
+        const languages = input.languages ?? []
 
-        while (chapters.length < requestedLimit) {
-            const pageLimit = Math.min(PAGE_SIZE, requestedLimit - chapters.length)
-            const url = new URL(`/manga/${input.manga.sourceMangaId}/feed`, API_ORIGIN)
-            url.searchParams.set("limit", String(pageLimit))
-            url.searchParams.set("offset", String(baseOffset + chapters.length))
-            url.searchParams.set("order[chapter]", "asc")
-            for (const language of input.languages ?? []) {
-                url.searchParams.append("translatedLanguage[]", language)
-            }
-            for (const rating of ["safe", "suggestive", "erotica", "pornographic"]) {
-                url.searchParams.append("contentRating[]", rating)
-            }
-
-            const response = await context.request.getJson(url, chapterFeedSchema)
-
-            if (!tailResolved) {
-                tailResolved = true
-                if (response.total > requestedLimit) {
-                    // Discard this probe page and re-page from the newest window.
-                    baseOffset = response.total - requestedLimit
-                    continue
+        // Fetch the raw feed for a given language set. The feed is ordered oldest-first; for
+        // a series longer than the cap we keep the NEWEST chapters, so once the first
+        // response reveals the total, jump the offset to the tail window (total - cap) and
+        // page forward from there.
+        const fetchRaw = async (langs: readonly string[]): Promise<z.infer<typeof chapterSchema>[]> => {
+            const raw: z.infer<typeof chapterSchema>[] = []
+            let baseOffset = 0
+            let tailResolved = false
+            while (raw.length < requestedLimit) {
+                const pageLimit = Math.min(PAGE_SIZE, requestedLimit - raw.length)
+                const url = new URL(`/manga/${input.manga.sourceMangaId}/feed`, API_ORIGIN)
+                url.searchParams.set("limit", String(pageLimit))
+                url.searchParams.set("offset", String(baseOffset + raw.length))
+                url.searchParams.set("order[chapter]", "asc")
+                for (const language of langs) {
+                    url.searchParams.append("translatedLanguage[]", language)
+                }
+                for (const rating of ["safe", "suggestive", "erotica", "pornographic"]) {
+                    url.searchParams.append("contentRating[]", rating)
+                }
+                const response = await context.request.getJson(url, chapterFeedSchema)
+                if (!tailResolved) {
+                    tailResolved = true
+                    if (response.total > requestedLimit) {
+                        baseOffset = response.total - requestedLimit
+                        continue
+                    }
+                }
+                raw.push(...response.data)
+                if (response.data.length === 0 || response.offset + response.data.length >= response.total) {
+                    break
                 }
             }
-
-            chapters.push(...response.data.map(chapter => mapChapter(chapter, input.manga.sourceMangaId)))
-
-            if (response.data.length === 0 || response.offset + response.data.length >= response.total) {
-                break
-            }
+            return raw.slice(0, requestedLimit)
         }
 
-        return chapters.slice(0, requestedLimit)
+        let raw = await fetchRaw(languages)
+        // Graceful language fallback: if the series has NO chapters in the preferred
+        // language, re-fetch across all languages so a fully-foreign-language title still
+        // shows chapters instead of an empty reader.
+        if (raw.length === 0 && languages.length > 0) {
+            raw = await fetchRaw([])
+        }
+
+        return dedupeByChapterNumber(raw, languages[0]).map(chapter => mapChapter(chapter, input.manga.sourceMangaId))
     },
 
     async resolveChapter(input: ResolveChapterInput, context: SourceContext): Promise<ResolvedChapter> {
