@@ -310,6 +310,28 @@ main.fit-actual .page.spread img {
     max-height: none;
 }
 
+/* Fill width: scale each page to the full viewport width (upscaling if needed) instead of
+   fitting to height, so a paged Single/Double page fills the screen at fullscreen instead of
+   leaving lateral borders. A page taller than the window then scrolls (start-aligned); wheel/
+   arrows flip at the edge. Double gives each half an equal share of the width. */
+main.single.fit-fill .page img {
+    width: 100%;
+    max-width: 100%;
+    max-height: none;
+    height: auto;
+    object-fit: contain;
+}
+main.single.fit-fill {
+    align-items: start;
+}
+main.fit-fill .page.spread img {
+    flex: 1 1 50%;
+    max-width: 50%;
+    max-height: none;
+    min-width: 0;
+    width: auto;
+}
+
 .page-num {
     position: absolute;
     right: 12px;

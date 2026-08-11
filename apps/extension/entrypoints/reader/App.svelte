@@ -8,7 +8,7 @@
     import { spreadView } from "../../src/reader-spread"
 
     type ReadingDirection = "ltr" | "rtl" | "vertical"
-    type PageFit = "width" | "height" | "contain" | "original" | "actual"
+    type PageFit = "width" | "height" | "contain" | "original" | "actual" | "fill"
 
     let chapter = $state<ResolvedChapter | undefined>()
     let error = $state("")
