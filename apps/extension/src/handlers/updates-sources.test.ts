@@ -813,6 +813,45 @@ describe("backfillMangaGenres live-bus publishing", () => {
         expect(stored?.metadataUpdatedAt).toBeGreaterThan(0)
     })
 
+    it("upgrades an ongoing title to the catalog's finished status so it can reach Completed (S1)", async () => {
+        const { backfillMangaGenres } = await import("./updates-sources")
+
+        // Genres + cover already present, status still "ongoing" from add-time; the series
+        // has since finished upstream.
+        const m = makeManga({
+            id: "m-finished",
+            title: "Finished Upstream",
+            sourceId: "mangakatana",
+            status: "ongoing",
+            genres: ["Action"],
+            coverUrl: "https://cdn/cover.jpg"
+        })
+        await db.manga.put(m)
+        resolveMetadataMock.mockResolvedValue({ status: "completed" })
+
+        await backfillMangaGenres()
+
+        expect((await db.manga.get("m-finished"))?.status).toBe("completed")
+    })
+
+    it("does not downgrade an ongoing title when the catalog still reports ongoing (S1)", async () => {
+        const { backfillMangaGenres } = await import("./updates-sources")
+
+        const m = makeManga({
+            id: "m-still-ongoing",
+            sourceId: "mangakatana",
+            status: "ongoing",
+            genres: ["Action"],
+            coverUrl: "https://cdn/cover.jpg"
+        })
+        await db.manga.put(m)
+        resolveMetadataMock.mockResolvedValue({ status: "ongoing" })
+
+        await backfillMangaGenres()
+
+        expect((await db.manga.get("m-still-ongoing"))?.status).toBe("ongoing")
+    })
+
     it("stamps metadataUpdatedAt on a no-match so it is not re-queried next run", async () => {
         const { backfillMangaGenres } = await import("./updates-sources")
 

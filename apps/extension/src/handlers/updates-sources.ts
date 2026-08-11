@@ -494,7 +494,16 @@ export async function backfillMangaGenres(): Promise<void> {
         const now = Date.now()
         const toFetch = await db.manga
             .filter(m => {
-                const missing = !m.genres || m.genres.length === 0 || !m.coverUrl || m.status === "unknown"
+                // Also re-check "ongoing" titles: a series that finished upstream after being
+                // added keeps its stale "ongoing" status forever otherwise, so it can never
+                // reach Completed even when caught up (the 0.19 "everything went unread"
+                // regression). The 7-day window keeps this from hammering the catalog.
+                const missing =
+                    !m.genres ||
+                    m.genres.length === 0 ||
+                    !m.coverUrl ||
+                    m.status === "unknown" ||
+                    m.status === "ongoing"
                 if (!missing) return false
                 return m.metadataUpdatedAt === undefined || now - m.metadataUpdatedAt >= META_RETRY_MS
             })
@@ -546,7 +555,10 @@ export async function backfillMangaGenres(): Promise<void> {
             // way so a no-match falls into the retry window rather than re-querying.
             if (genreBackfillAborted) break
             const fresh = await db.manga.get(manga.id)
-            if (fresh && (fresh.status === "unknown" || !fresh.genres?.length || !fresh.coverUrl)) {
+            if (
+                fresh &&
+                (fresh.status === "unknown" || fresh.status === "ongoing" || !fresh.genres?.length || !fresh.coverUrl)
+            ) {
                 const patch: Partial<LibraryManga> = { metadataUpdatedAt: Date.now() }
                 try {
                     const meta = await resolveMetadata({
@@ -555,8 +567,17 @@ export async function backfillMangaGenres(): Promise<void> {
                         ...(fresh.sourceMangaId ? { sourceMangaId: fresh.sourceMangaId } : {})
                     })
                     if (meta) {
-                        if (fresh.status === "unknown" && meta.status && meta.status !== "unknown") {
-                            patch.status = meta.status
+                        // Fill an unknown status, OR upgrade an "ongoing" title to the catalog's
+                        // finished/cancelled/hiatus status so a series that ended upstream can
+                        // reach Completed. Never downgrade a known status back to ongoing (a
+                        // fuzzy title match must not un-finish a title), and never write unknown.
+                        if (meta.status && meta.status !== "unknown") {
+                            if (
+                                fresh.status === "unknown" ||
+                                (fresh.status === "ongoing" && meta.status !== "ongoing")
+                            ) {
+                                patch.status = meta.status
+                            }
                         }
                         if ((!fresh.genres || fresh.genres.length === 0) && meta.genres?.length) {
                             patch.genres = meta.genres
