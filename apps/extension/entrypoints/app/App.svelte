@@ -1773,7 +1773,7 @@
     }
 
     async function setReadingPageFit(manga: LibraryManga, raw: string) {
-        const value = raw === "" ? null : (raw as "width" | "height" | "contain" | "original" | "actual")
+        const value = raw === "" ? null : (raw as "width" | "height" | "contain" | "original" | "actual" | "fill")
         try {
             await sendRuntimeMessage({ type: "library:reading-prefs", mangaId: manga.id, pageFit: value })
             const apply = (m: LibraryManga): LibraryManga => {
@@ -5216,13 +5216,20 @@
                         value={settings?.pageFit ?? "width"}
                         onchange={e =>
                             void updateSetting({
-                                pageFit: e.currentTarget.value as "width" | "height" | "contain" | "original" | "actual"
+                                pageFit: e.currentTarget.value as
+                                    | "width"
+                                    | "height"
+                                    | "contain"
+                                    | "original"
+                                    | "actual"
+                                    | "fill"
                             })}>
                         <option value="width">Fit width</option>
                         <option value="height">Fit height</option>
                         <option value="contain">Fit screen</option>
                         <option value="original">Original size</option>
                         <option value="actual">Actual size (native resolution)</option>
+                        <option value="fill">Fill width (fill the screen)</option>
                     </select>
                 </div>
                 <div class="settings-row">
@@ -5771,6 +5778,7 @@
                                 <option value="contain">Contain</option>
                                 <option value="original">Original size</option>
                                 <option value="actual">Actual size</option>
+                                <option value="fill">Fill width</option>
                             </select>
                         </label>
                     </div>

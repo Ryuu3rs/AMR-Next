@@ -1,5 +1,5 @@
 export type ReadingDirection = "ltr" | "rtl" | "vertical"
-export type PageFit = "width" | "height" | "contain" | "original" | "actual"
+export type PageFit = "width" | "height" | "contain" | "original" | "actual" | "fill"
 
 export type OpenChapterIn = "reader" | "browser"
 

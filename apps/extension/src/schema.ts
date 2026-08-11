@@ -30,7 +30,7 @@ export const libraryMangaSchema = mangaRecordSchema.extend({
     readingStatus: z.enum(["paused", "dropped", "planning"]).optional(),
     readingStatusUpdatedAt: z.number().int().nonnegative().optional(),
     readingDirection: z.enum(["ltr", "rtl", "vertical"]).optional(),
-    pageFit: z.enum(["width", "height", "contain", "original", "actual"]).optional(),
+    pageFit: z.enum(["width", "height", "contain", "original", "actual", "fill"]).optional(),
     // Set by library:switch when moving to a source whose chapter numbering can't be
     // assumed comparable to the previous source's (e.g. MangaHub's internal sequential
     // slug numbering vs. another site's true chapter numbers). See LibraryManga in
