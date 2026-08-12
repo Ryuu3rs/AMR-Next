@@ -104,6 +104,22 @@ describe("saveResolvedChapter", () => {
         expect(stored?.latestChapterAt).toBe(1_700_000_500_000)
         expect(stored?.chapterNumberingUnreliable).toBe(true)
     })
+
+    it("keeps a clean stored series title when a capture carries a chapter-suffixed one (S4)", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await saveResolvedChapter({
+            manga: { ...manga, title: "Test Manga Chapter 6" },
+            chapter: { ...chapter, id: "mangadex:chapter:2", sortKey: 6 },
+            sourceLink
+        })
+        expect((await db.manga.get(manga.id))?.title).toBe("Test Manga")
+    })
+
+    it("self-heals an already chapter-suffixed stored title when a clean capture arrives (S4)", async () => {
+        await saveResolvedChapter({ manga: { ...manga, title: "Test Manga Chapter 5" }, chapter, sourceLink })
+        await saveResolvedChapter({ manga: { ...manga, title: "Test Manga" }, chapter, sourceLink })
+        expect((await db.manga.get(manga.id))?.title).toBe("Test Manga")
+    })
 })
 
 describe("saveProgress", () => {
@@ -320,6 +336,19 @@ describe("getLocalStats", () => {
         const stats = await getLocalStats()
         expect(stats.readingDays).toBe(3)
         expect(stats.longestStreak).toBe(3)
+    })
+
+    it("counts only completed events toward reading days and streaks, not bare 'started' (S5)", async () => {
+        const day = 86_400_000
+        const base = Date.parse("2026-06-10T12:00:00Z")
+        await db.historyEvents.bulkAdd([
+            { mangaId: manga.id, chapterId: "c1", type: "completed", occurredAt: base },
+            // A merely-opened chapter on a different day must NOT manufacture a reading day.
+            { mangaId: manga.id, chapterId: "c2", type: "started", occurredAt: base + day }
+        ])
+        const stats = await getLocalStats()
+        expect(stats.readingDays).toBe(1)
+        expect(stats.longestStreak).toBe(1)
     })
 
     it("buckets reading days on the same local-day boundary as the activity calendar", async () => {

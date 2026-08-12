@@ -935,6 +935,12 @@ export async function applyCleanupGroup(
     )
 }
 
+// A title that is really just a chapter label ("<Series> Chapter 129", "Ch. 5", "Episode 12")
+// leaked from a chapter page - used to stop such a string overwriting a real series name.
+export function looksLikeChapterTitle(title: string | undefined): boolean {
+    return typeof title === "string" && /\b(?:chapter|chap|ch|episode|ep)\.?\s*\d+(?:[.-]\d+)?\s*$/i.test(title)
+}
+
 export async function saveResolvedChapter(input: {
     manga: MangaRecord
     chapter: ChapterRecord
@@ -951,6 +957,15 @@ export async function saveResolvedChapter(input: {
             mangaUrl: input.sourceLink.url,
             latestChapterId: input.chapter.id,
             ...(Number.isFinite(input.chapter.sortKey) ? { latestChapterNumber: input.chapter.sortKey } : {}),
+            // Never let a chapter-page-derived "<Series> Chapter N" title overwrite a good
+            // stored series name (Asura's chapter pages leak a chapter-suffixed title past the
+            // adapter strip). Asymmetric: when the STORED title is clean and the incoming one is
+            // chapter-shaped, keep the stored name; when the stored one is itself chapter-shaped
+            // and the incoming is clean, the incoming wins (default), self-healing an already-
+            // renamed entry on its next capture.
+            ...(existing?.title && looksLikeChapterTitle(input.manga.title) && !looksLikeChapterTitle(existing.title)
+                ? { title: existing.title }
+                : {}),
             // Preserve user-controlled and read-progress fields from the existing record
             // so a re-capture never silently clears ratings, categories, notes, or history.
             ...(existing?.lastReadChapterId ? { lastReadChapterId: existing.lastReadChapterId } : {}),
@@ -1372,7 +1387,11 @@ export async function trackExternalChapter(input: {
         // ?ch=7), routing that case into the well-supported ch-N key shape below instead
         // of the fallback path.
         const numberMatch =
-            input.url.match(/chapter[-_ ]?(\d+(?:\.\d+)?)/i) ??
+            // Accept "/" between the word and the number too (Asura's /comics/<slug>/chapter/129
+            // shape), matching CHAPTER_NUM_IN_PATH in handlers/reader.ts - without it every Asura
+            // external track parsed no number, minting an "External chapter" row with an Infinity
+            // sortKey that froze lastReadChapterNumber and flooded History.
+            input.url.match(/chapter[-_/ ]?(\d+(?:\.\d+)?)/i) ??
             input.url.match(/[?&](?:episode|chapter|ep|ch)(?:[-_]?no)?=(\d+(?:\.\d+)?)/i)
         const parsedNumber = numberMatch?.[1] !== undefined ? Number(numberMatch[1]) : undefined
         // MangaHub chapter URLs are /chapter/{slug}/chapter-{N} where N is frequently an
@@ -2581,7 +2600,15 @@ export async function getLocalStats() {
             m.lastReadChapterNumber !== undefined &&
             m.lastReadChapterNumber >= m.latestChapterNumber
     ).length
-    const dayKeys = [...new Set(history.map(event => localDayKey(new Date(event.occurredAt))))].sort()
+    // Count only COMPLETED reads toward reading-days and streaks, matching the activity
+    // calendar and pace metrics (which already filter to "completed"). A bare "started"
+    // event from merely opening a chapter must not manufacture a streak day the heatmap
+    // shows as empty.
+    const dayKeys = [
+        ...new Set(
+            history.filter(event => event.type === "completed").map(event => localDayKey(new Date(event.occurredAt)))
+        )
+    ].sort()
     const readingDays = dayKeys.length
 
     const dayMs = 86_400_000

@@ -117,6 +117,20 @@ export const readerHandlers: HandlerMap = {
                 throw fetchError
             }
         }
+        // Slug-rotation self-heal (Asura and friends rotate the per-series slug hash): the
+        // URL the reader opened resolves to a FRESH source/manga/chapter id, but the library
+        // entry lives under the slug it was added with. If the resolved manga id isn't in the
+        // library yet a cached chapter row already maps this exact URL to an existing entry,
+        // rebind the resolved identity onto that entry - otherwise saveProgress silently drops
+        // every write (its manga-exists guard) and nothing is ever tracked.
+        if ((await db.manga.get(resolved.manga.manga.id)) === undefined) {
+            const owned = await db.chapters.where("url").equals(request.url).first()
+            if (owned && (await db.manga.get(owned.mangaId))) {
+                resolved.manga.manga.id = owned.mangaId
+                resolved.chapter.id = owned.id
+                resolved.chapter.mangaId = owned.mangaId
+            }
+        }
         // Persist chapter so saveProgress can look up its sortKey for
         // lastReadChapterNumber, plus backfill coverUrl into the library entry if
         // missing - one transaction. The live publish is driven by MUTATION_SCOPES
