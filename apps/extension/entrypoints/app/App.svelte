@@ -2277,6 +2277,10 @@
             case "on-hold":
                 return Boolean(m.onHold)
         }
+        if (libraryFilter === "updates") {
+            const eff = effectiveReadingStatus(m, { autoPauseDays, now: Date.now() })
+            return hasUpdates(m) && eff !== "paused" && eff !== "dropped" && eff !== "completed" && !m.onHold
+        }
         const effective = effectiveReadingStatus(m, { autoPauseDays, now: Date.now() })
         switch (libraryFilter) {
             case "ongoing":
@@ -2336,6 +2340,12 @@
         return sorted
     })
 
+    // "Find better sources" scope: an explicit Select-mode selection when there is one,
+    // otherwise the currently visible (filtered) library minus manually-tracked titles.
+    const relinkScopeIds = $derived(
+        selectedIds.size > 0 ? [...selectedIds] : visibleLibrary.filter(m => !m.manualTracking).map(m => m.id)
+    )
+
     // Home: continue-reading = most recently read; recently-added by addedAt.
     const continueReading = $derived.by(() => {
         const read = library.filter(m => m.lastReadAt).sort((a, b) => (b.lastReadAt ?? 0) - (a.lastReadAt ?? 0))
@@ -2350,11 +2360,12 @@
     // large libraries don't render everything at once.
     let libraryView = $state<"grid" | "list">("grid")
     let libraryFilter = $state<
-        "all" | "ongoing" | "unread" | "reading" | "completed" | "paused" | "dropped" | "manual" | "on-hold"
+        "all" | "ongoing" | "updates" | "unread" | "reading" | "completed" | "paused" | "dropped" | "manual" | "on-hold"
     >("ongoing")
     const LIBRARY_FILTERS = [
         "all",
         "ongoing",
+        "updates",
         "unread",
         "reading",
         "completed",
@@ -3478,7 +3489,13 @@
                                 class="chip"
                                 class:active={libraryFilter === f}
                                 onclick={() => (libraryFilter = f)}>
-                                {f === "all" ? "All" : f === "on-hold" ? "On Hold" : f[0]?.toUpperCase() + f.slice(1)}
+                                {f === "all"
+                                    ? "All"
+                                    : f === "on-hold"
+                                      ? "On Hold"
+                                      : f === "unread"
+                                        ? "Never opened"
+                                        : f[0]?.toUpperCase() + f.slice(1)}
                             </button>
                         {/each}
                     </div>
@@ -3534,12 +3551,13 @@
                         <button
                             type="button"
                             class="btn-sm btn-outline"
-                            title="Search all sources for better matches for every manga in your library"
+                            title="Search all sources for better matches, scoped to your current selection or filter"
+                            disabled={relinkScopeIds.length === 0}
                             onclick={() => {
-                                libScanIds = library.filter(m => !m.manualTracking).map(m => m.id)
+                                libScanIds = relinkScopeIds
                                 activeSection = "Data"
                             }}>
-                            Find better sources
+                            Find better sources ({relinkScopeIds.length})
                         </button>
                         <button
                             type="button"
