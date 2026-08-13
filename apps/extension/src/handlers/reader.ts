@@ -299,7 +299,10 @@ export const readerHandlers: HandlerMap = {
         const tracked = await trackExternalChapter({
             url: request.url,
             sourceId: source.manifest.id,
-            ...(mangaInfo ? { mangaInfo } : {})
+            ...(mangaInfo ? { mangaInfo } : {}),
+            // Lets the matcher recognise the same series across a rotated slug hash (Asura),
+            // so an external mark-read attaches to the existing entry instead of duplicating it.
+            ...(source.normalizeSourceMangaId ? { normalizeSlug: source.normalizeSourceMangaId } : {})
         })
         // No chapter-list refresh on a title that already has one. Marking a chapter read
         // must never re-open a tab crawl: on a getChapterListUrl source (Webtoons) that

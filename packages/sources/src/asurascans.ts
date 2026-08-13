@@ -198,6 +198,12 @@ export const asuraScansAdapter: SourceAdapter = {
         return { sourceMangaId: slug, mangaUrl: `${ORIGIN}/comics/${slug}/` }
     },
 
+    // Collapse a rotated slug to its stable base so external-chapter tracking matches the
+    // existing library entry after Asura rotates the per-series hash (see baseSlug).
+    normalizeSourceMangaId(sourceMangaId: string): string {
+        return baseSlug(sourceMangaId)
+    },
+
     match(url: URL): SourcePageMatch {
         if (parseChapterUrl(url)) return "chapter"
         if (parseSeriesUrl(url)) return "manga"
