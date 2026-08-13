@@ -338,6 +338,40 @@ describe("getLocalStats", () => {
         expect(stats.longestStreak).toBe(3)
     })
 
+    it("counts a logical chapter once even across duplicate/placeholder completed rows (S6)", async () => {
+        await db.chapters.bulkPut([
+            {
+                id: "asurascans:chapter:foo-chapter-12",
+                mangaId: "m1",
+                sourceId: "asurascans",
+                title: "Chapter 12",
+                url: "https://a/comics/foo/chapter/12",
+                sortKey: 12
+            },
+            {
+                id: "m1:ext:ch-12",
+                mangaId: "m1",
+                sourceId: "asurascans",
+                title: "External chapter",
+                url: "https://a/comics/foo/chapter/12",
+                sortKey: 12
+            }
+        ])
+        await db.progress.bulkAdd([
+            {
+                mangaId: "m1",
+                chapterId: "asurascans:chapter:foo-chapter-12",
+                pageIndex: 0,
+                pageCount: 1,
+                completed: true,
+                updatedAt: 1
+            },
+            { mangaId: "m1", chapterId: "m1:ext:ch-12", pageIndex: 0, pageCount: 1, completed: true, updatedAt: 2 }
+        ])
+        const stats = await getLocalStats()
+        expect(stats.completedChapters).toBe(1)
+    })
+
     it("counts only completed events toward reading days and streaks, not bare 'started' (S5)", async () => {
         const day = 86_400_000
         const base = Date.parse("2026-06-10T12:00:00Z")
@@ -2009,6 +2043,44 @@ describe("trackExternalChapter", () => {
         const chapters = await db.chapters.where("mangaId").equals(first.mangaId).toArray()
         expect(chapters).toHaveLength(2)
         expect(new Set(chapters.map(c => c.id)).size).toBe(2)
+    })
+
+    it("matches a rotated Asura slug to the existing entry + parses /chapter/N, no duplicate (S2/S3)", async () => {
+        const base = (s: string) => s.replace(/^\d{4,}-/, "").replace(/-[a-f0-9]{8}$/i, "")
+        await db.manga.put({
+            id: "asurascans:manga:dungeon-odyssey-aaaa1111",
+            title: "Dungeon Odyssey",
+            normalizedTitle: "dungeon odyssey",
+            sourceId: "asurascans",
+            authors: [],
+            status: "unknown",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceMangaId: "dungeon-odyssey-aaaa1111",
+            mangaUrl: "https://asuracomic.net/series/dungeon-odyssey-aaaa1111/",
+            sourceUrl: "https://asuracomic.net/series/dungeon-odyssey-aaaa1111/"
+        })
+
+        const res = await trackExternalChapter({
+            url: "https://asuracomic.net/series/dungeon-odyssey-bbbb2222/chapter/100",
+            sourceId: "asurascans",
+            mangaInfo: {
+                sourceMangaId: "dungeon-odyssey-bbbb2222",
+                mangaUrl: "https://asuracomic.net/series/dungeon-odyssey-bbbb2222/"
+            },
+            normalizeSlug: base
+        })
+
+        expect(res.created).toBe(false)
+        expect(res.mangaId).toBe("asurascans:manga:dungeon-odyssey-aaaa1111")
+        expect(res.chapterNumber).toBe(100)
+        expect(await db.manga.count()).toBe(1)
+        const stored = await db.manga.get("asurascans:manga:dungeon-odyssey-aaaa1111")
+        expect(stored?.sourceMangaId).toBe("dungeon-odyssey-bbbb2222")
+        expect(stored?.mangaUrl).toContain("bbbb2222")
+        // The tracked chapter parsed a real number, not an "External chapter" placeholder.
+        const chapters = await db.chapters.where("mangaId").equals(res.mangaId).toArray()
+        expect(chapters.some(c => c.sortKey === 100 && /100/.test(c.title))).toBe(true)
     })
 
     it("persists sourceMangaId on the created manga AND source link so future refreshes can run", async () => {

@@ -126,6 +126,12 @@ export interface SourceAdapter {
     // Optional: derive manga ID and list URL from a chapter URL without network.
     // Used to prime the chapter list for panel prev/next when chapter resolve fails (bot-block).
     parseMangaUrl?(url: URL): { sourceMangaId: string; mangaUrl: string } | null
+    // Optional: collapse a source manga id / slug to a rotation-stable canonical form. Sites
+    // like Asura rotate a per-series slug hash, so the raw id changes over time even though it
+    // is the same series. External-chapter tracking uses this to match a rotated chapter URL
+    // back to the existing library entry instead of forking a duplicate. Return the input
+    // unchanged when there is nothing to normalize.
+    normalizeSourceMangaId?(sourceMangaId: string): string
     // Optional: return the URL of the chapter-list page for this series.
     // When listChapters returns 0 results (list page is JS-rendered and the service
     // worker fetch returns empty HTML), background.ts falls back to tab-injecting

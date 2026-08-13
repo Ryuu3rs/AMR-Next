@@ -53,7 +53,8 @@ async function doCaptureChapter(url: string) {
                 url,
                 sourceId: source.manifest.id,
                 completed: false,
-                ...(mangaInfo ? { mangaInfo } : {})
+                ...(mangaInfo ? { mangaInfo } : {}),
+                ...(source.normalizeSourceMangaId ? { normalizeSlug: source.normalizeSourceMangaId } : {})
             })
         } catch (trackError) {
             console.warn("[AMR] Failed to track external chapter", { url, trackError })

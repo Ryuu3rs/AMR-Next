@@ -1306,6 +1306,17 @@ function deriveSlug(u: URL): string | null {
     return first && !NON_TITLE_SEGMENTS.has(first.toLowerCase()) ? first : null
 }
 
+// The adapter-normalized (rotation-stable) slug of a URL, or null when no slug can be
+// derived or parsing fails. Used only for the rotation-tolerant external-track match.
+function normalizedSlugOf(url: string, normalize: (slug: string) => string): string | null {
+    try {
+        const slug = deriveSlug(new URL(url))
+        return slug ? normalize(slug) : null
+    } catch {
+        return null
+    }
+}
+
 function deriveMangaUrl(u: URL, slug: string | null): string {
     const segments = u.pathname.split("/").filter(Boolean)
     const markerIndex = segments.findIndex(s => MANGA_PATH_MARKERS.includes(s.toLowerCase()))
@@ -1377,6 +1388,10 @@ export async function trackExternalChapter(input: {
     // here so we use a stable, correct ID and series prefix URL instead of deriveSlug/deriveMangaUrl.
     // Important for sites like Webtoons where the path alone carries no per-title slug.
     mangaInfo?: { sourceMangaId: string; mangaUrl: string }
+    // Optional per-adapter slug normalizer (SourceAdapter.normalizeSourceMangaId). Lets the
+    // matcher recognise the same series across a rotated slug hash (Asura) so a rotated
+    // chapter URL attaches to the existing entry instead of forking a duplicate.
+    normalizeSlug?: (slug: string) => string
 }): Promise<{ tracked: boolean; title: string; chapterNumber: number | null; mangaId: string; created: boolean }> {
     return db.transaction("rw", [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents], async () => {
         const now = Date.now()
@@ -1427,6 +1442,20 @@ export async function trackExternalChapter(input: {
                 sameSource.find(m => m.mangaUrl && sameHostSlug(m.mangaUrl, input.url)) ??
                 sameSource.find(m => m.sourceUrl && sameHostSlug(m.sourceUrl, input.url))
 
+            // Rotation-tolerant rung: when the raw slug matchers miss and the adapter can
+            // normalize its slug (Asura rotates a per-series hash), compare the hash-stripped
+            // base slug so a rotated chapter URL matches the existing entry instead of forking
+            // a duplicate. Host knowledge stays in the adapter (input.normalizeSlug).
+            if (!manga && input.normalizeSlug) {
+                const inputBase = normalizedSlugOf(input.url, input.normalizeSlug)
+                if (inputBase) {
+                    manga = sameSource.find(m => {
+                        const candidateUrl = m.mangaUrl ?? m.sourceUrl
+                        return candidateUrl ? normalizedSlugOf(candidateUrl, input.normalizeSlug!) === inputBase : false
+                    })
+                }
+            }
+
             if (!manga) {
                 const all = await db.manga.toArray()
                 manga = all.find(m => m.mangaUrl && startsWithUrlPrefix(input.url, m.mangaUrl))
@@ -1468,20 +1497,32 @@ export async function trackExternalChapter(input: {
                 addedAt: now,
                 updatedAt: now
             })
-        } else if (input.mangaInfo && !manga.sourceMangaId) {
-            // Manga located via the slug-matching fallback (not the direct id lookup) and
-            // it predates sourceMangaId being stored - a legacy/fallback-created record.
-            // Now that a correct, verified sourceMangaId is in hand, backfill it onto both
-            // the manga and its link so the record stops reading as fallback-created and
-            // the genre/cover resolvers' sourceMangaId fast-path starts working. Only the
-            // created branch used to do this, so such a record never self-healed even when
-            // the right id passed through on a later capture.
+        } else if (input.mangaInfo && manga.sourceMangaId !== input.mangaInfo.sourceMangaId) {
+            // Backfill a corrected/rotated source id (and series URL) onto a matched record.
+            // Two cases: (1) a legacy/fallback record that never stored a sourceMangaId, so the
+            // genre/cover resolvers' fast-path can start working; (2) a slug ROTATION (Asura) -
+            // the entry was matched by its stable base slug but the live slug moved, so update it
+            // to the live slug/URL and the background update-check keeps fetching the right page.
+            // The manga id is left unchanged so progress/history/bookmarks keyed to it survive.
             const sourceMangaId = input.mangaInfo.sourceMangaId
-            await db.manga.update(manga.id, { sourceMangaId, updatedAt: now })
+            const nextMangaUrl =
+                input.mangaInfo.mangaUrl && input.mangaInfo.mangaUrl !== manga.mangaUrl
+                    ? input.mangaInfo.mangaUrl
+                    : undefined
+            await db.manga.update(manga.id, {
+                sourceMangaId,
+                ...(nextMangaUrl ? { mangaUrl: nextMangaUrl } : {}),
+                updatedAt: now
+            } as Partial<LibraryManga>)
             manga.sourceMangaId = sourceMangaId
             const link = await db.sourceLinks.get(manga.id)
-            if (link && !link.sourceMangaId) {
-                await db.sourceLinks.put({ ...link, sourceMangaId, updatedAt: now })
+            if (link) {
+                await db.sourceLinks.put({
+                    ...link,
+                    sourceMangaId,
+                    ...(nextMangaUrl ? { url: nextMangaUrl } : {}),
+                    updatedAt: now
+                })
             }
         }
 
@@ -2581,14 +2622,28 @@ export async function seedDatabase(): Promise<void> {
 }
 
 export async function getLocalStats() {
-    const [manga, progress, history, downloadedChapters] = await Promise.all([
+    const [manga, progress, history, downloadedChapters, chapters] = await Promise.all([
         db.manga.toArray(),
         db.progress.toArray(),
         db.historyEvents.orderBy("occurredAt").toArray(),
-        db.downloads.count()
+        db.downloads.count(),
+        db.chapters.toArray()
     ])
     const mangaCount = manga.length
-    const completedChapters = progress.filter(item => item.completed).length
+    // Count DISTINCT completed chapters, not raw progress rows: a leftover placeholder row
+    // or a duplicate library entry (both from the Asura slug-rotation class) otherwise
+    // inflates the total. Key by (mangaId, chapter number) when the number is known, else the
+    // chapter URL, so the same logical chapter counts once across ext-rows and re-slugs.
+    const chapterById = new Map(chapters.map(c => [c.id, c]))
+    const completedKeys = new Set<string>()
+    for (const item of progress) {
+        if (!item.completed) continue
+        const ch = chapterById.get(item.chapterId)
+        const key =
+            ch && Number.isFinite(ch.sortKey) ? `${item.mangaId}:${ch.sortKey}` : `url:${ch?.url ?? item.chapterId}`
+        completedKeys.add(key)
+    }
+    const completedChapters = completedKeys.size
 
     const ratedCount = manga.filter(m => m.rating !== undefined).length
     const categoriesCount = new Set(manga.flatMap(m => m.categories ?? [])).size
