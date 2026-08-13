@@ -280,16 +280,44 @@
 
     let showDuplicates = $state(false)
 
+    // Group duplicates by title AND by source + rotation-stable slug, unioned. The slug key
+    // catches the Asura class where a rotated per-series hash forks a second entry whose title
+    // may also have drifted (a stale "... Chapter N" or a hash-in-slug) - the title key alone
+    // misses those. Cross-source same-title entries still group as before.
     const duplicateGroups = $derived.by(() => {
-        const byKey = new Map<string, LibraryManga[]>()
-        for (const m of library) {
-            if (isSeedData(m)) continue
-            const key = (m.normalizedTitle || m.title).trim().toLowerCase()
-            const arr = byKey.get(key) ?? []
-            arr.push(m)
-            byKey.set(key, arr)
+        const items = library.filter(m => !isSeedData(m))
+        const parent = new Map<string, string>()
+        const find = (x: string): string => {
+            const p = parent.get(x)
+            if (p === undefined || p === x) return x
+            const root = find(p)
+            parent.set(x, root)
+            return root
         }
-        return [...byKey.values()].filter(group => group.length > 1)
+        const union = (a: string, b: string) => parent.set(find(a), find(b))
+        for (const m of items) parent.set(m.id, m.id)
+        // Strip a legacy numeric prefix and a trailing hex hash so a rotated slug collapses to
+        // its stable base (mirrors asurascans baseSlug; safe because it only affects grouping,
+        // which the user still confirms before any merge).
+        const baseSlug = (s: string) => s.replace(/^\d{4,}-/, "").replace(/-[a-f0-9]{8,}$/i, "")
+        const repByKey = new Map<string, string>()
+        for (const m of items) {
+            const keys = [`t:${(m.normalizedTitle || m.title).trim().toLowerCase()}`]
+            if (m.sourceMangaId) keys.push(`s:${m.sourceId}:${baseSlug(m.sourceMangaId)}`)
+            for (const key of keys) {
+                const rep = repByKey.get(key)
+                if (rep) union(m.id, rep)
+                else repByKey.set(key, m.id)
+            }
+        }
+        const groups = new Map<string, LibraryManga[]>()
+        for (const m of items) {
+            const root = find(m.id)
+            const arr = groups.get(root) ?? []
+            arr.push(m)
+            groups.set(root, arr)
+        }
+        return [...groups.values()].filter(group => group.length > 1)
     })
 
     // Deterministic primary pick, shared by mergeDuplicates and the merge-suggestion UI
