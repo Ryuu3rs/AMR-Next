@@ -604,7 +604,7 @@ describe("repairMangahubChapterNumbers one-shot poisoned-library sweep", () => {
 
         await repairMangahubChapterNumbers()
         expect(listChaptersForSourceMock).toHaveBeenCalledTimes(1)
-        expect(storageLocal.store.get("mangahubChapterRepairDone2")).toBe(true)
+        expect(storageLocal.store.get("mangahubChapterRepairDone3")).toBe(true)
 
         listChaptersForSourceMock.mockClear()
         await repairMangahubChapterNumbers()
@@ -612,7 +612,7 @@ describe("repairMangahubChapterNumbers one-shot poisoned-library sweep", () => {
         expect(listChaptersForSourceMock).not.toHaveBeenCalled()
     })
 
-    it("still sets the completion flag even when an individual title fails", async () => {
+    it("locally heals the poisoned number even when the fetch fails (Cloudflare block)", async () => {
         const { repairMangahubChapterNumbers } = await import("./updates-sources")
 
         const poisoned = makeManga({
@@ -623,19 +623,41 @@ describe("repairMangahubChapterNumbers one-shot poisoned-library sweep", () => {
             latestChapterNumber: 2650711
         })
         await db.manga.put(poisoned)
-        listChaptersForSourceMock.mockRejectedValue(new Error("network exploded"))
+        // A real chapter row plus a poisoned internal-id row cached locally.
+        await db.chapters.bulkPut([
+            {
+                id: "mangahub:chapter:some-series:105",
+                mangaId: poisoned.id,
+                sourceId: "mangahub",
+                title: "Chapter 105",
+                url: "https://mangahub.io/chapter/some-series/chapter-105",
+                sortKey: 105
+            },
+            {
+                id: "mangahub:chapter:some-series:2650711",
+                mangaId: poisoned.id,
+                sourceId: "mangahub",
+                title: "External chapter",
+                url: "https://mangahub.io/chapter/some-series/chapter-2650711",
+                sortKey: 2650711
+            }
+        ])
+        listChaptersForSourceMock.mockRejectedValue(new Error("cloudflare 403"))
 
         await expect(repairMangahubChapterNumbers()).resolves.toBeUndefined()
 
-        expect(storageLocal.store.get("mangahubChapterRepairDone2")).toBe(true)
-        // The failed title's poisoned number is left as-is - best-effort, not a retry loop.
-        const stillPoisoned = await db.manga.get(poisoned.id)
-        expect(stillPoisoned?.latestChapterNumber).toBe(2650711)
+        expect(storageLocal.store.get("mangahubChapterRepairDone3")).toBe(true)
+        // The local clamp heals the badge from the highest real row and deletes the poison,
+        // with no network at all.
+        const healed = await db.manga.get(poisoned.id)
+        expect(healed?.latestChapterNumber).toBe(105)
+        const remaining = await db.chapters.where("mangaId").equals(poisoned.id).toArray()
+        expect(remaining.every(c => c.sortKey < 100_000)).toBe(true)
     })
 
     // Fix 4: guard against writing a freshly-fetched chapter list back to a manga a
     // concurrent library:remove/merge deleted while the network fetch was in flight.
-    it("does not write chapters back or publish when the manga record is deleted during the chapter-list fetch (race guard)", async () => {
+    it("does not write the fetched chapters back when the manga is deleted during the fetch (race guard)", async () => {
         const { repairMangahubChapterNumbers } = await import("./updates-sources")
 
         const poisoned = makeManga({
@@ -667,11 +689,13 @@ describe("repairMangahubChapterNumbers one-shot poisoned-library sweep", () => {
 
         expect(await db.chapters.count()).toBe(0)
         expect(purgeStaleMangahubChapterRowsMock).not.toHaveBeenCalled()
-        expect(publishLiveMock).not.toHaveBeenCalled()
+        // The local clamp healed + published while the manga still existed (before the
+        // concurrent delete); the network repair below correctly writes nothing to the gone row.
+        expect(publishLiveMock).toHaveBeenCalledTimes(1)
         expect(await db.manga.get(poisoned.id)).toBeUndefined()
         // The sweep still completes and sets the flag - a race on one title doesn't
         // abort the rest of the (empty, in this case) loop.
-        expect(storageLocal.store.get("mangahubChapterRepairDone2")).toBe(true)
+        expect(storageLocal.store.get("mangahubChapterRepairDone3")).toBe(true)
     })
 })
 
@@ -735,7 +759,7 @@ describe("repairMangahubChapterNumbers initial-query failure (Fix 8)", () => {
 
         await expect(repairMangahubChapterNumbers()).resolves.toBeUndefined()
 
-        expect(storageLocal.store.get("mangahubChapterRepairDone2")).toBeUndefined()
+        expect(storageLocal.store.get("mangahubChapterRepairDone3")).toBeUndefined()
         expect(listChaptersForSourceMock).not.toHaveBeenCalled()
         whereSpy.mockRestore()
 
@@ -763,7 +787,7 @@ describe("repairMangahubChapterNumbers initial-query failure (Fix 8)", () => {
         await repairMangahubChapterNumbers()
 
         expect(listChaptersForSourceMock).toHaveBeenCalledTimes(1)
-        expect(storageLocal.store.get("mangahubChapterRepairDone2")).toBe(true)
+        expect(storageLocal.store.get("mangahubChapterRepairDone3")).toBe(true)
     })
 })
 
