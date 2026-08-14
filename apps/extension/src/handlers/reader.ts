@@ -19,6 +19,7 @@ import {
 import { getSettings } from "../settings"
 import {
     ensureChapterListRefreshed,
+    MANGAHUB_INTERNAL_ID_MIN,
     mineAndCacheEpisodesFromHtml,
     scheduleChapterListRefresh
 } from "../background/chapter-cache"
@@ -26,6 +27,15 @@ import { fetchChapterHtmlViaTab } from "../background/tab-fetch"
 import { captureChapter, isBotBlocked, isSlugLikeTitle, refreshExternalMangaMetadata } from "../background/capture"
 import { publishLive } from "../live"
 import type { HandlerMap } from "../background/handler-types"
+
+// MangaHub internal-id rows (sortKey >= floor) are legacy poison, never a real chapter -
+// exclude them from every read-time chapter list so a stale one can't become a phantom
+// "next" past the true latest chapter (the "Next always available on MangaHub" bug).
+function dropMangahubInternalIds<T extends { sourceId: string; sortKey: number }>(chapters: T[]): T[] {
+    return chapters.filter(
+        c => !(c.sourceId === "mangahub" && Number.isFinite(c.sortKey) && c.sortKey >= MANGAHUB_INTERNAL_ID_MIN)
+    )
+}
 
 // Fallback for chapter:siblings when no cached row has the exact page URL. A stored URL
 // can legitimately differ from the one the user is on: Comix, for example, addresses
@@ -158,9 +168,10 @@ export const readerHandlers: HandlerMap = {
         // open chapter isn't in it (they deliberately opened another), stay within THAT
         // chapter's own language rather than the full cross-language list.
         const { language } = await getSettings()
-        const preferred = chaptersForLanguage(all, language)
+        const cleaned = dropMangahubInternalIds(all)
+        const preferred = chaptersForLanguage(cleaned, language)
         const inPreferred = preferred.some(c => c.id === chRecord.id)
-        const sameLanguage = all.filter(c => (c.language ?? "") === (chRecord.language ?? ""))
+        const sameLanguage = cleaned.filter(c => (c.language ?? "") === (chRecord.language ?? ""))
         const scoped = inPreferred ? preferred : sameLanguage.length > 0 ? sameLanguage : all
         // Dedupe by chapter number so a leftover duplicate upload of the same number (legacy
         // data from before the adapter deduped) is never a prev/next target; the currently
@@ -194,7 +205,11 @@ export const readerHandlers: HandlerMap = {
         const { language } = await getSettings()
         const fromCache = async () => {
             const cached = await db.chapters.where("mangaId").equals(request.mangaId).sortBy("sortKey")
-            return chaptersForLanguage(cached, language).map(c => ({ url: c.url, sortKey: c.sortKey, title: c.title }))
+            return chaptersForLanguage(dropMangahubInternalIds(cached), language).map(c => ({
+                url: c.url,
+                sortKey: c.sortKey,
+                title: c.title
+            }))
         }
 
         const source = getSourceById(request.sourceId)
@@ -237,7 +252,7 @@ export const readerHandlers: HandlerMap = {
             if (chapters.length <= 2) return await fromCache()
             await putChapters(chapters)
             publishLive(["chapters"], [request.mangaId])
-            return chaptersForLanguage(chapters, language)
+            return chaptersForLanguage(dropMangahubInternalIds(chapters), language)
                 .map(c => ({ url: c.url, sortKey: c.sortKey, title: c.title }))
                 .sort((a, b) => a.sortKey - b.sortKey)
         } catch {

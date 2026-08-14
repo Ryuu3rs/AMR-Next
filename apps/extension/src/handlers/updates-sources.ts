@@ -3,6 +3,7 @@ import { isNumberedChapter, latestNumberedChapter, matchesSourceDomain } from "@
 import {
     applyUpdateCheckResult,
     cacheCover,
+    clampPoisonedMangahubLocally,
     db,
     repairMangahubChapters,
     updateManga,
@@ -351,7 +352,9 @@ export async function checkUpdates(sourceId?: string) {
 // Bumped to v2: the original sweep only healed a poisoned latestChapterNumber. v2 also
 // heals a poisoned lastReadChapterNumber (set by the pre-fix trackExternalChapter from a
 // MangaHub internal-id URL), so it must re-run once for users the v1 sweep already marked done.
-const MANGAHUB_CHAPTER_REPAIR_FLAG = "mangahubChapterRepairDone2"
+// Bumped to v3 so the sweep re-runs once with the new purely-local clamp, which heals
+// existing poisoned titles even when MangaHub's Cloudflare gate blocks the fetch.
+const MANGAHUB_CHAPTER_REPAIR_FLAG = "mangahubChapterRepairDone3"
 
 // One-time repair sweep for libraries poisoned by the pre-fix extractChapters bug
 // (MangaHub's id-slug "alternate version" chapter anchors getting ingested as real
@@ -393,6 +396,14 @@ export async function repairMangahubChapterNumbers(): Promise<void> {
     try {
         for (const manga of poisoned) {
             try {
+                // Local heal FIRST (no network): delete the internal-id rows and recompute the
+                // badge from the remaining real chapters, so a Cloudflare-blocked fetch still
+                // fixes the Updates number instead of leaving the poison and burning the flag.
+                // The network fetch below then restores the true upstream latest when it works.
+                if (await clampPoisonedMangahubLocally(manga.id)) {
+                    publishLive(["chapters", "library"], [manga.id])
+                }
+
                 const link = await db.sourceLinks.get(manga.id)
                 const sourceMangaId = link?.sourceMangaId ?? manga.sourceMangaId
                 const mangaUrl = link?.url ?? manga.mangaUrl

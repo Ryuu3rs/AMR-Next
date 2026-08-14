@@ -1273,6 +1273,56 @@ export async function repairMangahubChapters(input: {
     })
 }
 
+// Purely-LOCAL heal for a MangaHub title poisoned with internal-id chapter numbers (a
+// pre-dedupe artifact: rows / latestChapterNumber holding a site-wide internal id >= floor
+// instead of a real chapter number). repairMangahubChapters only heals via a fresh fetch,
+// which MangaHub's Cloudflare gate blocks, so the poison survived forever. This needs no
+// network: it deletes the internal-id chapter rows (provably never real) and recomputes the
+// badge from the highest remaining real row (or clears it), so the Updates page shows a sane
+// number and the reader stops seeing a phantom "next" chapter. Returns true when it changed
+// anything.
+export async function clampPoisonedMangahubLocally(mangaId: string): Promise<boolean> {
+    return db.transaction("rw", db.chapters, db.manga, async () => {
+        const existing = await db.manga.get(mangaId)
+        if (existing === undefined || existing.sourceId !== "mangahub") return false
+        const rows = await db.chapters.where("mangaId").equals(mangaId).toArray()
+        const poisoned = rows.filter(
+            c => c.sourceId === "mangahub" && Number.isFinite(c.sortKey) && c.sortKey >= MANGAHUB_INTERNAL_ID_MIN
+        )
+        const latestPoisoned = (existing.latestChapterNumber ?? 0) >= MANGAHUB_INTERNAL_ID_MIN
+        const lastReadPoisoned = (existing.lastReadChapterNumber ?? 0) >= MANGAHUB_INTERNAL_ID_MIN
+        if (poisoned.length === 0 && !latestPoisoned && !lastReadPoisoned) return false
+        if (poisoned.length > 0) await db.chapters.bulkDelete(poisoned.map(c => c.id))
+        if (latestPoisoned) {
+            const best = rows
+                .filter(c => Number.isFinite(c.sortKey) && c.sortKey < MANGAHUB_INTERNAL_ID_MIN)
+                .reduce<ChapterRecord | undefined>((acc, c) => (!acc || c.sortKey > acc.sortKey ? c : acc), undefined)
+            if (best) {
+                await db.manga.update(mangaId, {
+                    latestChapterId: best.id,
+                    latestChapterNumber: best.sortKey,
+                    sourceUrl: best.url,
+                    updatedAt: Date.now()
+                })
+            } else {
+                await db.table("manga").update(mangaId, {
+                    latestChapterId: undefined,
+                    latestChapterNumber: undefined,
+                    updatedAt: Date.now()
+                })
+            }
+        }
+        if (lastReadPoisoned) {
+            await db.table("manga").update(mangaId, {
+                lastReadChapterNumber: undefined,
+                lastReadChapterId: undefined,
+                updatedAt: Date.now()
+            })
+        }
+        return true
+    })
+}
+
 const MANGA_PATH_MARKERS = ["manga", "comic", "comics", "series", "manhwa", "manhua", "title", "read"]
 // First path segments that name a chapter/reading context, never a title. Sites like
 // MangaDex address chapters as /chapter/<opaque-id> with no series slug anywhere in the
