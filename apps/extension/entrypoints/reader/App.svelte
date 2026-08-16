@@ -8,7 +8,7 @@
     import { spreadView } from "../../src/reader-spread"
 
     type ReadingDirection = "ltr" | "rtl" | "vertical"
-    type PageFit = "width" | "height" | "contain" | "original" | "actual" | "fill"
+    type PageFit = "width" | "height" | "contain" | "original" | "actual"
 
     let chapter = $state<ResolvedChapter | undefined>()
     let error = $state("")
@@ -27,6 +27,8 @@
     let noGapContinuous = $state(false)
     // Gap in px between the two pages of a Double-page spread (from settings; seamless forces 0).
     let spreadGapPx = $state(8)
+    // Percent of the viewport width the Fit-width fit fills (30-100; from settings).
+    let pageWidthPct = $state(100)
     // Per-series "Webtoon view" override: null = no override (inherits the global
     // default), true/false = explicit per-series value saved via library:reading-prefs.
     let noGapOverride = $state<boolean | null>(null)
@@ -741,6 +743,7 @@
                         showPageNumber: boolean
                         noGapContinuous: boolean
                         spreadGapPx: number
+                        pageWidthPct: number
                         preloadPages: number
                     }>({ type: "settings:get" }),
                     browser.storage.local
@@ -767,6 +770,7 @@
                 pageFit = libraryManga?.pageFit ?? settings.pageFit
                 showPageNumber = settings.showPageNumber
                 spreadGapPx = settings.spreadGapPx ?? 8
+                pageWidthPct = settings.pageWidthPct ?? 100
                 noGapDefault = settings.noGapContinuous
                 noGapOverride = libraryManga?.noGapContinuous ?? null
                 noGapContinuous = libraryManga?.noGapContinuous ?? settings.noGapContinuous
@@ -1284,7 +1288,7 @@
     class:single={effectiveMode === "single"}
     class:no-gap={effectiveMode === "continuous" && noGapContinuous}
     class="fit-{effectivePageFit} dir-{direction}"
-    style="--spread-gap: {spreadGapPx}px">
+    style="--spread-gap: {spreadGapPx}px; --page-width: {pageWidthPct}%">
     {#if chapter && !error && !resolving && zeroPages}
         <div class="mirror-banner">
             <span>No reader pages available - open on site and use the AMR sidebar to navigate.</span>

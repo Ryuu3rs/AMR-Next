@@ -70,7 +70,7 @@ export type LibraryManga = MangaRecord & {
     // Per-series reading overrides - when set, the reader uses these instead of
     // the global reading settings for chapters of this title.
     readingDirection?: "ltr" | "rtl" | "vertical"
-    pageFit?: "width" | "height" | "contain" | "original" | "actual" | "fill"
+    pageFit?: "width" | "height" | "contain" | "original" | "actual"
     // Per-series override for the global "no gap continuous" reader setting -
     // undefined means "no override, use the global default".
     noGapContinuous?: boolean
