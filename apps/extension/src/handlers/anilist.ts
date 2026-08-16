@@ -311,15 +311,14 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
                 if (kind === "unread") continue
                 try {
                     const entry = await getViewerListEntry(token, anilistId)
-                    // An explicit user status (paused/dropped/planning) stamps
-                    // readingStatusUpdatedAt; a derived status (reading/completed) does not.
-                    // Do NOT fall back to `updatedAt` for the tiebreak - unrelated writes
-                    // (the genre/status backfill) churn it, which would let a legacy title
-                    // wrongly win last-writer over a genuinely newer remote change.
-                    const explicit =
-                        manga.readingStatus === "paused" ||
-                        manga.readingStatus === "dropped" ||
-                        manga.readingStatus === "planning"
+                    // Explicit = the RESOLVED kind is a user choice (paused/dropped/planning),
+                    // not the raw readingStatus field: a title marked "planning" that has since
+                    // been read resolves to a DERIVED "reading", which must not be treated as
+                    // explicit. An explicit status stamps readingStatusUpdatedAt; a derived one
+                    // does not. Do NOT fall back to `updatedAt` for the tiebreak - unrelated
+                    // writes (the genre/status backfill) churn it, which would let a legacy
+                    // title wrongly win last-writer over a genuinely newer remote change.
+                    const explicit = kind === "paused" || kind === "dropped" || kind === "planning"
                     const decision = resolveStatusSync({
                         local: {
                             kind,
