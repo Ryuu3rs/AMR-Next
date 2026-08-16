@@ -2348,6 +2348,11 @@ button:disabled {
     color: #fff;
 }
 
+.badge-warn {
+    background: #b45309;
+    color: #fff;
+}
+
 @media (max-width: 680px) {
     .shell {
         grid-template-columns: 1fr;

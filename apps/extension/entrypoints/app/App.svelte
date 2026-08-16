@@ -297,13 +297,23 @@
         const union = (a: string, b: string) => parent.set(find(a), find(b))
         for (const m of items) parent.set(m.id, m.id)
         // Strip a legacy numeric prefix and a trailing hex hash so a rotated slug collapses to
-        // its stable base (mirrors asurascans baseSlug; safe because it only affects grouping,
-        // which the user still confirms before any merge).
-        const baseSlug = (s: string) => s.replace(/^\d{4,}-/, "").replace(/-[a-f0-9]{8,}$/i, "")
+        // its stable base. Mirrors asurascans baseSlug EXACTLY (6+ digit prefix; an 8-char hex
+        // suffix only when it is a real hash - a mix of a letter and a digit) so the tool never
+        // groups slugs the rotation matcher itself would treat as distinct. Scoped to asurascans:
+        // it is the only source that rotates a per-series hash, and applying the strip to every
+        // source collapsed unrelated titles whose ids merely end in 8 hex/digits.
+        const baseSlug = (s: string) =>
+            s
+                .replace(/^\d{6,}-/, "")
+                .replace(/-([0-9a-f]{8})$/i, (whole, hash: string) =>
+                    /[a-f]/i.test(hash) && /[0-9]/.test(hash) ? "" : whole
+                )
         const repByKey = new Map<string, string>()
         for (const m of items) {
             const keys = [`t:${(m.normalizedTitle || m.title).trim().toLowerCase()}`]
-            if (m.sourceMangaId) keys.push(`s:${m.sourceId}:${baseSlug(m.sourceMangaId)}`)
+            if (m.sourceMangaId && m.sourceId === "asurascans") {
+                keys.push(`s:${m.sourceId}:${baseSlug(m.sourceMangaId)}`)
+            }
             for (const key of keys) {
                 const rep = repByKey.get(key)
                 if (rep) union(m.id, rep)
@@ -3698,8 +3708,16 @@
                     <p class="row-label">Possible duplicates</p>
                     {#each duplicateGroups as group}
                         {@const primary = primaryOfGroup(group)}
+                        {@const distinctTitles = [...new Set(group.map(m => m.title.trim()))]}
                         <div class="dup-group">
-                            <span class="dup-title">{group[0]?.title}</span>
+                            <span class="dup-title">{distinctTitles.join("  ·  ")}</span>
+                            {#if distinctTitles.length > 1}
+                                <span
+                                    class="list-badge badge-warn"
+                                    title="This group holds more than one distinct title - check before merging, they may be different series">
+                                    {distinctTitles.length} titles
+                                </span>
+                            {/if}
                             <span class="muted">{group.map(m => m.sourceId).join(", ")}</span>
                             {#if primary}
                                 <span

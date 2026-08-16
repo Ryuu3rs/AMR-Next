@@ -117,7 +117,7 @@ describe("resolveStatusSync", () => {
     it("returns none when local and remote already agree", () => {
         expect(
             resolveStatusSync({
-                local: { kind: "paused", ts: 5 },
+                local: { kind: "paused", ts: 5, explicit: true },
                 remote: { status: "PAUSED", ts: 9 },
                 push: true,
                 pull: true
@@ -125,10 +125,10 @@ describe("resolveStatusSync", () => {
         ).toEqual({ action: "none" })
     })
 
-    it("push-only always pushes the local status", () => {
+    it("push-only always pushes an explicit local status", () => {
         expect(
             resolveStatusSync({
-                local: { kind: "dropped", ts: 1 },
+                local: { kind: "dropped", ts: 1, explicit: true },
                 remote: { status: "CURRENT", ts: 999 },
                 push: true,
                 pull: false
@@ -139,7 +139,7 @@ describe("resolveStatusSync", () => {
     it("pull-only always applies the remote status", () => {
         expect(
             resolveStatusSync({
-                local: { kind: "reading", ts: 999 },
+                local: { kind: "reading", ts: 999, explicit: false },
                 remote: { status: "PAUSED", ts: 1 },
                 push: false,
                 pull: true
@@ -149,15 +149,20 @@ describe("resolveStatusSync", () => {
 
     it("pull-only with no remote entry does nothing", () => {
         expect(
-            resolveStatusSync({ local: { kind: "reading", ts: 1 }, remote: { ts: 0 }, push: false, pull: true })
+            resolveStatusSync({
+                local: { kind: "reading", ts: 1, explicit: false },
+                remote: { ts: 0 },
+                push: false,
+                pull: true
+            })
         ).toEqual({ action: "none" })
     })
 
-    it("both directions: the more recently changed side wins", () => {
+    it("both directions: an explicit local change follows last-writer", () => {
         // Local changed more recently -> push local up.
         expect(
             resolveStatusSync({
-                local: { kind: "dropped", ts: 100 },
+                local: { kind: "dropped", ts: 100, explicit: true },
                 remote: { status: "CURRENT", ts: 50 },
                 push: true,
                 pull: true
@@ -166,7 +171,7 @@ describe("resolveStatusSync", () => {
         // Remote changed more recently -> pull remote down.
         expect(
             resolveStatusSync({
-                local: { kind: "reading", ts: 50 },
+                local: { kind: "paused", ts: 50, explicit: true },
                 remote: { status: "DROPPED", ts: 100 },
                 push: true,
                 pull: true
@@ -177,12 +182,57 @@ describe("resolveStatusSync", () => {
     it("does nothing when neither direction is enabled", () => {
         expect(
             resolveStatusSync({
-                local: { kind: "paused", ts: 1 },
+                local: { kind: "paused", ts: 1, explicit: true },
                 remote: { status: "CURRENT", ts: 1 },
                 push: false,
                 pull: false
             })
         ).toEqual({ action: "none" })
+    })
+
+    // Regression: a DERIVED "reading" (from progress, not a user choice) must never push
+    // CURRENT over a deliberate remote hold/drop, however fresh the local read timestamp is.
+    it("derived reading does not push CURRENT over a deliberate remote PAUSED", () => {
+        // Both on: adopt the remote hold locally rather than clobber it.
+        expect(
+            resolveStatusSync({
+                local: { kind: "reading", ts: Number.MAX_SAFE_INTEGER, explicit: false },
+                remote: { status: "PAUSED", ts: 1 },
+                push: true,
+                pull: true
+            })
+        ).toEqual({ action: "pullLocal", status: "PAUSED" })
+        // Push-only: leave the remote hold untouched, don't push CURRENT.
+        expect(
+            resolveStatusSync({
+                local: { kind: "reading", ts: Number.MAX_SAFE_INTEGER, explicit: false },
+                remote: { status: "DROPPED", ts: 1 },
+                push: true,
+                pull: false
+            })
+        ).toEqual({ action: "none" })
+    })
+
+    it("derived completed does not push over a deliberate remote DROPPED", () => {
+        expect(
+            resolveStatusSync({
+                local: { kind: "completed", ts: Number.MAX_SAFE_INTEGER, explicit: false },
+                remote: { status: "DROPPED", ts: 1 },
+                push: true,
+                pull: false
+            })
+        ).toEqual({ action: "none" })
+    })
+
+    it("derived reading still promotes a remote PLANNING to CURRENT", () => {
+        expect(
+            resolveStatusSync({
+                local: { kind: "reading", ts: 10, explicit: false },
+                remote: { status: "PLANNING", ts: 5 },
+                push: true,
+                pull: true
+            })
+        ).toEqual({ action: "push", status: "CURRENT" })
     })
 })
 
@@ -262,6 +312,24 @@ describe("mapMediaListEntry", () => {
         expect(plain.nsfw).toBeUndefined()
         expect(plain.authors).toBeUndefined()
         expect(plain.format).toBeUndefined()
+    })
+
+    it("dedups authors on the trimmed name and covers Artist / Original Story roles", () => {
+        const mapped = mapMediaListEntry({
+            media: {
+                id: 1,
+                staff: {
+                    edges: [
+                        { role: "Story & Art", node: { name: { full: "Kentaro Miura" } } },
+                        // Same creator, second edge, stray surrounding whitespace - must not double.
+                        { role: "Art", node: { name: { full: " Kentaro Miura " } } },
+                        { role: "Artist", node: { name: { full: "Studio Gaga" } } },
+                        { role: "Original Story", node: { name: { full: "Original Author" } } }
+                    ]
+                }
+            }
+        })
+        expect(mapped.authors).toEqual(["Kentaro Miura", "Studio Gaga", "Original Author"])
     })
 
     it("carries anilistId, genres, and progress; defaults a missing progress to 0", () => {

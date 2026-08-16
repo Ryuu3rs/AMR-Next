@@ -60,6 +60,24 @@ function makeMangaStub(sourceMangaId: string) {
     }
 }
 
+describe("asuraScansAdapter.normalizeSourceMangaId (baseSlug)", () => {
+    const norm = (s: string) => asuraScansAdapter.normalizeSourceMangaId!(s)
+
+    it("strips a real hash suffix and a legacy numeric prefix so a rotated slug re-finds its base", () => {
+        expect(norm("dungeon-odyssey-1d35e5bd")).toBe("dungeon-odyssey")
+        expect(norm("0223090894-dungeon-odyssey")).toBe("dungeon-odyssey")
+    })
+
+    it("does NOT over-strip legitimate title fragments into a colliding base", () => {
+        // 4-digit year prefix is kept (only 6+ digit ids are Asura prefixes).
+        expect(norm("2001-a-space-odyssey")).not.toBe(norm("a-space-odyssey"))
+        // A letter-only 8-char word is not a hash (real hashes mix a letter and a digit).
+        expect(norm("solo-leveling-deadbeef")).not.toBe(norm("solo-leveling"))
+        // A digit-only 8-char run is not a hash either.
+        expect(norm("the-100-girlfriends-12345678")).not.toBe(norm("the-100-girlfriends"))
+    })
+})
+
 describe("asuraScansAdapter.match", () => {
     it("classifies chapter, series, and foreign URLs", () => {
         expect(asuraScansAdapter.match(new URL(CHAPTER_URL))).toBe("chapter")

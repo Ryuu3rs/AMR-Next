@@ -546,6 +546,79 @@ describe("runAniListSync bidirectional status sync", () => {
         expect(updated?.lastReadChapterNumber).toBe(50)
     })
 
+    it("does not push CURRENT over a deliberate remote PAUSED for a merely-read title (push-only)", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({
+            token: "t",
+            autoSync: false,
+            syncMembership: false,
+            statusPush: true,
+            statusPull: false
+        })
+        // Read locally with NO explicit status -> derives "reading". User PAUSED it on AniList.
+        await db.manga.add(makeManga({ id: "mp", anilistId: 91, lastReadChapterNumber: 10, lastReadAt: 9_999_999 }))
+        getViewerProgressMock.mockResolvedValue(10)
+        getViewerListEntryMock.mockResolvedValue({ progress: 10, status: "PAUSED", updatedAt: 1 })
+
+        const res = await runAniListSync()
+
+        expect(saveMediaStatusMock).not.toHaveBeenCalled()
+        expect(res.statusPushed).toBe(0)
+    })
+
+    it("adopts a remote PAUSED locally for a merely-read title instead of clobbering it (both on)", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({
+            token: "t",
+            autoSync: false,
+            syncMembership: false,
+            statusPush: true,
+            statusPull: true
+        })
+        await db.manga.add(makeManga({ id: "mp2", anilistId: 92, lastReadChapterNumber: 10, lastReadAt: 9_999_999 }))
+        getViewerProgressMock.mockResolvedValue(10)
+        getViewerListEntryMock.mockResolvedValue({ progress: 10, status: "PAUSED", updatedAt: 1 })
+
+        await runAniListSync()
+
+        expect(saveMediaStatusMock).not.toHaveBeenCalled()
+        expect((await db.manga.get("mp2"))?.readingStatus).toBe("paused")
+    })
+
+    it("pull-COMPLETED never lowers a higher local latest or fabricates reads (clamp)", async () => {
+        const { runAniListSync } = await import("./anilist")
+        getAniListConfigMock.mockResolvedValue({
+            token: "t",
+            autoSync: false,
+            syncMembership: false,
+            statusPush: false,
+            statusPull: true
+        })
+        await db.manga.add(
+            makeManga({
+                id: "m5",
+                anilistId: 90,
+                status: "completed",
+                latestChapterNumber: 150,
+                lastReadChapterNumber: 140
+            })
+        )
+        getViewerProgressMock.mockResolvedValue(140)
+        getViewerListEntryMock.mockResolvedValue({
+            progress: 140,
+            status: "COMPLETED",
+            updatedAt: 5,
+            totalChapters: 145,
+            seriesFinished: true
+        })
+
+        await runAniListSync()
+
+        const u = await db.manga.get("m5")
+        expect(u?.latestChapterNumber).toBe(150) // never lowered to AniList's 145 (would hide 5 chapters)
+        expect(u?.lastReadChapterNumber).toBe(145) // raised to the total, capped at the real local latest
+    })
+
     it("does not run the status pass when both directions are off (default)", async () => {
         const { runAniListSync } = await import("./anilist")
         await db.manga.add(makeManga({ id: "m4", anilistId: 88, lastReadChapterNumber: 2, readingStatus: "dropped" }))
