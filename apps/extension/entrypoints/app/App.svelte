@@ -1801,7 +1801,7 @@
     }
 
     async function setReadingPageFit(manga: LibraryManga, raw: string) {
-        const value = raw === "" ? null : (raw as "width" | "height" | "contain" | "original" | "actual" | "fill")
+        const value = raw === "" ? null : (raw as "width" | "height" | "contain" | "original" | "actual")
         try {
             await sendRuntimeMessage({ type: "library:reading-prefs", mangaId: manga.id, pageFit: value })
             const apply = (m: LibraryManga): LibraryManga => {
@@ -5262,21 +5262,31 @@
                         value={settings?.pageFit ?? "width"}
                         onchange={e =>
                             void updateSetting({
-                                pageFit: e.currentTarget.value as
-                                    | "width"
-                                    | "height"
-                                    | "contain"
-                                    | "original"
-                                    | "actual"
-                                    | "fill"
+                                pageFit: e.currentTarget.value as "width" | "height" | "contain" | "original" | "actual"
                             })}>
                         <option value="width">Fit width</option>
                         <option value="height">Fit height</option>
                         <option value="contain">Fit screen</option>
                         <option value="original">Original size</option>
                         <option value="actual">Actual size (native resolution)</option>
-                        <option value="fill">Fill width (fill the screen)</option>
                     </select>
+                </div>
+                <div class="settings-row">
+                    <div>
+                        <p class="row-label">Page width</p>
+                        <p class="muted">
+                            How much of the width Fit-width fills: {settings?.pageWidthPct ?? 100}%. Lower it for long
+                            strips, raise it to fill the screen.
+                        </p>
+                    </div>
+                    <input
+                        type="range"
+                        min="30"
+                        max="100"
+                        step="5"
+                        aria-label="Page width percent"
+                        value={settings?.pageWidthPct ?? 100}
+                        onchange={e => void updateSetting({ pageWidthPct: Number(e.currentTarget.value) })} />
                 </div>
                 <div class="settings-row">
                     <div>
@@ -5824,7 +5834,6 @@
                                 <option value="contain">Contain</option>
                                 <option value="original">Original size</option>
                                 <option value="actual">Actual size</option>
-                                <option value="fill">Fill width</option>
                             </select>
                         </label>
                     </div>
