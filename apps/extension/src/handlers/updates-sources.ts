@@ -1,5 +1,6 @@
 import { sourceRegistry } from "@amr/sources"
 import { isNumberedChapter, latestNumberedChapter, matchesSourceDomain } from "@amr/source-sdk"
+import { normalizeTitle } from "@amr/normalize"
 import {
     applyUpdateCheckResult,
     cacheCover,
@@ -578,22 +579,41 @@ export async function backfillMangaGenres(): Promise<void> {
                         ...(fresh.sourceMangaId ? { sourceMangaId: fresh.sourceMangaId } : {})
                     })
                     if (meta) {
+                        // resolveMetadata is a FUZZY AniList search that always returns a
+                        // best guess for any string, with no title verification. Before it
+                        // can flip a title to finished or (re)bind its anilistId - both of
+                        // which mis-file the title or push the user's progress to the wrong
+                        // AniList entry - require the matched title to be consistent with ours.
+                        const titleMatchesMeta =
+                            typeof meta.title === "string" &&
+                            (() => {
+                                const a = normalizeTitle(fresh.title)
+                                const b = normalizeTitle(meta.title as string)
+                                if (!a || !b) return false
+                                return a === b || a.startsWith(b) || b.startsWith(a)
+                            })()
+
                         // Fill an unknown status, OR upgrade an "ongoing" title to the catalog's
                         // finished/cancelled/hiatus status so a series that ended upstream can
                         // reach Completed. Never downgrade a known status back to ongoing (a
-                        // fuzzy title match must not un-finish a title), and never write unknown.
+                        // fuzzy title match must not un-finish a title), never write unknown, and
+                        // never flip a title to FINISHED off a title-inconsistent match.
                         if (meta.status && meta.status !== "unknown") {
-                            if (
-                                fresh.status === "unknown" ||
-                                (fresh.status === "ongoing" && meta.status !== "ongoing")
-                            ) {
-                                patch.status = meta.status
-                            }
+                            const upgradesToFinished = meta.status !== "ongoing"
+                            const allowed =
+                                fresh.status === "unknown"
+                                    ? !upgradesToFinished || titleMatchesMeta
+                                    : fresh.status === "ongoing" && upgradesToFinished && titleMatchesMeta
+                            if (allowed) patch.status = meta.status
                         }
                         if ((!fresh.genres || fresh.genres.length === 0) && meta.genres?.length) {
                             patch.genres = meta.genres
                         }
-                        if (meta.anilistId) patch.anilistId = meta.anilistId
+                        // Only bind anilistId from a title-consistent match, and never clobber
+                        // an id we already have with a fresh fuzzy guess.
+                        if (meta.anilistId && titleMatchesMeta && fresh.anilistId === undefined) {
+                            patch.anilistId = meta.anilistId
+                        }
                         if (!fresh.coverUrl && meta.coverUrl) patch.coverUrl = meta.coverUrl
                     }
                 } catch {

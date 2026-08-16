@@ -824,7 +824,13 @@
         settingsListener = (changes, area) => {
             if (area !== "local" || !changes["settings"]) return
             const next = changes["settings"].newValue as
-                | Partial<{ showPageNumber: boolean; noGapContinuous: boolean; preloadPages: number }>
+                | Partial<{
+                      showPageNumber: boolean
+                      noGapContinuous: boolean
+                      preloadPages: number
+                      spreadGapPx: number
+                      pageWidthPct: number
+                  }>
                 | undefined
             if (!next) return
             if (next.showPageNumber !== undefined) showPageNumber = next.showPageNumber
@@ -833,6 +839,11 @@
                 noGapDefault = next.noGapContinuous
                 if (noGapOverride === null) noGapContinuous = noGapDefault
             }
+            // Both are global-only (no per-series override), so applying them live is safe -
+            // dragging the Page-width / Double-page-gap slider updates an open reader instead
+            // of waiting for a reload.
+            if (next.spreadGapPx !== undefined) spreadGapPx = next.spreadGapPx
+            if (next.pageWidthPct !== undefined) pageWidthPct = next.pageWidthPct
         }
         browser.storage.onChanged.addListener(settingsListener)
 

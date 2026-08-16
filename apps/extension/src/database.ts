@@ -1282,7 +1282,7 @@ export async function repairMangahubChapters(input: {
 // number and the reader stops seeing a phantom "next" chapter. Returns true when it changed
 // anything.
 export async function clampPoisonedMangahubLocally(mangaId: string): Promise<boolean> {
-    return db.transaction("rw", db.chapters, db.manga, async () => {
+    return db.transaction("rw", db.chapters, db.manga, db.progress, db.historyEvents, async () => {
         const existing = await db.manga.get(mangaId)
         if (existing === undefined || existing.sourceId !== "mangahub") return false
         const rows = await db.chapters.where("mangaId").equals(mangaId).toArray()
@@ -1292,7 +1292,15 @@ export async function clampPoisonedMangahubLocally(mangaId: string): Promise<boo
         const latestPoisoned = (existing.latestChapterNumber ?? 0) >= MANGAHUB_INTERNAL_ID_MIN
         const lastReadPoisoned = (existing.lastReadChapterNumber ?? 0) >= MANGAHUB_INTERNAL_ID_MIN
         if (poisoned.length === 0 && !latestPoisoned && !lastReadPoisoned) return false
-        if (poisoned.length > 0) await db.chapters.bulkDelete(poisoned.map(c => c.id))
+        if (poisoned.length > 0) {
+            const poisonedIds = poisoned.map(c => c.id)
+            await db.chapters.bulkDelete(poisonedIds)
+            // Cascade: the progress/history rows keyed to those phantom chapters would
+            // otherwise be orphaned - left to re-inflate the completed-chapter stat via
+            // getLocalStats' url-fallback key, and to accumulate across repeated sweeps.
+            await db.progress.bulkDelete(poisonedIds)
+            await db.historyEvents.where("chapterId").anyOf(poisonedIds).delete()
+        }
         if (latestPoisoned) {
             const best = rows
                 .filter(c => Number.isFinite(c.sortKey) && c.sortKey < MANGAHUB_INTERNAL_ID_MIN)
@@ -1462,13 +1470,13 @@ export async function trackExternalChapter(input: {
         // MangaHub chapter URLs are /chapter/{slug}/chapter-{N} where N is frequently an
         // internal id (>= 100_000), not the real chapter number. Parsing it verbatim here
         // poisoned the chapter row's title/sortKey AND (via saveProgress) lastReadChapterNumber -
-        // the "Updates page shows wrong chapter numbers for MangaHub" bug. Mirror the adapter's
-        // INTERNAL_ID_MIN guard (packages/sources/src/mangahub.ts) and drop an internal-id-sized
-        // number so the row stays unnumbered until the adapter's update-check fills the real one.
-        const number =
-            parsedNumber !== undefined && input.sourceId === "mangahub" && parsedNumber >= MANGAHUB_INTERNAL_ID_MIN
-                ? undefined
-                : parsedNumber
+        // the "Updates page shows wrong chapter numbers for MangaHub" bug. Now that the regex
+        // also parses a bare /chapter/<numericId> shape, ANY source addressing chapters by a
+        // large numeric id would mint the same poisoned row - so apply the INTERNAL_ID_MIN
+        // floor to every source (no real series reaches 100_000 chapters), dropping an
+        // internal-id-sized number so the row stays unnumbered until the update-check fills
+        // the real one.
+        const number = parsedNumber !== undefined && parsedNumber >= MANGAHUB_INTERNAL_ID_MIN ? undefined : parsedNumber
 
         // When caller supplies series-level info, try direct ID lookup first - finds the manga
         // even if it was previously added via resolveChapter (which uses a different code path).

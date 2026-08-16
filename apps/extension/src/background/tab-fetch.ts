@@ -30,6 +30,20 @@ function looksLikeChallengePage(html: string): boolean {
     )
 }
 
+// A src worth replacing from a data-* lazy attr: truly empty, an inline data: URI, or a
+// URL whose FILENAME is itself a known placeholder ("loading.gif", "1x1.png", "spacer.png").
+// Kept as an exported twin of the copy inlined into extractHtml's injected function below
+// (browser.scripting serializes that function, so it cannot close over this) - the two MUST
+// stay in sync. Testing the whole-URL tokens flagged real page images on any CDN whose path
+// happened to contain "loading"/"blank"/"spacer"/"1x1".
+export function isLazyPlaceholderSrc(src: string | null): boolean {
+    if (!src || !src.trim()) return true
+    if (/^data:/i.test(src)) return true
+    const path = src.split(/[?#]/)[0] ?? src
+    const file = (path.split("/").pop() ?? "").replace(/\.[a-z0-9]+$/i, "")
+    return /^(1x1|blank|spacer|placeholder|loading)$/i.test(file) || /^\d{1,3}x\d{1,3}$/i.test(file)
+}
+
 async function extractHtml(tabId: number): Promise<string> {
     const results = await browser.scripting.executeScript({
         target: { tabId },
@@ -39,10 +53,22 @@ async function extractHtml(tabId: number): Promise<string> {
             // real src on the initial preload window. Fill any empty/placeholder src from
             // those data-* attrs so the snapshot carries every page. Best-effort only.
             try {
-                const placeholder = /^\s*$|^data:|1x1|blank|spacer|placeholder|loading/i
+                // Only a truly empty/inline src, or a src whose FILENAME is itself a known
+                // placeholder ("loading.gif", "1x1.png", "spacer.png"...), counts as a
+                // placeholder to replace. Testing the tokens against the whole URL matched
+                // real page images on any CDN whose path/title happened to contain "loading",
+                // "blank", "spacer" or "1x1" (e.g. .../loading-scans/1.jpg) and clobbered
+                // them with the wrong lazy attr.
+                const isPlaceholder = (s: string | null): boolean => {
+                    if (!s || !s.trim()) return true
+                    if (/^data:/i.test(s)) return true
+                    const path = s.split(/[?#]/)[0] ?? s
+                    const file = (path.split("/").pop() ?? "").replace(/\.[a-z0-9]+$/i, "")
+                    return /^(1x1|blank|spacer|placeholder|loading)$/i.test(file) || /^\d{1,3}x\d{1,3}$/i.test(file)
+                }
                 for (const img of Array.from(document.querySelectorAll("img"))) {
                     const src = img.getAttribute("src")
-                    if (src && !placeholder.test(src)) continue
+                    if (!isPlaceholder(src)) continue
                     const lazy =
                         img.getAttribute("data-src") ??
                         img.getAttribute("data-original") ??

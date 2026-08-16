@@ -311,10 +311,20 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
                 if (kind === "unread") continue
                 try {
                     const entry = await getViewerListEntry(token, anilistId)
+                    // An explicit user status (paused/dropped/planning) stamps
+                    // readingStatusUpdatedAt; a derived status (reading/completed) does not.
+                    // Do NOT fall back to `updatedAt` for the tiebreak - unrelated writes
+                    // (the genre/status backfill) churn it, which would let a legacy title
+                    // wrongly win last-writer over a genuinely newer remote change.
+                    const explicit =
+                        manga.readingStatus === "paused" ||
+                        manga.readingStatus === "dropped" ||
+                        manga.readingStatus === "planning"
                     const decision = resolveStatusSync({
                         local: {
                             kind,
-                            ts: manga.readingStatusUpdatedAt ?? manga.lastReadAt ?? manga.updatedAt ?? 0
+                            ts: manga.readingStatusUpdatedAt ?? manga.lastReadAt ?? 0,
+                            explicit
                         },
                         remote: {
                             ...(entry?.status ? { status: entry.status } : {}),
@@ -333,11 +343,22 @@ export async function runAniListSync(): Promise<AniListSyncResult> {
                             // a real total is known - never stamp publication-finished from the
                             // user's list status alone (S7, same rule as import).
                             if (entry?.totalChapters !== undefined && entry.seriesFinished) {
+                                // Never LOWER the local latest to AniList's total: a
+                                // scanlation mirror is frequently ahead of AniList's chapter
+                                // count, and overwriting would hide real chapters from the
+                                // reader/badge. Never RAISE lastRead past what actually
+                                // exists locally either (no phantom "read" chapters).
+                                const total = entry.totalChapters
+                                const nextLatest = Math.max(manga.latestChapterNumber ?? 0, total)
+                                const nextLastRead = Math.min(
+                                    nextLatest,
+                                    Math.max(manga.lastReadChapterNumber ?? 0, total)
+                                )
                                 await db.table("manga").update(manga.id, {
                                     status: "completed",
-                                    latestChapterNumber: entry.totalChapters,
+                                    latestChapterNumber: nextLatest,
                                     latestChapterAt: nowMs,
-                                    lastReadChapterNumber: entry.totalChapters,
+                                    lastReadChapterNumber: nextLastRead,
                                     readingStatus: undefined,
                                     readingStatusUpdatedAt: nowMs,
                                     updatedAt: nowMs

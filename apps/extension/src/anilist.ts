@@ -204,14 +204,37 @@ export type StatusSyncDecision =
 // change time (readingStatusUpdatedAt / lastReadAt), `remote.ts` the AniList entry's
 // updatedAt - both epoch ms. When both directions are enabled the more recent change wins;
 // with a single direction that side always wins. Returns "none" when the two already agree.
+//
+// `local.explicit` distinguishes a status the USER chose (paused/dropped/planning) from one
+// merely DERIVED from reading progress (reading/completed). A derived status must never
+// overwrite a deliberate remote hold/drop - reading one chapter of a title the user PAUSED
+// or DROPPED on AniList should adopt that hold locally (when pull is on), never silently
+// un-pause it by pushing CURRENT. This is the last-writer tiebreak's blind spot: reading
+// activity churns the local timestamp but is not a status-change intent.
+const DERIVED_PUSH_BLOCKED: Record<string, Set<string>> = {
+    // A local re-read (derived "reading") leaves a remote hold/drop/finish alone.
+    reading: new Set(["PAUSED", "DROPPED", "COMPLETED", "REPEATING"]),
+    // Deriving "completed" (finished + caught up) still respects an explicit remote
+    // hold/drop - the user parked it there on purpose.
+    completed: new Set(["PAUSED", "DROPPED"])
+}
 export function resolveStatusSync(input: {
-    local: { kind: SyncStatusKind; ts: number }
+    local: { kind: SyncStatusKind; ts: number; explicit: boolean }
     remote: { status?: string; ts: number }
     push: boolean
     pull: boolean
 }): StatusSyncDecision {
     const localAsAniList = localStatusToAniList(input.local.kind)
     if (localAsAniList === input.remote.status) return { action: "none" }
+    const remote = input.remote.status
+
+    // Guard: a derived local status may not push over a deliberate remote status it must
+    // respect. Adopt the remote status locally when pull is enabled; otherwise leave both.
+    if (input.push && !input.local.explicit && remote && DERIVED_PUSH_BLOCKED[input.local.kind]?.has(remote)) {
+        if (input.pull) return { action: "pullLocal", status: remote }
+        return { action: "none" }
+    }
+
     let dir: "push" | "pull" | undefined
     if (input.push && input.pull) dir = input.local.ts >= input.remote.ts ? "push" : "pull"
     else if (input.push) dir = "push"
@@ -321,8 +344,9 @@ type StaffConnection = {
 }
 
 // AniList staff roles that count as an "author" for our purposes. Matches "Story", "Art",
-// "Story & Art" case-insensitively, tolerating trailing qualifiers like "Art (Ch. 1-10)".
-const AUTHOR_ROLE_RE = /^\s*(story\s*&\s*art|story|art)\b/i
+// "Artist", "Story & Art", "Original Story" case-insensitively, tolerating trailing
+// qualifiers like "Art (Ch. 1-10)".
+const AUTHOR_ROLE_RE = /^\s*(story\s*&\s*art|original\s+story|story|artist|art)\b/i
 
 function mapStaffToAuthors(staff: StaffConnection | null | undefined): string[] {
     const out: string[] = []
@@ -330,9 +354,13 @@ function mapStaffToAuthors(staff: StaffConnection | null | undefined): string[] 
     for (const edge of staff?.edges ?? []) {
         if (!edge || !AUTHOR_ROLE_RE.test(edge.role ?? "")) continue
         const name = edge.node?.name?.full
-        if (typeof name === "string" && name.trim() && !seen.has(name)) {
-            seen.add(name)
-            out.push(name.trim())
+        // Dedup on the TRIMMED name (a solo creator often appears under separate Story and
+        // Art edges with inconsistent surrounding whitespace) - keying on the raw value let
+        // whitespace variants slip through and produced the same author twice.
+        const trimmed = typeof name === "string" ? name.trim() : ""
+        if (trimmed && !seen.has(trimmed)) {
+            seen.add(trimmed)
+            out.push(trimmed)
         }
     }
     return out

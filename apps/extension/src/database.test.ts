@@ -8,6 +8,7 @@ import {
     addImportedManga,
     applyCleanupGroup,
     cacheCover,
+    clampPoisonedMangahubLocally,
     createBackup,
     db,
     exportDatabase,
@@ -2124,6 +2125,68 @@ describe("trackExternalChapter", () => {
             mangaInfo: { sourceMangaId: "solo-leveling", mangaUrl: "https://mangahub.io/manga/solo-leveling" }
         })
         expect(real.chapterNumber).toBe(42)
+    })
+
+    it("does not adopt an internal-id-sized /chapter/<id> as a number for any source", async () => {
+        // The widened regex now parses a bare /chapter/<numericId>, so the internal-id floor
+        // must apply to every source (not just mangahub) or a numeric-id site mints a poisoned
+        // row with a bogus sortKey that freezes lastReadChapterNumber.
+        const result = await trackExternalChapter({
+            url: "https://somesite.com/chapter/998877",
+            sourceId: "somesite",
+            mangaInfo: { sourceMangaId: "some-series", mangaUrl: "https://somesite.com/manga/some-series" }
+        })
+        expect(result.chapterNumber).toBeNull()
+        expect((await db.manga.get(result.mangaId))?.lastReadChapterNumber).toBeUndefined()
+
+        // A normal chapter number on the same non-mangahub source is still parsed.
+        const real = await trackExternalChapter({
+            url: "https://somesite.com/chapter/42",
+            sourceId: "somesite",
+            mangaInfo: { sourceMangaId: "some-series", mangaUrl: "https://somesite.com/manga/some-series" }
+        })
+        expect(real.chapterNumber).toBe(42)
+    })
+
+    it("clampPoisonedMangahubLocally cascades: deletes progress/history for the phantom chapters it removes", async () => {
+        const mangaId = "mangahub:manga:x"
+        await db.manga.put({
+            id: mangaId,
+            title: "X",
+            normalizedTitle: "x",
+            sourceId: "mangahub",
+            sourceUrl: "https://mangahub.io/manga/x",
+            authors: [],
+            status: "unknown",
+            addedAt: 1,
+            updatedAt: 1,
+            latestChapterNumber: 2650123
+        })
+        const realId = `${mangaId}:c5`
+        const poisonId = `${mangaId}:ext:chapter-2650123`
+        await db.chapters.bulkPut([
+            { id: realId, mangaId, sourceId: "mangahub", title: "Chapter 5", url: "u5", sortKey: 5 },
+            { id: poisonId, mangaId, sourceId: "mangahub", title: "x", url: "u-poison", sortKey: 2650123 }
+        ])
+        await db.progress.put({
+            chapterId: poisonId,
+            mangaId,
+            pageIndex: 0,
+            pageCount: 1,
+            completed: true,
+            updatedAt: 1
+        } as ReadingProgress)
+        await db.historyEvents.add({ mangaId, chapterId: poisonId, type: "completed", occurredAt: 1 } as never)
+
+        const changed = await clampPoisonedMangahubLocally(mangaId)
+
+        expect(changed).toBe(true)
+        expect(await db.chapters.get(poisonId)).toBeUndefined()
+        expect(await db.progress.get(poisonId)).toBeUndefined()
+        expect(await db.historyEvents.where("chapterId").equals(poisonId).count()).toBe(0)
+        // The real chapter and its badge survive.
+        expect(await db.chapters.get(realId)).toBeDefined()
+        expect((await db.manga.get(mangaId))?.latestChapterNumber).toBe(5)
     })
 
     it("backfills sourceMangaId onto a fallback-matched legacy record (manga + link) when mangaInfo is now available", async () => {

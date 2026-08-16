@@ -827,7 +827,7 @@ describe("backfillMangaGenres live-bus publishing", () => {
             coverUrl: "https://cdn/cover.jpg"
         })
         await db.manga.put(m)
-        resolveMetadataMock.mockResolvedValue({ anilistId: 105398, status: "completed" })
+        resolveMetadataMock.mockResolvedValue({ anilistId: 105398, title: "Solo Leveling", status: "completed" })
 
         await backfillMangaGenres()
 
@@ -835,6 +835,36 @@ describe("backfillMangaGenres live-bus publishing", () => {
         expect(stored?.status).toBe("completed")
         expect(stored?.anilistId).toBe(105398)
         expect(stored?.metadataUpdatedAt).toBeGreaterThan(0)
+    })
+
+    it("does not flip an ongoing title to finished (or rebind anilistId) on a wrong-title fuzzy match", async () => {
+        const { backfillMangaGenres } = await import("./updates-sources")
+
+        // Already correctly bound + genuinely ongoing. AniList's fuzzy search returns a
+        // DIFFERENT, finished series - no title check would mis-file it as completed and
+        // clobber the good anilistId, later pushing progress to the wrong entry.
+        const m = makeManga({
+            id: "m-fuzzy",
+            title: "My Obscure Webtoon",
+            normalizedTitle: "my obscure webtoon",
+            sourceId: "mangakatana",
+            status: "ongoing",
+            genres: ["Action"],
+            coverUrl: "https://cdn/cover.jpg",
+            anilistId: 111
+        })
+        await db.manga.put(m)
+        resolveMetadataMock.mockResolvedValue({
+            anilistId: 999,
+            title: "Completely Different Finished Series",
+            status: "completed"
+        })
+
+        await backfillMangaGenres()
+
+        const stored = await db.manga.get("m-fuzzy")
+        expect(stored?.status).toBe("ongoing")
+        expect(stored?.anilistId).toBe(111)
     })
 
     it("upgrades an ongoing title to the catalog's finished status so it can reach Completed (S1)", async () => {
@@ -851,7 +881,7 @@ describe("backfillMangaGenres live-bus publishing", () => {
             coverUrl: "https://cdn/cover.jpg"
         })
         await db.manga.put(m)
-        resolveMetadataMock.mockResolvedValue({ status: "completed" })
+        resolveMetadataMock.mockResolvedValue({ title: "Finished Upstream", status: "completed" })
 
         await backfillMangaGenres()
 

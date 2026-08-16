@@ -46,8 +46,17 @@ function parseSeriesUrl(url: URL): string | null {
 // title slug; the hash is either a legacy asuracomic.net numeric prefix
 // (0223090894-dungeon-odyssey) or the current asurascans.com hex suffix
 // (dungeon-odyssey-1d35e5bd). Strip both to recover the re-findable base slug.
+//
+// Both strips are deliberately narrow so a legitimate title fragment isn't mistaken for
+// a hash (which would collapse two distinct series to the same base and let a mark-read
+// on one hijack the other): the numeric prefix must be 6+ digits (Asura's ids are ~10;
+// a 4-digit year like "2001-a-space-odyssey" is kept), and the 8-char hex suffix must
+// look like a real hash - a mix of at least one letter AND one digit - so a letter-only
+// word ("...-deadbeef") or a digit-only run ("...-12345678") is left intact.
 function baseSlug(slug: string): string {
-    return slug.replace(/^\d{4,}-/, "").replace(/-[a-f0-9]{8}$/i, "")
+    return slug.replace(/^\d{6,}-/, "").replace(/-([0-9a-f]{8})$/i, (whole, hash: string) => {
+        return /[a-f]/i.test(hash) && /[0-9]/.test(hash) ? "" : whole
+    })
 }
 
 function titleFromSlug(slug: string): string {

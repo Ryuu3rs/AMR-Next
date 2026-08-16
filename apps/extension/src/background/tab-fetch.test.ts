@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.stubGlobal("browser", fakeBrowser)
 
-const { fetchChapterHtmlViaTab, isInternalTab, isInternalUrl } = await import("./tab-fetch")
+const { fetchChapterHtmlViaTab, isInternalTab, isInternalUrl, isLazyPlaceholderSrc } = await import("./tab-fetch")
 
 beforeEach(() => {
     fakeBrowser.reset()
@@ -12,6 +12,29 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.restoreAllMocks()
+})
+
+describe("isLazyPlaceholderSrc", () => {
+    it("treats empty/whitespace and data: URIs as placeholders", () => {
+        expect(isLazyPlaceholderSrc(null)).toBe(true)
+        expect(isLazyPlaceholderSrc("   ")).toBe(true)
+        expect(isLazyPlaceholderSrc("data:image/gif;base64,AAAA")).toBe(true)
+    })
+
+    it("treats a placeholder FILENAME as a placeholder", () => {
+        expect(isLazyPlaceholderSrc("https://cdn.x.com/assets/loading.gif")).toBe(true)
+        expect(isLazyPlaceholderSrc("https://cdn.x.com/1x1.png")).toBe(true)
+        expect(isLazyPlaceholderSrc("https://cdn.x.com/spacer.png?v=2")).toBe(true)
+        expect(isLazyPlaceholderSrc("https://cdn.x.com/blank.gif#x")).toBe(true)
+    })
+
+    it("does NOT flag a real page image whose PATH merely contains a token", () => {
+        expect(isLazyPlaceholderSrc("https://cdn.mghcdn.com/loading-scans/one-piece/1.jpg")).toBe(false)
+        expect(isLazyPlaceholderSrc("https://img.site.com/blanksky-manga/ch5/003.png")).toBe(false)
+        expect(isLazyPlaceholderSrc("https://cdn.x.com/spacermaster/ch1/01.jpg")).toBe(false)
+        expect(isLazyPlaceholderSrc("https://cdn.x.com/series/1x1000/pg2.jpg")).toBe(false)
+        expect(isLazyPlaceholderSrc("https://cdn.mghcdn.com/manga/One-Piece/1092/1.jpg")).toBe(false)
+    })
 })
 
 describe("fetchChapterHtmlViaTab internal-tab tracking", () => {
