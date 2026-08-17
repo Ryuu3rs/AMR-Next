@@ -61,23 +61,10 @@ const SITES: MadaraConfig[] = [
         domains: ["natomanga.com", "www.natomanga.com"]
     },
     { id: "hentairead", name: "HentaiRead", origin: "https://hentairead.com", domains: ["hentairead.com"] },
-    {
-        id: "hentai20",
-        name: "Hentai20",
-        origin: "https://hentai20.io",
-        domains: ["hentai20.io"],
-        // Chapter page images are served from img.hentai1.io, an entirely different
-        // domain from hentai20.io. Confirmed live 2026-07-14.
-        imageOrigins: ["https://img.hentai1.io/*"]
-    },
-    {
-        id: "oppaistream",
-        name: "Oppai Stream",
-        origin: "https://read.oppai.stream",
-        domains: ["read.oppai.stream"]
-    },
-    { id: "eahentai", name: "EA Hentai", origin: "https://eahentai.com", domains: ["eahentai.com"] },
-    { id: "hentalk", name: "HenTalk", origin: "https://hentalk.pw", domains: ["hentalk.pw"] },
+    // { id: "hentai20", name: "Hentai20", origin: "https://hentai20.io", domains: ["hentai20.io"], imageOrigins: ["https://img.hentai1.io/*"] }, // retired 2026-08-17: hentai20.io homepage 200s but series pages now serve a parked "adultCasinoRedirect" hijack page (source-health verdict: hijacked). Domain compromised, no real content. Verified live 2026-08-17.
+    // { id: "oppaistream", name: "Oppai Stream", origin: "https://read.oppai.stream", domains: ["read.oppai.stream"] }, // retired 2026-08-17: read.oppai.stream is now a Next.js SPA (__NEXT_DATA__/_next static, no /manga/<slug> server markup) - the Madara scraper matches nothing. Same engine-migration class as phoenixscans/templescan. Verified live 2026-08-17.
+    // { id: "eahentai", name: "EA Hentai", origin: "https://eahentai.com", domains: ["eahentai.com"] }, // retired 2026-08-17: eahentai.com is a doujin gallery site keyed on /a/<id>, not a Madara /manga/<slug> reader - the adapter never matched its structure. Verified live 2026-08-17.
+    // { id: "hentalk", name: "HenTalk", origin: "https://hentalk.pw", domains: ["hentalk.pw"] }, // retired 2026-08-17: hentalk.pw resets the connection (ECONNRESET) on every request across two runs - unreachable, no longer serving. Verified live 2026-08-17.
     // { id: "likemanga", name: "LikeManga", origin: "https://likemanga.io", domains: ["likemanga.io"] }, // retired 2026-07-19: likemanga.io now permanently 301-redirects every path (root, /manga/<slug>/, ?s=<query> search) to the bare root of https://mgread.io/ - not a path-preserving redirect, the path and query are dropped entirely. mgread.io is already registered below as its own working source (id: "mgread"), so this isn't a same-engine rebrand needing a new entry (like aryascans->brainrotcomics) - it's a dead domain merged into an already-registered site. Verified live 2026-07-19.
     // { id: "suryatoon", name: "Surya Toon", origin: "https://suryatoon.com", domains: ["suryatoon.com"] }, // retired: domain hijacked/stalled 2026-07 - 200s but body is a bare stuck "Loading..." placeholder, no real content, verified 2026-07-11
     // { id: "mangagalaxy", name: "Manga Galaxy", origin: "https://mangagalaxy.me", domains: ["mangagalaxy.me"] }, // retired: domain hijacked 2026-07 - homepage 200s with a JS redirect chain that lands on an unrelated TikTok video, verified 2026-07-11
