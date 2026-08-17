@@ -127,4 +127,28 @@ describe("createMangaStreamAdapter", () => {
         const result = await adapter.resolveChapter({ url: new URL(CHAPTER_URL) }, context)
         expect(result.manga.manga.title).toBe("Cool Manga Chapter 12")
     })
+
+    it("recovers a chapter list rendered as bare /chapter/ anchors when the <li> markup is gone", async () => {
+        // Spider Scans and similar ts-theme variants dropped the <li data-num> #chapterlist
+        // block and now render chapters as plain <a href> cards under a separate /chapter/
+        // root. The <li> pass finds nothing; the anchor fallback must recover the list, and
+        // dedup the Start-Reading / First nav buttons that point at the same chapter URLs.
+        const listHtml = `<html><body>
+<div class="detail-actions">
+  <a href="https://test-stream.example/chapter/cool-manga-chapter-3/" class="btn">Start Reading</a>
+  <a href="https://test-stream.example/chapter/cool-manga-chapter-1/" class="btn">First</a>
+</div>
+<div class="chapter-cards">
+  <a href="https://test-stream.example/chapter/cool-manga-chapter-1/">Chapter 1</a>
+  <a href="https://test-stream.example/chapter/cool-manga-chapter-2/">Chapter 2</a>
+  <a href="https://test-stream.example/chapter/cool-manga-chapter-3/">Chapter 3</a>
+  <a href="https://other.example/chapter/unrelated-chapter-9/">off-domain, must skip</a>
+  <a href="https://test-stream.example/manga/related-series/">related, not a chapter</a>
+</div></body></html>`
+        const context = createContext({ "/manga/cool-manga/": listHtml })
+        const chapters = await adapter.listChapters({ manga: { sourceMangaId: "cool-manga" } as never }, context)
+        expect(chapters.map(c => c.sortKey)).toEqual([1, 2, 3])
+        expect(chapters.map(c => c.title)).toEqual(["Chapter 1", "Chapter 2", "Chapter 3"])
+        expect(chapters.every(c => c.url.startsWith("https://test-stream.example/chapter/"))).toBe(true)
+    })
 })

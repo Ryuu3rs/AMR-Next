@@ -253,33 +253,28 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
 
     function extractChapterList(html: string, slug: string): SourceChapter[] {
         const mangaId = `${config.id}:manga:${slug}`
-        const items = [...html.matchAll(/<li[^>]*\bdata-num=["']([^"']+)["'][^>]*>([\s\S]*?)<\/li>/gi)]
-        const fallback = items.length === 0 ? [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)] : []
-        const blocks =
-            items.length > 0 ? items.map(m => captureGroup(m, 2) ?? "") : fallback.map(m => captureGroup(m, 1) ?? "")
         const out: SourceChapter[] = []
         const seen = new Set<string>()
-        for (const block of blocks) {
-            const a = block.match(/<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i)
-            const href = a ? captureGroup(a, 1) : undefined
-            if (!href) continue
+
+        function pushHref(href: string): void {
             let absolute: URL
             try {
                 absolute = new URL(href, config.origin)
             } catch {
-                continue
+                return
             }
             let cslug: string
             if (isHierarchical) {
                 const m = absolute.pathname.match(chapterRe)
-                if (!m) continue
+                if (!m) return
                 cslug = `${m[1]}/${m[2]}`
             } else {
+                if (!matchesSourceDomain(absolute.hostname, config.domains)) return
                 const lastSeg = absolute.pathname.replace(/\/$/, "").split("/").pop()
-                if (!lastSeg || !/chapter/i.test(lastSeg)) continue
+                if (!lastSeg || !/chapter/i.test(lastSeg)) return
                 cslug = lastSeg
             }
-            if (seen.has(cslug)) continue
+            if (seen.has(cslug)) return
             seen.add(cslug)
             const number = chapterNumberOf(cslug)
             out.push({
@@ -293,6 +288,30 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
                 language
             })
         }
+
+        const items = [...html.matchAll(/<li[^>]*\bdata-num=["']([^"']+)["'][^>]*>([\s\S]*?)<\/li>/gi)]
+        const fallback = items.length === 0 ? [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)] : []
+        const blocks =
+            items.length > 0 ? items.map(m => captureGroup(m, 2) ?? "") : fallback.map(m => captureGroup(m, 1) ?? "")
+        for (const block of blocks) {
+            const a = block.match(/<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i)
+            const href = a ? captureGroup(a, 1) : undefined
+            if (href) pushHref(href)
+        }
+
+        // Theme-variant fallback: some ts-family sites (e.g. Spider Scans) dropped the
+        // <li data-num> #chapterlist markup and render the list as bare <a href> cards
+        // pointing at /chapter/<manga-slug>-chapter-N. Only when the <li> pass found
+        // nothing (flat sites only - hierarchical relies on the path-shape match) scan
+        // every same-domain anchor whose last segment looks like a chapter. Dedup by
+        // slug keeps the Start-Reading / First nav buttons from double-counting.
+        if (out.length === 0 && !isHierarchical) {
+            for (const m of html.matchAll(/<a\s+[^>]*\bhref=["']([^"']+)["']/gi)) {
+                const href = captureGroup(m, 1)
+                if (href) pushHref(href)
+            }
+        }
+
         return out
     }
 

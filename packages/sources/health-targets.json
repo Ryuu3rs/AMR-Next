@@ -92,26 +92,6 @@
         "expectTitle": "",
         "note": "best-guess slug; adult site. Verdict is what matters, not the exact title."
     },
-    "hentai20": {
-        "seriesUrl": "https://hentai20.io/manga/wireless-onahole/",
-        "expectTitle": "",
-        "note": "refreshed 2026-08-17; adult site."
-    },
-    "oppaistream": {
-        "seriesUrl": "https://read.oppai.stream/manga/one-piece/",
-        "expectTitle": "",
-        "note": "best-guess slug; adult site."
-    },
-    "eahentai": {
-        "seriesUrl": "https://eahentai.com/manga/one-piece/",
-        "expectTitle": "",
-        "note": "best-guess slug; adult site."
-    },
-    "hentalk": {
-        "seriesUrl": "https://hentalk.pw/manga/one-piece/",
-        "expectTitle": "",
-        "note": "best-guess slug; adult site."
-    },
     "tritinia": {
         "seriesUrl": "https://tritinia.org/manga/the-beginning-after-the-end/",
         "expectTitle": "Beginning After the End",
