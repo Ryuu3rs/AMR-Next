@@ -68,9 +68,9 @@
         "note": "best-guess slug"
     },
     "mangasushi": {
-        "seriesUrl": "https://mangasushi.org/manga/the-beginning-after-the-end/",
-        "expectTitle": "Beginning After the End",
-        "note": "best-guess slug"
+        "seriesUrl": "https://mangasushi.org/manga/lonely-attack-on-the-different-world/",
+        "expectTitle": "Lonely Attack",
+        "note": "refreshed 2026-08-17 (live series)"
     },
     "manhuatop": {
         "seriesUrl": "https://manhuatop.org/manhua/martial-peak/",
@@ -93,9 +93,9 @@
         "note": "best-guess slug; adult site. Verdict is what matters, not the exact title."
     },
     "hentai20": {
-        "seriesUrl": "https://hentai20.io/manga/one-piece/",
+        "seriesUrl": "https://hentai20.io/manga/wireless-onahole/",
         "expectTitle": "",
-        "note": "best-guess slug; adult site."
+        "note": "refreshed 2026-08-17; adult site."
     },
     "oppaistream": {
         "seriesUrl": "https://read.oppai.stream/manga/one-piece/",
@@ -128,9 +128,9 @@
         "note": "Madara with /volume-N/chapter-M/ chapter URLs; live-verified 2026-08-05"
     },
     "mgread": {
-        "seriesUrl": "https://mgread.io/manga/one-piece/",
-        "expectTitle": "One Piece",
-        "note": "best-guess slug (also the likemanga.io redirect target)"
+        "seriesUrl": "https://mgread.io/manga/tomb-raider-king/",
+        "expectTitle": "Tomb Raider King",
+        "note": "refreshed 2026-08-17 (live series)"
     },
     "manhwatop": {
         "seriesUrl": "https://manhwatop.com/manga/the-beginning-after-the-end/",
@@ -138,9 +138,9 @@
         "note": "best-guess slug"
     },
     "thunderscans": {
-        "seriesUrl": "https://en-thunderscans.com/manga/nano-machine/",
-        "expectTitle": "Nano Machine",
-        "note": "best-guess slug"
+        "seriesUrl": "https://en-thunderscans.com/comics/the-artist-who-paints-dungeons/",
+        "expectTitle": "",
+        "note": "refreshed 2026-08-17: /comics/ path (site moved from /manga/)"
     },
     "kappabeast": {
         "seriesUrl": "https://kappabeast.com/reader/nano-machine/",
@@ -148,9 +148,9 @@
         "note": "best-guess slug (mangaPath=reader, hierarchical chapters)"
     },
     "spiderscans": {
-        "seriesUrl": "https://spiderscans.xyz/manga/nano-machine/",
-        "expectTitle": "Nano Machine",
-        "note": "best-guess slug"
+        "seriesUrl": "https://spiderscans.xyz/manga/all-hail-the-sect-leader/",
+        "expectTitle": "Sect Leader",
+        "note": "refreshed 2026-08-17 (live series)"
     },
     "fanfox": {
         "seriesUrl": "https://fanfox.net/manga/one_piece/",

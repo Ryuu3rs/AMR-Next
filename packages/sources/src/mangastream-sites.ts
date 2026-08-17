@@ -10,7 +10,10 @@ const SITES: MangaStreamConfig[] = [
         id: "thunderscans",
         name: "Thunder Scans EN",
         origin: "https://en-thunderscans.com",
-        domains: ["en-thunderscans.com"]
+        domains: ["en-thunderscans.com"],
+        // Series moved from /manga/<slug> to /comics/<slug> (still the ts-theme engine:
+        // ts_reader.run()/#readerarea markup intact). Verified live 2026-08-17.
+        mangaPath: "comics"
     },
     {
         id: "kappabeast",
