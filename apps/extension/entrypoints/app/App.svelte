@@ -44,7 +44,7 @@
 
     const sections = [
         "Home",
-        "Suggestions",
+        "Discover",
         "Library",
         "Bookmarks",
         "Updates",
@@ -2749,7 +2749,7 @@
         // One load attempt per visit to the tab: the flag guards against re-firing while
         // we stay on the tab, and resets when we leave, so a failed first load retries on
         // the next visit (and a success revalidates cheaply via the cached handler).
-        if (activeSection === "Suggestions") {
+        if (activeSection === "Discover") {
             if (!suggestionsRequestedForVisit) {
                 suggestionsRequestedForVisit = true
                 void loadSuggestions(false)
@@ -2816,6 +2816,53 @@
     // counting against this so the podium picks are never duplicated below. Based on the
     // filtered list so paging respects the active filters.
     const restSuggestionsCount = $derived(Math.max(0, filteredSuggestions.length - 3))
+
+    // --- Discover rails (all derived from the already-fetched `suggestions`, no new network) ---
+    // "Because you read X": group suggestions by the owned titles that led to them (a
+    // Suggestion carries the owned titles in `reasons`). One rail per owned title with
+    // enough picks, strongest first.
+    const becauseYouReadRails = $derived.by(() => {
+        const byTitle = new Map<string, Suggestion[]>()
+        for (const s of suggestions) {
+            for (const reason of s.reasons) {
+                const arr = byTitle.get(reason) ?? []
+                if (arr.length < 24) arr.push(s)
+                byTitle.set(reason, arr)
+            }
+        }
+        return [...byTitle.entries()]
+            .filter(([, items]) => items.length >= 3)
+            .sort((a, b) => b[1].length - a[1].length)
+            .slice(0, 6)
+            .map(([title, items]) => ({ title, items: items.slice(0, 15) }))
+    })
+    // "More <genre>": one rail per the user's strongest genres, filled from suggestions
+    // carrying that genre. Skipped when a genre has too few picks to be worth a row.
+    const byGenreRails = $derived.by(() => {
+        const rails: { genre: string; items: Suggestion[] }[] = []
+        for (const g of genreBreakdown) {
+            const key = g.name.toLocaleLowerCase("en")
+            const items = suggestions.filter(s => (s.genres ?? []).some(x => x.toLocaleLowerCase("en") === key))
+            if (items.length >= 4) rails.push({ genre: g.name, items: items.slice(0, 15) })
+            if (rails.length >= 5) break
+        }
+        return rails
+    })
+    // Focus mode: "Find similar" on a library title opens Discover scoped to that title's
+    // picks (the suggestions whose `reasons` cite it). Null = the full Discover page.
+    let discoverFocus = $state<string | null>(null)
+    const focusedSuggestions = $derived(
+        discoverFocus ? suggestions.filter(s => s.reasons.includes(discoverFocus as string)) : []
+    )
+    function discoverSimilarTo(title: string) {
+        discoverFocus = title
+        activeSection = "Discover"
+        suggestionsShown = SUGGESTIONS_PAGE
+        if (!suggestionsRequestedForVisit && suggestions.length === 0) void loadSuggestions(false)
+    }
+    function clearDiscoverFocus() {
+        discoverFocus = null
+    }
     async function executeClear(scope: "history" | "all") {
         clearWorking = true
         try {
@@ -3405,9 +3452,39 @@
                     </button>
                 </div>
             {/if}
-        {:else if activeSection === "Suggestions"}
+        {:else if activeSection === "Discover"}
+            {#snippet sugCard(s: Suggestion)}
+                <article class="disc-card">
+                    <div class="poster-wrap">
+                        <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
+                            {#if s.coverUrl}<img
+                                    src={s.coverUrl}
+                                    alt={s.title}
+                                    loading="lazy"
+                                    decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span>{/if}
+                            {#if s.community}
+                                <div class="poster-badges"><span class="updated-chip">Readers also read</span></div>
+                            {/if}
+                        </button>
+                    </div>
+                    <p class="poster-title">{s.title}</p>
+                    <p class="poster-sub muted">{suggestionWhy(s)}</p>
+                    <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}
+                        >Find on a source</button>
+                </article>
+            {/snippet}
+            {#snippet rail(heading: string, items: Suggestion[])}
+                <section class="disc-rail">
+                    <h2 class="disc-rail-head">{heading}</h2>
+                    <div class="disc-rail-track">
+                        {#each items as s (s.anilistId)}
+                            {@render sugCard(s)}
+                        {/each}
+                    </div>
+                </section>
+            {/snippet}
             <div class="page-head">
-                <h1>Suggestions</h1>
+                <h1>Discover</h1>
                 <button
                     type="button"
                     class="btn-sm"
@@ -3416,7 +3493,23 @@
                     {suggestionsLoading ? "Refreshing…" : "Refresh"}
                 </button>
             </div>
-            {#if suggestionsLoading && suggestions.length === 0}
+            {#if discoverFocus}
+                <div class="disc-focus-head">
+                    <button type="button" class="link-btn" onclick={clearDiscoverFocus}>‹ Back to Discover</button>
+                    <h2>More like {discoverFocus}</h2>
+                </div>
+                {#if focusedSuggestions.length === 0}
+                    <p class="muted">
+                        No similar picks for {discoverFocus} yet. Read a bit more of it, then hit Refresh.
+                    </p>
+                {:else}
+                    <div class="poster-grid">
+                        {#each focusedSuggestions as s (s.anilistId)}
+                            {@render sugCard(s)}
+                        {/each}
+                    </div>
+                {/if}
+            {:else if suggestionsLoading && suggestions.length === 0}
                 <p class="muted">Finding titles you might like…</p>
             {:else if suggestions.length === 0}
                 <p class="muted">
@@ -3425,6 +3518,13 @@
                         : "No suggestions yet. Add a few titles to your library so we can learn what you like."}
                 </p>
             {:else}
+                {#each becauseYouReadRails as r (r.title)}
+                    {@render rail(`Because you read ${r.title}`, r.items)}
+                {/each}
+                {#each byGenreRails as r (r.genre)}
+                    {@render rail(`More ${r.genre}`, r.items)}
+                {/each}
+                <h2 class="podium-heading">Top picks for you</h2>
                 <div class="sug-filters">
                     <input
                         class="sug-search"
@@ -3474,7 +3574,6 @@
                         <button type="button" class="link-btn" onclick={clearSugFilters}>Clear filters</button>
                     </p>
                 {:else}
-                    <h2 class="podium-heading">Top picks for you</h2>
                     <div class="podium">
                         {#each filteredSuggestions.slice(0, 3) as s, i (s.anilistId)}
                             {@const matched = matchedGenres(s)}
@@ -3516,29 +3615,7 @@
                     {#if restSuggestionsCount > 0}
                         <div class="poster-grid">
                             {#each filteredSuggestions.slice(3, 3 + suggestionsShown) as s (s.anilistId)}
-                                <article>
-                                    <div class="poster-wrap">
-                                        <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
-                                            {#if s.coverUrl}<img
-                                                    src={s.coverUrl}
-                                                    alt={s.title}
-                                                    loading="lazy"
-                                                    decoding="async" />{:else}<span class="cover-initial"
-                                                    >{s.title[0]}</span
-                                                >{/if}
-                                            {#if s.community}
-                                                <div class="poster-badges">
-                                                    <span class="updated-chip">Readers also read</span>
-                                                </div>
-                                            {/if}
-                                        </button>
-                                    </div>
-                                    <p class="poster-title">{s.title}</p>
-                                    <p class="poster-sub muted">{suggestionWhy(s)}</p>
-                                    <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}>
-                                        Find on a source
-                                    </button>
-                                </article>
+                                {@render sugCard(s)}
                             {/each}
                         </div>
                         {#if suggestionsShown < restSuggestionsCount}
@@ -3562,23 +3639,7 @@
                     <p class="muted">Popular with readers who share your library.</p>
                     <div class="poster-grid">
                         {#each communitySuggestions as s (s.anilistId)}
-                            <article>
-                                <div class="poster-wrap">
-                                    <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
-                                        {#if s.coverUrl}<img
-                                                src={s.coverUrl}
-                                                alt={s.title}
-                                                loading="lazy"
-                                                decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span
-                                            >{/if}
-                                    </button>
-                                </div>
-                                <p class="poster-title">{s.title}</p>
-                                <p class="poster-sub muted">{suggestionWhy(s)}</p>
-                                <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}>
-                                    Find on a source
-                                </button>
-                            </article>
+                            {@render sugCard(s)}
                         {/each}
                     </div>
                 {/if}
@@ -3922,6 +3983,17 @@
                                         e.stopPropagation()
                                         detailManga = manga
                                     }}>⋯</button>
+                                {#if !isSeedData(manga)}
+                                    <button
+                                        type="button"
+                                        class="poster-similar-btn"
+                                        aria-label={`Find titles similar to ${manga.title}`}
+                                        title="Find similar"
+                                        onclick={e => {
+                                            e.stopPropagation()
+                                            discoverSimilarTo(manga.title)
+                                        }}>≈</button>
+                                {/if}
                             </div>
                             <p class="poster-title">{manga.title}</p>
                             <p class="poster-sub">
@@ -6035,6 +6107,18 @@
                         class="btn-outline"
                         onclick={() => detailManga && openInBrowser(detailManga, true, { fallback: true })}>
                         Open source
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-outline"
+                        onclick={() => {
+                            if (detailManga) {
+                                const t = detailManga.title
+                                closeDetail()
+                                discoverSimilarTo(t)
+                            }
+                        }}>
+                        Find similar
                     </button>
                     {#if openSourceError}<span class="muted" style="color:var(--color-warn)">{openSourceError}</span
                         >{/if}
