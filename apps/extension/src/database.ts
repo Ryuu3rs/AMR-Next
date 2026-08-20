@@ -3106,7 +3106,7 @@ export async function recordAnalyticsEvent(event: Omit<AnalyticsEvent, "id">): P
 // Bounded diagnostic-log ring buffer. Appends then count-trims to the newest LOG_MAX
 // entries (by insertion id) - same append-then-prune shape as recordAnalyticsEvent but
 // count- rather than age-bounded. Backs the user-exportable log (log:export).
-export const LOG_MAX = 500
+export const LOG_MAX = 1000
 
 export async function recordLog(entry: Omit<LogEntry, "id">): Promise<void> {
     await db.logs.add(entry)

@@ -153,6 +153,23 @@ describe("checkUpdates", () => {
         expect(listMangaChaptersMock).toHaveBeenCalledTimes(1)
         expect(listMangaChaptersMock.mock.calls[0]?.[0]?.id).toBe("m-normal")
     })
+
+    it("writes an update-check run summary to the diagnostic log (not only on failure)", async () => {
+        const { checkUpdates } = await import("./updates-sources")
+        await db.logs.clear()
+
+        const normal = makeManga({ id: "m-run" })
+        await db.manga.bulkPut([normal])
+        await db.sourceLinks.bulkPut([makeLink(normal.id)])
+        listMangaChaptersMock.mockResolvedValue([])
+
+        await checkUpdates()
+
+        const logs = await db.logs.toArray()
+        const run = logs.find(l => l.scope === "update-check" && l.level === "info" && /^run /.test(l.message))
+        expect(run).toBeDefined()
+        expect(run?.message).toContain("checked 1")
+    })
 })
 
 describe("checkUpdates per-title error handling", () => {

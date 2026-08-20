@@ -32,12 +32,54 @@ function redact(text: string, secrets: readonly string[]): string {
     return out
 }
 
+// A point-in-time picture of the library the log lines alone don't carry. Answers the
+// "why is X still unread / did the update check see it" questions a bare event log can't.
+export type LibrarySnapshot = {
+    total: number
+    // Newest completed update check's counts, if one has run (from updateStatus).
+    lastUpdateCheck?: {
+        at: number
+        checked: number
+        updated: number
+        failed: number
+    }
+    bySource: readonly { sourceId: string; count: number }[]
+    // Titles the app currently considers to have unread/new chapters, capped.
+    unread: readonly { title: string; sourceId: string; read: number | null; latest: number | null }[]
+    unreadTotal: number
+}
+
 export type DiagnosticLogMeta = {
     version: string
     browser: string
     // Known secret values (AniList/gist tokens, community userId/username, gist id) to
     // redact literally. Empty/undefined entries are ignored.
     secrets: readonly string[]
+    // Optional library picture rendered as a section above the event log.
+    snapshot?: LibrarySnapshot
+}
+
+function formatSnapshot(s: LibrarySnapshot): string {
+    const bySource = s.bySource.length ? s.bySource.map(b => `${flatten(b.sourceId)} ${b.count}`).join(", ") : "(none)"
+    const lines = [`Library snapshot: ${s.total} titles`, `  by source: ${bySource}`]
+    if (s.lastUpdateCheck) {
+        const c = s.lastUpdateCheck
+        lines.push(
+            `  last update check: ${new Date(c.at).toISOString()} - checked ${c.checked}, updated ${c.updated}, failed ${c.failed}`
+        )
+    } else {
+        lines.push(`  last update check: (none recorded)`)
+    }
+    lines.push(`  titles with unread/new chapters: ${s.unreadTotal}`)
+    for (const u of s.unread) {
+        lines.push(
+            `    - ${flatten(u.title)} [${flatten(u.sourceId)}] read ${u.read ?? "-"} / latest ${u.latest ?? "-"}`
+        )
+    }
+    if (s.unreadTotal > s.unread.length) {
+        lines.push(`    ... and ${s.unreadTotal - s.unread.length} more`)
+    }
+    return lines.join("\n")
 }
 
 export function formatDiagnosticLog(entries: readonly LogEntry[], meta: DiagnosticLogMeta): string {
@@ -47,8 +89,9 @@ export function formatDiagnosticLog(entries: readonly LogEntry[], meta: Diagnost
         `generated: ${new Date().toISOString()}`,
         `extension version: ${meta.version}`,
         `browser: ${meta.browser}`,
-        `entries: ${entries.length}`
+        `log entries: ${entries.length}`
     ].join("\n")
+    const snapshotBlock = meta.snapshot ? `\n\n${formatSnapshot(meta.snapshot)}` : ""
 
     const lines = entries.map(entry => {
         const time = new Date(entry.ts).toISOString()
@@ -61,5 +104,5 @@ export function formatDiagnosticLog(entries: readonly LogEntry[], meta: Diagnost
         return redact(line, secrets)
     })
 
-    return `${header}\n\n${lines.join("\n") || "(no entries)"}`
+    return `${header}${snapshotBlock}\n\n${lines.join("\n") || "(no entries)"}`
 }
