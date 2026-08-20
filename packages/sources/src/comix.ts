@@ -152,6 +152,13 @@ export const comixAdapter: SourceAdapter = {
         homepage: ORIGIN
     },
 
+    // Comix is bot-walled (Cloudflare), so a service-worker fetch of the manga page 403s
+    // and listChapters synthesises from a latestChapter it never got - an empty list, which
+    // breaks the on-page panel's prev/next. When the SW list comes back empty the extension
+    // tab-renders the manga page (real browser session clears Cloudflare) and re-runs
+    // listChapters against that HTML, where the SSR initial-data - and latestChapter - is present.
+    chapterListViaMangaPageTab: true,
+
     // Needed for chapter:siblings' number-fallback and for correct mark-read tracking:
     // both resolve the manga from the chapter URL. A chapter URL is
     // /title/{slug}/{id}-chapter-{n}, so the slug is the same segment either way.

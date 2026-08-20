@@ -1,7 +1,7 @@
 import type { ChapterRecord } from "@amr/contracts"
 import { latestNumberedChapter } from "@amr/source-sdk"
 import { db } from "../database"
-import { findSource, listChaptersBySource } from "../sources"
+import { findSource, listChaptersBySource, listChaptersFromSourceHtml } from "../sources"
 import { fetchChapterHtmlViaTab } from "./tab-fetch"
 import { publishLive } from "../live"
 
@@ -286,7 +286,21 @@ export async function listChaptersWithTabFallback(
     }
 
     // Standard path: SW-fetch the chapter list then persist + update latest count.
-    const chapters = await listChaptersBySource(source!.manifest.id, sourceMangaId, mangaUrl)
+    let chapters = await listChaptersBySource(source!.manifest.id, sourceMangaId, mangaUrl)
+    // Bot-walled manga page (e.g. Comix behind Cloudflare): the SW fetch 403s so the list
+    // comes back empty. Tab-render the manga page with the user's real session and re-run
+    // the adapter's own listChapters against that HTML, which the source parses normally.
+    if (chapters.length === 0 && source!.chapterListViaMangaPageTab) {
+        try {
+            const manga = await db.manga.get(mangaId)
+            if (manga) {
+                const html = await fetchChapterHtmlViaTab(mangaUrl)
+                chapters = await listChaptersFromSourceHtml(manga, source!.manifest.id, sourceMangaId, mangaUrl, html)
+            }
+        } catch {
+            // Tab load timed out / still challenged - leave the list empty for the next visit.
+        }
+    }
     if (chapters.length === 0) return 0
     // Same bulkPut + stale-purge + latest-count write sequence as checkUpdates in
     // updates-sources.ts - wrapped in one transaction there for the same SW-restart
