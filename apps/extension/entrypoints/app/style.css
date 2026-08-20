@@ -1630,6 +1630,104 @@ button:disabled {
     white-space: nowrap;
 }
 
+/* Suggestions-tab filter bar */
+.sug-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.sug-search {
+    flex: 1 1 200px;
+    min-width: 160px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: inherit;
+    font-size: 13px;
+}
+
+.sug-search:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.sug-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.sug-control select {
+    padding: 7px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: inherit;
+    font-size: 13px;
+}
+
+.sug-toggle {
+    cursor: pointer;
+    user-select: none;
+}
+
+.sug-genre-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+
+.genre-chip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    transition:
+        background 0.12s,
+        color 0.12s,
+        border-color 0.12s;
+}
+
+.genre-chip-btn:hover {
+    border-color: var(--accent);
+    color: inherit;
+}
+
+.genre-chip-on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.genre-chip-count {
+    opacity: 0.65;
+    font-variant-numeric: tabular-nums;
+}
+
+.genre-chip-on .genre-chip-count {
+    opacity: 0.85;
+}
+
+.link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
 @media (max-width: 560px) {
     .podium {
         grid-template-columns: 1fr;
