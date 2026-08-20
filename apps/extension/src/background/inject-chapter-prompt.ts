@@ -1,4 +1,4 @@
-// Self-contained — serialized and injected into the page via scripting.executeScript.
+// Self-contained - serialized and injected into the page via scripting.executeScript.
 // Must not reference any external variables or imports.
 export function injectChapterPrompt(chapterUrl: string): void {
     const BANNER_ID = "__amr-chapter-prompt__"
@@ -6,7 +6,7 @@ export function injectChapterPrompt(chapterUrl: string): void {
 
     // Resolve the WebExtension runtime from the page-level global, NOT from the background
     // module's closure. When Chrome serializes this function via scripting.executeScript the
-    // closure is broken — 'browser' from wxt/browser compiles to a minified module-local var
+    // closure is broken - 'browser' from wxt/browser compiles to a minified module-local var
     // that is undefined in the re-evaluated isolated world. globalThis.browser (Chrome 121+
     // native) or globalThis.chrome (all Chrome/Edge) are always available in the isolated world.
     const ext: any = (globalThis as any).browser ?? (globalThis as any).chrome
@@ -149,7 +149,7 @@ export function injectChapterPrompt(chapterUrl: string): void {
 
     shadow.append(style, panel)
 
-    // Scroll progress bar — updates on every scroll event via rAF.
+    // Scroll progress bar - updates on every scroll event via rAF.
     const progEl = shadow.getElementById("prog") as HTMLElement | null
     function updateProgress() {
         if (!progEl) return
@@ -211,6 +211,55 @@ export function injectChapterPrompt(chapterUrl: string): void {
         } catch {}
     })()
 
+    // Seed prev/next for Comix straight from the page it's on. Comix is Cloudflare-walled
+    // (no background fetch of its list) and addresses chapters by an opaque id, but every
+    // page SSRs `latestChapter` in its <script id="initial-data"> block and the site
+    // canonicalises a placeholder `/{slug}/0-chapter-N` URL to the real chapter. So the
+    // current number (from the URL) + latestChapter (from the DOM) is enough to build
+    // working prev/next here, with no cached list and no round-trip.
+    ;(function seedComixNavFromDom() {
+        try {
+            if (!/(^|\.)comix\.to$/i.test(location.hostname)) return
+            const m = new URL(chapterUrl).pathname.match(
+                /^\/title\/([a-z0-9][a-z0-9-]+)\/\d+-chapter-(\d+(?:\.\d+)?)\/?$/i
+            )
+            if (!m) return
+            const slug = m[1]
+            const cur = parseFloat(m[2]!)
+            if (!isFinite(cur)) return
+            let latest = Infinity
+            const el = document.getElementById("initial-data")
+            if (el && el.textContent) {
+                const data = JSON.parse(el.textContent)
+                const queries = data && data.queries
+                if (queries && typeof queries === "object") {
+                    for (const k of Object.keys(queries)) {
+                        let key: unknown
+                        try {
+                            key = JSON.parse(k)
+                        } catch {
+                            continue
+                        }
+                        if (Array.isArray(key) && key.indexOf("detail") !== -1) {
+                            const lc = (queries as Record<string, { latestChapter?: unknown }>)[k]?.latestChapter
+                            if (typeof lc === "number") latest = lc
+                            break
+                        }
+                    }
+                }
+            }
+            const base = `${location.origin}/title/${slug}/0-chapter-`
+            if (cur > 1 && !prevUrl) {
+                prevUrl = base + (Number.isInteger(cur) ? cur - 1 : Math.floor(cur))
+                ;(bprev as HTMLButtonElement).disabled = false
+            }
+            if (cur < latest && !nextUrl) {
+                nextUrl = base + (Number.isInteger(cur) ? cur + 1 : Math.ceil(cur))
+                ;(bnext as HTMLButtonElement).disabled = false
+            }
+        } catch {}
+    })()
+
     ext.runtime
         .sendMessage({ type: "chapter:siblings", url: chapterUrl })
         .then((resp: any) => {
@@ -221,7 +270,7 @@ export function injectChapterPrompt(chapterUrl: string): void {
                 mangaTitle: string | null
                 chapterTitle: string | null
             }
-            // Only overwrite DOM-seeded URLs if the DB has real values — don't
+            // Only overwrite DOM-seeded URLs if the DB has real values - don't
             // re-disable buttons that seedNavFromDom already enabled.
             if (d.prevUrl !== null) prevUrl = d.prevUrl
             if (d.nextUrl !== null) nextUrl = d.nextUrl
