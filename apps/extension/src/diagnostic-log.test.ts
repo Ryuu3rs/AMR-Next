@@ -57,6 +57,47 @@ describe("formatDiagnosticLog", () => {
         expect(formatDiagnosticLog([], meta())).toContain("(no entries)")
     })
 
+    it("renders a library snapshot: totals, per-source counts, last update check, and unread titles", () => {
+        const out = formatDiagnosticLog([], {
+            ...meta(),
+            snapshot: {
+                total: 712,
+                lastUpdateCheck: { at: 1_700_000_000_000, checked: 712, updated: 3, failed: 5 },
+                bySource: [
+                    { sourceId: "mangadex", count: 400 },
+                    { sourceId: "mangahub", count: 312 }
+                ],
+                unread: [{ title: "Mahou Tsukai No Yome", sourceId: "mangahub", read: 118, latest: 123 }],
+                unreadTotal: 1
+            }
+        })
+        expect(out).toContain("Library snapshot: 712 titles")
+        expect(out).toContain("mangadex 400, mangahub 312")
+        expect(out).toContain("checked 712, updated 3, failed 5")
+        expect(out).toContain("titles with unread/new chapters: 1")
+        expect(out).toContain("Mahou Tsukai No Yome [mangahub] read 118 / latest 123")
+    })
+
+    it("notes when the unread list was capped and when no update check has run", () => {
+        const unread = Array.from({ length: 3 }, (_, i) => ({
+            title: `T${i}`,
+            sourceId: "mangahub",
+            read: 1,
+            latest: 2
+        }))
+        const out = formatDiagnosticLog([], {
+            ...meta(),
+            snapshot: { total: 50, bySource: [{ sourceId: "mangahub", count: 50 }], unread, unreadTotal: 20 }
+        })
+        expect(out).toContain("last update check: (none recorded)")
+        expect(out).toContain("titles with unread/new chapters: 20")
+        expect(out).toContain("... and 17 more")
+    })
+
+    it("omits the snapshot section entirely when none is provided", () => {
+        expect(formatDiagnosticLog([entry({ message: "x" })], meta())).not.toContain("Library snapshot")
+    })
+
     // Regression: scope + sourceId were previously interpolated un-redacted, leaking a
     // secret/token that landed in either field.
     it("redacts a known secret in the sourceId field", () => {

@@ -253,6 +253,11 @@ export async function checkUpdates(sourceId?: string) {
                         updated += 1
                         updatedTitles.push(item.title)
                         publishLive(["chapters", "library"], [item.id])
+                        diag.info("update-check", `new chapter: ${item.title}`, {
+                            sourceId: item.sourceId,
+                            prev: item.latestChapterNumber ?? null,
+                            latest: latest?.sortKey ?? null
+                        })
                     }
                     checked += 1
                 } catch (error) {
@@ -325,6 +330,20 @@ export async function checkUpdates(sourceId?: string) {
         // the Updates page as a fresh, finished check. Leave the previous status intact.
         if (!sourceId && !updateCheckAborted) finalWrite["updateStatus"] = status
         await browser.storage.local.set(finalWrite)
+        // Record the run in the diagnostic log so an export actually shows update-check
+        // activity (previously only per-title FAILURES were logged, so a clean run left the
+        // log unchanged between checks). Bounded detail: the advanced titles + per-source
+        // block/failure tallies, not every checked title.
+        diag.info(
+            "update-check",
+            `run ${sourceId ?? "all"}: checked ${checked}, updated ${updated}, failed ${failed}`,
+            {
+                aborted: updateCheckAborted,
+                updatedTitles: updatedTitles.slice(0, 50),
+                botBlocked: Object.fromEntries(botBlockedCounts),
+                failuresBySource: Object.fromEntries(failuresBySource)
+            }
+        )
         // Notify only on a full, non-aborted check (same gate as the library-wide status)
         // so a single-source refresh doesn't fire, and only when something actually
         // advanced. Best-effort - never blocks or throws into the caller.

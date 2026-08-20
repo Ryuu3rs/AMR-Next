@@ -1,6 +1,7 @@
 import { SourceError } from "@amr/source-sdk"
 import {
     bookmarkedPagesForChapter,
+    db,
     getAnalyticsSummary,
     getDownload,
     getLogs,
@@ -17,7 +18,8 @@ import { resolveChapterUrl } from "../sources"
 import { getAniListConfig } from "../anilist"
 import { getSyncConfig } from "../sync"
 import { getCommunityProfile } from "../community"
-import { formatDiagnosticLog } from "../diagnostic-log"
+import { formatDiagnosticLog, type LibrarySnapshot } from "../diagnostic-log"
+import { hasNewerChapters } from "../reading-status"
 import { delay, type HandlerMap } from "../background/handler-types"
 
 async function fetchPageBlob(url: string): Promise<Blob> {
@@ -50,6 +52,48 @@ async function fetchPageBlob(url: string): Promise<Blob> {
         return res.blob()
     }
     throw new SourceError("request-failed", "Failed to download a page", { url })
+}
+
+// Cap on the per-title unread list embedded in the diagnostic log so a huge library
+// can't bloat the export; the full count is still reported separately.
+const SNAPSHOT_UNREAD_CAP = 200
+
+// Assemble the library picture the diagnostic log embeds: total + per-source counts,
+// the newest completed update-check counts, and the titles the app currently treats as
+// having unread/new chapters (what "why is X still unread" needs to see).
+async function buildLibrarySnapshot(): Promise<LibrarySnapshot> {
+    const [allManga, stored] = await Promise.all([
+        db.manga.toArray(),
+        browser.storage.local.get("updateStatus") as Promise<{
+            updateStatus?: { checkedAt: number; checked: number; updated: number; failed: number }
+        }>
+    ])
+    const bySourceMap = new Map<string, number>()
+    for (const m of allManga) bySourceMap.set(m.sourceId, (bySourceMap.get(m.sourceId) ?? 0) + 1)
+    const bySource = [...bySourceMap.entries()]
+        .map(([sourceId, count]) => ({ sourceId, count }))
+        .sort((a, b) => b.count - a.count || a.sourceId.localeCompare(b.sourceId))
+
+    const unreadAll = allManga
+        .filter(m => hasNewerChapters(m))
+        .sort((a, b) => a.sourceId.localeCompare(b.sourceId) || a.title.localeCompare(b.title))
+    const unread = unreadAll.slice(0, SNAPSHOT_UNREAD_CAP).map(m => ({
+        title: m.title,
+        sourceId: m.sourceId,
+        read: m.lastReadChapterNumber ?? null,
+        latest: m.latestChapterNumber ?? null
+    }))
+
+    const st = stored.updateStatus
+    return {
+        total: allManga.length,
+        ...(st
+            ? { lastUpdateCheck: { at: st.checkedAt, checked: st.checked, updated: st.updated, failed: st.failed } }
+            : {}),
+        bySource,
+        unread,
+        unreadTotal: unreadAll.length
+    }
 }
 
 export const downloadsBookmarksAnalyticsHandlers: HandlerMap = {
@@ -157,11 +201,12 @@ export const downloadsBookmarksAnalyticsHandlers: HandlerMap = {
         // need when something is already broken. A missing secret still can't leak
         // because the token-pattern backstop runs regardless.
         const safe = async <T>(p: Promise<T>): Promise<T | undefined> => p.catch(() => undefined)
-        const [logs, anilist, sync, community] = await Promise.all([
+        const [logs, anilist, sync, community, snapshot] = await Promise.all([
             getLogs(),
             safe(getAniListConfig()),
             safe(getSyncConfig()),
-            safe(getCommunityProfile())
+            safe(getCommunityProfile()),
+            safe(buildLibrarySnapshot())
         ])
         const secrets = [anilist?.token, sync?.token, sync?.gistId, community?.userId, community?.username].filter(
             (s): s is string => typeof s === "string" && s.length > 0
@@ -169,7 +214,8 @@ export const downloadsBookmarksAnalyticsHandlers: HandlerMap = {
         const text = formatDiagnosticLog(logs, {
             version: browser.runtime.getManifest().version,
             browser: import.meta.env.BROWSER,
-            secrets
+            secrets,
+            ...(snapshot ? { snapshot } : {})
         })
         return { text }
     }
