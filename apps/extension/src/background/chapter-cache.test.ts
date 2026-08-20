@@ -14,12 +14,14 @@ vi.mock("../live", () => ({
 }))
 
 const listChaptersBySourceMock = vi.fn()
+const listChaptersFromSourceHtmlMock = vi.fn()
 vi.mock("../sources", () => ({
     // findSource is only referenced in chapter-cache.ts's type positions
     // (ReturnType<typeof findSource>), never called - fakeSource() below builds
     // the values these tests pass in directly.
     findSource: vi.fn(),
-    listChaptersBySource: (...args: unknown[]) => listChaptersBySourceMock(...args)
+    listChaptersBySource: (...args: unknown[]) => listChaptersBySourceMock(...args),
+    listChaptersFromSourceHtml: (...args: unknown[]) => listChaptersFromSourceHtmlMock(...args)
 }))
 
 const {
@@ -62,6 +64,8 @@ beforeEach(async () => {
     await Promise.all([db.manga.clear(), db.chapters.clear()])
     publishLiveMock.mockReset()
     listChaptersBySourceMock.mockReset()
+    listChaptersFromSourceHtmlMock.mockReset()
+    fetchChapterHtmlViaTabMock.mockReset()
 })
 
 describe("mineAndCacheEpisodesFromHtml", () => {
@@ -301,6 +305,48 @@ describe("listChaptersWithTabFallback standard (SW-fetch) path", () => {
         await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
 
         expect(publishLiveMock).not.toHaveBeenCalled()
+    })
+
+    it("tab-renders the manga page and re-parses when the SW list is empty and chapterListViaMangaPageTab is set (Comix)", async () => {
+        // Comix behind Cloudflare: the SW-fetch list 403s -> []. With the flag set the
+        // fallback tab-renders the manga page and re-runs listChapters against that HTML.
+        await db.manga.put(manga)
+        listChaptersBySourceMock.mockResolvedValue([])
+        fetchChapterHtmlViaTabMock.mockResolvedValue("<html>rendered manga page</html>")
+        const synthesised: ChapterRecord[] = [1, 2, 3].map(n => ({
+            id: `${SOURCE_ID}:chapter:${SOURCE_MANGA_ID}:${n}`,
+            mangaId: MANGA_ID,
+            sourceId: SOURCE_ID,
+            title: `Ch.${n}`,
+            url: `https://${HOSTNAME}/title/slug/0-chapter-${n}`,
+            sortKey: n
+        }))
+        listChaptersFromSourceHtmlMock.mockResolvedValue(synthesised)
+
+        const source = {
+            manifest: { id: SOURCE_ID },
+            getChapterListUrl: () => null,
+            chapterListViaMangaPageTab: true
+        } as unknown as Parameters<typeof listChaptersWithTabFallback>[0]
+        const cached = await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+
+        expect(fetchChapterHtmlViaTabMock).toHaveBeenCalledWith(MANGA_URL)
+        expect(listChaptersFromSourceHtmlMock).toHaveBeenCalledOnce()
+        expect(cached).toBe(3)
+        const chapters = await db.chapters.where("mangaId").equals(MANGA_ID).toArray()
+        expect(chapters.map(c => c.sortKey).sort((a, b) => a - b)).toEqual([1, 2, 3])
+    })
+
+    it("does not tab-render when chapterListViaMangaPageTab is unset (default sources)", async () => {
+        await db.manga.put(manga)
+        listChaptersBySourceMock.mockResolvedValue([])
+        fetchChapterHtmlViaTabMock.mockResolvedValue("<html></html>")
+
+        const source = fakeSource(() => null)
+        await listChaptersWithTabFallback(source, SOURCE_MANGA_ID, MANGA_URL, MANGA_ID)
+
+        expect(fetchChapterHtmlViaTabMock).not.toHaveBeenCalled()
+        expect(listChaptersFromSourceHtmlMock).not.toHaveBeenCalled()
     })
 
     it("advances manga.latestChapterNumber/latestChapterId when a fetched chapter outranks the stored one", async () => {

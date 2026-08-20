@@ -137,4 +137,11 @@ export interface SourceAdapter {
     // worker fetch returns empty HTML), background.ts falls back to tab-injecting
     // this URL and mining episode links from the fully-rendered DOM.
     getChapterListUrl?(sourceMangaId: string, mangaUrl: string): string | null
+    // Optional: when true and a service-worker listChapters returns 0 (the manga page
+    // is bot-walled / behind Cloudflare so a plain SW fetch 403s), the extension
+    // tab-renders the manga page URL and re-runs THIS adapter's listChapters against
+    // that HTML. Unlike getChapterListUrl (which mines <a> links from a standalone list
+    // page), this reuses the adapter's own parse - for sources like Comix that synthesise
+    // the whole list from one SSR field (latestChapter) the browser-rendered page exposes.
+    chapterListViaMangaPageTab?: boolean
 }
