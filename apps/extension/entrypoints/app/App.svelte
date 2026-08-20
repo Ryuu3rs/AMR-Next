@@ -2670,6 +2670,59 @@
     let suggestionsLoading = $state(false)
     let suggestionsFailed = $state(false)
     const communitySuggestions = $derived(suggestions.filter(s => s.community))
+    // Suggestions-tab filters. Genre keys are lowercased; a suggestion must carry ALL
+    // selected genres (AND narrowing). Community-only keeps just the "readers also read"
+    // picks. Sort re-orders the already score-ranked list.
+    let sugQuery = $state("")
+    let sugGenres = $state<string[]>([])
+    let sugCommunityOnly = $state(false)
+    let sugSort = $state<"score" | "frequency" | "title">("score")
+    const sugFiltersActive = $derived(sugQuery.trim() !== "" || sugGenres.length > 0 || sugCommunityOnly)
+    // Distinct genres present across the current suggestions, most-common first, keeping the
+    // first-seen casing for display. Drives the filter chip row.
+    const suggestionGenreOptions = $derived.by(() => {
+        const counts = new Map<string, { name: string; count: number }>()
+        for (const s of suggestions) {
+            const seen = new Set<string>()
+            for (const g of s.genres ?? []) {
+                const key = g.toLocaleLowerCase("en")
+                if (seen.has(key)) continue
+                seen.add(key)
+                const e = counts.get(key)
+                if (e) e.count += 1
+                else counts.set(key, { name: g, count: 1 })
+            }
+        }
+        return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    })
+    const filteredSuggestions = $derived.by(() => {
+        const q = sugQuery.trim().toLocaleLowerCase("en")
+        const need = sugGenres
+        const out = suggestions.filter(s => {
+            if (sugCommunityOnly && !s.community) return false
+            if (q && !s.title.toLocaleLowerCase("en").includes(q)) return false
+            if (need.length > 0) {
+                const have = new Set((s.genres ?? []).map(g => g.toLocaleLowerCase("en")))
+                for (const g of need) if (!have.has(g)) return false
+            }
+            return true
+        })
+        // `suggestions` arrives already score-sorted; only re-sort for the other modes.
+        if (sugSort === "frequency")
+            out.sort((a, b) => b.frequency - a.frequency || b.score - a.score || a.title.localeCompare(b.title))
+        else if (sugSort === "title") out.sort((a, b) => a.title.localeCompare(b.title))
+        return out
+    })
+    function toggleSugGenre(key: string) {
+        sugGenres = sugGenres.includes(key) ? sugGenres.filter(g => g !== key) : [...sugGenres, key]
+        suggestionsShown = SUGGESTIONS_PAGE
+    }
+    function clearSugFilters() {
+        sugQuery = ""
+        sugGenres = []
+        sugCommunityOnly = false
+        suggestionsShown = SUGGESTIONS_PAGE
+    }
     // The cached handler hands back up to ~60 items at once; rendering every card (and
     // firing every cover fetch) up front makes the tab feel slow. Grow a visible slice
     // instead, one page at a time as the user scrolls to the end.
@@ -2760,8 +2813,9 @@
         return s.genres.filter(g => topGenreKeys.has(g.toLocaleLowerCase("en"))).slice(0, 3)
     }
     // Suggestions past the top-3 podium feed the paginated grid; keep its lazy-load slice
-    // counting against this so the podium picks are never duplicated below.
-    const restSuggestionsCount = $derived(Math.max(0, suggestions.length - 3))
+    // counting against this so the podium picks are never duplicated below. Based on the
+    // filtered list so paging respects the active filters.
+    const restSuggestionsCount = $derived(Math.max(0, filteredSuggestions.length - 3))
     async function executeClear(scope: "history" | "all") {
         clearWorking = true
         try {
@@ -3371,49 +3425,60 @@
                         : "No suggestions yet. Add a few titles to your library so we can learn what you like."}
                 </p>
             {:else}
-                <h2 class="podium-heading">Top picks for you</h2>
-                <div class="podium">
-                    {#each suggestions.slice(0, 3) as s, i (s.anilistId)}
-                        {@const matched = matchedGenres(s)}
-                        <article class="podium-item" class:podium-first={i === 0}>
-                            <div class="poster-wrap">
-                                <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
-                                    {#if s.coverUrl}<img
-                                            src={s.coverUrl}
-                                            alt={s.title}
-                                            loading="lazy"
-                                            decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span
-                                        >{/if}
-                                    <span class="podium-rank podium-rank-{i + 1}"
-                                        >{i === 0 ? "1st" : i === 1 ? "2nd" : "3rd"}</span>
-                                    {#if s.community}
-                                        <div class="poster-badges">
-                                            <span class="updated-chip">Readers also read</span>
-                                        </div>
-                                    {/if}
-                                </button>
-                            </div>
-                            <p class="poster-title">{s.title}</p>
-                            {#if s.reasons.length > 0}
-                                <p class="poster-sub muted">Because you read {s.reasons.slice(0, 2).join(", ")}</p>
-                            {:else if matched.length === 0}
-                                <p class="poster-sub muted">Popular with readers like you</p>
-                            {/if}
-                            {#if matched.length > 0}
-                                <div class="podium-chips">
-                                    {#each matched as g}<span class="genre-chip">{g}</span>{/each}
-                                </div>
-                            {/if}
-                            <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}>
-                                Find on a source
-                            </button>
-                        </article>
-                    {/each}
+                <div class="sug-filters">
+                    <input
+                        class="sug-search"
+                        type="search"
+                        placeholder="Filter by title…"
+                        bind:value={sugQuery}
+                        oninput={() => (suggestionsShown = SUGGESTIONS_PAGE)} />
+                    <label class="sug-control">
+                        <span>Sort</span>
+                        <select bind:value={sugSort} onchange={() => (suggestionsShown = SUGGESTIONS_PAGE)}>
+                            <option value="score">Best match</option>
+                            <option value="frequency">Most recommended</option>
+                            <option value="title">Title A-Z</option>
+                        </select>
+                    </label>
+                    <label class="sug-control sug-toggle">
+                        <input
+                            type="checkbox"
+                            bind:checked={sugCommunityOnly}
+                            onchange={() => (suggestionsShown = SUGGESTIONS_PAGE)} />
+                        <span>Community picks</span>
+                    </label>
+                    {#if sugFiltersActive}
+                        <button type="button" class="btn-sm" onclick={clearSugFilters}>
+                            Clear ({filteredSuggestions.length})
+                        </button>
+                    {/if}
                 </div>
-                {#if restSuggestionsCount > 0}
-                    <div class="poster-grid">
-                        {#each suggestions.slice(3, 3 + suggestionsShown) as s (s.anilistId)}
-                            <article>
+                {#if suggestionGenreOptions.length > 0}
+                    <div class="sug-genre-chips">
+                        {#each suggestionGenreOptions as g (g.name)}
+                            {@const key = g.name.toLocaleLowerCase("en")}
+                            <button
+                                type="button"
+                                class="genre-chip genre-chip-btn"
+                                class:genre-chip-on={sugGenres.includes(key)}
+                                aria-pressed={sugGenres.includes(key)}
+                                onclick={() => toggleSugGenre(key)}>
+                                {g.name} <span class="genre-chip-count">{g.count}</span>
+                            </button>
+                        {/each}
+                    </div>
+                {/if}
+                {#if filteredSuggestions.length === 0}
+                    <p class="muted">
+                        No suggestions match these filters.
+                        <button type="button" class="link-btn" onclick={clearSugFilters}>Clear filters</button>
+                    </p>
+                {:else}
+                    <h2 class="podium-heading">Top picks for you</h2>
+                    <div class="podium">
+                        {#each filteredSuggestions.slice(0, 3) as s, i (s.anilistId)}
+                            {@const matched = matchedGenres(s)}
+                            <article class="podium-item" class:podium-first={i === 0}>
                                 <div class="poster-wrap">
                                     <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
                                         {#if s.coverUrl}<img
@@ -3422,6 +3487,8 @@
                                                 loading="lazy"
                                                 decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span
                                             >{/if}
+                                        <span class="podium-rank podium-rank-{i + 1}"
+                                            >{i === 0 ? "1st" : i === 1 ? "2nd" : "3rd"}</span>
                                         {#if s.community}
                                             <div class="poster-badges">
                                                 <span class="updated-chip">Readers also read</span>
@@ -3430,29 +3497,67 @@
                                     </button>
                                 </div>
                                 <p class="poster-title">{s.title}</p>
-                                <p class="poster-sub muted">{suggestionWhy(s)}</p>
+                                {#if s.reasons.length > 0}
+                                    <p class="poster-sub muted">Because you read {s.reasons.slice(0, 2).join(", ")}</p>
+                                {:else if matched.length === 0}
+                                    <p class="poster-sub muted">Popular with readers like you</p>
+                                {/if}
+                                {#if matched.length > 0}
+                                    <div class="podium-chips">
+                                        {#each matched as g}<span class="genre-chip">{g}</span>{/each}
+                                    </div>
+                                {/if}
                                 <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}>
                                     Find on a source
                                 </button>
                             </article>
                         {/each}
                     </div>
-                    {#if suggestionsShown < restSuggestionsCount}
-                        <div bind:this={suggestionsSentinel} class="suggestions-sentinel">
-                            <button
-                                type="button"
-                                class="btn-sm"
-                                onclick={() =>
-                                    (suggestionsShown = Math.min(
-                                        suggestionsShown + SUGGESTIONS_PAGE,
-                                        restSuggestionsCount
-                                    ))}>
-                                Load more ({restSuggestionsCount - suggestionsShown} remaining)
-                            </button>
+                    {#if restSuggestionsCount > 0}
+                        <div class="poster-grid">
+                            {#each filteredSuggestions.slice(3, 3 + suggestionsShown) as s (s.anilistId)}
+                                <article>
+                                    <div class="poster-wrap">
+                                        <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
+                                            {#if s.coverUrl}<img
+                                                    src={s.coverUrl}
+                                                    alt={s.title}
+                                                    loading="lazy"
+                                                    decoding="async" />{:else}<span class="cover-initial"
+                                                    >{s.title[0]}</span
+                                                >{/if}
+                                            {#if s.community}
+                                                <div class="poster-badges">
+                                                    <span class="updated-chip">Readers also read</span>
+                                                </div>
+                                            {/if}
+                                        </button>
+                                    </div>
+                                    <p class="poster-title">{s.title}</p>
+                                    <p class="poster-sub muted">{suggestionWhy(s)}</p>
+                                    <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}>
+                                        Find on a source
+                                    </button>
+                                </article>
+                            {/each}
                         </div>
+                        {#if suggestionsShown < restSuggestionsCount}
+                            <div bind:this={suggestionsSentinel} class="suggestions-sentinel">
+                                <button
+                                    type="button"
+                                    class="btn-sm"
+                                    onclick={() =>
+                                        (suggestionsShown = Math.min(
+                                            suggestionsShown + SUGGESTIONS_PAGE,
+                                            restSuggestionsCount
+                                        ))}>
+                                    Load more ({restSuggestionsCount - suggestionsShown} remaining)
+                                </button>
+                            </div>
+                        {/if}
                     {/if}
                 {/if}
-                {#if communitySuggestions.length > 0}
+                {#if !sugFiltersActive && communitySuggestions.length > 0}
                     <h2 style="margin-top:8px">Readers also read</h2>
                     <p class="muted">Popular with readers who share your library.</p>
                     <div class="poster-grid">
