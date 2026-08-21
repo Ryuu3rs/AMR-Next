@@ -160,3 +160,27 @@ describe("comix listChapters", () => {
         expect(chapters).toEqual([])
     })
 })
+
+describe("comix resolveChapter", () => {
+    it("canonicalises a leading-zero chapter number so its id matches listChapters", async () => {
+        // A `0-chapter-08` permalink must resolve to the same id listChapters emits for
+        // chapter 8 (":8"), not ":08" - otherwise the reader mints a duplicate row and
+        // progress/prev-next stop matching.
+        const requests: string[] = []
+        const context = createContext(
+            { [MANGA_PATH]: initialDataHtml({ title: "Lord of Goblins", latestChapter: 10 }) },
+            requests
+        )
+        const resolved = await comixAdapter.resolveChapter!(
+            { url: new URL(`${ORIGIN}/title/${SLUG}/0-chapter-08`) },
+            context
+        )
+        expect(resolved.chapter.id).toBe(`comix:chapter:${SLUG}:8`)
+        expect(resolved.chapter.sourceChapterId).toBe("8")
+        expect(resolved.chapter.sortKey).toBe(8)
+
+        const list = await comixAdapter.listChapters!(listInput(), context)
+        const ch8 = list.find(c => c.sortKey === 8)
+        expect(ch8?.id).toBe(resolved.chapter.id)
+    })
+})
