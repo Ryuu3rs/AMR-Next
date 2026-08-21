@@ -82,7 +82,10 @@ export function validateUsername(raw: string): { ok: true; value: string } | { o
 
     if (!ALLOWED_CHARSET.test(value)) return { ok: false, reason: "invalid characters" }
 
-    const bare = value.replace(/[\s_-]+/g, "")
+    // Strip combining marks too: on their own they render as nothing / dotted circles, so a
+    // name of only \p{M} (which ALLOWED_CHARSET permits, to decorate a base letter) would
+    // otherwise pass this "has a real glyph" check as an invisible/degenerate identity.
+    const bare = value.replace(/[\s_\-\p{M}]+/gu, "")
     if (bare.length === 0) return { ok: false, reason: "must contain a letter, number, or emoji" }
 
     const key = value.toLocaleLowerCase("en")

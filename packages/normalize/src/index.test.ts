@@ -129,6 +129,13 @@ describe("validateUsername", () => {
         expect(validateUsername("   ").ok).toBe(false)
     })
 
+    it("rejects a name made only of combining marks (invisible/degenerate identity)", () => {
+        // Combining marks render as nothing / dotted circles on their own; a base glyph is required.
+        expect(validateUsername("́́́").ok).toBe(false)
+        // But marks decorating a real base letter are still fine.
+        expect(validateUsername("écho").ok).toBe(true)
+    })
+
     it("rejects punctuation outside the allowed set", () => {
         bad("a@b")
         bad("a.b")

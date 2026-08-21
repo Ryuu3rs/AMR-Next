@@ -100,11 +100,21 @@ async function queryAniList(query: string, variables: Record<string, unknown>): 
                 throw new Error("AniList rate limited")
             }
 
+            // AniList replies HTTP 404 (NOT 200) with a JSON body {errors, data:{Media:null}}
+            // for a genuine single-Media no-match. So the status alone can't tell "no such
+            // title" from "AniList is down": parse the body first. If GraphQL actually
+            // responded (a `data` key is present), a null Media is a real no-match -> null.
+            // Only a response with no parseable GraphQL body (5xx, network, a CDN/proxy error
+            // page) is transient -> throw, so the caller doesn't cache a no-match over an outage.
+            let body: { data?: { Media?: AniListMedia | null } } | undefined
+            try {
+                body = (await res.json()) as { data?: { Media?: AniListMedia | null } }
+            } catch {
+                body = undefined
+            }
+            if (body && "data" in body) return body.data?.Media ?? null
             if (!res.ok) throw new Error(`AniList ${res.status}`)
-
-            const body = (await res.json()) as { data?: { Media?: AniListMedia | null } }
-            // A successful response with no Media is a GENUINE no-match -> null.
-            return body.data?.Media ?? null
+            return null
         }
         throw new Error("AniList rate limited")
     })
