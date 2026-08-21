@@ -82,22 +82,30 @@
     async function togglePageBookmark() {
         if (!chapter || bookmarkWorking) return
         bookmarkWorking = true
+        // Capture the exact chapter + page this toggle is FOR, before the await. Page nav isn't
+        // gated by bookmarkWorking, so currentPage (and even the chapter) can change mid-request;
+        // re-reading them afterwards would star the wrong page (or the wrong chapter).
+        const chapterId = chapter.chapter.id
+        const pageIndex = currentPage
         try {
             const added = await sendRuntimeMessage<boolean>({
                 type: "bookmark:toggle",
                 mangaId: chapter.manga.manga.id,
-                chapterId: chapter.chapter.id,
-                pageIndex: currentPage,
+                chapterId,
+                pageIndex,
                 mangaTitle: chapter.manga.manga.title,
                 chapterTitle: chapter.chapter.title,
                 chapterUrl: chapter.chapter.url
             })
-            // Reassign instead of mutating in place - Svelte 5's $state proxy doesn't
-            // track plain Set.add/.delete, so isBookmarked wouldn't recompute otherwise.
-            const next = new Set(bookmarkedPages)
-            if (added) next.add(currentPage)
-            else next.delete(currentPage)
-            bookmarkedPages = next
+            // Only apply the optimistic UI update if we're still on the same chapter, and always
+            // to the captured page - never the live currentPage. Reassign (not mutate) so Svelte
+            // 5's $state proxy recomputes isBookmarked.
+            if (chapter?.chapter.id === chapterId) {
+                const next = new Set(bookmarkedPages)
+                if (added) next.add(pageIndex)
+                else next.delete(pageIndex)
+                bookmarkedPages = next
+            }
         } catch {
             // ignore
         } finally {

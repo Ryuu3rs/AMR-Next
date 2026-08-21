@@ -31,6 +31,7 @@ import {
     saveResolvedChapter,
     seedDatabase,
     switchMangaSource,
+    toggleBookmark,
     trackExternalChapter
 } from "./database"
 import type { LibraryManga, PageBookmark } from "./database"
@@ -459,6 +460,47 @@ describe("removeManga", () => {
         expect(await db.manga.get(manga2.id)).toBeDefined()
         expect(await db.chapters.where("mangaId").equals(manga2.id).count()).toBe(1)
         expect(await db.sourceLinks.get(manga2.id)).toBeDefined()
+    })
+})
+
+describe("toggleBookmark", () => {
+    const bmData = {
+        mangaId: manga.id,
+        chapterId: "mangadex:chapter:1",
+        pageIndex: 3,
+        mangaTitle: "Test Manga",
+        chapterTitle: "Ch.1",
+        chapterUrl: "https://mangadex.org/chapter/1"
+    }
+
+    it("does not create an orphan bookmark for a manga not in the library", async () => {
+        await db.manga.clear()
+        const added = await toggleBookmark(bmData)
+        expect(added).toBe(false)
+        expect(await db.pageBookmarks.count()).toBe(0)
+    })
+
+    it("adds then removes when the manga is in the library", async () => {
+        await db.manga.put({
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/title/abc"
+        } as LibraryManga)
+        expect(await toggleBookmark(bmData)).toBe(true)
+        expect(await db.pageBookmarks.count()).toBe(1)
+        expect(await toggleBookmark(bmData)).toBe(false)
+        expect(await db.pageBookmarks.count()).toBe(0)
+    })
+
+    it("two concurrent toggles from an unbookmarked page net exactly one bookmark (atomic)", async () => {
+        await db.manga.put({
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/title/abc"
+        } as LibraryManga)
+        const [a, b] = await Promise.all([toggleBookmark(bmData), toggleBookmark(bmData)])
+        expect([a, b].filter(Boolean).length).toBe(1)
+        expect(await db.pageBookmarks.count()).toBe(0)
     })
 })
 

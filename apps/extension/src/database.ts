@@ -3270,13 +3270,21 @@ export async function getAnalyticsSummary(days = 30) {
 
 export async function toggleBookmark(data: Omit<PageBookmark, "id" | "addedAt">): Promise<boolean> {
     const id = `${data.chapterId}:${data.pageIndex}`
-    const existing = await db.pageBookmarks.get(id)
-    if (existing) {
-        await db.pageBookmarks.delete(id)
-        return false
-    }
-    await db.pageBookmarks.put({ ...data, id, addedAt: Date.now() })
-    return true
+    // One transaction so the get-then-put/delete is atomic: two concurrent toggles (two reader
+    // tabs on the same page, a duplicate message) must alternate, not both "add". Also enforce
+    // the anti-orphan invariant (mirrors runChapterDownload/saveProgress) - the reader resolves
+    // any URL, so a bookmark for a title not in the library would strand a pageBookmarks row no
+    // removeManga/cascade can ever reclaim.
+    return db.transaction("rw", db.pageBookmarks, db.manga, async () => {
+        const existing = await db.pageBookmarks.get(id)
+        if (existing) {
+            await db.pageBookmarks.delete(id)
+            return false
+        }
+        if ((await db.manga.get(data.mangaId)) === undefined) return false
+        await db.pageBookmarks.put({ ...data, id, addedAt: Date.now() })
+        return true
+    })
 }
 
 export async function bookmarkedPagesForChapter(chapterId: string): Promise<number[]> {
