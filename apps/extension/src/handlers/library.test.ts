@@ -1927,3 +1927,32 @@ describe("library:cleanup:apply", () => {
         expect(await db.manga.get(canonicalId)).toBeUndefined()
     })
 })
+
+describe("library:merge", () => {
+    it("snapshots a restorable pre-merge backup before deleting the loser (guards a wrong same-title merge)", async () => {
+        const a: LibraryManga = {
+            ...manga,
+            id: "mangadex:manga:a",
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/title/a",
+            lastReadChapterNumber: 700
+        }
+        const b: LibraryManga = {
+            ...manga,
+            id: "webtoons:manga:b",
+            title: "Test Manga",
+            sourceId: "webtoons",
+            sourceUrl: "https://www.webtoons.com/title/b",
+            lastReadChapterNumber: 50
+        }
+        await db.manga.bulkPut([a, b])
+
+        const handler = libraryHandlers["library:merge"]!
+        await handler({ type: "library:merge", primaryId: a.id, loserIds: [b.id] }, ctx)
+
+        const backups = await listBackups()
+        expect(backups.some(bk => bk.reason === "pre-merge")).toBe(true)
+        // The merge still happened (loser gone).
+        expect(await db.manga.get(b.id)).toBeUndefined()
+    })
+})

@@ -418,6 +418,10 @@ export const libraryHandlers: HandlerMap = {
     },
 
     "library:merge": async request => {
+        // Merge deletes the loser titles' manga rows, source links and chapters with no undo,
+        // and the duplicate grouping can union two DISTINCT series that share a title. Snapshot
+        // first (like library:clear / cleanup:apply) so a wrong merge is recoverable from Data.
+        await createBackup("pre-merge")
         return mergeMangaRecords(request.primaryId, request.loserIds)
     },
 
