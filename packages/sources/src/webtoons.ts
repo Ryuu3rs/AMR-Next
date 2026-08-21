@@ -235,9 +235,11 @@ export const webtoonsAdapter: SourceAdapter = {
             }
             // If we added nothing new this page, stop
             if (added === 0) break
-            // Webtoons uses &amp; in href attributes, so check for the raw number only.
-            // page=10 won't match page=1 because \D after the digit rejects '0'.
-            const hasNext = new RegExp(`page=${page + 1}(?:\\D|$)`).test(html)
+            // Require a query-param boundary before "page=" so an incidental substring like a
+            // "listpage=2" analytics param doesn't false-positive a next page. `?`/`&` are the
+            // raw boundaries; `;` covers Webtoons' HTML-encoded `&amp;page=`. \D after the digit
+            // still stops page=1 matching page=10.
+            const hasNext = new RegExp(`[?&;]page=${page + 1}(?:\\D|$)`).test(html)
             if (!hasNext) break
         }
 
@@ -292,6 +294,10 @@ export const webtoonsAdapter: SourceAdapter = {
         const titleNo = url.searchParams.get("title_no")
         const episodeNo = input.sourceChapterId ?? url.searchParams.get("episode_no")
         if (!titleNo || !episodeNo) throw new SourceError("invalid-input", "Missing title_no or episode_no in URL")
+        // episode_no flows into sortKey via Number(); a non-numeric value (malformed/adversarial
+        // viewer URL that still has title_no, which match() waves through) would become NaN and
+        // sort into an arbitrary position. Reject it here rather than store a NaN sortKey.
+        if (!/^\d+$/.test(episodeNo)) throw new SourceError("invalid-input", "episode_no must be numeric")
 
         const html = await ctx.request.getText(url, { headers: BROWSER_HEADERS })
         const images = extractImages(html)
