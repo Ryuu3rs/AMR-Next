@@ -48,7 +48,30 @@ function jsonBlob(): Blob {
 beforeEach(async () => {
     vi.clearAllMocks()
     vi.useRealTimers()
-    await Promise.all([db.downloads.clear(), db.pageBookmarks.clear(), db.analyticsEvents.clear()])
+    await Promise.all([db.downloads.clear(), db.pageBookmarks.clear(), db.analyticsEvents.clear(), db.manga.clear()])
+    // chapter:download now requires the title to be in the library (anti-orphan guard).
+    await db.manga.put({ ...manga, sourceId: "mangadex", sourceUrl: "https://mangadex.org/title/abc" })
+})
+
+describe("chapter:download library guard", () => {
+    it("does NOT persist a download for a title that is not in the library (anti-orphan)", async () => {
+        await db.manga.clear() // title was never added
+        vi.mocked(resolveChapterUrl).mockResolvedValue(makeResolved(["https://cdn.example/p0.jpg"]))
+        const fetchMock = vi.fn(
+            async () => ({ ok: true, status: 200, blob: async () => jsonBlob() }) as unknown as Response
+        )
+        vi.stubGlobal("fetch", fetchMock)
+
+        const handler = downloadsBookmarksAnalyticsHandlers["chapter:download"]!
+        await expect(
+            handler({ type: "chapter:download", url: "https://mangadex.org/chapter/1" }, ctx)
+        ).rejects.toThrow()
+        expect(await db.downloads.count()).toBe(0)
+        // Should fail fast BEFORE fetching any page blob.
+        expect(fetchMock).not.toHaveBeenCalled()
+
+        vi.unstubAllGlobals()
+    })
 })
 
 describe("fetchPageBlob (via chapter:download)", () => {

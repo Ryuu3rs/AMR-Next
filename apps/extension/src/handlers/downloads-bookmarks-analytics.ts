@@ -99,6 +99,16 @@ async function buildLibrarySnapshot(): Promise<LibrarySnapshot> {
 export const downloadsBookmarksAnalyticsHandlers: HandlerMap = {
     "chapter:download": async request => {
         const resolved = await resolveChapterUrl(request.url)
+        // Anti-orphan invariant (mirrors saveProgress/saveReaderResolvedChapter): never persist
+        // a manga-scoped download for a title that isn't in the library. The reader resolves any
+        // URL, so downloading from a non-library chapter would otherwise leave up to 200 full-res
+        // page blobs stranded under a mangaId no removeManga/GC can ever reclaim.
+        if (!(await db.manga.get(resolved.manga.manga.id))) {
+            throw new SourceError(
+                "invalid-input",
+                "Add this title to your library before downloading it for offline reading."
+            )
+        }
         let pages = resolved.pages.slice(0, 200)
         const pageBlobs: Blob[] = []
         let reResolved = false
