@@ -123,14 +123,19 @@ export default defineBackground(() => {
     })
 
     browser.alarms.onAlarm.addListener(alarm => {
-        if (alarm.name === updateAlarmName)
-            void checkUpdates().catch(error => console.error("[AMR] Scheduled update check crashed", error))
-        if (alarm.name === communityAlarmName) void runCommunitySync()
-        if (alarm.name === syncAlarmName) void autoPush()
-        if (alarm.name === anilistAlarmName) void runAniListSync()
-        if (alarm.name === extensionUpdateAlarmName) void checkExtensionUpdate()
-        if (alarm.name === backupAlarmName) void runAutoBackup()
-        if (alarm.name === ADD_BADGE_ALARM_NAME) void clearAddedBadge()
+        // Every alarm dispatch is a fire-and-forget async call in the service worker: a
+        // rejection (e.g. a transient IndexedDB/storage read failing before the routine's own
+        // try) would otherwise surface as an unhandled promise rejection. Wrap each uniformly
+        // so one flaky read is logged, not thrown into the SW's global handler.
+        const guard = (name: string, run: () => Promise<unknown>) =>
+            void run().catch(error => console.error(`[AMR] Scheduled ${name} crashed`, error))
+        if (alarm.name === updateAlarmName) guard("update check", checkUpdates)
+        if (alarm.name === communityAlarmName) guard("community sync", runCommunitySync)
+        if (alarm.name === syncAlarmName) guard("gist auto-push", autoPush)
+        if (alarm.name === anilistAlarmName) guard("AniList sync", runAniListSync)
+        if (alarm.name === extensionUpdateAlarmName) guard("extension-update check", checkExtensionUpdate)
+        if (alarm.name === backupAlarmName) guard("auto-backup", runAutoBackup)
+        if (alarm.name === ADD_BADGE_ALARM_NAME) guard("badge clear", clearAddedBadge)
     })
 
     // Clicking a "new chapters" notification opens the library so the user can jump in.

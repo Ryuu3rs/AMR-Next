@@ -111,13 +111,17 @@
     let catSaving = $state(false)
 
     $effect(() => {
-        if (!mangaId) {
+        const id = mangaId
+        if (!id) {
             mangaCategories = []
             return
         }
-        void sendRuntimeMessage<{ categories?: string[] } | null>({ type: "library:get", mangaId })
+        void sendRuntimeMessage<{ categories?: string[] } | null>({ type: "library:get", mangaId: id })
             .then(m => {
-                mangaCategories = m?.categories ?? []
+                // Stale-response guard (mirrors the bookmark effect above): a slow library:get
+                // for the previous title must not overwrite the tags after a fast chapter switch,
+                // or the Tag panel shows - and saves to - the wrong title.
+                if (id === mangaId) mangaCategories = m?.categories ?? []
             })
             .catch(() => {})
     })
@@ -288,10 +292,15 @@
 
     async function downloadChapter() {
         if (!chapter || downloading) return
+        // Capture the target chapter up front: reading chapter.chapter.id AFTER the (long,
+        // up-to-200-page) download would refresh whatever chapter the user navigated to
+        // meanwhile, not the one that was actually downloaded.
+        const url = chapter.chapter.url
+        const id = chapter.chapter.id
         downloading = true
         try {
-            await sendRuntimeMessage({ type: "chapter:download", url: chapter.chapter.url })
-            await refreshDownloadState(chapter.chapter.id)
+            await sendRuntimeMessage({ type: "chapter:download", url })
+            await refreshDownloadState(id)
         } catch (cause) {
             error = cause instanceof Error ? cause.message : "The chapter could not be downloaded"
         } finally {
