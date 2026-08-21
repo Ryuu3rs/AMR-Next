@@ -466,11 +466,19 @@ export async function getViewerMangaList(token: string): Promise<AniListListEntr
         }`,
         { userId }
     )
-    const entries: AniListListEntry[] = []
+    // AniList returns one MediaListGroup per status PLUS one per user-defined custom list, so a
+    // title tagged into a custom list (e.g. "Favorites") appears in both its status group and the
+    // custom-list group - the identical entry, twice. Dedup by anilistId (copies are identical)
+    // so callers get distinct titles; otherwise import's total/skipped counts are inflated by a
+    // phantom "skip" for every custom-list-tagged title.
+    const byId = new Map<number, AniListListEntry>()
     for (const list of data.MediaListCollection?.lists ?? []) {
-        for (const raw of list?.entries ?? []) entries.push(mapMediaListEntry(raw))
+        for (const raw of list?.entries ?? []) {
+            const entry = mapMediaListEntry(raw)
+            byId.set(entry.anilistId, entry)
+        }
     }
-    return entries
+    return [...byId.values()]
 }
 
 // Removes a title from the user's list by its list-entry id.

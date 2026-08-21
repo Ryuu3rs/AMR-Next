@@ -111,3 +111,35 @@ describe("webtoonsAdapter.resolveCover", () => {
         expect(result).toBeUndefined()
     })
 })
+
+describe("webtoonsAdapter.listChapters hasNext scoping", () => {
+    it("does not fetch page 2 when 'page=2' only appears incidentally (e.g. a listpage=2 beacon)", async () => {
+        const page1 = `<html><body>
+<a href="/en/romance/slug/ep-1/viewer?title_no=${TITLE_NO}&amp;episode_no=1">Episode 1</a>
+<img src="https://stats.example.com/b?listpage=2&uid=9" />
+</body></html>`
+        const requests: string[] = []
+        const context = createContext({ [SERIES_LIST_PATH]: page1 }, requests)
+        await webtoonsAdapter.listChapters(
+            {
+                manga: {
+                    manga: { id: `webtoons:manga:${TITLE_NO}` },
+                    sourceId: "webtoons",
+                    sourceMangaId: TITLE_NO,
+                    url: SERIES_PREFIX_URL
+                }
+            } as never,
+            context
+        )
+        const listReqs = requests.filter(r => r.includes(SERIES_LIST_PATH))
+        expect(listReqs.length).toBe(1) // no wasted page=2 fetch from the incidental substring
+    })
+})
+
+describe("webtoonsAdapter.resolveChapter numeric guard", () => {
+    it("rejects a non-numeric episode_no instead of producing a NaN sortKey", async () => {
+        const context = createContext({})
+        const url = new URL(`${ORIGIN}/en/romance/slug/ep-1/viewer?title_no=${TITLE_NO}&episode_no=abc`)
+        await expect(webtoonsAdapter.resolveChapter({ url }, context)).rejects.toThrow(/numeric/)
+    })
+})

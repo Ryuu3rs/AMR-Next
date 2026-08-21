@@ -381,6 +381,46 @@ describe("getViewerMangaList", () => {
         expect(list[1]).toMatchObject({ anilistId: 2, title: "B", status: "completed", progress: 0 })
     })
 
+    it("dedups a title AniList surfaces twice via a custom list", async () => {
+        // A title on both its status group and a user's custom list appears twice in the
+        // MediaListCollection response - the identical entry. getViewerMangaList must return it once.
+        const fetchMock = vi
+            .fn()
+            .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { Viewer: { id: 7 } } }) })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    data: {
+                        MediaListCollection: {
+                            lists: [
+                                {
+                                    entries: [
+                                        {
+                                            progress: 3,
+                                            media: { id: 31224, title: { romaji: "A" }, status: "RELEASING" }
+                                        }
+                                    ]
+                                },
+                                {
+                                    entries: [
+                                        {
+                                            progress: 3,
+                                            media: { id: 31224, title: { romaji: "A" }, status: "RELEASING" }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                })
+            })
+        vi.stubGlobal("fetch", fetchMock)
+
+        const list = await getViewerMangaList("t")
+        expect(list).toHaveLength(1)
+        expect(list[0]).toMatchObject({ anilistId: 31224 })
+    })
+
     it("rejects and never fires the collection query when the viewer id is null", async () => {
         const fetchMock = vi
             .fn()
