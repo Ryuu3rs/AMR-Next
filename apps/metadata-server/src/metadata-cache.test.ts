@@ -106,6 +106,16 @@ test("resolveFromAniList throws on a transient failure, returns null on a genuin
     globalThis.fetch = async () => new Response(JSON.stringify({ data: { Media: null } }), { status: 200 })
     assert.equal(await resolveFromAniList("no such title"), null)
 
+    // AniList actually returns HTTP 404 (not 200) with a GraphQL body for a genuine no-match;
+    // the body's `data` key means GraphQL responded -> real no-match -> null, not a throw.
+    globalThis.fetch = async () =>
+        new Response(JSON.stringify({ errors: [{ status: 404 }], data: { Media: null } }), { status: 404 })
+    assert.equal(await resolveFromAniList("zzz-nonexistent"), null)
+
+    // A non-2xx with no parseable GraphQL body (CDN/proxy error page) is transient -> throw.
+    globalThis.fetch = async () => new Response("<html>gateway error</html>", { status: 404 })
+    await assert.rejects(resolveFromAniList("anything"), /AniList/)
+
     globalThis.fetch = realFetch
 })
 
