@@ -20,7 +20,18 @@ export function getSourceById(sourceId: string) {
 }
 
 const wrapFetch = (requestUrl: string, init: Parameters<typeof fetch>[1]) =>
-    fetch(requestUrl, init).then(r => ({ ok: r.ok, status: r.status, url: r.url, text: () => r.text() }))
+    fetch(requestUrl, init).then(r => ({
+        ok: r.ok,
+        status: r.status,
+        url: r.url,
+        // Pass headers + the raw body stream so the bounded client can reject an over-cap
+        // Content-Length up front and read the body incrementally (aborting past the byte cap)
+        // instead of buffering an unbounded response whole. text() stays as the fallback.
+        // Guarded because a real Response always carries these but a stubbed fetch may not.
+        ...(r.headers ? { headers: Object.fromEntries(r.headers) as Readonly<Record<string, string>> } : {}),
+        ...(r.body ? { body: r.body } : {}),
+        text: () => r.text()
+    }))
 
 // createSourceContext builds a fresh client PER OPERATION (per manga resolve, per
 // chapter list, per cover fetch, etc.) so each operation gets its own independent

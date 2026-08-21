@@ -9,6 +9,14 @@ export type FetchResponse = {
     // against allowedOrigins so redirects to ad networks are caught and thrown
     // as SourceError("invalid-input") rather than surfacing as CORS failures.
     url?: string
+    // Optional response headers (lowercased keys). When a Content-Length is present the
+    // bounded client rejects an already-over-cap response before reading a single byte.
+    headers?: Readonly<Record<string, string>>
+    // Optional raw body stream. When present the client reads it incrementally and aborts
+    // once maxResponseBytes is exceeded, so a hostile/oversized response from an allowed
+    // (or MITM'd http) origin can't be buffered whole into memory. Environments and test
+    // fakes that only implement text() fall back to a post-read size check.
+    body?: ReadableStream<Uint8Array> | null
     text(): Promise<string>
 }
 
@@ -93,6 +101,57 @@ export function createOriginAllowlist(allowedOrigins: readonly string[]): (origi
     }
 }
 
+// Read a response body without ever buffering more than maxResponseBytes. Rejects early on a
+// declared Content-Length over the cap, then streams the body counting bytes and aborts the read
+// the moment it exceeds the cap - so a hostile/oversized response can't OOM the worker before a
+// post-hoc size check fires. A response that exposes no stream (test fakes, exotic environments)
+// falls back to text() + a post-read cap.
+async function readBoundedBody(response: FetchResponse, maxResponseBytes: number, urlStr: string): Promise<string> {
+    const declared = Number(response.headers?.["content-length"])
+    if (Number.isFinite(declared) && declared > maxResponseBytes) {
+        throw new SourceError("request-limit", `Response exceeded ${maxResponseBytes} bytes`, {
+            url: urlStr,
+            bodySize: declared
+        })
+    }
+    const stream = response.body
+    if (stream && typeof stream.getReader === "function") {
+        const reader = stream.getReader()
+        const chunks: Uint8Array[] = []
+        let total = 0
+        try {
+            for (;;) {
+                const { done, value } = await reader.read()
+                if (done) break
+                if (!value) continue
+                total += value.byteLength
+                if (total > maxResponseBytes) {
+                    await reader.cancel().catch(() => undefined)
+                    throw new SourceError("request-limit", `Response exceeded ${maxResponseBytes} bytes`, {
+                        url: urlStr,
+                        bodySize: total
+                    })
+                }
+                chunks.push(value)
+            }
+        } finally {
+            reader.releaseLock?.()
+        }
+        const merged = new Uint8Array(total)
+        let offset = 0
+        for (const chunk of chunks) {
+            merged.set(chunk, offset)
+            offset += chunk.byteLength
+        }
+        return new TextDecoder().decode(merged)
+    }
+    const body = await response.text()
+    if (new TextEncoder().encode(body).byteLength > maxResponseBytes) {
+        throw new SourceError("request-limit", `Response exceeded ${maxResponseBytes} bytes`, { url: urlStr })
+    }
+    return body
+}
+
 export function createBoundedRequestClient(options: BoundedRequestClientOptions): SourceRequestClient {
     const isOriginAllowed = createOriginAllowlist(options.allowedOrigins)
     const maxRetries = options.maxRetries ?? 2
@@ -158,18 +217,14 @@ export function createBoundedRequestClient(options: BoundedRequestClientOptions)
                     }
                 } catch (e) {
                     if (e instanceof SourceError) throw e
+                    // new URL(response.url) failed - the final origin is unverifiable. Fail
+                    // CLOSED: an SSRF/redirect guard must not treat "I don't know where this
+                    // came from" as allowed.
+                    throw new SourceError("invalid-input", "Could not verify the final response origin")
                 }
             }
 
-            const body = await response.text()
-            const bodySize = new TextEncoder().encode(body).byteLength
-
-            if (bodySize > options.maxResponseBytes) {
-                throw new SourceError("request-limit", `Response exceeded ${options.maxResponseBytes} bytes`, {
-                    url: url.toString(),
-                    bodySize
-                })
-            }
+            const body = await readBoundedBody(response, options.maxResponseBytes, url.toString())
             if (!response.ok) {
                 throw new SourceRequestError(`Request failed with status ${response.status}`, response.status, {
                     url: url.toString()

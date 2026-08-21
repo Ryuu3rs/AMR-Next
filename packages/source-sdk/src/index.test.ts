@@ -98,6 +98,82 @@ describe("createBoundedRequestClient", () => {
             client.getJson(new URL("https://api.example.test/value"), z.object({ value: z.number() }))
         ).rejects.toMatchObject({ code: "invalid-response" })
     })
+
+    it("rejects a declared Content-Length over the cap before reading the body", async () => {
+        let read = false
+        const client = createBoundedRequestClient({
+            fetch: async () => ({
+                ok: true,
+                status: 200,
+                url: "https://api.example.test/big",
+                headers: { "content-length": "999999" },
+                text: async () => {
+                    read = true
+                    return "x"
+                }
+            }),
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 5,
+            maxResponseBytes: 100,
+            timeoutMs: 100
+        })
+        await expect(client.getText(new URL("https://api.example.test/big"))).rejects.toMatchObject({
+            code: "request-limit"
+        })
+        expect(read).toBe(false)
+    })
+
+    it("aborts an oversized body stream instead of buffering it whole", async () => {
+        let pulls = 0
+        const chunk = () => new Uint8Array(60)
+        const stream = () => {
+            let i = 0
+            return new ReadableStream<Uint8Array>({
+                pull(controller) {
+                    pulls += 1
+                    if (i < 4) {
+                        i += 1
+                        controller.enqueue(chunk())
+                    } else {
+                        controller.close()
+                    }
+                }
+            })
+        }
+        const client = createBoundedRequestClient({
+            fetch: async () => ({
+                ok: true,
+                status: 200,
+                url: "https://api.example.test/big",
+                body: stream(),
+                text: async () => {
+                    throw new Error("must not fall back to text() when a stream is present")
+                }
+            }),
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 5,
+            maxResponseBytes: 100,
+            timeoutMs: 100
+        })
+        await expect(client.getText(new URL("https://api.example.test/big"))).rejects.toMatchObject({
+            code: "request-limit"
+        })
+        // 60 + 60 = 120 > 100, so it aborts after 2 chunks - never reads all 4.
+        expect(pulls).toBeLessThan(4)
+    })
+
+    it("fails closed when the final response URL cannot be verified (SSRF guard)", async () => {
+        const client = createBoundedRequestClient({
+            fetch: async () => ({ ok: true, status: 200, url: "", text: async () => "unverifiable" }),
+            allowedOrigins: ["https://api.example.test"],
+            maxRequests: 5,
+            maxResponseBytes: 1000,
+            timeoutMs: 100
+        })
+        await expect(client.getText(new URL("https://api.example.test/x"))).rejects.toMatchObject({
+            code: "invalid-input"
+        })
+    })
 })
 
 describe("createBoundedRequestClient wildcard host origins (mangaread/mangafreak fix)", () => {
