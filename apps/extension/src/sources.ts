@@ -416,7 +416,11 @@ export function searchMangaStreaming(
     onPartial: (results: SourceSearchResult[], sourceId: string) => void,
     onDone: () => void,
     signal?: AbortSignal,
-    excludeSourceIds?: ReadonlySet<string>
+    excludeSourceIds?: ReadonlySet<string>,
+    // Fired once per source as it settles (matched, empty, timed out, or errored) so the UI can
+    // show true progress. onPartial only fires for sources that matched, so counting partials
+    // undercounts and the "X/Y sources" indicator stalls on a no-match-heavy query.
+    onSettled?: (sourceId: string) => void
 ): void {
     const searchable = sourceRegistry
         .list()
@@ -440,6 +444,7 @@ export function searchMangaStreaming(
             })
             .catch(() => {})
             .finally(() => {
+                if (!signal?.aborted) onSettled?.(adapter.manifest.id)
                 if (--remaining === 0 && !signal?.aborted) onDone()
             })
     }
