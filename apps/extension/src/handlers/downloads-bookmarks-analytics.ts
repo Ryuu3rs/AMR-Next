@@ -96,62 +96,74 @@ async function buildLibrarySnapshot(): Promise<LibrarySnapshot> {
     }
 }
 
-export const downloadsBookmarksAnalyticsHandlers: HandlerMap = {
-    "chapter:download": async request => {
-        const resolved = await resolveChapterUrl(request.url)
-        // Anti-orphan invariant (mirrors saveProgress/saveReaderResolvedChapter): never persist
-        // a manga-scoped download for a title that isn't in the library. The reader resolves any
-        // URL, so downloading from a non-library chapter would otherwise leave up to 200 full-res
-        // page blobs stranded under a mangaId no removeManga/GC can ever reclaim.
-        if (!(await db.manga.get(resolved.manga.manga.id))) {
-            throw new SourceError(
-                "invalid-input",
-                "Add this title to your library before downloading it for offline reading."
-            )
-        }
-        let pages = resolved.pages.slice(0, 200)
-        const pageBlobs: Blob[] = []
-        let reResolved = false
-        for (let index = 0; index < pages.length; index += 1) {
-            const page = pages[index]
-            if (!page) continue
-            let blob: Blob
-            try {
-                blob = await fetchPageBlob(page.url)
-            } catch (error) {
-                const expired =
-                    error instanceof SourceError &&
-                    (error.details?.["status"] === 404 || error.details?.["status"] === 410)
-                if (expired && !reResolved) {
-                    reResolved = true
-                    const refreshed = await resolveChapterUrl(request.url)
-                    pages = refreshed.pages.slice(0, 200)
-                    // The refreshed resolution can differ in page count or order, so
-                    // blobs already fetched from the stale list cannot be interleaved
-                    // with it - discard them and re-download the whole chapter from the
-                    // fresh list to keep the saved pages consistent.
-                    pageBlobs.length = 0
-                    index = -1
-                    continue
-                }
-                throw error
+// In-flight downloads keyed by chapter URL: two concurrent downloads of the same chapter
+// (two reader tabs, or reader + a retry) otherwise both fetch every page and both saveDownload.
+// Share the one promise so the work runs once. Mirrors capture.ts's capturingUrls dedup.
+const inFlightDownloads = new Map<string, Promise<{ chapterId: string; pageCount: number }>>()
+
+async function runChapterDownload(url: string): Promise<{ chapterId: string; pageCount: number }> {
+    const resolved = await resolveChapterUrl(url)
+    // Anti-orphan invariant (mirrors saveProgress/saveReaderResolvedChapter): never persist
+    // a manga-scoped download for a title that isn't in the library. The reader resolves any
+    // URL, so downloading from a non-library chapter would otherwise leave up to 200 full-res
+    // page blobs stranded under a mangaId no removeManga/GC can ever reclaim.
+    if (!(await db.manga.get(resolved.manga.manga.id))) {
+        throw new SourceError(
+            "invalid-input",
+            "Add this title to your library before downloading it for offline reading."
+        )
+    }
+    let pages = resolved.pages.slice(0, 200)
+    const pageBlobs: Blob[] = []
+    let reResolved = false
+    for (let index = 0; index < pages.length; index += 1) {
+        const page = pages[index]
+        if (!page) continue
+        let blob: Blob
+        try {
+            blob = await fetchPageBlob(page.url)
+        } catch (error) {
+            const expired =
+                error instanceof SourceError && (error.details?.["status"] === 404 || error.details?.["status"] === 410)
+            if (expired && !reResolved) {
+                reResolved = true
+                const refreshed = await resolveChapterUrl(url)
+                pages = refreshed.pages.slice(0, 200)
+                // The refreshed resolution can differ in page count or order, so
+                // blobs already fetched from the stale list cannot be interleaved
+                // with it - discard them and re-download the whole chapter from the
+                // fresh list to keep the saved pages consistent.
+                pageBlobs.length = 0
+                index = -1
+                continue
             }
-            pageBlobs.push(blob)
+            throw error
         }
-        // A soft-failed / anti-scrape resolution can yield zero pages. Don't persist an
-        // empty download - the offline reader would show a "downloaded" chapter with no
-        // pages. Surface it as an error instead.
-        if (pageBlobs.length === 0) {
-            throw new SourceError("invalid-response", "That chapter resolved to no pages - nothing to download")
-        }
-        await saveDownload({
-            chapterId: resolved.chapter.id,
-            mangaId: resolved.manga.manga.id,
-            pageBlobs,
-            pageCount: pageBlobs.length,
-            downloadedAt: Date.now()
-        })
-        return { chapterId: resolved.chapter.id, pageCount: pageBlobs.length }
+        pageBlobs.push(blob)
+    }
+    // A soft-failed / anti-scrape resolution can yield zero pages. Don't persist an
+    // empty download - the offline reader would show a "downloaded" chapter with no
+    // pages. Surface it as an error instead.
+    if (pageBlobs.length === 0) {
+        throw new SourceError("invalid-response", "That chapter resolved to no pages - nothing to download")
+    }
+    await saveDownload({
+        chapterId: resolved.chapter.id,
+        mangaId: resolved.manga.manga.id,
+        pageBlobs,
+        pageCount: pageBlobs.length,
+        downloadedAt: Date.now()
+    })
+    return { chapterId: resolved.chapter.id, pageCount: pageBlobs.length }
+}
+
+export const downloadsBookmarksAnalyticsHandlers: HandlerMap = {
+    "chapter:download": request => {
+        const existing = inFlightDownloads.get(request.url)
+        if (existing) return existing
+        const run = runChapterDownload(request.url)
+        inFlightDownloads.set(request.url, run)
+        return run.finally(() => inFlightDownloads.delete(request.url))
     },
 
     "chapter:download:get": async request => {

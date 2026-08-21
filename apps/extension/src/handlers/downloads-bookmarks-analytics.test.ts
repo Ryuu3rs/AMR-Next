@@ -72,6 +72,25 @@ describe("chapter:download library guard", () => {
 
         vi.unstubAllGlobals()
     })
+
+    it("dedups two concurrent downloads of the same chapter URL into one resolve+fetch pass", async () => {
+        vi.mocked(resolveChapterUrl).mockResolvedValue(makeResolved(["https://cdn.example/p1.jpg"]))
+        const fetchMock = vi.fn(
+            async () => ({ ok: true, status: 200, blob: async () => jsonBlob() }) as unknown as Response
+        )
+        vi.stubGlobal("fetch", fetchMock)
+
+        const handler = downloadsBookmarksAnalyticsHandlers["chapter:download"]!
+        const url = "https://mangadex.org/chapter/1"
+        const [a, b] = await Promise.all([
+            handler({ type: "chapter:download", url }, ctx),
+            handler({ type: "chapter:download", url }, ctx)
+        ])
+        expect(a).toEqual(b)
+        expect(resolveChapterUrl).toHaveBeenCalledTimes(1) // shared promise, not 2
+
+        vi.unstubAllGlobals()
+    })
 })
 
 describe("fetchPageBlob (via chapter:download)", () => {
