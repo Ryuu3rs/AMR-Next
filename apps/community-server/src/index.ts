@@ -90,6 +90,15 @@ export function withinRateLimit(
     return true
 }
 
+// Input caps for the free-text fields that reach the DB and the public feed. Titles/sourceIds
+// were previously only truthiness-checked, so a non-string 500'd the bind and an unbounded
+// string filled disk / injected arbitrary content into the shared trending feed.
+const MAX_TITLE_LEN = 300
+const MAX_SOURCE_LEN = 100
+const MAX_GENRE_LEN = 50
+const isBoundedString = (v: unknown, max: number): v is string =>
+    typeof v === "string" && v.length > 0 && v.length <= max
+
 app.get("/", c => c.json({ name: "AMR Community API", version: "1.0.0", status: "ok" }))
 app.get("/health", c => c.json({ ok: true }))
 
@@ -132,13 +141,21 @@ app.post("/events", async c => {
 
     const today = new Date().toISOString().slice(0, 10)
     const rows: EventRow[] = (body.events ?? [])
-        .filter(e => e.type === "chapter_read" && e.sourceId && e.mangaTitle && e.date && e.date <= today)
+        .filter(
+            e =>
+                e.type === "chapter_read" &&
+                isBoundedString(e.sourceId, MAX_SOURCE_LEN) &&
+                isBoundedString(e.mangaTitle, MAX_TITLE_LEN) &&
+                typeof e.date === "string" &&
+                e.date.length > 0 &&
+                e.date <= today
+        )
         .slice(0, 500)
         .map(e => ({
             id: randomUUID(),
             sourceId: e.sourceId!,
             mangaTitle: e.mangaTitle!,
-            genres: Array.isArray(e.genres) ? e.genres.filter(g => typeof g === "string").slice(0, 20) : [],
+            genres: Array.isArray(e.genres) ? e.genres.filter(g => isBoundedString(g, MAX_GENRE_LEN)).slice(0, 20) : [],
             date: e.date!.slice(0, 10)
         }))
 
@@ -163,7 +180,9 @@ app.post("/rate", async c => {
         return c.json({ error: "Too many requests" }, 429)
     }
     const body = await c.req.json<{ userId?: string; mangaTitle?: string; rating?: number }>().catch(() => ({}))
-    if (!body.userId || !body.mangaTitle) return c.json({ error: "userId and mangaTitle required" }, 400)
+    if (!body.userId || !isBoundedString(body.mangaTitle, MAX_TITLE_LEN) || !body.mangaTitle.trim()) {
+        return c.json({ error: "userId and a valid mangaTitle required" }, 400)
+    }
     if (!getUserById(body.userId)) return c.json({ error: "User not found" }, 404)
     const rating = Number(body.rating)
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) return c.json({ error: "Rating must be 1-5" }, 400)
@@ -182,12 +201,23 @@ app.get("/recommendations", c => {
 })
 
 app.get("/manga", c => {
+    if (!withinRateLimit(c.req.header("x-forwarded-for"), "manga", 120, 60 * 1000)) {
+        return c.json({ error: "Too many requests" }, 429)
+    }
     const title = c.req.query("title")?.trim()
     if (!title) return c.json({ error: "title required" }, 400)
+    if (title.length > MAX_TITLE_LEN) return c.json({ error: "title too long" }, 400)
     return c.json(getMangaStats(title))
 })
 
-app.get("/community", c => c.json(getCommunityStats()))
+// /community runs several full-table GROUP BY aggregations per hit; better-sqlite3 is
+// synchronous so an unmetered flood blocks the event loop and starves the write endpoints.
+app.get("/community", c => {
+    if (!withinRateLimit(c.req.header("x-forwarded-for"), "community", 120, 60 * 1000)) {
+        return c.json({ error: "Too many requests" }, 429)
+    }
+    return c.json(getCommunityStats())
+})
 
 // Only listen when run directly, not when imported by a test.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
