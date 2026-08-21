@@ -116,3 +116,32 @@ describe("spreadRows", () => {
         expect(spreadRows(1, 2, true)).toEqual([[0]])
     })
 })
+
+describe("double-page completion detection reaches the true last page", () => {
+    // Regression for the reader bug where a chapter read in Double mode never registered as
+    // completed: recordProgress checked pageIndex === lastIndex, but paged navigation's terminal
+    // start is the start of the final PAIR. The fix instead asks whether the current spread's
+    // indices include the last page - which must be true once navigation reaches the terminal.
+    function terminalStart(pageCount: number, offset: boolean): number {
+        let cur = 0
+        for (let i = 0; i < 200; i += 1) {
+            const view = spreadView(cur, 2, offset, pageCount)
+            const start = view.indices[0]!
+            if (view.nextStart === start) break
+            cur = view.nextStart
+        }
+        return cur
+    }
+
+    it("the terminal spread includes the last page for the cases that used to get stuck", () => {
+        for (const [pageCount, offset] of [
+            [6, false],
+            [7, true],
+            [10, false],
+            [11, true]
+        ] as const) {
+            const start = terminalStart(pageCount, offset)
+            expect(spreadView(start, 2, offset, pageCount).indices.includes(pageCount - 1)).toBe(true)
+        }
+    })
+})

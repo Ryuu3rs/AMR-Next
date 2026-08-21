@@ -847,6 +847,22 @@ export async function remapExternalChapterProgress(
         // historyEvents aren't uniquely keyed by chapterId, so every matching row is
         // simply re-pointed - scoped to THIS specific ext chapter id, not the whole loser.
         await db.historyEvents.where("chapterId").equals(extChapter.id).modify({ chapterId: canonical.id })
+
+        // Two losers mapping onto the SAME canonical chapter each re-point their own
+        // completed/started row here, leaving duplicate history rows for one logical chapter.
+        // getLocalStats counts completed history rows for readingDays/streaks/chaptersToday
+        // (unlike completedChapters, which dedups), so those duplicates inflate the stats and
+        // can manufacture a phantom active day. Collapse to the earliest row per (chapterId,
+        // type); the earliest occurredAt is the true first read.
+        const canonHistory = await db.historyEvents.where("chapterId").equals(canonical.id).toArray()
+        const keepByType = new Map<string, (typeof canonHistory)[number]>()
+        for (const ev of canonHistory) {
+            const cur = keepByType.get(ev.type)
+            if (!cur || ev.occurredAt < cur.occurredAt) keepByType.set(ev.type, ev)
+        }
+        const keepIds = new Set([...keepByType.values()].map(e => e.id))
+        const dupeIds = canonHistory.filter(e => e.id !== undefined && !keepIds.has(e.id)).map(e => e.id as number)
+        if (dupeIds.length > 0) await db.historyEvents.bulkDelete(dupeIds)
     }
     return translated
 }
