@@ -4407,7 +4407,9 @@
             <div class="stat-row">
                 <div class="stat-box"><strong>{stats?.completedChapters ?? 0}</strong><span>Completed</span></div>
                 <div class="stat-box"><strong>{stats?.mangaCount ?? 0}</strong><span>Saved</span></div>
-                <div class="stat-box"><strong>{stats?.readingDays ?? 0}</strong><span>Active days</span></div>
+                <div class="stat-box">
+                    <strong>{stats?.readingDays ?? 0}</strong><span>Active days (all-time)</span>
+                </div>
             </div>
             <div class="stat-row">
                 <div class="stat-box"><strong>{stats?.currentStreak ?? 0}</strong><span>Day streak</span></div>
