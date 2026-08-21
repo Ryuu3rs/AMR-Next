@@ -1530,6 +1530,17 @@
         }
     }
 
+    // Single funnel for opening a source-controlled URL in a tab. Every mangaUrl/sourceUrl/
+    // chapter URL comes from an adapter parsing a third-party page, so it must pass the
+    // http(s) scheme gate before reaching browser.tabs.create - a compromised/hostile adapter
+    // returning a javascript:/data:/file: URL is otherwise handed straight to the browser.
+    // Returns false when the URL was rejected so callers can surface an error.
+    function openExternal(url: string | undefined | null, active = true): boolean {
+        if (!isValidUrl(url)) return false
+        void browser.tabs.create({ url, active })
+        return true
+    }
+
     // Best-effort link for a manga: the series/detail page is more durable than
     // a last-captured chapter URL, which can 404 once a site reslugs chapters.
     // Falls back to the adapter's homepage/domain if neither stored URL is usable.
@@ -1544,17 +1555,17 @@
     let openSourceError = $state("")
 
     function openInBrowser(manga: LibraryManga, active = true, opts: { fallback?: boolean } = {}) {
-        if (!opts.fallback) {
-            void browser.tabs.create({ url: manga.sourceUrl, active })
-            return
-        }
         openSourceError = ""
-        const url = resolveSourceLink(manga)
-        if (!url) {
-            openSourceError = "Couldn't open - no working link found for this source."
+        if (!opts.fallback) {
+            if (!openExternal(manga.sourceUrl, active)) {
+                openSourceError = "Couldn't open - no working link found for this source."
+            }
             return
         }
-        void browser.tabs.create({ url, active })
+        const url = resolveSourceLink(manga)
+        if (!openExternal(url, active)) {
+            openSourceError = "Couldn't open - no working link found for this source."
+        }
     }
 
     function openSeriesPage(manga: LibraryManga, e?: MouseEvent) {
@@ -1564,9 +1575,7 @@
             toggleSelect(manga.id)
             return
         }
-        const url = manga.mangaUrl ?? manga.sourceUrl
-        if (!url) return
-        void browser.tabs.create({ url, active: e?.button !== 1 })
+        openExternal(manga.mangaUrl ?? manga.sourceUrl, e?.button !== 1)
     }
 
     async function openInReader(manga: LibraryManga) {
@@ -2160,7 +2169,7 @@
     // MangaDex can list chapters; other sources open the manga page directly.
     async function openResult(result: SearchResult) {
         if (result.sourceId !== "mangadex") {
-            void browser.tabs.create({ url: result.url })
+            openExternal(result.url)
             return
         }
         selectedManga = { title: result.title }
@@ -2472,7 +2481,7 @@
                 }
                 return
             }
-            if (settings?.openChapterIn === "browser") void browser.tabs.create({ url: target.url })
+            if (settings?.openChapterIn === "browser") openExternal(target.url)
             else
                 void browser.tabs.create({
                     url: browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(target.url)}`)
@@ -2978,8 +2987,7 @@
     })
 
     function openSourceSite(src: { homepage?: string; domains: string[] }) {
-        const url = src.homepage ?? (src.domains[0] ? `https://${src.domains[0]}` : undefined)
-        if (url) void browser.tabs.create({ url })
+        openExternal(src.homepage ?? (src.domains[0] ? `https://${src.domains[0]}` : undefined))
     }
 
     const searchDisabledSet = $derived(new Set(searchDisabledSourceIds))
@@ -3371,7 +3379,7 @@
                                             title="Open on source site"
                                             onclick={e => {
                                                 e.stopPropagation()
-                                                void browser.tabs.create({ url: continueReading!.mangaUrl! })
+                                                openExternal(continueReading!.mangaUrl)
                                             }}>
                                             {sourceMeta.get(continueReading.sourceId)?.name ?? continueReading.sourceId}
                                         </button>
@@ -4007,7 +4015,7 @@
                                         title="Open on source site"
                                         onclick={e => {
                                             e.stopPropagation()
-                                            void browser.tabs.create({ url: manga.mangaUrl! })
+                                            openExternal(manga.mangaUrl)
                                         }}>
                                         {sourceMeta.get(manga.sourceId)?.name ?? manga.sourceId}
                                     </button>
@@ -4069,7 +4077,7 @@
                                             title="Open on source site"
                                             onclick={e => {
                                                 e.stopPropagation()
-                                                void browser.tabs.create({ url: manga.mangaUrl! })
+                                                openExternal(manga.mangaUrl)
                                             }}>
                                             {sourceMeta.get(manga.sourceId)?.name ?? manga.sourceId}
                                         </button>
@@ -6093,10 +6101,8 @@
                                         {:else}
                                             <span class="muted">current</span>
                                         {/if}
-                                        <button
-                                            type="button"
-                                            class="btn-sm"
-                                            onclick={() => void browser.tabs.create({ url: r.url })}>Open</button>
+                                        <button type="button" class="btn-sm" onclick={() => openExternal(r.url)}
+                                            >Open</button>
                                     </div>
                                 {/each}
                             </div>
