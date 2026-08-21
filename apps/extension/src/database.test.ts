@@ -20,11 +20,14 @@ import {
     libraryChangeSignature,
     listBackups,
     mergeMangaRecords,
+    putChapters,
     rekeyManga,
     remapExternalChapterProgress,
     removeManga,
     restoreBackup,
+    saveLinkedChapters,
     saveProgress,
+    saveReaderResolvedChapter,
     saveResolvedChapter,
     seedDatabase,
     switchMangaSource,
@@ -456,6 +459,43 @@ describe("removeManga", () => {
         expect(await db.manga.get(manga2.id)).toBeDefined()
         expect(await db.chapters.where("mangaId").equals(manga2.id).count()).toBe(1)
         expect(await db.sourceLinks.get(manga2.id)).toBeDefined()
+    })
+})
+
+describe("orphan-write guards (title removed during the network fetch)", () => {
+    it("saveLinkedChapters writes no chapters when the manga is absent", async () => {
+        await saveLinkedChapters(manga.id, [chapter], undefined)
+        expect(await db.chapters.where("mangaId").equals(manga.id).count()).toBe(0)
+    })
+
+    it("switchMangaSource writes no chapters or source link when the manga is absent", async () => {
+        await switchMangaSource({
+            mangaId: manga.id,
+            sourceId: "other",
+            chapters: [{ ...chapter, id: "other:chapter:1", sourceId: "other" }],
+            mangaPatch: {},
+            numberingUnreliable: false,
+            sourceLink
+        })
+        expect(await db.chapters.where("mangaId").equals(manga.id).count()).toBe(0)
+        expect(await db.sourceLinks.get(manga.id)).toBeUndefined()
+    })
+
+    it("putChapters writes nothing for a manga that no longer exists, but writes when it does", async () => {
+        await putChapters([chapter])
+        expect(await db.chapters.get(chapter.id)).toBeUndefined()
+        await db.manga.put({
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/title/abc"
+        } as LibraryManga)
+        await putChapters([chapter])
+        expect(await db.chapters.get(chapter.id)).toBeDefined()
+    })
+
+    it("saveReaderResolvedChapter writes no chapter row when the manga is absent", async () => {
+        await saveReaderResolvedChapter({ chapter, mangaId: manga.id })
+        expect(await db.chapters.get(chapter.id)).toBeUndefined()
     })
 })
 

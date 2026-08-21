@@ -583,6 +583,8 @@ describe("reader:chapters (standard sources without getChapterListUrl)", () => {
     })
 
     it("caches a freshly-fetched chapter list and publishes to the live bus", async () => {
+        // putChapters now only writes for a manga that exists (anti-orphan guard).
+        await db.manga.put(manga)
         listChaptersBySourceMock.mockResolvedValue([
             chapter("c1", 1, "https://mangadex.org/chapter/1"),
             chapter("c2", 2, "https://mangadex.org/chapter/2"),

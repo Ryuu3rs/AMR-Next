@@ -144,7 +144,7 @@ export type LogEntry = {
 export type LibraryBackup = {
     id?: number
     createdAt: number
-    reason: "pre-import" | "pre-sync-pull" | "pre-clear" | "pre-cleanup" | "pre-update" | "auto"
+    reason: "pre-import" | "pre-sync-pull" | "pre-clear" | "pre-cleanup" | "pre-merge" | "pre-update" | "auto"
     envelope: Awaited<ReturnType<typeof exportDatabase>>
 }
 
@@ -1014,12 +1014,15 @@ export async function saveReaderResolvedChapter(input: {
     coverUrl?: string
 }): Promise<void> {
     await db.transaction("rw", [db.chapters, db.manga], async () => {
+        // Re-check inside the transaction: reader:resolve runs a network fetch first, so the
+        // user may have removed the title (or it was never in the library) by now. Writing the
+        // chapter row anyway would orphan it under a mangaId with no parent - the same guard
+        // saveProgress/applyUpdateCheckResult use. No manga row -> nothing to track, skip.
+        const existing = await db.manga.get(input.mangaId)
+        if (existing === undefined) return
         await db.chapters.put(input.chapter)
-        if (input.coverUrl) {
-            const existing = await db.manga.get(input.mangaId)
-            if (existing && !existing.coverUrl) {
-                await db.manga.update(input.mangaId, { coverUrl: input.coverUrl })
-            }
+        if (input.coverUrl && !existing.coverUrl) {
+            await db.manga.update(input.mangaId, { coverUrl: input.coverUrl })
         }
     })
 }
@@ -1090,7 +1093,18 @@ export async function addImportedManga(candidates: LibraryManga[]): Promise<{ im
 
 // Thin wrapper so handlers never call db.chapters.bulkPut directly.
 export async function putChapters(chapters: ChapterRecord[]): Promise<void> {
-    await db.chapters.bulkPut(chapters)
+    if (chapters.length === 0) return
+    await db.transaction("rw", db.chapters, db.manga, async () => {
+        // Every caller fetches the chapter list over the network first, then caches it here.
+        // If the user removed the title in that window, writing its chapters would orphan them
+        // under a parentless mangaId. Only persist rows whose manga still exists (checked in
+        // the transaction, per distinct mangaId so a mixed batch is filtered, not all-or-nothing).
+        const ids = [...new Set(chapters.map(c => c.mangaId))]
+        const present = await Promise.all(ids.map(id => db.manga.get(id)))
+        const live = new Set(present.filter((m): m is LibraryManga => m !== undefined).map(m => m.id))
+        const rows = chapters.filter(c => live.has(c.mangaId))
+        if (rows.length > 0) await db.chapters.bulkPut(rows)
+    })
 }
 
 // library:relink - rekey the manga and write the resolved chapter in ONE
@@ -1144,6 +1158,9 @@ export async function saveLinkedChapters(
     latestPatch: Partial<LibraryManga> | undefined
 ): Promise<void> {
     await db.transaction("rw", db.chapters, db.manga, async () => {
+        // The chapter list is fetched over the network first; if the user removed the title in
+        // the meantime, writing its chapters now would orphan them (no parent manga row). Skip.
+        if ((await db.manga.get(mangaId)) === undefined) return
         await db.chapters.bulkPut(chapters)
         if (latestPatch) await db.manga.update(mangaId, latestPatch)
     })
@@ -1161,6 +1178,10 @@ export async function switchMangaSource(input: {
     sourceLink: SourceLinkRecord
 }): Promise<void> {
     await db.transaction("rw", db.manga, db.sourceLinks, db.chapters, async () => {
+        // library:switch fetches the new mirror's list over the network before this write, so
+        // re-check: a concurrent library:remove would otherwise leave orphan chapters AND an
+        // orphan source link (the latter silently drops the title from update checks).
+        if ((await db.manga.get(input.mangaId)) === undefined) return
         await db.chapters
             .where("mangaId")
             .equals(input.mangaId)
