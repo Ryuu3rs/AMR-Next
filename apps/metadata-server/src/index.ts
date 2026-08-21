@@ -24,12 +24,48 @@ function bearerMatches(authHeader: string | undefined, token: string): boolean {
     return timingSafeEqual(actual, expected)
 }
 
+// Both resolve routes are public + unauthenticated and each cache-miss chains onto a serial
+// AniList/Jikan queue, so without a limiter a flood of unique-title requests backs up unbounded
+// in memory (OOM) and fills disk with no-match rows. A small in-memory IP+route limiter caps
+// both. Traefik appends the real client as the rightmost X-Forwarded-For hop.
+const TITLE_MAX_LEN = 300
+const RL_WINDOW_MS = 60_000
+const RL_MAX = 120
+const RL_MAX_BUCKETS = 50_000
+const rlBuckets = new Map<string, { count: number; resetAt: number }>()
+function rateLimited(xff: string | undefined, route: string): boolean {
+    const now = Date.now()
+    const hops = (xff ?? "")
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean)
+    const ip = hops[hops.length - 1] ?? "unknown"
+    const key = `${ip}:${route}`
+    const b = rlBuckets.get(key)
+    if (!b || b.resetAt <= now) {
+        if (rlBuckets.size >= RL_MAX_BUCKETS) {
+            for (const [k, v] of rlBuckets) if (v.resetAt <= now) rlBuckets.delete(k)
+            if (rlBuckets.size >= RL_MAX_BUCKETS) {
+                const oldest = rlBuckets.keys().next().value as string | undefined
+                if (oldest) rlBuckets.delete(oldest)
+            }
+        }
+        rlBuckets.set(key, { count: 1, resetAt: now + RL_WINDOW_MS })
+        return false
+    }
+    if (b.count >= RL_MAX) return true
+    b.count++
+    return false
+}
+
 app.get("/", c => c.json({ name: "AMR Metadata API", status: "ok" }))
 app.get("/health", c => c.json({ ok: true }))
 
 app.get("/metadata/resolve", async c => {
+    if (rateLimited(c.req.header("x-forwarded-for"), "resolve")) return c.json({ error: "Too many requests" }, 429)
     const title = c.req.query("title")?.trim()
     if (!title) return c.json({ error: "title required" }, 400)
+    if (title.length > TITLE_MAX_LEN) return c.json({ error: "title too long" }, 400)
 
     const norm = normalizeTitle(title)
     const hit = store.getByNormalizedTitle(norm)
@@ -77,6 +113,7 @@ app.get("/metadata/resolve", async c => {
 })
 
 app.get("/metadata/by-anilist/:id", async c => {
+    if (rateLimited(c.req.header("x-forwarded-for"), "by-anilist")) return c.json({ error: "Too many requests" }, 429)
     const id = Number(c.req.param("id"))
     if (!Number.isInteger(id) || id <= 0) return c.json({ error: "invalid id" }, 400)
 
