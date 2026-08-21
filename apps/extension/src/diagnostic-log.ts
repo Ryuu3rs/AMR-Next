@@ -91,7 +91,10 @@ export function formatDiagnosticLog(entries: readonly LogEntry[], meta: Diagnost
         `browser: ${meta.browser}`,
         `log entries: ${entries.length}`
     ].join("\n")
-    const snapshotBlock = meta.snapshot ? `\n\n${formatSnapshot(meta.snapshot)}` : ""
+    // Redact the snapshot too: manga titles/sourceIds are scraped from third-party sites, so
+    // a token-shaped value there must be stripped by the same known-secret + TOKEN_PATTERNS
+    // pass the event-log lines get. Without this the whole snapshot section bypassed redaction.
+    const snapshotBlock = meta.snapshot ? `\n\n${redact(formatSnapshot(meta.snapshot), secrets)}` : ""
 
     const lines = entries.map(entry => {
         const time = new Date(entry.ts).toISOString()

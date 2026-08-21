@@ -151,4 +151,24 @@ describe("createMangaStreamAdapter", () => {
         expect(chapters.map(c => c.title)).toEqual(["Chapter 1", "Chapter 2", "Chapter 3"])
         expect(chapters.every(c => c.url.startsWith("https://test-stream.example/chapter/"))).toBe(true)
     })
+
+    it("anchor fallback must not swallow OTHER series' chapter links from page widgets", async () => {
+        // ts pages carry "Latest Update"/recommended widgets linking to other series' chapters
+        // on the same domain. Those must NOT be admitted as chapters of the series being listed
+        // (they invented foreign chapters + fired false "new chapter" notifications).
+        const listHtml = `<html><body>
+<div class="chapter-cards">
+  <a href="https://test-stream.example/chapter/cool-manga-chapter-1/">Chapter 1</a>
+  <a href="https://test-stream.example/chapter/cool-manga-chapter-2/">Chapter 2</a>
+</div>
+<aside class="widget latest-update">
+  <a href="https://test-stream.example/chapter/solo-leveling-chapter-200/">Solo Leveling 200</a>
+  <a href="https://test-stream.example/naruto-chapter-700/">Naruto 700</a>
+  <a href="https://test-stream.example/how-to-read-chapter-guide/">guide</a>
+</aside></body></html>`
+        const context = createContext({ "/manga/cool-manga/": listHtml })
+        const chapters = await adapter.listChapters({ manga: { sourceMangaId: "cool-manga" } as never }, context)
+        expect(chapters.map(c => c.sortKey)).toEqual([1, 2])
+        expect(chapters.every(c => c.url.includes("cool-manga"))).toBe(true)
+    })
 })

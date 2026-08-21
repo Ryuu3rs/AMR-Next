@@ -242,8 +242,13 @@ export function injectChapterPrompt(chapterUrl: string): void {
                         }
                         if (Array.isArray(key) && key.indexOf("detail") !== -1) {
                             const lc = (queries as Record<string, { latestChapter?: unknown }>)[k]?.latestChapter
-                            if (typeof lc === "number") latest = lc
-                            break
+                            // Only stop scanning once a numeric latestChapter is actually found -
+                            // a detail query missing the field must not leave `latest` at Infinity
+                            // when a later query carries it.
+                            if (typeof lc === "number") {
+                                latest = lc
+                                break
+                            }
                         }
                     }
                 }
@@ -253,7 +258,11 @@ export function injectChapterPrompt(chapterUrl: string): void {
                 prevUrl = base + (Number.isInteger(cur) ? cur - 1 : Math.floor(cur))
                 ;(bprev as HTMLButtonElement).disabled = false
             }
-            if (cur < latest && !nextUrl) {
+            // Only seed Next when latest is KNOWN (finite). If the SSR data was missing/
+            // malformed, latest stays Infinity - seeding a Next then would enable it on the
+            // final chapter and point at a nonexistent /0-chapter-(N+1); the DB siblings
+            // lookup that follows never clears it (it only overwrites non-null values).
+            if (Number.isFinite(latest) && cur < latest && !nextUrl) {
                 nextUrl = base + (Number.isInteger(cur) ? cur + 1 : Math.ceil(cur))
                 ;(bnext as HTMLButtonElement).disabled = false
             }

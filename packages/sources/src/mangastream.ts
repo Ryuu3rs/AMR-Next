@@ -256,7 +256,13 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
         const out: SourceChapter[] = []
         const seen = new Set<string>()
 
-        function pushHref(href: string): void {
+        // restrictSlug (used only by the whole-page fallback) requires a flat chapter slug
+        // to belong to THIS series: `<manga-slug>-chapter-N`. Without it the fallback would
+        // swallow "Latest Update"/recommended widget links to OTHER series' chapters that
+        // merely contain "chapter" in the last segment, inventing foreign chapters (and false
+        // "new chapter" notifications). The <li> pass passes no restrictSlug - it's already
+        // scoped to the chapter-list container.
+        function pushHref(href: string, restrictSlug?: string): void {
             let absolute: URL
             try {
                 absolute = new URL(href, config.origin)
@@ -272,6 +278,11 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
                 if (!matchesSourceDomain(absolute.hostname, config.domains)) return
                 const lastSeg = absolute.pathname.replace(/\/$/, "").split("/").pop()
                 if (!lastSeg || !/chapter/i.test(lastSeg)) return
+                if (
+                    restrictSlug &&
+                    !(lastSeg.startsWith(restrictSlug) && /^-chapter/i.test(lastSeg.slice(restrictSlug.length)))
+                )
+                    return
                 cslug = lastSeg
             }
             if (seen.has(cslug)) return
@@ -308,7 +319,7 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
         if (out.length === 0 && !isHierarchical) {
             for (const m of html.matchAll(/<a\s+[^>]*\bhref=["']([^"']+)["']/gi)) {
                 const href = captureGroup(m, 1)
-                if (href) pushHref(href)
+                if (href) pushHref(href, slug)
             }
         }
 
