@@ -171,4 +171,19 @@ describe("createMangaStreamAdapter", () => {
         expect(chapters.map(c => c.sortKey)).toEqual([1, 2])
         expect(chapters.every(c => c.url.includes("cool-manga"))).toBe(true)
     })
+
+    it("anchor fallback keeps a legit special/extra chapter of THIS series (intervening token)", async () => {
+        // The slug-scope gate must allow a token between the series slug and 'chapter'
+        // (specials/extras/seasons) while still excluding other series.
+        const listHtml = `<html><body>
+<div class="chapter-cards">
+  <a href="https://test-stream.example/chapter/cool-manga-chapter-1/">Chapter 1</a>
+  <a href="https://test-stream.example/chapter/cool-manga-extra-chapter-1/">Extra</a>
+  <a href="https://test-stream.example/chapter/solo-leveling-chapter-200/">Solo Leveling</a>
+</div></body></html>`
+        const context = createContext({ "/manga/cool-manga/": listHtml })
+        const chapters = await adapter.listChapters({ manga: { sourceMangaId: "cool-manga" } as never }, context)
+        expect(chapters.some(c => c.url.includes("cool-manga-extra-chapter-1"))).toBe(true)
+        expect(chapters.some(c => c.url.includes("solo-leveling"))).toBe(false)
+    })
 })

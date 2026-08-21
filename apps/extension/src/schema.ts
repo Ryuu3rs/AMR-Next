@@ -7,36 +7,45 @@ import { chapterRecordSchema, mangaRecordSchema, readingProgressSchema, sourceLi
 import { UNNUMBERED_SORT_KEY } from "@amr/source-sdk"
 import { z } from "zod"
 
-export const libraryMangaSchema = mangaRecordSchema.extend({
-    sourceId: z.string().trim().min(1),
-    sourceUrl: z.string(),
-    sourceMangaId: z.string().trim().min(1).optional(),
-    mangaUrl: z.string().optional(),
-    latestChapterId: z.string().optional(),
-    lastReadChapterId: z.string().optional(),
-    latestChapterNumber: z.number().finite().optional(),
-    lastReadChapterNumber: z.number().finite().optional(),
-    latestChapterAt: z.number().int().nonnegative().optional(),
-    lastReadAt: z.number().int().nonnegative().optional(),
-    manualTracking: z.boolean().optional(),
-    categories: z.array(z.string().trim().min(1)).optional(),
-    nsfw: z.boolean().optional(),
-    notes: z.string().optional(),
-    genres: z.array(z.string()).optional(),
-    anilistId: z.number().int().positive().optional(),
-    metadataUpdatedAt: z.number().int().nonnegative().optional(),
-    noGapContinuous: z.boolean().optional(),
-    onHold: z.boolean().optional(),
-    readingStatus: z.enum(["paused", "dropped", "planning"]).optional(),
-    readingStatusUpdatedAt: z.number().int().nonnegative().optional(),
-    readingDirection: z.enum(["ltr", "rtl", "vertical"]).optional(),
-    pageFit: z.enum(["width", "height", "contain", "original", "actual"]).optional(),
-    // Set by library:switch when moving to a source whose chapter numbering can't be
-    // assumed comparable to the previous source's (e.g. MangaHub's internal sequential
-    // slug numbering vs. another site's true chapter numbers). See LibraryManga in
-    // database.ts.
-    chapterNumberingUnreliable: z.boolean().optional()
-})
+export const libraryMangaSchema = mangaRecordSchema
+    .extend({
+        sourceId: z.string().trim().min(1),
+        sourceUrl: z.string(),
+        sourceMangaId: z.string().trim().min(1).optional(),
+        mangaUrl: z.string().optional(),
+        latestChapterId: z.string().optional(),
+        lastReadChapterId: z.string().optional(),
+        latestChapterNumber: z.number().finite().optional(),
+        lastReadChapterNumber: z.number().finite().optional(),
+        latestChapterAt: z.number().int().nonnegative().optional(),
+        lastReadAt: z.number().int().nonnegative().optional(),
+        manualTracking: z.boolean().optional(),
+        categories: z.array(z.string().trim().min(1)).optional(),
+        nsfw: z.boolean().optional(),
+        notes: z.string().optional(),
+        genres: z.array(z.string()).optional(),
+        anilistId: z.number().int().positive().optional(),
+        metadataUpdatedAt: z.number().int().nonnegative().optional(),
+        noGapContinuous: z.boolean().optional(),
+        onHold: z.boolean().optional(),
+        readingStatus: z.enum(["paused", "dropped", "planning"]).optional(),
+        readingStatusUpdatedAt: z.number().int().nonnegative().optional(),
+        readingDirection: z.enum(["ltr", "rtl", "vertical"]).optional(),
+        pageFit: z.enum(["width", "height", "contain", "original", "actual"]).optional(),
+        // Set by library:switch when moving to a source whose chapter numbering can't be
+        // assumed comparable to the previous source's (e.g. MangaHub's internal sequential
+        // slug numbering vs. another site's true chapter numbers). See LibraryManga in
+        // database.ts.
+        chapterNumberingUnreliable: z.boolean().optional()
+    })
+    // mangaRecordSchema is .strict(), so the extend inherits strict mode: an unrecognized key
+    // rejected the WHOLE manga record on import, and the import path then cascade-drops that
+    // title's chapters/progress/history/bookmarks. LibraryManga carries 24 non-indexed fields
+    // whose only tie to this schema is manual - the next field added to the runtime type but
+    // not mirrored here would silently vaporize every affected title on restore. Passthrough
+    // keeps unknown keys instead of rejecting, so a forward/backward field mismatch preserves
+    // the row (and even round-trips the stray field) rather than destroying data.
+    .passthrough()
 
 // Every real chapter-write path stores `SourceChapter` (packages/source-sdk), which is
 // `ChapterRecord & { sourceChapterId: string; language: string }` - a superset of the
