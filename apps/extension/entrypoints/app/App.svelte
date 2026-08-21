@@ -2756,6 +2756,9 @@
             }
         } else {
             suggestionsRequestedForVisit = false
+            // Leaving Discover clears any "More like X" focus so returning shows the full
+            // page, not a stale focused view from a "Find similar" click.
+            discoverFocus = null
         }
     })
     $effect(() => {

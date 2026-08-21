@@ -98,6 +98,26 @@ describe("formatDiagnosticLog", () => {
         expect(formatDiagnosticLog([entry({ message: "x" })], meta())).not.toContain("Library snapshot")
     })
 
+    it("redacts a token-shaped title and a known secret inside the snapshot (no redaction bypass)", () => {
+        const out = formatDiagnosticLog([], {
+            version: "1.0.0",
+            browser: "chrome",
+            secrets: ["abc-secret-123"],
+            snapshot: {
+                total: 2,
+                bySource: [{ sourceId: "mangadex", count: 2 }],
+                unread: [
+                    { title: "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", sourceId: "mangadex", read: 1, latest: 2 },
+                    { title: "abc-secret-123", sourceId: "mangadex", read: 0, latest: 5 }
+                ],
+                unreadTotal: 2
+            }
+        })
+        expect(out).not.toContain("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+        expect(out).not.toContain("abc-secret-123")
+        expect(out).toContain("[redacted]")
+    })
+
     // Regression: scope + sourceId were previously interpolated un-redacted, leaking a
     // secret/token that landed in either field.
     it("redacts a known secret in the sourceId field", () => {
