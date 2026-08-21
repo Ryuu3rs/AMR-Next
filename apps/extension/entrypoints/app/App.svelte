@@ -899,6 +899,8 @@
     let searchTotal = $state(0)
     let searchSettled = $state(0)
     let expandedSourceGroups = $state<Set<string>>(new Set())
+    // The first source to return results this search; auto-expanded until the user toggles a group.
+    let autoExpandSourceId = $state<string | null>(null)
     // Search-result view: ON collapses the same work across mirrors into one card
     // carrying a source chip per mirror; OFF restores today's per-source grouping.
     let groupDuplicates = $state(true)
@@ -2123,6 +2125,7 @@
         }
         searchLoading = true
         searchResults = []
+        autoExpandSourceId = null
         searchTotal = 0
         searchSettled = 0
         expandedSourceGroups = new Set()
@@ -2139,6 +2142,10 @@
                 } else if (msg.type === "partial" && msg.results) {
                     searchResults = [...searchResults, ...msg.results]
                     searchSettled++
+                    // Pin the first source that returns results as the auto-expanded group, so
+                    // the ungrouped view doesn't re-pick "first" (and collapse what the user is
+                    // reading) every time searchBySource re-sorts by count on a later partial.
+                    if (autoExpandSourceId === null && msg.results[0]) autoExpandSourceId = msg.results[0].sourceId
                 } else if (msg.type === "done") {
                     searchLoading = false
                     port.disconnect()
@@ -2166,24 +2173,32 @@
         }, SEARCH_DEBOUNCE_MS)
     }
 
+    // Generation guard (mirrors refreshGeneration): two chapter-list loads can be in flight
+    // at once (the user opens result Y while X's slow load is pending). Without this, X's late
+    // response would land into mangaChapters while selectedManga still shows Y - the header and
+    // the chapter list would disagree, and "Read" would open the wrong series' chapter.
+    let openResultSeq = 0
     // MangaDex can list chapters; other sources open the manga page directly.
     async function openResult(result: SearchResult) {
         if (result.sourceId !== "mangadex") {
             openExternal(result.url)
             return
         }
+        const seq = ++openResultSeq
         selectedManga = { title: result.title }
         chaptersLoading = true
         mangaChapters = []
         try {
-            mangaChapters = await sendRuntimeMessage<typeof mangaChapters>({
+            const chapters = await sendRuntimeMessage<typeof mangaChapters>({
                 type: "manga:chapters",
                 mangaId: result.sourceMangaId
             })
+            if (seq !== openResultSeq) return // a newer openResult superseded this one
+            mangaChapters = chapters
         } catch {
-            mangaChapters = []
+            if (seq === openResultSeq) mangaChapters = []
         } finally {
-            chaptersLoading = false
+            if (seq === openResultSeq) chaptersLoading = false
         }
     }
 
@@ -3271,9 +3286,10 @@
                             {/each}
                         </div>
                     {:else}
-                        {#each searchBySource as [sourceId, results], i}
+                        {#each searchBySource as [sourceId, results]}
                             {@const expanded =
-                                expandedSourceGroups.has(sourceId) || (expandedSourceGroups.size === 0 && i === 0)}
+                                expandedSourceGroups.has(sourceId) ||
+                                (expandedSourceGroups.size === 0 && sourceId === autoExpandSourceId)}
                             <div class="source-group">
                                 <button
                                     type="button"
