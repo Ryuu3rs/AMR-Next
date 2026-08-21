@@ -146,10 +146,15 @@ export async function fetchChapterHtmlViaTab(url: string): Promise<string> {
         }
         return html
     } finally {
-        internalUrls.delete(url)
+        // Clear the internal markers only AFTER the tab is actually gone - mirroring the
+        // register-before-create ordering at the top. If we cleared first, a challenge that
+        // auto-solves and reloads the tab in the window before tabs.remove settles would no
+        // longer be excluded, and onUpdated would treat it as real user navigation -> a
+        // spurious re-capture from a background scraping tab mid-teardown.
         if (tabId !== undefined) {
-            internalTabIds.delete(tabId)
             await browser.tabs.remove(tabId).catch(() => {})
+            internalTabIds.delete(tabId)
         }
+        internalUrls.delete(url)
     }
 }

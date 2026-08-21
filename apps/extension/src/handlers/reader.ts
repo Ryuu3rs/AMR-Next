@@ -356,6 +356,11 @@ export const readerHandlers: HandlerMap = {
             } else if (mangaInfo) {
                 void refreshExternalMangaMetadata(source.manifest.id, mangaInfo, tracked.mangaId)
             }
+        } else if (mangaInfo && isSlugLikeTitle(tracked.title)) {
+            // Not first creation, but the title is still a slug placeholder - the manga page was
+            // gated when the entry was minted and no periodic job re-derives title. Retry the
+            // recovery on this visit so it doesn't stay a slug forever (mirrors capture.ts).
+            void refreshExternalMangaMetadata(source.manifest.id, mangaInfo, tracked.mangaId)
         }
         return { supported: true as const, ...tracked }
     },
