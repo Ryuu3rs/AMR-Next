@@ -298,14 +298,22 @@ export const comixAdapter: SourceAdapter = {
             url: `${ORIGIN}/title/${slug}`
         }
 
+        // Canonicalise the chapter number into the SAME numeric form listChapters emits
+        // (id `${slug}:${n}`, sourceChapterId String(n)). Building the id from the raw URL
+        // token instead would diverge on a leading-zero or trailing-.0 permalink
+        // (`0-chapter-08` -> ":08" vs listChapters' ":8"), minting a second row for the same
+        // chapter so progress + prev/next stop matching. Fall back to the raw token only when
+        // it isn't a parseable number (unnumbered special).
+        const parsedNum = parseChapterNumber(chapterNum)
+        const canonicalNum = parsedNum !== undefined && Number.isFinite(parsedNum) ? String(parsedNum) : chapterNum
         const chapter: SourceChapter = {
-            id: `${SOURCE_ID}:chapter:${slug}:${chapterNum}`,
+            id: `${SOURCE_ID}:chapter:${slug}:${canonicalNum}`,
             mangaId,
             sourceId: SOURCE_ID,
-            sourceChapterId: chapterNum,
-            title: `Ch.${chapterNum}`,
+            sourceChapterId: canonicalNum,
+            title: `Ch.${canonicalNum}`,
             url: input.url.toString(),
-            sortKey: parseChapterNumber(chapterNum) ?? UNNUMBERED_SORT_KEY,
+            sortKey: parsedNum ?? UNNUMBERED_SORT_KEY,
             language: "en"
         }
 
