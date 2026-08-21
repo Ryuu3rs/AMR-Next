@@ -147,10 +147,24 @@
     }
 
     // Open the chapter on its own site and still record it as read - the no-scrape
+    // Only open a source-controlled URL in a tab if it is http(s): an adapter-parsed
+    // chapter/source URL must never hand a javascript:/data:/file: scheme to tabs.create.
+    function openExternal(url: string | undefined | null): boolean {
+        if (!url) return false
+        try {
+            const protocol = new URL(url).protocol
+            if (protocol !== "http:" && protocol !== "https:") return false
+        } catch {
+            return false
+        }
+        void browser.tabs.create({ url })
+        return true
+    }
+
     // fallback for sources whose images the in-app reader can't load.
     async function openOnSiteAndTrack() {
         if (!chapterUrl) return
-        void browser.tabs.create({ url: chapterUrl })
+        openExternal(chapterUrl)
         try {
             const res = await sendRuntimeMessage<{
                 supported: boolean
@@ -229,7 +243,7 @@
     })
 
     function openMirror(result: SearchResult) {
-        void browser.tabs.create({ url: result.url })
+        openExternal(result.url)
     }
 
     // A9: offline downloads. When a chapter has been downloaded, render the
@@ -1070,7 +1084,7 @@
                     class="source-link"
                     type="button"
                     title="Open manga page on source site"
-                    onclick={() => void browser.tabs.create({ url: sourceUrl })}>
+                    onclick={() => openExternal(sourceUrl)}>
                     {sourceDomain}
                 </button>
             {/if}
