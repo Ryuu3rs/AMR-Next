@@ -69,9 +69,14 @@ async function doCaptureChapter(url: string) {
         // every cooldown-apart revisit. Use tracked.mangaId (the actual DB entry).
         if (mangaInfo && tracked.created) {
             scheduleChapterListRefresh(source, mangaInfo.sourceMangaId, mangaInfo.mangaUrl, tracked.mangaId)
-            // The external-track path only has a humanized-slug title and no cover
-            // (resolveChapter was blocked). Best-effort pull the real title/cover from the
-            // manga page, which is often reachable even when the chapter page is gated.
+        }
+        // The external-track path only has a humanized-slug title and no cover (resolveChapter
+        // was blocked). Best-effort pull the real title/cover from the manga page. Retry on ANY
+        // visit where the title is still a slug placeholder - not only on first creation: if the
+        // manga page was also gated at mint time the title would otherwise stay a slug forever
+        // (no periodic job re-derives title). scheduleChapterListRefresh stays created-gated to
+        // avoid re-opening the tab-crawl on every revisit.
+        if (mangaInfo && (tracked.created || isSlugLikeTitle(tracked.title))) {
             void refreshExternalMangaMetadata(source.manifest.id, mangaInfo, tracked.mangaId)
         }
         publishLive(["library", "chapters"], [tracked.mangaId])
