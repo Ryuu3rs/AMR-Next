@@ -319,10 +319,16 @@
     async function removeChapterDownload() {
         if (!chapter || removingDownload) return
         removingDownload = true
+        // Capture the chapter this remove is FOR: if the user navigates while the backend
+        // removal is in flight, revoking offlinePages + clearing `downloaded` unconditionally
+        // would blow away the NEW chapter's offline URLs and mis-flag it as not-downloaded.
+        const chapterId = chapter.chapter.id
         try {
-            await sendRuntimeMessage({ type: "chapter:download:remove", chapterId: chapter.chapter.id })
-            revokeOfflinePages()
-            downloaded = false
+            await sendRuntimeMessage({ type: "chapter:download:remove", chapterId })
+            if (chapter?.chapter.id === chapterId) {
+                revokeOfflinePages()
+                downloaded = false
+            }
         } catch {
             // ignore
         } finally {
@@ -467,11 +473,18 @@
         if (!chapter || exportingCbz) return
         exportingCbz = true
         exportCbzError = ""
+        // Capture the chapter identity + names BEFORE the await-heavy blob loop: the user can
+        // navigate (loadChapter reassigns `chapter`) while up to 200 blobs are decoded, and
+        // reading the title afterwards would name the file for the NEW chapter while the bytes
+        // are the old one's - a mislabeled CBZ written to disk. Mirrors downloadChapter's capture.
+        const chapterId = chapter.chapter.id
+        const mangaTitle = sanitizeFilenamePart(chapter.manga.manga.title)
+        const chapterTitle = sanitizeFilenamePart(chapter.chapter.title)
         let objectUrl = ""
         try {
             const record = await sendRuntimeMessage<{ pageBlobs: Blob[]; pageCount: number } | null>({
                 type: "chapter:download:get",
-                chapterId: chapter.chapter.id
+                chapterId
             })
             if (!record || record.pageBlobs.length === 0) {
                 exportCbzError = "No offline pages to export"
@@ -486,8 +499,6 @@
                 entries.push({ name, data })
             }
             const zipBlob = buildZip(entries)
-            const mangaTitle = sanitizeFilenamePart(chapter.manga.manga.title)
-            const chapterTitle = sanitizeFilenamePart(chapter.chapter.title)
             objectUrl = URL.createObjectURL(zipBlob)
             await browser.downloads.download({
                 url: objectUrl,
@@ -747,6 +758,8 @@
         mirrorOpen = false
         mirrorSearched = false
         mirrorResults = []
+        // Don't carry a previous chapter's CBZ-export error onto the new chapter's button.
+        exportCbzError = ""
         try {
             chapter = await sendRuntimeMessage<ResolvedChapter>({ type: "reader:resolve", url })
             progressReporter = createReporterForChapter(chapter)
