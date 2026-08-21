@@ -278,9 +278,16 @@ export function createMangaStreamAdapter(config: MangaStreamConfig): SourceAdapt
                 if (!matchesSourceDomain(absolute.hostname, config.domains)) return
                 const lastSeg = absolute.pathname.replace(/\/$/, "").split("/").pop()
                 if (!lastSeg || !/chapter/i.test(lastSeg)) return
+                // Belongs-to-this-series check for the whole-page fallback: the slug must be a
+                // prefix AND `chapter` must appear as a later token. Allowing intervening tokens
+                // keeps legit specials/extras (<slug>-extra-chapter-1, <slug>-season-2-chapter-1)
+                // while still excluding OTHER series' links (solo-leveling-chapter-200).
                 if (
                     restrictSlug &&
-                    !(lastSeg.startsWith(restrictSlug) && /^-chapter/i.test(lastSeg.slice(restrictSlug.length)))
+                    !(
+                        lastSeg.startsWith(restrictSlug) &&
+                        /(?:^|-)chapter[-_]/i.test(lastSeg.slice(restrictSlug.length))
+                    )
                 )
                     return
                 cslug = lastSeg

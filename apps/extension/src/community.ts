@@ -105,6 +105,14 @@ export async function apiRegister(username: string): Promise<{ userId: string }>
     return res.json() as Promise<{ userId: string }>
 }
 
+// The server stores at most 500 events per POST (index.ts .slice(0, 500)). Sending more in
+// one request silently dropped the overflow while the caller still advanced its sync
+// watermark - permanently losing events 501+ on the first sync of an established library.
+// Chunk at the same size so every event is stored; the final chunk's response carries the
+// up-to-date rank/achievements/recommendations. A mid-run failure throws before the caller
+// advances the watermark, so the next sync re-sends everything (the server dedups).
+const EVENT_CHUNK = 500
+
 export async function apiSyncEvents(
     userId: string,
     events: CommunityEvent[]
@@ -114,17 +122,26 @@ export async function apiSyncEvents(
     recommendations: CommunityRecommendation[]
 }> {
     assertCommunityConfigured()
-    const res = await fetch(`${COMMUNITY_API_BASE}/events`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, events })
-    })
-    if (!res.ok) throw new Error(`Event sync failed: ${res.status}`)
-    return res.json() as Promise<{
-        rank: number | null
-        newAchievements: string[]
-        recommendations: CommunityRecommendation[]
-    }>
+    type SyncResult = { rank: number | null; newAchievements: string[]; recommendations: CommunityRecommendation[] }
+    // At least one request even with no events, so the caller still gets the current rank.
+    const batches: CommunityEvent[][] = []
+    for (let i = 0; i < events.length; i += EVENT_CHUNK) batches.push(events.slice(i, i + EVENT_CHUNK))
+    if (batches.length === 0) batches.push([])
+
+    let last: SyncResult = { rank: null, newAchievements: [], recommendations: [] }
+    const achievements = new Set<string>()
+    for (const batch of batches) {
+        const res = await fetch(`${COMMUNITY_API_BASE}/events`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, events: batch })
+        })
+        if (!res.ok) throw new Error(`Event sync failed: ${res.status}`)
+        last = (await res.json()) as SyncResult
+        for (const a of last.newAchievements) achievements.add(a)
+    }
+    // newAchievements can unlock on any chunk - union them so none is lost across batches.
+    return { ...last, newAchievements: [...achievements] }
 }
 
 export async function apiFetchCommunityStats(): Promise<CommunityStats> {

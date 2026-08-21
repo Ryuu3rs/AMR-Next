@@ -124,6 +124,20 @@ describe("exportEnvelopeSchema", () => {
         }
     })
 
+    it("keeps a manga record carrying an unknown future field instead of rejecting + cascade-dropping the title", () => {
+        // A field added to the runtime LibraryManga but not yet mirrored in libraryMangaSchema
+        // must NOT cause the whole record (and its cascade of chapters/progress/history) to be
+        // dropped on restore. Passthrough preserves the row (and round-trips the stray field).
+        const env = validEnvelope() as Record<string, unknown> & { data: { manga: Record<string, unknown>[] } }
+        env.data.manga[0] = { ...env.data.manga[0], someFutureFieldV12: "hello" }
+        const parsed = exportEnvelopeSchema.safeParse(env)
+        expect(parsed.success).toBe(true)
+        if (parsed.success) {
+            expect(parsed.data.data.manga).toHaveLength(1)
+            expect((parsed.data.data.manga[0] as Record<string, unknown>).someFutureFieldV12).toBe("hello")
+        }
+    })
+
     it("drops unknown extra tables but keeps known ones", () => {
         const env = validEnvelope() as Record<string, unknown> & { data: Record<string, unknown> }
         env.data["futureTable"] = [{ anything: true }]
