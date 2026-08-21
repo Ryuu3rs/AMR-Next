@@ -206,10 +206,10 @@
         if (!chapter || chapter.pages.length === 0) return false
         const pageCount = chapter.pages.length
         if (effectiveMode === "single") {
-            // Paged mode mounts only the current one or two pages, so trip when every
-            // page in the current view has failed - but require two distinct failures
-            // overall so a single transient error never shows the banner.
-            if (failedPages.size < 2 && pageCount > 1) return false
+            // Paged mode mounts only the current one or two pages, so trip when every page in
+            // the current view has failed. A page only enters failedPages after handleImageError
+            // exhausts its retries (i.e. it's confirmed dead, not a transient blip), so a single
+            // dead page the user is stuck on must surface the fallback - no second-failure gate.
             return spreadIndices.length > 0 && spreadIndices.every(p => failedPages.has(p))
         }
         return failedPages.size >= pageCount
@@ -748,7 +748,10 @@
                 type: "reader:progress:get",
                 chapterId: chapter.chapter.id
             })
-            currentPage = progress?.pageIndex ?? 0
+            // Clamp to this resolution's page count: a source that dropped pages since the last
+            // read would otherwise leave currentPage past the end (>100% bar, "62/40" header,
+            // bookmarks on a nonexistent page, frozen continuous progress).
+            currentPage = Math.min(Math.max(0, progress?.pageIndex ?? 0), Math.max(0, chapter.pages.length - 1))
             // A10: load global settings + per-title overrides in parallel so mode is
             // set exactly once - no flicker from a global-default interim state.
             mangaId = chapter.manga.manga.id
@@ -896,7 +899,11 @@
         if (!chapter) return
         // Unthrottled - drives the visible page-number UI and must stay instant.
         currentPage = pageIndex
-        const completed = pageIndex === chapter.pages.length - 1
+        // Completed = the CURRENT VIEW shows the last page, not pageIndex === last: in double-page
+        // mode the terminal nextStart is the start of the final PAIR (e.g. index 8 of a 10-page
+        // chapter), so an exact-index check never fired and the chapter stayed "Started" forever.
+        const view = spreadView(pageIndex, effectiveSpread, effectiveOffset, chapter.pages.length)
+        const completed = view.indices.includes(chapter.pages.length - 1)
         progressReporter?.report(pageIndex, completed)
         // "Chapter finished" must reach the DB/live-bus immediately, not wait
         // out the trailing coalescing window.

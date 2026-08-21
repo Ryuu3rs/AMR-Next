@@ -984,6 +984,48 @@ describe("remapExternalChapterProgress", () => {
         expect(merged?.updatedAt).toBe(10)
     })
 
+    it("does not duplicate a completed history row when two losers' chapters merge onto one canonical chapter", async () => {
+        const loserA = "mangafreak:manga:read1-foo-1a"
+        const loserB = "mangafreak:manga:read1-foo-1b"
+        await db.manga.bulkPut([
+            { ...manga, id: loserA, sourceId: "mangafreak", sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1" },
+            { ...manga, id: loserB, sourceId: "mangafreak", sourceUrl: "https://ww2.mangafreak.me/Read1_Foo_1" }
+        ])
+        await db.chapters.bulkPut([
+            {
+                id: `${loserA}:ext:ch-1`,
+                mangaId: loserA,
+                sourceId: "mangafreak",
+                title: "Chapter 1",
+                url: "https://ww2.mangafreak.me/Read1_Foo_1",
+                sortKey: 1
+            },
+            {
+                id: `${loserB}:ext:ch-1`,
+                mangaId: loserB,
+                sourceId: "mangafreak",
+                title: "Chapter 1",
+                url: "https://ww2.mangafreak.me/Read1_Foo_1",
+                sortKey: 1
+            }
+        ])
+        const day = 86_400_000
+        const base = Date.parse("2026-06-10T12:00:00Z")
+        await db.historyEvents.bulkAdd([
+            { mangaId: loserA, chapterId: `${loserA}:ext:ch-1`, type: "completed", occurredAt: base },
+            { mangaId: loserB, chapterId: `${loserB}:ext:ch-1`, type: "completed", occurredAt: base + day }
+        ])
+
+        await remapExternalChapterProgress(loserA, canonicalChapters)
+        await remapExternalChapterProgress(loserB, canonicalChapters)
+
+        const events = await db.historyEvents.where("chapterId").equals("mangafreak:chapter:Foo:1").toArray()
+        // One chapter was completed once - one completed row, keeping the earliest occurredAt.
+        const completed = events.filter(e => e.type === "completed")
+        expect(completed).toHaveLength(1)
+        expect(completed[0]?.occurredAt).toBe(base)
+    })
+
     it("leaves an ext chapter's progress/history alone when it can't be matched to any canonical chapter", async () => {
         const loserId = "mangafreak:manga:read1-unmatched"
         await db.manga.put({
