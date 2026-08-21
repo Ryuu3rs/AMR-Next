@@ -235,7 +235,15 @@ export default defineBackground(() => {
                         }
                     },
                     controller.signal,
-                    excluded
+                    excluded,
+                    sourceId => {
+                        if (controller.signal.aborted) return
+                        try {
+                            port.postMessage({ type: "settled", sourceId })
+                        } catch {
+                            // port may have disconnected
+                        }
+                    }
                 )
             })
         })

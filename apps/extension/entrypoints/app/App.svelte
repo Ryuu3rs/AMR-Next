@@ -2141,11 +2141,14 @@
                     searchTotal = msg.total ?? 0
                 } else if (msg.type === "partial" && msg.results) {
                     searchResults = [...searchResults, ...msg.results]
-                    searchSettled++
                     // Pin the first source that returns results as the auto-expanded group, so
                     // the ungrouped view doesn't re-pick "first" (and collapse what the user is
                     // reading) every time searchBySource re-sorts by count on a later partial.
                     if (autoExpandSourceId === null && msg.results[0]) autoExpandSourceId = msg.results[0].sourceId
+                } else if (msg.type === "settled") {
+                    // One source finished (matched, empty, timed out, or errored). Count
+                    // settlements, not partials, so "X/Y sources" reflects true progress.
+                    searchSettled++
                 } else if (msg.type === "done") {
                     searchLoading = false
                     port.disconnect()
