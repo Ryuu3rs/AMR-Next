@@ -469,6 +469,21 @@ button:disabled {
     width: 132px;
     scroll-snap-align: start;
 }
+
+/* Suggestion cards are flex columns of equal height (their row stretches them), with the action
+   button pinned to the bottom - so every "Find on a source" button lines up across a row no
+   matter how many lines the title/subtitle wrap to. */
+.poster-grid article.disc-card,
+.disc-rail-track > .disc-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    height: 100%;
+}
+.disc-card > .btn-sm,
+.podium-item > .btn-sm {
+    margin-top: auto;
+}
 .disc-focus-head {
     display: flex;
     align-items: baseline;
@@ -1630,12 +1645,15 @@ button:disabled {
     grid-template-columns: repeat(3, 1fr);
     gap: 18px;
     margin: 20px 0 32px;
-    align-items: start;
+    /* stretch (not start) so the three items are equal height and their "Find on a source"
+       buttons line up regardless of title/sub length. */
+    align-items: stretch;
 }
 
 .podium-item {
     position: relative;
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 6px;
 }
 

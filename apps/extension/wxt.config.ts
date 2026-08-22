@@ -1,5 +1,25 @@
+import { execSync } from "node:child_process"
 import { defineConfig } from "wxt"
 import { ALL_OPTIONAL_ORIGINS, ANILIST_API_ORIGIN, GITHUB_API_ORIGIN, METADATA_COVER_ORIGINS } from "./src/permissions"
+
+// Build marker shown in the UI next to the (release-please-owned) version, so a local dev build
+// is identifiable while testing without hand-bumping the version. Short commit + a "+" when the
+// working tree is dirty; "dev" if git is unavailable. Injected as a compile-time constant.
+function gitBuildId(): string {
+    try {
+        const sha = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim()
+        let dirty = ""
+        try {
+            execSync("git diff --quiet")
+        } catch {
+            dirty = "+"
+        }
+        return sha ? sha + dirty : "dev"
+    } catch {
+        return "dev"
+    }
+}
+const BUILD_ID = gitBuildId()
 
 export default defineConfig({
     manifestVersion: 3,
@@ -7,6 +27,9 @@ export default defineConfig({
     // Fully disable Vite's modulepreload - extensions use self.importScripts, not link preload,
     // and the preload helper injects Function() + innerHTML which violate MV3 CSP and AMO policy.
     vite: () => ({
+        define: {
+            __BUILD_ID__: JSON.stringify(BUILD_ID)
+        },
         build: {
             modulePreload: false
         }

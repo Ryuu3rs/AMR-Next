@@ -617,6 +617,9 @@
     let reconcileIds = $state<string[]>([])
     let libScanIds = $state<string[]>([])
     const currentVersion = browser.runtime.getManifest().version
+    // Build marker (git commit of this build) so a local dev build is identifiable next to the
+    // release-please-owned version, which only bumps on an actual release.
+    const buildId = __BUILD_ID__
     let extensionUpdate = $state<{
         available: boolean
         latestVersion: string
@@ -3080,7 +3083,7 @@
             {/each}
         </nav>
         <div class="sidebar-footer">
-            <span class="sidebar-version">v{currentVersion}</span>
+            <span class="sidebar-version">v{currentVersion}{buildId ? ` · ${buildId}` : ""}</span>
             <button
                 type="button"
                 class="discord-btn"
@@ -3548,13 +3551,8 @@
                         : "No suggestions yet. Add a few titles to your library so we can learn what you like."}
                 </p>
             {:else}
-                {#each becauseYouReadRails as r (r.title)}
-                    {@render rail(`Because you read ${r.title}`, r.items)}
-                {/each}
-                {#each byGenreRails as r (r.genre)}
-                    {@render rail(`More ${r.genre}`, r.items)}
-                {/each}
                 <h2 class="podium-heading">Top picks for you</h2>
+                <p class="muted" style="margin-top:-4px">Based on the genres and authors you read.</p>
                 <div class="sug-filters">
                     <input
                         class="sug-search"
@@ -3672,6 +3670,16 @@
                             {@render sugCard(s)}
                         {/each}
                     </div>
+                {/if}
+                {#if !sugFiltersActive}
+                    <!-- Supplementary discovery rails, below the main picks so the familiar
+                         top-3 + genre-filter layout leads. Hidden while a filter is active. -->
+                    {#each becauseYouReadRails as r (r.title)}
+                        {@render rail(`Because you read ${r.title}`, r.items)}
+                    {/each}
+                    {#each byGenreRails as r (r.genre)}
+                        {@render rail(`More ${r.genre}`, r.items)}
+                    {/each}
                 {/if}
             {/if}
         {:else if activeSection === "Library"}
