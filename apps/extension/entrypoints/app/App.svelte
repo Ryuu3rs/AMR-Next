@@ -4617,7 +4617,7 @@
                 {#if analyticsSummary.statusBreakdown.length > 0}
                     <p class="shelf-label" style="margin-top:16px">Library by status</p>
                     <div class="insights-list">
-                        {#each analyticsSummary.statusBreakdown.sort((a, b) => b.count - a.count) as s}
+                        {#each [...analyticsSummary.statusBreakdown].sort((a, b) => b.count - a.count) as s}
                             <div class="insights-row">
                                 <span class="insights-label" style="text-transform:capitalize">{s.status}</span>
                                 <span class="insights-count">{s.count} titles</span>
