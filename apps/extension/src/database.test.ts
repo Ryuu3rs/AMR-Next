@@ -14,6 +14,7 @@ import {
     exportDatabase,
     fixupDanglingChapterIds,
     getActivityCalendar,
+    getAnalyticsSummary,
     getCachedCovers,
     getLocalStats,
     importDatabase,
@@ -21,6 +22,7 @@ import {
     listBackups,
     mergeMangaRecords,
     putChapters,
+    recordAnalyticsEvent,
     rekeyManga,
     remapExternalChapterProgress,
     removeManga,
@@ -3633,5 +3635,87 @@ describe("importDatabase drops dependents with no parent manga anywhere (Fix 9)"
 
         expect(await db.progress.get("ghost:ch1")).toBeUndefined()
         expect(await db.progress.count()).toBe(0)
+    })
+})
+
+describe("getAnalyticsSummary (Stats tab data)", () => {
+    beforeEach(async () => {
+        // The shared beforeEach clears db.manga but not the events table.
+        await db.analyticsEvents.clear()
+    })
+
+    const put = (id: string, over: Partial<LibraryManga>) =>
+        db.manga.put({
+            id,
+            title: id,
+            normalizedTitle: normalizeTitle(id),
+            authors: [],
+            status: "ongoing",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceId: "mangadex",
+            sourceUrl: `https://mangadex.org/title/${id}`,
+            ...over
+        })
+
+    it("aggregates status, genre and author distributions across the whole library", async () => {
+        await put("a", { status: "ongoing", genres: ["Action", "Drama"], authors: ["Kubo"] })
+        await put("b", { status: "ongoing", genres: ["Action"], authors: ["Kubo"] })
+        await put("c", { status: "completed", genres: ["Comedy"], authors: ["Oda"] })
+        await put("d", { status: "unknown" })
+
+        const s = await getAnalyticsSummary()
+
+        expect(Object.fromEntries(s.statusBreakdown.map(x => [x.status, x.count]))).toEqual({
+            ongoing: 2,
+            completed: 1,
+            unknown: 1
+        })
+        const genres = Object.fromEntries(s.topGenres.map(x => [x.genre, x.count]))
+        expect(genres.Action).toBe(2)
+        expect(genres.Drama).toBe(1)
+        expect(genres.Comedy).toBe(1)
+        const authors = Object.fromEntries(s.topAuthors.map(x => [x.author, x.count]))
+        expect(authors.Kubo).toBe(2)
+        expect(authors.Oda).toBe(1)
+    })
+
+    it("computes capture/reader/error rates from recent events and ignores events outside the window", async () => {
+        const now = Date.now()
+        await recordAnalyticsEvent({ event: "capture_ok", sourceId: "mangadex", ts: now })
+        await recordAnalyticsEvent({ event: "capture_ok", sourceId: "mangadex", ts: now })
+        await recordAnalyticsEvent({ event: "capture_ok", sourceId: "mangahub", ts: now })
+        await recordAnalyticsEvent({
+            event: "capture_error",
+            sourceId: "mangahub",
+            ts: now,
+            detail: JSON.stringify({ errorType: "cf_block" })
+        })
+        await recordAnalyticsEvent({ event: "reader_opened", ts: now })
+        await recordAnalyticsEvent({ event: "reader_opened", ts: now })
+        // Older than the default 30-day window - must not be counted.
+        await recordAnalyticsEvent({ event: "capture_ok", sourceId: "mangadex", ts: now - 40 * 86_400_000 })
+
+        const s = await getAnalyticsSummary()
+
+        expect(s.captureOk).toBe(3)
+        expect(s.captureErrors).toBe(1)
+        expect(s.readerOpened).toBe(2)
+        expect(s.readerRate).toBe(67) // round(2/3 * 100)
+        expect(s.errorRate).toBe(25) // round(1/(3+1) * 100)
+        expect(Object.fromEntries(s.topSources.map(x => [x.sourceId, x.count]))).toMatchObject({
+            mangadex: 2,
+            mangahub: 1
+        })
+        expect(Object.fromEntries(s.errorTypes.map(x => [x.type, x.count]))).toMatchObject({ cf_block: 1 })
+    })
+
+    it("returns zeroed rates and empty breakdowns for an empty library", async () => {
+        const s = await getAnalyticsSummary()
+        expect(s.captureOk).toBe(0)
+        expect(s.readerRate).toBe(0)
+        expect(s.errorRate).toBe(0)
+        expect(s.statusBreakdown).toEqual([])
+        expect(s.topGenres).toEqual([])
     })
 })
