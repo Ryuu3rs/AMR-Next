@@ -2346,6 +2346,9 @@ export async function seedDatabase(): Promise<void> {
                 coverUrl: "/sample-covers/buried-injustice.jpg",
                 authors: [],
                 status: "ongoing",
+                // Real AniList id so the sample library actually drives the Discover tab
+                // (suggestions seed from library titles that carry an anilistId).
+                anilistId: 194902,
                 sourceId: "mangadex",
                 sourceUrl: "https://mangadex.org/chapter/3dff8b5f-844e-4964-abd7-641c34f1f091",
                 sourceMangaId: "62994137-014f-4499-b88a-c219b115fd64",
@@ -2367,6 +2370,7 @@ export async function seedDatabase(): Promise<void> {
                 coverUrl: "/sample-covers/entomologist.jpg",
                 authors: [],
                 status: "ongoing",
+                anilistId: 185452,
                 sourceId: "mangaread",
                 sourceUrl: "https://www.mangaread.org/manga/entomologist-in-sichuan-tang-clan/chapter-79/?style=list",
                 sourceMangaId: "entomologist-in-sichuan-tang-clan",
@@ -2432,6 +2436,7 @@ export async function seedDatabase(): Promise<void> {
                 coverUrl: "/sample-covers/jujutsu-kaisen.jpg",
                 authors: ["Gege Akutami"],
                 status: "ongoing",
+                anilistId: 101517,
                 sourceId: "weebcentral",
                 sourceUrl: "https://weebcentral.com/chapters/01KWX62ZXF6VQDFEM1ADY98TFD/",
                 sourceMangaId: "01KWX62ZXF6VQDFEM1ADY98TFD",
