@@ -3,9 +3,10 @@ import { chromium } from "playwright"
 import { chromiumExtension } from "../../src/paths.js"
 
 // Regression test for a real bug fixed in this codebase: marking a title "caught up"
-// updated lastReadChapterNumber but not lastReadChapterId, so the Unread badge (which
-// compares latestChapterId/lastReadChapterId, not the chapter numbers) never cleared.
-test("marking a title caught up clears its Unread badge and survives reload", async () => {
+// updated lastReadChapterNumber but not lastReadChapterId, so the new-chapter indicator
+// (which compares latestChapterId/lastReadChapterId, not the chapter numbers) never
+// cleared. In list view that indicator is the "New ch" badge (grid view calls it "Unread").
+test("marking a title caught up clears its New-ch badge and survives reload", async () => {
     const context = await chromium.launchPersistentContext("", {
         channel: "chromium",
         headless: true,
@@ -52,7 +53,7 @@ test("marking a title caught up clears its Unread badge and survives reload", as
         )
         expect(importResult?.ok).toBe(true)
 
-        // activeSection/libraryView are plain $state, not persisted — every reload lands
+        // activeSection/libraryView are plain $state, not persisted - every reload lands
         // back on the Home tab in grid view, so each round needs to navigate to Library
         // and switch to list view (the "Caught up" action only exists in list view).
         async function goToLibraryListView() {
@@ -68,15 +69,15 @@ test("marking a title caught up clears its Unread badge and survives reload", as
 
         const row = app.locator(".list-row", { hasText: "E2E Reading Test" })
         await expect(row).toBeVisible()
-        await expect(row.getByText("Unread", { exact: true })).toBeVisible()
+        await expect(row.getByText("New ch", { exact: true })).toBeVisible()
 
         await row.getByRole("button", { name: "Caught up" }).click()
-        await expect(row.getByText("Unread", { exact: true })).toHaveCount(0)
+        await expect(row.getByText("New ch", { exact: true })).toHaveCount(0)
 
         await app.reload()
         await goToLibraryListView()
         const rowAfterReload = app.locator(".list-row", { hasText: "E2E Reading Test" })
-        await expect(rowAfterReload.getByText("Unread", { exact: true })).toHaveCount(0)
+        await expect(rowAfterReload.getByText("New ch", { exact: true })).toHaveCount(0)
     } finally {
         await context.close()
     }
