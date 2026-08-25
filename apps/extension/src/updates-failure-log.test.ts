@@ -39,6 +39,31 @@ describe("formatUpdateFailureLog", () => {
         expect(log).not.toContain("failures by source:")
     })
 
+    it("renders skipped (bot-blocked) sources in their own section, not as failures", () => {
+        const log = formatUpdateFailureLog([], {
+            ...meta,
+            failed: 0,
+            skippedSources: { natomanga: 154, otherblocked: 3 }
+        })
+        expect(log).toContain("skipped (site blocks automated checks, not a failure):")
+        expect(log).toContain("- natomanga: 154 title(s) - chapters still load in the reader")
+        // Sorted worst-first.
+        const idx = (s: string) => log.indexOf(s)
+        expect(idx("natomanga")).toBeLessThan(idx("otherblocked"))
+        // A skip is never emitted as a plain failure row.
+        expect(log).not.toContain("natomanga: 154\n")
+    })
+
+    it("omits the skipped section when none is provided and tolerates garbage counts", () => {
+        expect(formatUpdateFailureLog([], meta)).not.toContain("skipped (site blocks automated checks")
+        const log = formatUpdateFailureLog([], {
+            ...meta,
+            skippedSources: { good: 2, bad: Number.NaN } as never
+        })
+        expect(log).toContain("- good: 2 title(s)")
+        expect(log).not.toContain("bad")
+    })
+
     it("tolerates a garbage failuresBySource without throwing", () => {
         expect(() =>
             formatUpdateFailureLog([], { ...meta, failuresBySource: { good: 3, bad: Number.NaN } as never })

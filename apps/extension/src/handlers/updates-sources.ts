@@ -294,19 +294,6 @@ export async function checkUpdates(sourceId?: string) {
             done += 1
         }
 
-        // One aggregate notice per bot-blocked source, not full silence - a user
-        // still gets some signal that a whole source has stopped updating via this
-        // path, without a persistent noisy row per title. unshift (not push) so
-        // these survive the errors.slice(0, 20) cap below even when the library is
-        // large enough to otherwise push them out.
-        for (const [blockedSourceId, count] of botBlockedCounts) {
-            errors.unshift({
-                mangaId: "",
-                title: blockedSourceId,
-                message: `${count} title(s) skipped - this site is blocking automated checks; chapters still load in the reader`
-            })
-        }
-
         // Keep only the most recent handful of errors so the status stays small.
         const status = {
             checked,
@@ -314,6 +301,12 @@ export async function checkUpdates(sourceId?: string) {
             failed,
             checkedAt: Date.now(),
             errors: errors.slice(0, 20),
+            // Bot-block skips are NOT failures (failed stays 0) - a whole source refusing
+            // automated checks while its chapters still load in the reader. Kept in their
+            // own field, sorted worst-first, so the UI can render them as an expected
+            // "skipped" notice instead of burying them in the failure list where they read
+            // as something broken that should clear.
+            skippedSources: Object.fromEntries([...botBlockedCounts].sort((a, b) => b[1] - a[1])),
             // Sorted worst-first, serialised as a plain object (storage.local can't hold a
             // Map) so the failure log can render a "failures by source" tally over all 450,
             // not just the 20 sampled rows above.
