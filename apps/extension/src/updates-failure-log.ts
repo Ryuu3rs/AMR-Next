@@ -19,6 +19,10 @@ export type UpdateFailureMeta = {
     // sourceId -> failure count for this run. Lets the log show the failure
     // distribution across all failed titles, not just the sampled per-title rows.
     failuresBySource?: Record<string, number>
+    // sourceId -> count of titles SKIPPED because the site blocks automated checks
+    // (Cloudflare challenge etc.). Not failures - chapters still load in the reader -
+    // so they're reported in their own section, never mixed into the failure rows.
+    skippedSources?: Record<string, number>
 }
 
 const ZWJ = 0x200d
@@ -114,6 +118,25 @@ export function formatUpdateFailureLog(errors: readonly UpdateFailureEntry[], me
             : []
     const bySourceSection = sourceRows.length > 0 ? `\n\nfailures by source:\n${sourceRows.join("\n")}` : ""
 
+    // Skipped (bot-blocked) sources - expected, not failures. Own section so a persistent
+    // Cloudflare-gated source doesn't look like a failure the user should chase or wait to
+    // clear (it regenerates every check because the block is permanent for automated fetch).
+    const skipped = meta?.skippedSources
+    const skippedRows =
+        skipped && typeof skipped === "object"
+            ? Object.entries(skipped)
+                  .filter(([, count]) => typeof count === "number" && Number.isFinite(count))
+                  .sort((a, b) => b[1] - a[1])
+                  .map(
+                      ([source, count]) =>
+                          `- ${orPlaceholder(flatten(source), "(unknown source)")}: ${count} title(s) - chapters still load in the reader`
+                  )
+            : []
+    const skippedSection =
+        skippedRows.length > 0
+            ? `\n\nskipped (site blocks automated checks, not a failure):\n${skippedRows.join("\n")}`
+            : ""
+
     // Tolerate a null/undefined entry or a non-array (corrupt storage / a future producer
     // change) rather than throwing - the whole point is a resilient bug-report artifact.
     const rows = (Array.isArray(errors) ? errors : []).filter((e): e is UpdateFailureEntry => e != null)
@@ -130,5 +153,5 @@ export function formatUpdateFailureLog(errors: readonly UpdateFailureEntry[], me
                   .join("\n")
             : "(no per-title errors recorded)"
 
-    return `${header}${bySourceSection}\n\n${body}`
+    return `${header}${bySourceSection}${skippedSection}\n\n${body}`
 }

@@ -278,6 +278,48 @@
         }
     }
 
+    // Bulk "Caught up": set every selected title's last-read to its own latest chapter, so
+    // a batch of titles clears their New-ch badge at once. Same per-id success/failure
+    // tracking as bulkManual - only ids whose write landed get their local numbers moved.
+    // Titles with no known latest chapter can't be caught up and are skipped, not failed.
+    async function bulkCaughtUp() {
+        const ids = selectedVisibleIds()
+        const byId = new Map(library.map(m => [m.id, m]))
+        const actionable = ids.filter(id => byId.get(id)?.latestChapterNumber !== undefined)
+        bulkMessage = ""
+        bulkWorking = true
+        let succeeded: string[] = []
+        let failed: string[] = []
+        try {
+            ;({ succeeded, failed } = await runSettled(actionable, async id => {
+                const m = byId.get(id)!
+                await sendRuntimeMessage({
+                    type: "library:numbers",
+                    mangaId: id,
+                    lastReadChapterNumber: m.latestChapterNumber,
+                    ...(m.latestChapterId ? { lastReadChapterId: m.latestChapterId } : {})
+                })
+            }))
+        } finally {
+            bulkWorking = false
+        }
+        const done = new Set(succeeded)
+        library = library.map(m => {
+            if (!done.has(m.id) || m.latestChapterNumber === undefined) return m
+            return {
+                ...m,
+                lastReadChapterNumber: m.latestChapterNumber,
+                ...(m.latestChapterId ? { lastReadChapterId: m.latestChapterId } : {})
+            }
+        })
+        if (failed.length > 0) {
+            selectedIds = new Set([...selectedIds].filter(id => !done.has(id)))
+            bulkMessage = `Marked ${done.size} caught up. ${failed.length} failed - still selected, try again.`
+        } else {
+            clearSelection()
+        }
+    }
+
     let showDuplicates = $state(false)
 
     // Group duplicates by title AND by source + rotation-stable slug, unioned. The slug key
@@ -653,6 +695,7 @@
         checkedAt: number
         errors?: Array<{ mangaId: string; title: string; message: string }>
         failuresBySource?: Record<string, number>
+        skippedSources?: Record<string, number>
     } | null>(null)
     let updateProgress = $state<{
         running: boolean
@@ -676,14 +719,17 @@
     let componentAlive = true
     async function copyUpdateFailureLog() {
         if (updateLogCopying) return
-        if (!updateStatus?.errors || updateStatus.errors.length === 0) return
-        const text = formatUpdateFailureLog(updateStatus.errors, {
+        const hasErrors = (updateStatus?.errors?.length ?? 0) > 0
+        const hasSkips = Object.keys(updateStatus?.skippedSources ?? {}).length > 0
+        if (!updateStatus || (!hasErrors && !hasSkips)) return
+        const text = formatUpdateFailureLog(updateStatus.errors ?? [], {
             version: browser.runtime.getManifest().version,
             checkedAt: updateStatus.checkedAt,
             checked: updateStatus.checked,
             updated: updateStatus.updated,
             failed: updateStatus.failed,
-            ...(updateStatus.failuresBySource ? { failuresBySource: updateStatus.failuresBySource } : {})
+            ...(updateStatus.failuresBySource ? { failuresBySource: updateStatus.failuresBySource } : {}),
+            ...(updateStatus.skippedSources ? { skippedSources: updateStatus.skippedSources } : {})
         })
         updateLogCopying = true
         let outcome: "ok" | "fail"
@@ -3965,6 +4011,12 @@
                         onclick={() => void bulkManual(false)}>{bulkWorking ? "Working…" : "Unmark manual"}</button>
                     <button
                         type="button"
+                        class="btn-sm"
+                        disabled={selectedIds.size === 0 || bulkWorking}
+                        title="Set each selected title's progress to its latest chapter"
+                        onclick={() => void bulkCaughtUp()}>{bulkWorking ? "Working…" : "Mark caught up"}</button>
+                    <button
+                        type="button"
                         class="btn-sm confirm-remove-btn"
                         class:armed={bulkRemoveArmed}
                         disabled={selectedIds.size === 0 || bulkWorking}
@@ -4032,6 +4084,10 @@
                                             discoverSimilarTo(manga.title)
                                         }}>≈</button>
                                 {/if}
+                                {#if selectMode}
+                                    <span class="select-check" class:on={selectedIds.has(manga.id)} aria-hidden="true"
+                                        >{selectedIds.has(manga.id) ? "✓" : ""}</span>
+                                {/if}
                             </div>
                             <p class="poster-title">{manga.title}</p>
                             <p class="poster-sub">
@@ -4077,6 +4133,12 @@
                     {#each pagedLibrary as manga (manga.id)}
                         {@const status = effectiveReadingStatus(manga, { autoPauseDays, now: Date.now() })}
                         <div class="list-row" class:selected={selectMode && selectedIds.has(manga.id)}>
+                            {#if selectMode}
+                                <span
+                                    class="select-check list-select-check"
+                                    class:on={selectedIds.has(manga.id)}
+                                    aria-hidden="true">{selectedIds.has(manga.id) ? "✓" : ""}</span>
+                            {/if}
                             <button
                                 type="button"
                                 class="list-cover"
@@ -4257,24 +4319,37 @@
                     ? `Last checked ${new Date(updateStatus.checkedAt).toLocaleString()} - ${updateStatus.updated} updated, ${updateStatus.failed} failed`
                     : "No update check has run yet. Click Check all to scan for new chapters."}
             </p>
-            {#if updateStatus?.errors && updateStatus.errors.length > 0}
+            {@const skippedEntries = Object.entries(updateStatus?.skippedSources ?? {}).sort((a, b) => b[1] - a[1])}
+            {#if (updateStatus?.errors && updateStatus.errors.length > 0) || skippedEntries.length > 0}
                 <div class="error-panel">
                     <div class="error-panel-head">
-                        <p class="row-label">Titles that failed to update</p>
+                        <p class="row-label">Update check details</p>
                         <button type="button" class="btn-sm" onclick={() => void copyUpdateFailureLog()}>
                             {updateLogCopyState === "ok"
                                 ? "Copied ✓"
                                 : updateLogCopyState === "fail"
                                   ? "Copy failed"
-                                  : "Copy failure log"}
+                                  : "Copy log"}
                         </button>
                     </div>
-                    {#each updateStatus.errors as err}
-                        <div class="error-row">
-                            <span class="error-title">{err.title}</span>
-                            <span class="muted">{err.message}</span>
-                        </div>
-                    {/each}
+                    {#if updateStatus?.errors && updateStatus.errors.length > 0}
+                        <p class="row-sublabel">Titles that failed to update</p>
+                        {#each updateStatus.errors as err}
+                            <div class="error-row">
+                                <span class="error-title">{err.title}</span>
+                                <span class="muted">{err.message}</span>
+                            </div>
+                        {/each}
+                    {/if}
+                    {#if skippedEntries.length > 0}
+                        <p class="row-sublabel">Skipped - these sites block automated checks (not a failure)</p>
+                        {#each skippedEntries as [source, count]}
+                            <div class="error-row">
+                                <span class="error-title">{source}</span>
+                                <span class="muted">{count} title(s) skipped; chapters still load in the reader</span>
+                            </div>
+                        {/each}
+                    {/if}
                 </div>
             {/if}
             {#if library.length === 0}

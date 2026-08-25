@@ -14,10 +14,12 @@ const STALE_MS = 6 * 60 * 60 * 1000
 // Bounds the AniList fan-out: one recommendations query per seed title, run one at a
 // time. The provider rate-limits internally; capping the seed set keeps a large library
 // from queuing dozens of calls per refresh.
-const MAX_SEED_TITLES = 40
+const MAX_SEED_TITLES = 60
 
-// Upper bound on how many suggestions are surfaced/cached at once.
-const MAX_SUGGESTIONS = 60
+// Upper bound on how many suggestions are surfaced/cached at once. Kept generous so the
+// Discover grid has real depth to lazy-load through; the podium takes the top 3 and the
+// rest paginate.
+const MAX_SUGGESTIONS = 120
 
 type SuggestionsCache = {
     suggestions: Suggestion[]

@@ -218,7 +218,7 @@ describe("checkUpdates per-title error handling", () => {
 // isBotBlocked() gates this on the error shape (403/502/503 status, or a "blocked"
 // message), not on sourceId - it's a bot-block detector, not a kagane-specific one.
 describe("checkUpdates bot-block suppression (Fix 9)", () => {
-    it("does not count a bot-blocked title as failed, still advances checked/done for the rest of the run, and adds exactly one aggregate notice", async () => {
+    it("does not count a bot-blocked title as failed, still advances checked/done for the rest of the run, and records exactly one skipped-source tally", async () => {
         const { checkUpdates } = await import("./updates-sources")
 
         const blocked = makeManga({ id: "m-blocked", sourceId: "kagane" })
@@ -238,18 +238,17 @@ describe("checkUpdates bot-block suppression (Fix 9)", () => {
             checked: number
             failed: number
             errors: Array<{ mangaId: string; title: string; message: string }>
+            skippedSources: Record<string, number>
         }
         // The blocked title is neither counted as failed nor given its own errors
         // entry - only the normal title counts toward `checked`.
         expect(status.failed).toBe(0)
         expect(status.checked).toBe(1)
         expect(status.errors.filter(e => e.mangaId === "m-blocked")).toHaveLength(0)
-        // Exactly one aggregate notice for the whole "kagane" source, using the
-        // existing mangaId: "" aggregate-error shape.
-        const aggregate = status.errors.filter(e => e.mangaId === "")
-        expect(aggregate).toHaveLength(1)
-        expect(aggregate[0]?.title).toBe("kagane")
-        expect(aggregate[0]?.message).toContain("1 title(s) skipped")
+        // Bot-block skips live in skippedSources, NOT in the failure rows - so the
+        // failure list stays clean and the log/UI can label them as an expected skip.
+        expect(status.errors.filter(e => e.mangaId === "")).toHaveLength(0)
+        expect(status.skippedSources.kagane).toBe(1)
 
         const finalProgress = storageLocal.store.get("updateProgress") as { done: number }
         expect(finalProgress.done).toBe(2)
@@ -273,12 +272,15 @@ describe("checkUpdates bot-block suppression (Fix 9)", () => {
         const status = storageLocal.store.get("updateStatus") as {
             failed: number
             errors: Array<{ mangaId: string; title: string; message: string }>
+            skippedSources: Record<string, number>
         }
         expect(status.failed).toBe(1)
         expect(status.errors).toContainEqual(
             expect.objectContaining({ mangaId: "m-broken", message: "totally unrelated failure" })
         )
-        expect(status.errors.filter(e => e.mangaId === "")).toHaveLength(1)
+        // The genuine failure is a failure row; the bot-blocked sibling is a skip.
+        expect(status.errors.filter(e => e.mangaId === "")).toHaveLength(0)
+        expect(status.skippedSources.kagane).toBe(1)
     })
 })
 
