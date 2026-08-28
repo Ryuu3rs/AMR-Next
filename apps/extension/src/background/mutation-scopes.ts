@@ -138,6 +138,8 @@ export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<Runt
     "community:status",
     "community:register",
     "community:toggle",
+    "community:decline",
+    "community:delete-data",
     "community:sync",
     "community:rate",
     "community:manga-stats",

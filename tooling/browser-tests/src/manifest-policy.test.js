@@ -162,8 +162,10 @@ test("browser-specific manifest policy is preserved", async () => {
     assert.equal(chromium.key, EXPECTED_CHROMIUM_KEY)
     assert.equal(firefox.key, undefined)
     assert.equal(firefox.browser_specific_settings?.gecko?.id, "amr-next@ryuu3rs.dev")
+    // Nothing collected by default; opt-in community data is declared as optional.
     assert.deepEqual(firefox.browser_specific_settings?.gecko?.data_collection_permissions, {
-        required: ["none"]
+        required: ["none"],
+        optional: ["technicalAndInteraction", "personallyIdentifyingInfo"]
     })
     assert.equal(chromium.background?.service_worker, "background.js")
     assert.deepEqual(firefox.background?.scripts, ["background.js"])

@@ -188,6 +188,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         username: z.string().refine(v => validateUsername(v).ok, "invalid username")
     }),
     z.object({ type: z.literal("community:toggle"), enabled: z.boolean() }),
+    z.object({ type: z.literal("community:decline") }),
+    z.object({ type: z.literal("community:delete-data") }),
     z.object({ type: z.literal("community:sync") }),
     z.object({
         type: z.literal("community:rate"),

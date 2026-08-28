@@ -43,7 +43,30 @@ db.exec(`
         PRIMARY KEY (user_id, manga_title)
     );
     CREATE INDEX IF NOT EXISTS idx_ratings_title ON ratings(manga_title);
+
+    -- Anonymous per-install rows for cross-browser install/active counts. install_id is a
+    -- random client id (NOT a user identifier); user_id is only linked once a user opts in
+    -- and registers, so it stays NULL for installs that never enable community features.
+    CREATE TABLE IF NOT EXISTS installs (
+        install_id TEXT PRIMARY KEY,
+        user_id    TEXT REFERENCES users(id) ON DELETE SET NULL,
+        browser    TEXT,
+        version    TEXT,
+        first_seen INTEGER NOT NULL DEFAULT (unixepoch()),
+        last_seen  INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_installs_last_seen ON installs(last_seen);
 `)
+
+// Additive migration for existing DBs: consent bookkeeping on users. better-sqlite3's
+// ALTER TABLE throws "duplicate column" if the column already exists, so guard on
+// table_info rather than blindly ALTERing on every boot.
+function addColumnIfMissing(table: string, column: string, ddl: string): void {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+    if (!cols.some(c => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
+}
+addColumnIfMissing("users", "consent_version", "consent_version INTEGER")
+addColumnIfMissing("users", "consent_at", "consent_at INTEGER")
 
 function weekBounds(): [string, string] {
     const now = new Date()
@@ -57,8 +80,12 @@ function weekBounds(): [string, string] {
     return [fmt(mon), fmt(sun)]
 }
 
-export function createUser(id: string, username: string): void {
-    db.prepare("INSERT INTO users (id, username) VALUES (?, ?)").run(id, username)
+export function createUser(id: string, username: string, consentVersion = 1): void {
+    db.prepare("INSERT INTO users (id, username, consent_version, consent_at) VALUES (?, ?, ?, unixepoch())").run(
+        id,
+        username,
+        consentVersion
+    )
 }
 
 export function getUserByUsername(username: string): { id: string; username: string } | undefined {
@@ -71,6 +98,57 @@ export function getUserById(id: string): { id: string; username: string } | unde
     return db.prepare("SELECT id, username FROM users WHERE id = ?").get(id) as
         | { id: string; username: string }
         | undefined
+}
+
+// GDPR erasure: removing the user row cascades to events, ratings, and achievements
+// (ON DELETE CASCADE) and nulls the link on any install row. Returns whether a row existed.
+export function deleteUser(id: string): boolean {
+    return db.prepare("DELETE FROM users WHERE id = ?").run(id).changes > 0
+}
+
+// Anonymous install/active ping. Upserts the install row (first_seen kept, last_seen bumped)
+// and links a user_id only if the caller is a registered, opted-in user.
+export function recordInstallPing(installId: string, browser: string | null, version: string | null): void {
+    db.prepare(
+        `INSERT INTO installs (install_id, browser, version, first_seen, last_seen)
+         VALUES (?, ?, ?, unixepoch(), unixepoch())
+         ON CONFLICT (install_id) DO UPDATE SET
+            browser = excluded.browser, version = excluded.version, last_seen = unixepoch()`
+    ).run(installId, browser, version)
+}
+
+export function linkInstallToUser(installId: string, userId: string): void {
+    db.prepare(
+        `INSERT INTO installs (install_id, user_id, first_seen, last_seen)
+         VALUES (?, ?, unixepoch(), unixepoch())
+         ON CONFLICT (install_id) DO UPDATE SET user_id = excluded.user_id, last_seen = unixepoch()`
+    ).run(installId, userId)
+}
+
+// Admin-only install dashboard: totals, 7-day active, and per-browser / per-version splits.
+export function getInstallStats(): {
+    total: number
+    active7d: number
+    byBrowser: Array<{ browser: string; count: number }>
+    byVersion: Array<{ version: string; count: number }>
+} {
+    const total = (db.prepare("SELECT COUNT(*) as n FROM installs").get() as { n: number }).n
+    const active7d = (
+        db.prepare("SELECT COUNT(*) as n FROM installs WHERE last_seen >= unixepoch() - 7 * 86400").get() as {
+            n: number
+        }
+    ).n
+    const byBrowser = db
+        .prepare(
+            "SELECT COALESCE(browser, 'unknown') as browser, COUNT(*) as count FROM installs GROUP BY browser ORDER BY count DESC"
+        )
+        .all() as Array<{ browser: string; count: number }>
+    const byVersion = db
+        .prepare(
+            "SELECT COALESCE(version, 'unknown') as version, COUNT(*) as count FROM installs GROUP BY version ORDER BY count DESC LIMIT 20"
+        )
+        .all() as Array<{ version: string; count: number }>
+    return { total, active7d, byBrowser, byVersion }
 }
 
 export type EventRow = {

@@ -50,7 +50,10 @@ const disabledProfile = {
     communityRank: null,
     recommendations: [],
     newAchievements: [],
-    communityStats: null
+    communityStats: null,
+    consentVersion: 0,
+    consentAt: 0,
+    declined: false
 }
 
 async function getSuggestions(force?: boolean): Promise<Suggestion[]> {

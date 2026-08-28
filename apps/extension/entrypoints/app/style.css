@@ -3425,3 +3425,84 @@ button:disabled {
     padding: 8px 14px;
     border-top: 1px solid var(--border);
 }
+
+/* First-run consent card - a non-blocking bottom banner. */
+.consent-card {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    z-index: 50;
+    width: min(680px, calc(100vw - 32px));
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 16px 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+.consent-body {
+    flex: 1;
+    min-width: 0;
+}
+.consent-title {
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.consent-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 0 0 auto;
+    max-width: 220px;
+}
+.consent-accept {
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.consent-accept:hover {
+    filter: brightness(1.08);
+}
+.consent-note {
+    font-size: 11px;
+}
+.policy-list {
+    margin: 4px 0 0;
+    padding-left: 18px;
+}
+.policy-list li {
+    margin: 2px 0;
+    color: var(--muted);
+    font-size: 12px;
+}
+.policy-doc {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-top: 6px;
+}
+.policy-doc h4 {
+    margin: 10px 0 2px;
+    font-size: 13px;
+}
+.policy-doc h4:first-child {
+    margin-top: 0;
+}
+
+@media (max-width: 560px) {
+    .consent-card {
+        flex-direction: column;
+    }
+    .consent-actions {
+        max-width: none;
+    }
+}

@@ -12,7 +12,7 @@ async function newUser(username: string): Promise<string> {
     const res = await app.request("/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username })
+        body: JSON.stringify({ username, consentVersion: 1 })
     })
     const { userId } = (await res.json()) as { userId: string }
     return userId
