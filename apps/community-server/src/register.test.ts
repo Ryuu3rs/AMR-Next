@@ -13,9 +13,19 @@ async function register(username: unknown): Promise<Response> {
     return app.request("/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username })
+        body: JSON.stringify({ username, consentVersion: 1 })
     })
 }
+
+test("rejects registration without the current consent version (400)", async () => {
+    const res = await app.request("/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "someone" })
+    })
+    assert.equal(res.status, 400)
+    assert.equal(((await res.json()) as { error: string }).error, "Consent required")
+})
 
 test("rejects a reserved name with 400", async () => {
     const res = await register("Admin")

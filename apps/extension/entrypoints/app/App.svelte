@@ -19,6 +19,14 @@
     import type { Suggestion } from "../../src/suggestions"
     import { repairMangahubChapterNumbers } from "../../src/handlers/updates-sources"
     import { formatUpdateFailureLog } from "../../src/updates-failure-log"
+    import { communityConfigured, CONSENT_VERSION } from "../../src/community"
+    import {
+        PRIVACY_POLICY,
+        DATA_COLLECTED,
+        CONSENT_SUMMARY,
+        DECLINE_EXPLAINER,
+        POLICY_URL
+    } from "../../src/privacy-policy"
     import { pruneSelectionToVisible } from "../../src/library-selection"
     import { subscribeLive } from "../../src/live"
     import ActivityHeatmap from "./ActivityHeatmap.svelte"
@@ -2720,11 +2728,29 @@
             topGenres: Array<{ genre: string; count: number }>
             totalUsers: number
         } | null
+        consentVersion: number
+        consentAt: number
+        declined: boolean
     }
     let communityProfile = $state<CommunityProfile | null>(null)
     let communityLoaded = $state(false)
     let communityUsernameInput = $state("")
     let communityRegisterError = $state("")
+    let showPolicy = $state(false)
+    let deleteDataConfirm = $state(false)
+    let deleteDataWorking = $state(false)
+    // The first-run consent card shows once: community features are configured (a base URL is
+    // baked in), the user has never agreed to the current policy version, AND they have not
+    // already tapped Disable. Dismissed for the session once acted on.
+    let consentCardDismissed = $state(false)
+    let consentExpand = $state(false)
+    const showConsentCard = $derived(
+        communityConfigured &&
+            !consentCardDismissed &&
+            communityProfile !== null &&
+            !communityProfile.declined &&
+            communityProfile.consentVersion < CONSENT_VERSION
+    )
     $effect(() => {
         if ((activeSection === "Stats" || activeSection === "Settings") && !communityLoaded) {
             communityLoaded = true
@@ -2735,6 +2761,26 @@
     })
     async function toggleCommunity(enabled: boolean) {
         communityProfile = await sendRuntimeMessage<CommunityProfile>({ type: "community:toggle", enabled })
+    }
+    // Consent card: Accept turns community on (the handler stamps the consent version and
+    // auto-registers an anonymous username the user can rename in Settings).
+    async function acceptConsent() {
+        consentCardDismissed = true
+        await toggleCommunity(true)
+    }
+    // Decline records the explicit choice so the card never nags again; nothing is sent.
+    async function declineConsent() {
+        consentCardDismissed = true
+        communityProfile = await sendRuntimeMessage<CommunityProfile>({ type: "community:decline" })
+    }
+    async function deleteCommunityData() {
+        deleteDataWorking = true
+        try {
+            communityProfile = await sendRuntimeMessage<CommunityProfile>({ type: "community:delete-data" })
+            deleteDataConfirm = false
+        } finally {
+            deleteDataWorking = false
+        }
     }
 
     // Suggestions tab. Content-based (AniList co-recommendations + local genre/author
@@ -5778,23 +5824,57 @@
                     </label>
                 </div>
 
-                <p class="shelf-label" style="margin-top:28px">Community</p>
+                <p class="shelf-label" style="margin-top:28px">Privacy &amp; Community</p>
+                {#if !communityConfigured}
+                    <p class="muted">Community features are not configured in this build.</p>
+                {/if}
                 <div class="settings-row">
                     <div>
-                        <p class="row-label">Community stats</p>
+                        <p class="row-label">Community features</p>
                         <p class="muted">
-                            Share anonymous reading stats - no IP, no identity info collected. Enables the community
-                            leaderboard, trending manga, and personalised recommendations in the Stats &amp;
-                            achievements tab.
+                            Send anonymous usage and a username you choose to power install counts, leaderboards, and
+                            recommendations. We never sell your data.
                         </p>
                     </div>
                     <label class="toggle">
                         <input
                             type="checkbox"
-                            checked={communityProfile?.enabled ?? true}
+                            checked={communityProfile?.enabled ?? false}
                             onchange={e => void toggleCommunity(e.currentTarget.checked)} />
                         <span class="track"></span>
                     </label>
+                </div>
+                <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+                    <p class="row-label">What we collect</p>
+                    <ul class="policy-list">
+                        {#each DATA_COLLECTED as item}<li>{item}</li>{/each}
+                    </ul>
+                    <button type="button" class="link-btn" onclick={() => (showPolicy = !showPolicy)}>
+                        {showPolicy ? "Hide privacy policy" : "Read the full privacy policy"}
+                    </button>
+                    {#if showPolicy}
+                        <div class="policy-doc">
+                            {#each PRIVACY_POLICY as section}
+                                <h4>{section.heading}</h4>
+                                {#each section.body as line}<p class="muted">{line}</p>{/each}
+                            {/each}
+                            <p class="muted">
+                                Hosted copy:
+                                <a href={POLICY_URL} target="_blank" rel="noopener noreferrer">{POLICY_URL}</a>
+                            </p>
+                        </div>
+                    {/if}
+                    {#if communityProfile}
+                        <p class="muted">
+                            {#if communityProfile.consentVersion > 0}
+                                You accepted v{communityProfile.consentVersion} on {new Date(
+                                    communityProfile.consentAt
+                                ).toLocaleDateString()}.
+                            {:else}
+                                Community features are off. Nothing is collected.
+                            {/if}
+                        </p>
+                    {/if}
                 </div>
                 {#if communityProfile?.enabled}
                     <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px">
@@ -5825,6 +5905,31 @@
                             {#if communityRegisterError}
                                 <p class="muted" style="color:var(--color-warn)">{communityRegisterError}</p>
                             {/if}
+                        {/if}
+                    </div>
+                {/if}
+                {#if communityProfile?.userId}
+                    <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+                        <div>
+                            <p class="row-label">Delete my community data</p>
+                            <p class="muted">
+                                Permanently removes your username, votes, and reading events from our server.
+                            </p>
+                        </div>
+                        {#if deleteDataConfirm}
+                            <div style="display:flex;gap:8px">
+                                <button
+                                    type="button"
+                                    class="btn-sm confirm-remove-btn armed"
+                                    disabled={deleteDataWorking}
+                                    onclick={() => void deleteCommunityData()}
+                                    >{deleteDataWorking ? "Deleting…" : "Confirm delete"}</button>
+                                <button type="button" class="btn-sm" onclick={() => (deleteDataConfirm = false)}
+                                    >Cancel</button>
+                            </div>
+                        {:else}
+                            <button type="button" class="btn-sm" onclick={() => (deleteDataConfirm = true)}
+                                >Delete my community data</button>
                         {/if}
                     </div>
                 {/if}
@@ -6248,6 +6353,34 @@
                     <button type="button" class="btn-outline" onclick={closeDetail}>Close</button>
                 </div>
             </div>
+        </div>
+    </div>
+{/if}
+
+{#if showConsentCard}
+    <div class="consent-card" role="region" aria-label="Community data consent">
+        <div class="consent-body">
+            <p class="consent-title">Help improve AMR (optional)</p>
+            <p class="muted">{CONSENT_SUMMARY}</p>
+            <button type="button" class="link-btn" onclick={() => (consentExpand = !consentExpand)}>
+                {consentExpand ? "Hide details" : "What we collect"}
+            </button>
+            {#if consentExpand}
+                <ul class="policy-list">
+                    {#each DATA_COLLECTED as item}<li>{item}</li>{/each}
+                </ul>
+                <p class="muted">
+                    Full policy in Settings, or at
+                    <a href={POLICY_URL} target="_blank" rel="noopener noreferrer">{POLICY_URL}</a>.
+                </p>
+            {/if}
+        </div>
+        <div class="consent-actions">
+            <button type="button" class="consent-accept" onclick={() => void acceptConsent()}
+                >Accept &amp; turn on community</button>
+            <button type="button" class="btn-sm" onclick={() => void declineConsent()}
+                >Disable community features</button>
+            <p class="consent-note muted">{DECLINE_EXPLAINER}</p>
         </div>
     </div>
 {/if}

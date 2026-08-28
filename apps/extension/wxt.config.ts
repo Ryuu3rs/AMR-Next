@@ -85,8 +85,15 @@ export default defineConfig({
                       gecko: {
                           id: "amr-next@ryuu3rs.dev",
                           strict_min_version: "142.0",
+                          // Nothing is collected by default (required: none). Community
+                          // features are strictly opt-in behind an in-app consent card, so the
+                          // data they send is declared as OPTIONAL: technicalAndInteraction
+                          // (anonymous install id, version, feature usage) and
+                          // personallyIdentifyingInfo (the username the user chooses). See the
+                          // in-app privacy policy (src/privacy-policy.ts).
                           data_collection_permissions: {
-                              required: ["none"]
+                              required: ["none"],
+                              optional: ["technicalAndInteraction", "personallyIdentifyingInfo"]
                           }
                       }
                   }

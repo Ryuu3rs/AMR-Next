@@ -2,11 +2,15 @@ import { serve } from "@hono/node-server"
 import { pathToFileURL } from "node:url"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
-import { randomUUID } from "node:crypto"
+import { randomUUID, timingSafeEqual } from "node:crypto"
 import {
     createUser,
     getUserByUsername,
     getUserById,
+    deleteUser,
+    recordInstallPing,
+    linkInstallToUser,
+    getInstallStats,
     insertEvents,
     getUserChapterCount,
     getUserSourceCount,
@@ -99,6 +103,26 @@ const MAX_GENRE_LEN = 50
 const isBoundedString = (v: unknown, max: number): v is string =>
     typeof v === "string" && v.length > 0 && v.length <= max
 
+const MAX_INSTALL_ID_LEN = 100
+const MAX_BROWSER_LEN = 20
+const MAX_VERSION_LEN = 30
+
+// The current privacy-policy / consent version. A registration must declare it so the
+// server records exactly which version each user agreed to; bump it when the policy
+// materially changes so the client re-prompts.
+const CURRENT_CONSENT_VERSION = 1
+
+// Constant-time bearer check for the admin-only install dashboard. When COMMUNITY_ADMIN_TOKEN
+// is unset the endpoint is disabled (403) rather than open - a safe default.
+function isAdmin(header: string | undefined): boolean {
+    const expected = process.env.COMMUNITY_ADMIN_TOKEN
+    if (!expected) return false
+    const provided = (header ?? "").replace(/^Bearer\s+/i, "")
+    const a = Buffer.from(provided)
+    const b = Buffer.from(expected)
+    return a.length === b.length && timingSafeEqual(a, b)
+}
+
 app.get("/", c => c.json({ name: "AMR Community API", version: "1.0.0", status: "ok" }))
 app.get("/health", c => c.json({ ok: true }))
 
@@ -106,7 +130,14 @@ app.post("/register", async c => {
     if (!withinRateLimit(c.req.header("x-forwarded-for"), "register", 10, 60 * 60 * 1000)) {
         return c.json({ error: "Too many requests" }, 429)
     }
-    const body = await c.req.json<{ username?: string }>().catch(() => ({}))
+    const body = await c.req
+        .json<{ username?: string; consentVersion?: number; installId?: string }>()
+        .catch(() => ({}) as { username?: string; consentVersion?: number; installId?: string })
+    // Consent is mandatory server-side, not just a client checkbox: no registration (and so no
+    // data collection) happens without an explicit, current-version agreement.
+    if (body.consentVersion !== CURRENT_CONSENT_VERSION) {
+        return c.json({ error: "Consent required", consentVersion: CURRENT_CONSENT_VERSION }, 400)
+    }
     const result = validateUsername(body.username ?? "")
     if (!result.ok) return c.json({ error: result.reason }, 400)
     const username = result.value
@@ -115,8 +146,46 @@ app.post("/register", async c => {
     // schema migration to add a normalized-key column, which we are not doing here.
     if (getUserByUsername(username)) return c.json({ error: "Username already taken" }, 409)
     const userId = randomUUID()
-    createUser(userId, username)
-    return c.json({ userId })
+    createUser(userId, username, CURRENT_CONSENT_VERSION)
+    if (isBoundedString(body.installId, MAX_INSTALL_ID_LEN)) linkInstallToUser(body.installId, userId)
+    return c.json({ userId, consentVersion: CURRENT_CONSENT_VERSION })
+})
+
+// Anonymous install/active ping - powers cross-browser install counts. No userId needed and
+// no consent gate on the ping ITSELF beyond the client only sending it after the user accepts
+// (the install id is random and not tied to identity). Rate-limited so it can't be flooded.
+app.post("/ping", async c => {
+    if (!withinRateLimit(c.req.header("x-forwarded-for"), "ping", 60, 60 * 1000)) {
+        return c.json({ error: "Too many requests" }, 429)
+    }
+    const body = await c.req
+        .json<{ installId?: string; browser?: string; version?: string }>()
+        .catch(() => ({}) as { installId?: string; browser?: string; version?: string })
+    if (!isBoundedString(body.installId, MAX_INSTALL_ID_LEN)) {
+        return c.json({ error: "installId required" }, 400)
+    }
+    const browser = isBoundedString(body.browser, MAX_BROWSER_LEN) ? body.browser : null
+    const version = isBoundedString(body.version, MAX_VERSION_LEN) ? body.version : null
+    recordInstallPing(body.installId, browser, version)
+    return c.json({ ok: true })
+})
+
+// GDPR erasure: a user deletes all their community data. Cascades to events/ratings/
+// achievements and unlinks their installs. Idempotent - a missing user still returns ok.
+app.delete("/me", async c => {
+    if (!withinRateLimit(c.req.header("x-forwarded-for"), "delete-me", 20, 60 * 60 * 1000)) {
+        return c.json({ error: "Too many requests" }, 429)
+    }
+    const body = await c.req.json<{ userId?: string }>().catch(() => ({}) as { userId?: string })
+    if (!body.userId) return c.json({ error: "userId required" }, 400)
+    const deleted = deleteUser(body.userId)
+    return c.json({ ok: true, deleted })
+})
+
+// Admin-only install dashboard. Disabled (403) unless COMMUNITY_ADMIN_TOKEN is set + matched.
+app.get("/installs", c => {
+    if (!isAdmin(c.req.header("authorization"))) return c.json({ error: "Forbidden" }, 403)
+    return c.json(getInstallStats())
 })
 
 app.post("/events", async c => {

@@ -5,9 +5,12 @@ import {
     apiFetchCommunityStats,
     apiRate,
     apiFetchMangaStats,
+    apiPing,
+    apiDeleteMe,
     generateAnonymousUsername,
     getCommunityProfile,
     updateCommunityProfile,
+    CONSENT_VERSION,
     type CommunityEvent,
     type CommunityProfile
 } from "../community"
@@ -66,6 +69,14 @@ export async function runCommunitySync() {
     try {
         let profile = await getCommunityProfile()
         if (!profile.enabled) return
+        // Anonymous install/active ping (fire-and-forget). Only after the user opted in, so
+        // nothing is sent without consent; wrapped so neither a synchronous throw (e.g. no
+        // manifest) nor a rejected fetch can ever block the sync.
+        try {
+            void apiPing(import.meta.env.BROWSER ?? "unknown", browser.runtime.getManifest().version).catch(() => {})
+        } catch {
+            /* ping is best-effort; never let it break the sync */
+        }
         if (!profile.userId) {
             profile = await ensureRegistered(profile)
             if (!profile.userId) return
@@ -147,7 +158,10 @@ export const communityHandlers: HandlerMap = {
             username: request.username,
             userId,
             enabled: true,
-            lastSyncAt: 0
+            lastSyncAt: 0,
+            consentVersion: CONSENT_VERSION,
+            consentAt: Date.now(),
+            declined: false
         })
         await configureCommunityAlarm()
         void runCommunitySync()
@@ -158,7 +172,12 @@ export const communityHandlers: HandlerMap = {
         return null
     },
     "community:toggle": async request => {
-        let updated = await updateCommunityProfile({ enabled: request.enabled })
+        // Turning community ON is a consent action - stamp the version/date the user agreed to
+        // and clear any prior "declined" so the state is coherent.
+        let updated = await updateCommunityProfile({
+            enabled: request.enabled,
+            ...(request.enabled ? { consentVersion: CONSENT_VERSION, consentAt: Date.now(), declined: false } : {})
+        })
         if (request.enabled) {
             if (!updated.userId) updated = await ensureRegistered(updated)
             await configureCommunityAlarm()
@@ -167,6 +186,31 @@ export const communityHandlers: HandlerMap = {
             await browser.alarms.clear(communityAlarmName)
         }
         return updated
+    },
+    // The user tapped "Disable" on the first-run consent card. Record the explicit decline so
+    // the card never nags again (they re-enable from Settings). Sends nothing.
+    "community:decline": async () => {
+        return await updateCommunityProfile({ enabled: false, declined: true })
+    },
+    // GDPR erasure from Settings: delete server-side data (if registered), then reset the
+    // local profile to a clean, disabled, non-nagging state.
+    "community:delete-data": async () => {
+        const profile = await getCommunityProfile()
+        if (profile.userId) await apiDeleteMe(profile.userId)
+        await browser.alarms.clear(communityAlarmName)
+        return await updateCommunityProfile({
+            enabled: false,
+            declined: true,
+            username: "",
+            userId: "",
+            lastSyncAt: 0,
+            communityRank: null,
+            recommendations: [],
+            newAchievements: [],
+            communityStats: null,
+            consentVersion: 0,
+            consentAt: 0
+        })
     },
     "community:rate": async request => {
         const profile = await getCommunityProfile()

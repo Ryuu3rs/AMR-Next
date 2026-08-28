@@ -1,4 +1,10 @@
 const COMMUNITY_KEY = "community"
+const INSTALL_KEY = "installId"
+
+// The privacy-policy / consent version this build asks users to agree to. Bump it when the
+// policy materially changes so the client re-prompts and the server re-stamps. Must match
+// CURRENT_CONSENT_VERSION on the community server.
+export const CONSENT_VERSION = 1
 
 // Injected at build time from .env locally and from the VITE_COMMUNITY_API_URL repo
 // variable in CI (see .github/workflows/release-please.yml) - never hardcoded in source.
@@ -50,6 +56,15 @@ export type CommunityProfile = {
     recommendations: CommunityRecommendation[]
     newAchievements: string[]
     communityStats: CommunityStats | null
+    // The consent-card version the user agreed to (0 = never agreed). When this is below
+    // CONSENT_VERSION the client re-prompts before sending anything.
+    consentVersion: number
+    // When they agreed, epoch ms. 0 if never.
+    consentAt: number
+    // True once the user has explicitly tapped "Disable" on the consent card, so it is not
+    // shown again (they re-enable from Settings). Distinct from "never seen it" (both leave
+    // enabled false), so a first-run user still gets the card exactly once.
+    declined: boolean
 }
 
 const defaultProfile: CommunityProfile = {
@@ -63,7 +78,10 @@ const defaultProfile: CommunityProfile = {
     communityRank: null,
     recommendations: [],
     newAchievements: [],
-    communityStats: null
+    communityStats: null,
+    consentVersion: 0,
+    consentAt: 0,
+    declined: false
 }
 
 export async function getCommunityProfile(): Promise<CommunityProfile> {
@@ -96,13 +114,50 @@ export async function apiRegister(username: string): Promise<{ userId: string }>
     const res = await fetch(`${COMMUNITY_API_BASE}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username })
+        // Consent is declared to the server, which refuses to register (and so to collect
+        // anything) without the current version. installId links this install to the account
+        // for the install dashboard.
+        body: JSON.stringify({ username, consentVersion: CONSENT_VERSION, installId: await getInstallId() })
     })
     if (!res.ok) {
         const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error?: string }
         throw new Error(body.error ?? `Registration failed: ${res.status}`)
     }
     return res.json() as Promise<{ userId: string }>
+}
+
+// A random, anonymous per-install id (not a user identifier). Generated once and kept in
+// storage.local; a reinstall/clear makes a new one, which is the honest way to count installs.
+// Deliberately NOT included in the export/backup envelope so restoring a backup on a new
+// machine does not carry the old install's id (that would undercount installs).
+export async function getInstallId(): Promise<string> {
+    const stored = await browser.storage.local.get(INSTALL_KEY)
+    const existing = stored[INSTALL_KEY] as string | undefined
+    if (existing) return existing
+    const id = crypto.randomUUID()
+    await browser.storage.local.set({ [INSTALL_KEY]: id })
+    return id
+}
+
+// Anonymous install/active ping. Fire-and-forget from the background; caller gates on consent.
+export async function apiPing(browserName: string, version: string): Promise<void> {
+    assertCommunityConfigured()
+    await fetch(`${COMMUNITY_API_BASE}/ping`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ installId: await getInstallId(), browser: browserName, version })
+    })
+}
+
+// GDPR erasure: delete all of this user's community data from the server.
+export async function apiDeleteMe(userId: string): Promise<void> {
+    assertCommunityConfigured()
+    const res = await fetch(`${COMMUNITY_API_BASE}/me`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId })
+    })
+    if (!res.ok) throw new Error(`Data deletion failed: ${res.status}`)
 }
 
 // The server stores at most 500 events per POST (index.ts .slice(0, 500)). Sending more in
