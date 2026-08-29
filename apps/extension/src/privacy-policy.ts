@@ -34,7 +34,7 @@ export const DECLINE_EXPLAINER =
 // by the hosted copy at the URL below. Update POLICY_VERSION + CONSENT_VERSION together on any
 // material change so users are re-prompted.
 export const POLICY_VERSION = 1
-export const POLICY_URL = "https://weeb.ltd/privacy"
+export const POLICY_URL = "https://privacy.weeb.ltd"
 export const POLICY_CONTACT = "privacy@weeb.ltd"
 
 export type PolicySection = { heading: string; body: string[] }
