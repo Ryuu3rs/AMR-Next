@@ -14,6 +14,7 @@
     import { runSettled } from "../../src/bulk"
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
     import { migrateLegacyImport } from "../../src/legacy-import"
+    import { encryptBackup, decryptBackup } from "../../src/backup-crypto"
     import { getCachedCovers } from "../../src/database"
     import { groupSearchResultsIntoWorks } from "../../src/search-grouping"
     import type { Suggestion } from "../../src/suggestions"
@@ -496,6 +497,12 @@
     let importResolutions = $state<Record<string, ImportResolution>>({})
     let importWorking = $state(false)
     let importError = $state("")
+    // Encrypted-backup passphrases (optional AES-GCM envelope via backup-crypto). Export
+    // encrypts only when a passphrase is set; import holds the ciphertext until the user
+    // supplies the passphrase to decrypt.
+    let exportPassphrase = $state("")
+    let importPassphrase = $state("")
+    let pendingEncryptedText = $state<string | null>(null)
 
     // --- Repair auto-tracked entries (library:cleanup:scan / library:cleanup:apply) ---
     type CleanupMatchedBy = "adapter" | "pathname" | "scrape"
@@ -1943,15 +1950,32 @@
     }
 
     async function exportData() {
-        const envelope = await sendRuntimeMessage<unknown>({ type: "data:export" })
-        const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: "application/json" })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement("a")
-        a.href = url
-        a.download = `amr-backup-${new Date().toISOString().slice(0, 10)}.json`
-        a.click()
-        URL.revokeObjectURL(url)
-        dataMessage = "Backup exported."
+        dataMessage = ""
+        try {
+            const envelope = await sendRuntimeMessage<unknown>({ type: "data:export" })
+            const pass = exportPassphrase.trim()
+            const stamp = new Date().toISOString().slice(0, 10)
+            let text: string
+            let filename: string
+            if (pass) {
+                text = await encryptBackup(JSON.stringify(envelope), pass)
+                filename = `amr-backup-${stamp}.amrenc.json`
+            } else {
+                text = JSON.stringify(envelope, null, 2)
+                filename = `amr-backup-${stamp}.json`
+            }
+            const blob = new Blob([text], { type: "application/json" })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement("a")
+            a.href = url
+            a.download = filename
+            a.click()
+            URL.revokeObjectURL(url)
+            exportPassphrase = ""
+            dataMessage = pass ? "Encrypted backup exported." : "Backup exported."
+        } catch (cause) {
+            dataMessage = cause instanceof Error ? cause.message : "Backup export failed."
+        }
     }
 
     async function exportLog() {
@@ -1971,6 +1995,17 @@
         }
     }
 
+    // An AMR encrypted backup is the self-describing backup-crypto envelope, distinct from a
+    // plaintext export (which carries `format: "all-mangas-reader"` + `data`).
+    function isEncryptedEnvelope(v: unknown): boolean {
+        return (
+            typeof v === "object" &&
+            v !== null &&
+            (v as { kdf?: unknown }).kdf === "PBKDF2" &&
+            typeof (v as { ct?: unknown }).ct === "string"
+        )
+    }
+
     async function importData(file: File) {
         importConflicts = []
         importEnvelope = null
@@ -1978,26 +2013,65 @@
         importResolutions = {}
         dataMessage = ""
         importError = ""
+        pendingEncryptedText = null
         importWorking = true
         try {
-            const raw: unknown = JSON.parse(await file.text())
-            const { envelope, migrated, converted, skipped, needsAttention } = migrateLegacyImport(raw)
-            const conflicts = await sendRuntimeMessage<ImportConflict[]>({
-                type: "data:import:preview",
-                envelope
-            })
-            importEnvelope = envelope
-            importMigrationMeta = { migrated, converted, skipped, needsAttention }
-            if (conflicts.length > 0) {
-                importConflicts = conflicts
-                importResolutions = Object.fromEntries(conflicts.map(c => [c.mangaId, "overwrite" as ImportResolution]))
-            } else {
-                await applyImport(envelope, {}, { migrated, converted, skipped, needsAttention })
+            const text = await file.text()
+            let raw: unknown
+            try {
+                raw = JSON.parse(text)
+            } catch {
+                throw new Error("The backup could not be read.")
             }
+            if (isEncryptedEnvelope(raw)) {
+                // Hold the ciphertext and wait for the passphrase; don't touch the DB yet.
+                pendingEncryptedText = text
+                importWorking = false
+                return
+            }
+            await processImport(raw)
         } catch (cause) {
             dataMessage = cause instanceof Error ? cause.message : "The backup could not be imported."
         } finally {
             importWorking = false
+        }
+    }
+
+    async function decryptAndImport() {
+        if (!pendingEncryptedText) return
+        importError = ""
+        importWorking = true
+        try {
+            const json = await decryptBackup(pendingEncryptedText, importPassphrase)
+            let raw: unknown
+            try {
+                raw = JSON.parse(json)
+            } catch {
+                throw new Error("Decrypted data is not a valid backup.")
+            }
+            pendingEncryptedText = null
+            importPassphrase = ""
+            await processImport(raw)
+        } catch (cause) {
+            importError = cause instanceof Error ? cause.message : "Could not decrypt this backup."
+        } finally {
+            importWorking = false
+        }
+    }
+
+    async function processImport(raw: unknown) {
+        const { envelope, migrated, converted, skipped, needsAttention } = migrateLegacyImport(raw)
+        const conflicts = await sendRuntimeMessage<ImportConflict[]>({
+            type: "data:import:preview",
+            envelope
+        })
+        importEnvelope = envelope
+        importMigrationMeta = { migrated, converted, skipped, needsAttention }
+        if (conflicts.length > 0) {
+            importConflicts = conflicts
+            importResolutions = Object.fromEntries(conflicts.map(c => [c.mangaId, "overwrite" as ImportResolution]))
+        } else {
+            await applyImport(envelope, {}, { migrated, converted, skipped, needsAttention })
         }
     }
 
@@ -4938,9 +5012,18 @@
                 <div class="data-row">
                     <div>
                         <p class="row-label">Backup library</p>
-                        <p class="muted">Export manga, chapters, progress, and history as JSON.</p>
+                        <p class="muted">
+                            Export manga, chapters, progress, and history as JSON. Add a passphrase to encrypt it
+                            (AES-GCM) - you'll need the same passphrase to restore.
+                        </p>
+                        <input
+                            type="password"
+                            class="passphrase-input"
+                            placeholder="Optional passphrase to encrypt"
+                            autocomplete="new-password"
+                            bind:value={exportPassphrase} />
                     </div>
-                    <button type="button" onclick={exportData}>Export</button>
+                    <button type="button" onclick={() => void exportData()}>Export</button>
                 </div>
                 <div class="data-row">
                     <div>
@@ -4955,7 +5038,7 @@
                 <div class="data-row">
                     <div>
                         <p class="row-label">Restore backup</p>
-                        <p class="muted">Import a previously exported AMR backup file.</p>
+                        <p class="muted">Import a previously exported AMR backup file (plain or encrypted).</p>
                     </div>
                     <label class="file-label">
                         Import
@@ -4972,6 +5055,41 @@
                             }} />
                     </label>
                 </div>
+                {#if pendingEncryptedText}
+                    <div class="data-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+                        <div>
+                            <p class="row-label">Encrypted backup</p>
+                            <p class="muted">This file is encrypted. Enter its passphrase to restore.</p>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;width:100%">
+                            <input
+                                type="password"
+                                class="passphrase-input"
+                                style="flex:1"
+                                placeholder="Passphrase"
+                                autocomplete="off"
+                                bind:value={importPassphrase}
+                                onkeydown={e => {
+                                    if (e.key === "Enter") void decryptAndImport()
+                                }} />
+                            <button
+                                type="button"
+                                disabled={importWorking || !importPassphrase}
+                                onclick={() => void decryptAndImport()}>
+                                {importWorking ? "Decrypting…" : "Decrypt & import"}
+                            </button>
+                            <button
+                                type="button"
+                                class="btn-outline"
+                                onclick={() => {
+                                    pendingEncryptedText = null
+                                    importPassphrase = ""
+                                    importError = ""
+                                }}>Cancel</button>
+                        </div>
+                        {#if importError}<p class="muted" style="color:var(--color-warn)">{importError}</p>{/if}
+                    </div>
+                {/if}
                 <div class="data-row">
                     <div>
                         <p class="row-label">Sample data</p>

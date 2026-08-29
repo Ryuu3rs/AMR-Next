@@ -199,6 +199,12 @@ p {
     color: var(--muted);
     margin: 12px 0 4px;
 }
+
+.passphrase-input {
+    margin-top: 8px;
+    max-width: 320px;
+    width: 100%;
+}
 .row-sublabel:first-of-type {
     margin-top: 4px;
 }
