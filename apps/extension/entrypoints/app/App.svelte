@@ -2864,6 +2864,9 @@
     let suggestions = $state<Suggestion[]>([])
     // anilistId of the suggestion whose "More" menu is open (null = none).
     let sugMenuFor = $state<number | null>(null)
+    // anilist ids the user quick-added this session; filtered out of every suggestions fetch
+    // so a stale cache can't re-surface a title they've already logged.
+    const quickAddedIds = new Set<number>()
     // Transient confirmation after a quick-add (mark-read / plan-to-read).
     let sugToast = $state("")
     let sugToastTimer: ReturnType<typeof setTimeout> | undefined
@@ -2940,10 +2943,13 @@
         suggestionsFailed = false
         suggestionsShown = SUGGESTIONS_PAGE
         try {
-            suggestions = await sendRuntimeMessage<Suggestion[]>({
+            const fetched = await sendRuntimeMessage<Suggestion[]>({
                 type: "suggestions:get",
                 ...(force ? { force: true } : {})
             })
+            // Keep just-added titles out even if the (stale-while-revalidate) cache still
+            // carries them - the user logged them as read/planning, so they must not reappear.
+            suggestions = fetched.filter(s => !quickAddedIds.has(s.anilistId))
         } catch {
             suggestions = []
             suggestionsFailed = true
@@ -3004,6 +3010,7 @@
             })
             const label = mode === "read" ? "already read" : "plan-to-read"
             showSugToast(res.added ? `Added “${s.title}” to ${label}` : `“${s.title}” is already in your library`)
+            quickAddedIds.add(s.anilistId)
             suggestions = suggestions.filter(x => x.anilistId !== s.anilistId)
             void loadSuggestions(true)
         } catch {
