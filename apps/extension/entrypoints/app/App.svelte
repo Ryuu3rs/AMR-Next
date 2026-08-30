@@ -3274,7 +3274,7 @@
         </div>
     </aside>
 
-    <main>
+    <main class:full={activeSection === "Discover"}>
         {#if extensionUpdate?.available && !updateBannerDismissed}
             <div class="update-banner" role="alert">
                 <span>AMR <strong>v{extensionUpdate.latestVersion}</strong> is available.</span>
@@ -3718,7 +3718,7 @@
                 </p>
             {:else}
                 <h2 class="podium-heading">Top picks for you</h2>
-                <p class="muted" style="margin-top:-4px">Based on the genres and authors you read.</p>
+                <p class="muted" style="margin-top:-4px;text-align:center">Based on the genres and authors you read.</p>
                 <div class="sug-filters">
                     <input
                         class="sug-search"

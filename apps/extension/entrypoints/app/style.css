@@ -155,6 +155,12 @@ main {
     max-width: 1140px;
 }
 
+/* Discover uses the full shell width (no 1140 cap) so the suggestion grid fills to the
+   edges; the top controls + podium center themselves within it. */
+main.full {
+    max-width: none;
+}
+
 h1 {
     margin: 0 0 32px;
     font-size: clamp(28px, 4vw, 44px);
@@ -1687,19 +1693,19 @@ button:disabled {
 
 .podium-heading {
     margin-top: 8px;
+    text-align: center;
 }
 
 .podium {
-    display: grid;
-    /* minmax(0, 1fr), NOT 1fr: a plain 1fr track has an auto (min-content) minimum, so a
-       very long title expands its column past a third, and the 2/3-aspect cover balloons
-       with it. minmax(0,...) pins every column to exactly a third regardless of content. */
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* Fixed-width centered cards, NOT stretched columns: on a full-width page 3 equal
+       columns would each become a giant 1/3-screen poster. Fixed width also makes the cover
+       size independent of the image's intrinsic dimensions, so a wide cover can't balloon. */
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: stretch;
     gap: 18px;
     margin: 20px 0 32px;
-    /* stretch (not start) so the three items are equal height and their "Find on a source"
-       buttons line up regardless of title/sub length. */
-    align-items: stretch;
 }
 
 .podium-item {
@@ -1707,9 +1713,8 @@ button:disabled {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    /* Let the column shrink to its track; without this a long unbroken title keeps the
-       item wider than a third and re-inflates the cover. */
-    min-width: 0;
+    width: 200px;
+    flex: 0 0 200px;
 }
 
 .podium-item .poster-title {
@@ -1773,12 +1778,13 @@ button:disabled {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: center;
     gap: 10px;
     margin-bottom: 12px;
 }
 
 .sug-search {
-    flex: 1 1 200px;
+    flex: 0 1 340px;
     min-width: 160px;
     padding: 8px 12px;
     border-radius: 10px;
@@ -1818,6 +1824,7 @@ button:disabled {
 .sug-genre-chips {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
     gap: 6px;
     margin-bottom: 16px;
 }
