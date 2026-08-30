@@ -2862,6 +2862,8 @@
     // arrive folded into the same list with a `community` marker. Empty/unreachable
     // AniList degrades to an empty state, never an error.
     let suggestions = $state<Suggestion[]>([])
+    // anilistId of the suggestion whose "More" menu is open (null = none).
+    let sugMenuFor = $state<number | null>(null)
     let suggestionsRequestedForVisit = $state(false)
     let suggestionsLoading = $state(false)
     let suggestionsFailed = $state(false)
@@ -2977,6 +2979,26 @@
         browseQuery = title
         activeSection = "Home"
         doSearch()
+    }
+    // Quick-add a suggestion to the library as already-read/completed or plan-to-read, without
+    // needing a source. Removes it from the on-screen list (now owned) and refreshes the
+    // suggestions so the recommendation engine reweights against the updated taste profile.
+    async function quickAddSuggestion(s: Suggestion, mode: "read" | "planning") {
+        sugMenuFor = null
+        try {
+            await sendRuntimeMessage({
+                type: "library:quick-add",
+                anilistId: s.anilistId,
+                title: s.title,
+                ...(s.coverUrl ? { coverUrl: s.coverUrl } : {}),
+                ...(s.genres ? { genres: s.genres } : {}),
+                mode
+            })
+            suggestions = suggestions.filter(x => x.anilistId !== s.anilistId)
+            void loadSuggestions(true)
+        } catch {
+            /* best-effort; a failed add just leaves the card in place */
+        }
     }
     function suggestionWhy(s: Suggestion): string {
         if (s.reasons.length > 0) return `Recommended because you read ${s.reasons.slice(0, 2).join(", ")}`
@@ -3652,6 +3674,33 @@
                 </div>
             {/if}
         {:else if activeSection === "Discover"}
+            {#snippet sugActions(s: Suggestion)}
+                <div class="sug-actions">
+                    <button type="button" class="btn-sm sug-find-btn" onclick={() => findSuggestion(s.title)}
+                        >Find</button>
+                    <button
+                        type="button"
+                        class="btn-sm sug-more-btn"
+                        aria-haspopup="menu"
+                        aria-expanded={sugMenuFor === s.anilistId}
+                        onclick={() => (sugMenuFor = sugMenuFor === s.anilistId ? null : s.anilistId)}>More ▾</button>
+                    {#if sugMenuFor === s.anilistId}
+                        <div class="sug-menu" role="menu">
+                            <button
+                                type="button"
+                                role="menuitem"
+                                onclick={() => {
+                                    sugMenuFor = null
+                                    findSuggestion(s.title)
+                                }}>Find on a source</button>
+                            <button type="button" role="menuitem" onclick={() => void quickAddSuggestion(s, "read")}
+                                >Mark as already read</button>
+                            <button type="button" role="menuitem" onclick={() => void quickAddSuggestion(s, "planning")}
+                                >Add to plan-to-read</button>
+                        </div>
+                    {/if}
+                </div>
+            {/snippet}
             {#snippet sugCard(s: Suggestion)}
                 <article class="disc-card">
                     <div class="poster-wrap">
@@ -3668,8 +3717,7 @@
                     </div>
                     <p class="poster-title">{s.title}</p>
                     <p class="poster-sub muted">{suggestionWhy(s)}</p>
-                    <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}
-                        >Find on a source</button>
+                    {@render sugActions(s)}
                 </article>
             {/snippet}
             {#snippet rail(heading: string, items: Suggestion[])}
@@ -3800,9 +3848,7 @@
                                         {#each matched as g}<span class="genre-chip">{g}</span>{/each}
                                     </div>
                                 {/if}
-                                <button type="button" class="btn-sm" onclick={() => findSuggestion(s.title)}>
-                                    Find on a source
-                                </button>
+                                {@render sugActions(s)}
                             </article>
                         {/each}
                     </div>

@@ -1956,3 +1956,46 @@ describe("library:merge", () => {
         expect(await db.manga.get(b.id)).toBeUndefined()
     })
 })
+
+describe("library:quick-add (Discover -> library)", () => {
+    const req = (over: Record<string, unknown>) => ({
+        type: "library:quick-add" as const,
+        anilistId: 101517,
+        title: "Jujutsu Kaisen",
+        genres: ["Action"],
+        mode: "read" as const,
+        ...over
+    })
+
+    it("adds a completed, manual, no-source entry for mode=read that reads as caught-up", async () => {
+        const res = (await libraryHandlers["library:quick-add"]!(req({}), ctx)) as { added: boolean }
+        expect(res.added).toBe(true)
+        const m = (await db.manga.get("anilist:manga:101517")) as LibraryManga
+        expect(m.manualTracking).toBe(true)
+        expect(m.sourceId).toBe("anilist.co")
+        expect(m.anilistId).toBe(101517)
+        expect(m.status).toBe("completed")
+        // 1/1 so reading-status derives "completed" without a real chapter total.
+        expect(m.latestChapterNumber).toBe(1)
+        expect(m.lastReadChapterNumber).toBe(1)
+        expect(m.genres).toEqual(["Action"])
+    })
+
+    it("adds a plan-to-read entry for mode=planning", async () => {
+        await libraryHandlers["library:quick-add"]!(
+            req({ anilistId: 200, title: "Planned One", mode: "planning" }),
+            ctx
+        )
+        const m = (await db.manga.get("anilist:manga:200")) as LibraryManga
+        expect(m.readingStatus).toBe("planning")
+        expect(m.manualTracking).toBe(true)
+        expect(m.lastReadChapterNumber).toBeUndefined()
+    })
+
+    it("dedups by anilist id (a second add is a no-op)", async () => {
+        const first = (await libraryHandlers["library:quick-add"]!(req({ anilistId: 300 }), ctx)) as { added: boolean }
+        const second = (await libraryHandlers["library:quick-add"]!(req({ anilistId: 300 }), ctx)) as { added: boolean }
+        expect(first.added).toBe(true)
+        expect(second.added).toBe(false)
+    })
+})
