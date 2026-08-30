@@ -2864,6 +2864,14 @@
     let suggestions = $state<Suggestion[]>([])
     // anilistId of the suggestion whose "More" menu is open (null = none).
     let sugMenuFor = $state<number | null>(null)
+    // Transient confirmation after a quick-add (mark-read / plan-to-read).
+    let sugToast = $state("")
+    let sugToastTimer: ReturnType<typeof setTimeout> | undefined
+    function showSugToast(msg: string) {
+        sugToast = msg
+        clearTimeout(sugToastTimer)
+        sugToastTimer = setTimeout(() => (sugToast = ""), 2800)
+    }
     let suggestionsRequestedForVisit = $state(false)
     let suggestionsLoading = $state(false)
     let suggestionsFailed = $state(false)
@@ -2986,7 +2994,7 @@
     async function quickAddSuggestion(s: Suggestion, mode: "read" | "planning") {
         sugMenuFor = null
         try {
-            await sendRuntimeMessage({
+            const res = await sendRuntimeMessage<{ added: boolean }>({
                 type: "library:quick-add",
                 anilistId: s.anilistId,
                 title: s.title,
@@ -2994,10 +3002,12 @@
                 ...(s.genres ? { genres: s.genres } : {}),
                 mode
             })
+            const label = mode === "read" ? "already read" : "plan-to-read"
+            showSugToast(res.added ? `Added “${s.title}” to ${label}` : `“${s.title}” is already in your library`)
             suggestions = suggestions.filter(x => x.anilistId !== s.anilistId)
             void loadSuggestions(true)
         } catch {
-            /* best-effort; a failed add just leaves the card in place */
+            showSugToast("Couldn't add that title - try again.")
         }
     }
     function suggestionWhy(s: Suggestion): string {
@@ -6519,6 +6529,10 @@
             </div>
         </div>
     </div>
+{/if}
+
+{#if sugToast}
+    <div class="sug-toast" role="status" aria-live="polite">{sugToast}</div>
 {/if}
 
 {#if showConsentCard}
