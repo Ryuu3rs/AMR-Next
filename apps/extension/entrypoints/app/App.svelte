@@ -3013,8 +3013,8 @@
             quickAddedIds.add(s.anilistId)
             suggestions = suggestions.filter(x => x.anilistId !== s.anilistId)
             void loadSuggestions(true)
-        } catch {
-            showSugToast("Couldn't add that title - try again.")
+        } catch (cause) {
+            showSugToast(`Add failed: ${cause instanceof Error ? cause.message : String(cause)}`)
         }
     }
     function suggestionWhy(s: Suggestion): string {
