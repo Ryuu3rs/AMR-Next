@@ -73,7 +73,11 @@ button:focus-visible {
 
 .shell {
     display: grid;
-    grid-template-columns: 196px 1fr;
+    /* minmax(0, 1fr), NOT 1fr: a plain 1fr track has an auto (min-content) minimum, so a
+       full-width main (Discover) whose grid wants to grow pushes the whole shell past the
+       viewport (horizontal scrollbar). minmax(0,...) pins main to exactly the remaining
+       width and lets its content shrink to fit. */
+    grid-template-columns: 196px minmax(0, 1fr);
     min-height: 100vh;
 }
 
@@ -153,6 +157,9 @@ nav button.active {
 main {
     padding: 52px 60px;
     max-width: 1140px;
+    /* Grid item must be allowed to shrink below its content's intrinsic width, else the
+       full-width Discover grid overflows the shell horizontally. */
+    min-width: 0;
 }
 
 /* Discover uses the full shell width (no 1140 cap) so the suggestion grid fills to the
