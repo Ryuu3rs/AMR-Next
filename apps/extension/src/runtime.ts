@@ -76,6 +76,14 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         title: z.string().trim().min(1),
         coverUrl: z.url().optional()
     }),
+    z.object({
+        type: z.literal("library:quick-add"),
+        anilistId: z.number().int().positive(),
+        title: z.string().trim().min(1),
+        coverUrl: z.string().optional(),
+        genres: z.array(z.string()).optional(),
+        mode: z.enum(["read", "planning"])
+    }),
     z.object({ type: z.literal("library:covers:backfill"), mangaId: z.string().optional() }),
     z.object({ type: z.literal("stats:get") }),
     z.object({ type: z.literal("history:list") }),

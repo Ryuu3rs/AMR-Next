@@ -1,8 +1,10 @@
 import type { ChapterRecord, MangaRecord, SourceLinkRecord } from "@amr/contracts"
 import { SourceError, UNNUMBERED_SORT_KEY, latestNumberedChapter } from "@amr/source-sdk"
 import { sourceRegistry } from "@amr/sources"
+import { normalizeTitle } from "@amr/normalize"
 import {
     db,
+    addImportedManga,
     applyCleanupGroup,
     cacheCover,
     clearHistory,
@@ -261,6 +263,36 @@ export const libraryHandlers: HandlerMap = {
 
     "library:get": async request => {
         return (await db.manga.get(request.mangaId)) ?? null
+    },
+
+    // Quick-add a Discover suggestion straight into the library without a source, so the user
+    // can log what they've already read / plan to read. This feeds the recommendation engine
+    // (owned titles are excluded from future suggestions and their genres shape the profile).
+    // "read" marks it completed (synthetic 1/1 so reading-status derives "completed" - same
+    // shape as an AniList completed import); "planning" sets the planning override. Manual
+    // (no scanning); deduped by the anilist-scoped id via addImportedManga.
+    "library:quick-add": async request => {
+        const now = Date.now()
+        const base: LibraryManga = {
+            id: `anilist:manga:${request.anilistId}`,
+            title: request.title,
+            normalizedTitle: normalizeTitle(request.title),
+            authors: [],
+            status: request.mode === "read" ? "completed" : "unknown",
+            addedAt: now,
+            updatedAt: now,
+            anilistId: request.anilistId,
+            sourceId: "anilist.co",
+            sourceUrl: `https://anilist.co/manga/${request.anilistId}`,
+            manualTracking: true,
+            ...(request.coverUrl ? { coverUrl: request.coverUrl } : {}),
+            ...(request.genres && request.genres.length > 0 ? { genres: request.genres } : {}),
+            ...(request.mode === "read"
+                ? { latestChapterNumber: 1, lastReadChapterNumber: 1, latestChapterAt: now, lastReadAt: now }
+                : { readingStatus: "planning", readingStatusUpdatedAt: now })
+        }
+        const { imported } = await addImportedManga([base])
+        return { added: imported > 0 }
     },
 
     // Add a series to the library in an UNREAD state from a search result's series-level
