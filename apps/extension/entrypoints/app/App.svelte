@@ -3005,7 +3005,9 @@
                 anilistId: s.anilistId,
                 title: s.title,
                 ...(s.coverUrl ? { coverUrl: s.coverUrl } : {}),
-                ...(s.genres ? { genres: s.genres } : {}),
+                // s.genres is a Svelte $state proxy array; spread to a plain array so
+                // runtime.sendMessage can structured-clone it ("Proxy could not be cloned").
+                ...(s.genres ? { genres: [...s.genres] } : {}),
                 mode
             })
             const label = mode === "read" ? "already read" : "plan-to-read"
