@@ -47,7 +47,58 @@ export function isLazyPlaceholderSrc(src: string | null): boolean {
 async function extractHtml(tabId: number): Promise<string> {
     const results = await browser.scripting.executeScript({
         target: { tabId },
-        func: () => {
+        func: async () => {
+            // Some readers (e.g. MangaHub) server-render only a small preload window of
+            // page <img> elements and inject the rest via JavaScript once a follow-up API
+            // call returns - so an outerHTML snapshot taken at "load" captures only those
+            // first few pages. Watch for <img> insertions and snapshot once they have
+            // quiesced, so every injected page is present. A MutationObserver (not a fixed
+            // sleep or count-poll) handles a slow/late API without either exiting early on
+            // the preload window or always paying a worst-case wait. Deliberately no
+            // scrolling: some strip readers append the NEXT chapter's images on
+            // scroll-to-bottom, which would pollute this chapter's page list. Best-effort.
+            try {
+                await new Promise<void>(resolve => {
+                    // Resolve this long after the last <img> is inserted (injection settled);
+                    // this same floor also bounds the "nothing ever injects" case, and the
+                    // hard cap bounds a page that keeps mutating forever.
+                    const QUIET_MS = 1000
+                    const NO_INJECT_FLOOR_MS = 3000
+                    const HARD_CAP_MS = 8000
+                    let settled = false
+                    let quietTimer: ReturnType<typeof setTimeout> | undefined
+                    const finish = () => {
+                        if (settled) return
+                        settled = true
+                        observer.disconnect()
+                        if (quietTimer) clearTimeout(quietTimer)
+                        clearTimeout(hardTimer)
+                        resolve()
+                    }
+                    const bump = (delay: number) => {
+                        if (quietTimer) clearTimeout(quietTimer)
+                        quietTimer = setTimeout(finish, delay)
+                    }
+                    const observer = new MutationObserver(mutations => {
+                        for (const mutation of mutations) {
+                            for (const node of mutation.addedNodes) {
+                                if (
+                                    node.nodeName === "IMG" ||
+                                    (node instanceof Element && node.querySelector("img") !== null)
+                                ) {
+                                    bump(QUIET_MS)
+                                    return
+                                }
+                            }
+                        }
+                    })
+                    observer.observe(document.documentElement, { childList: true, subtree: true })
+                    bump(NO_INJECT_FLOOR_MS)
+                    const hardTimer = setTimeout(finish, HARD_CAP_MS)
+                })
+            } catch {
+                // Settle is best-effort; fall through and snapshot whatever is present.
+            }
             // Lazy-loading readers keep the real image URL on a data-* attribute until
             // each <img> scrolls into view, so an un-scrolled outerHTML snapshot only has
             // real src on the initial preload window. Fill any empty/placeholder src from
