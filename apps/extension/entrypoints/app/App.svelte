@@ -677,6 +677,29 @@
     // Build marker (git commit of this build) so a local dev build is identifiable next to the
     // release-please-owned version, which only bumps on an actual release.
     const buildId = __BUILD_ID__
+    // Owner broadcast messages (fetched on mount, dismissible; dismissed ids persisted).
+    type AppAnnouncement = { id: string; title: string; body: string; level: string }
+    let announcements = $state<AppAnnouncement[]>([])
+    let dismissedAnnouncements = $state<Set<string>>(new Set())
+    const visibleAnnouncements = $derived(announcements.filter(a => !dismissedAnnouncements.has(a.id)))
+    async function dismissAnnouncement(id: string) {
+        dismissedAnnouncements = new Set(dismissedAnnouncements).add(id)
+        try {
+            await browser.storage.local.set({ dismissedAnnouncements: [...dismissedAnnouncements] })
+        } catch {
+            /* best-effort */
+        }
+    }
+    async function loadAnnouncements() {
+        try {
+            const stored = await browser.storage.local.get("dismissedAnnouncements")
+            const ids = stored["dismissedAnnouncements"]
+            if (Array.isArray(ids)) dismissedAnnouncements = new Set(ids as string[])
+            announcements = await sendRuntimeMessage<AppAnnouncement[]>({ type: "community:announcements" })
+        } catch {
+            announcements = []
+        }
+    }
     let extensionUpdate = $state<{
         available: boolean
         latestVersion: string
@@ -1111,6 +1134,7 @@
     onMount(async () => {
         document.addEventListener("visibilitychange", onVisibilityChange)
         unsubscribeLive = subscribeLive(["library", "chapters", "progress", "all"], () => void refresh())
+        void loadAnnouncements()
         await load()
         hasPermission = await sendRuntimeMessage<boolean>({ type: "source:permission:check" })
         if (hasPermission) {
@@ -3321,6 +3345,19 @@
     </aside>
 
     <main class:full={activeSection === "Discover"}>
+        {#each visibleAnnouncements as a (a.id)}
+            <div class="announce announce-{a.level}" role="status">
+                <div class="announce-body">
+                    <strong>{a.title}</strong>
+                    <span>{a.body}</span>
+                </div>
+                <button
+                    type="button"
+                    class="announce-dismiss"
+                    aria-label="Dismiss"
+                    onclick={() => void dismissAnnouncement(a.id)}>✕</button>
+            </div>
+        {/each}
         {#if extensionUpdate?.available && !updateBannerDismissed}
             <div class="update-banner" role="alert">
                 <span>AMR <strong>v{extensionUpdate.latestVersion}</strong> is available.</span>

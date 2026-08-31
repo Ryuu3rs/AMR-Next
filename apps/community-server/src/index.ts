@@ -22,6 +22,11 @@ import {
     getCommunityStats,
     upsertRating,
     getMangaStats,
+    createAnnouncement,
+    deleteAnnouncement,
+    listAllAnnouncements,
+    listActiveAnnouncements,
+    getAdminStats,
     type EventRow
 } from "./db.js"
 import { computeUnlocked } from "./achievements.js"
@@ -29,7 +34,10 @@ import { validateUsername } from "./username.js"
 
 export const app = new Hono()
 
-app.use("/*", cors({ origin: "*", allowMethods: ["GET", "POST"], allowHeaders: ["Content-Type"] }))
+app.use(
+    "/*",
+    cors({ origin: "*", allowMethods: ["GET", "POST", "DELETE"], allowHeaders: ["Content-Type", "Authorization"] })
+)
 
 // Best-effort in-memory per-IP rate limit (single instance). Generous windows - only stops
 // abuse/DoS bursts (register spam, unbounded event floods), never a normal user.
@@ -186,6 +194,76 @@ app.delete("/me", async c => {
 app.get("/installs", c => {
     if (!isAdmin(c.req.header("authorization"))) return c.json({ error: "Forbidden" }, 403)
     return c.json(getInstallStats())
+})
+
+// --- Admin dashboard (all admin-token gated) ---
+
+const MAX_ANNOUNCE_TITLE = 120
+const MAX_ANNOUNCE_BODY = 2000
+const VALID_LEVELS = new Set(["info", "update", "warning"])
+const VALID_TARGETS = new Set(["all", "browser", "version"])
+
+// Lets the dashboard validate a pasted admin token before showing the panel.
+app.get("/admin/check", c => {
+    if (!isAdmin(c.req.header("authorization"))) return c.json({ error: "Forbidden" }, 403)
+    return c.json({ ok: true })
+})
+
+app.get("/admin/stats", c => {
+    if (!isAdmin(c.req.header("authorization"))) return c.json({ error: "Forbidden" }, 403)
+    return c.json(getAdminStats())
+})
+
+app.get("/admin/announcements", c => {
+    if (!isAdmin(c.req.header("authorization"))) return c.json({ error: "Forbidden" }, 403)
+    return c.json({ announcements: listAllAnnouncements() })
+})
+
+app.post("/admin/announce", async c => {
+    if (!isAdmin(c.req.header("authorization"))) return c.json({ error: "Forbidden" }, 403)
+    const body = await c.req
+        .json<{
+            title?: string
+            body?: string
+            level?: string
+            targetType?: string
+            targetValue?: string
+            startsAt?: number
+            endsAt?: number
+        }>()
+        .catch(() => ({}) as Record<string, never>)
+    if (!isBoundedString(body.title, MAX_ANNOUNCE_TITLE)) return c.json({ error: "title required" }, 400)
+    if (!isBoundedString(body.body, MAX_ANNOUNCE_BODY)) return c.json({ error: "body required" }, 400)
+    const level = typeof body.level === "string" && VALID_LEVELS.has(body.level) ? body.level : "info"
+    const targetType =
+        typeof body.targetType === "string" && VALID_TARGETS.has(body.targetType) ? body.targetType : "all"
+    const targetValue =
+        targetType === "all" ? null : isBoundedString(body.targetValue, MAX_VERSION_LEN) ? body.targetValue : null
+    if (targetType !== "all" && !targetValue) return c.json({ error: "targetValue required for this target" }, 400)
+    const startsAt = Number.isFinite(body.startsAt)
+        ? Math.floor(body.startsAt as number)
+        : Math.floor(Date.now() / 1000)
+    const endsAt = Number.isFinite(body.endsAt) ? Math.floor(body.endsAt as number) : null
+    const id = randomUUID()
+    createAnnouncement(id, { title: body.title, body: body.body, level, targetType, targetValue, startsAt, endsAt })
+    return c.json({ ok: true, id })
+})
+
+app.delete("/admin/announce", async c => {
+    if (!isAdmin(c.req.header("authorization"))) return c.json({ error: "Forbidden" }, 403)
+    const body = await c.req.json<{ id?: string }>().catch(() => ({}) as { id?: string })
+    if (!body.id) return c.json({ error: "id required" }, 400)
+    return c.json({ ok: true, deleted: deleteAnnouncement(body.id) })
+})
+
+// Public: the app fetches its active announcements, filtered to its browser/version.
+app.get("/announcements", c => {
+    if (!withinRateLimit(c.req.header("x-forwarded-for"), "announcements", 60, 60 * 1000)) {
+        return c.json({ error: "Too many requests" }, 429)
+    }
+    const browser = c.req.query("browser")?.slice(0, MAX_BROWSER_LEN) ?? null
+    const version = c.req.query("version")?.slice(0, MAX_VERSION_LEN) ?? null
+    return c.json({ announcements: listActiveAnnouncements(browser, version) })
 })
 
 app.post("/events", async c => {
