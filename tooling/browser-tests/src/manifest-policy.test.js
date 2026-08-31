@@ -39,6 +39,9 @@ const allowedPermissions = [
 const allowedRequiredHosts = [
     "*://*.asurascans.com/*",
     "*://*.compsci88.com/*",
+    "*://*.meowing.org/*",
+    "https://nyanukafe.com/*",
+    "https://www.nyanukafe.com/*",
     "*://*.flamecomics.xyz/*",
     "*://*.images.mangafreak.me/*",
     "*://*.imgsrv4.com/*",
@@ -142,7 +145,7 @@ for (const [browserName, extensionDirectory] of [
         const actualHosts = [...manifest.host_permissions]
             .filter(h => h !== communityApiOrigin && h !== metadataApiOrigin)
             .sort()
-        assert.deepEqual(actualHosts, allowedRequiredHosts)
+        assert.deepEqual(actualHosts, [...allowedRequiredHosts].sort())
         assert.equal(manifest.optional_host_permissions, undefined)
         assert.equal(manifest.content_scripts, undefined)
         assert.equal(manifest.externally_connectable, undefined)

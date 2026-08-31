@@ -18,6 +18,7 @@ import { fanfoxFamilyAdapters } from "./fanfox-sites"
 import { olympusstaffAdapter } from "./olympustaff"
 import { mangafreakAdapter } from "./mangafreak"
 import { comixAdapter } from "./comix"
+import { nyanukafeAdapter } from "./nyanukafe"
 import { mangakatanaAdapter } from "./mangakatana"
 import { flameComicsAdapter } from "./flamecomics"
 import { mangakAdapter } from "./mangak"
@@ -45,6 +46,7 @@ export { fanfoxFamilyAdapters, fanfoxFamilyOrigins } from "./fanfox-sites"
 export { olympusstaffAdapter } from "./olympustaff"
 export { mangafreakAdapter } from "./mangafreak"
 export { comixAdapter } from "./comix"
+export { nyanukafeAdapter } from "./nyanukafe"
 export { mangakatanaAdapter } from "./mangakatana"
 export { flameComicsAdapter } from "./flamecomics"
 export { mangakAdapter } from "./mangak"
@@ -69,6 +71,7 @@ export const sourceAdapters: readonly SourceAdapter[] = [
     olympusstaffAdapter,
     mangafreakAdapter,
     comixAdapter,
+    nyanukafeAdapter,
     mangakatanaAdapter,
     flameComicsAdapter,
     mangakAdapter

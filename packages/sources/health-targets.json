@@ -57,6 +57,11 @@
         "expectTitle": "Solo Leveling",
         "note": "best-guess slug"
     },
+    "nyanukafe": {
+        "seriesUrl": "https://nyanukafe.com/series/63f559b92c0",
+        "expectTitle": "Demon Lord City",
+        "note": "hash series id; page images on cdn.meowing.org"
+    },
     "aryascans": {
         "seriesUrl": "https://brainrotcomics.com/manga/the-beginning-after-the-end/",
         "expectTitle": "Beginning After the End",

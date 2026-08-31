@@ -23,6 +23,10 @@ const BASE_SOURCE_ORIGINS = [
     "https://www.mgeko.cc/*",
     "https://mgeko.cc/*",
     "*://*.imgsrv4.com/*",
+    // Nyanu Kafe - series/chapter pages on the main domain, page images on cdn.meowing.org
+    "https://nyanukafe.com/*",
+    "https://www.nyanukafe.com/*",
+    "*://*.meowing.org/*",
     // MangaNato - retired 2026-06: chapmanganato.to down, manganato.com hijacked - uncomment when a working domain is found
     // "https://chapmanganato.to/*",
     // "*://*.mkklcdnv6tempv3.com/*",
