@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.21.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.20.0...v0.21.0) (2026-08-31)
+
+
+### Features
+
+* **community:** consent-gated data collection, GDPR controls, and install counts ([25d89e3](https://github.com/Ryuu3rs/AMR-Next/commit/25d89e37f587a3b715e7fe79d73ae9400f386e3c))
+* **community:** owner announcements + admin dashboard API ([216e036](https://github.com/Ryuu3rs/AMR-Next/commit/216e036897c79589c13125401a0271b89fd5fa41))
+* **data:** optional passphrase-encrypted backups (AES-GCM) ([e2888b0](https://github.com/Ryuu3rs/AMR-Next/commit/e2888b05aa23cf2e982ffd40874fbd9fe423b045))
+* **discover:** confirmation toast on quick-add (mark read / plan-to-read) ([801229c](https://github.com/Ryuu3rs/AMR-Next/commit/801229c503c499e4956748363bd135a48f05ee5f))
+* **discover:** Find + More menu to log a suggestion as read or plan-to-read ([c4f03be](https://github.com/Ryuu3rs/AMR-Next/commit/c4f03be58d5481080317add66b8b6d1432a22a97))
+* **sources:** add Nyanu Kafe (nyanukafe.com) ([fc6bd9f](https://github.com/Ryuu3rs/AMR-Next/commit/fc6bd9f721161df55ec3734ebd5ce562c5a72874))
+
+
+### Bug Fixes
+
+* **deps:** bump hono 4.13.5 + @hono/node-server 1.19.17 (moderate CVEs) ([84285ce](https://github.com/Ryuu3rs/AMR-Next/commit/84285cea613e1947ea8e5f0e5bcc49046ecedb6c))
+* **discover,library,updates:** podium sizing, select-mode checkbox + bulk caught-up, de-conflate bot-block skips ([6c57f10](https://github.com/Ryuu3rs/AMR-Next/commit/6c57f105f992fdc0426b474e5418e25cefcc798b))
+* **discover:** don't blank the page when a refresh can't reach AniList ([2809977](https://github.com/Ryuu3rs/AMR-Next/commit/2809977197f8bbc7640289faade3e56282f32ae8))
+* **discover:** fixed-size centered podium, full-width layout, centered top controls ([ad25b22](https://github.com/Ryuu3rs/AMR-Next/commit/ad25b22b8beba4e7b014a95660b453cc9d4c2857))
+* **discover:** keep quick-added titles out of suggestions (no stale-cache flash-back) ([9eb7f27](https://github.com/Ryuu3rs/AMR-Next/commit/9eb7f27e50214df42100f56f43c910bd638d02aa))
+* **discover:** quick-add sent a Svelte $state proxy array (unclonable) - spread genres to a plain array ([28cb848](https://github.com/Ryuu3rs/AMR-Next/commit/28cb8489a8a2220a183f9ffde26d681ed9aed427))
+* **discover:** stop full-width main overflowing the shell horizontally ([1a53446](https://github.com/Ryuu3rs/AMR-Next/commit/1a534461a1300379c277049b72b20a830f1dc2cc))
+* **nyanukafe:** parse the full chapter anchor (real inners are ~1.4KB, not &lt;400) ([7b3a677](https://github.com/Ryuu3rs/AMR-Next/commit/7b3a6773d1b852d0baad9311e47b7446ece0b7df))
+* **privacy:** point policy URL at the live host privacy.weeb.ltd ([00db1cb](https://github.com/Ryuu3rs/AMR-Next/commit/00db1cbd3ddc64a16abfae4e8c6e103571da3c3a))
+
+
+### Performance Improvements
+
+* **suggestions:** cache AniList recommendations per seed to stop hammering AniList ([7549850](https://github.com/Ryuu3rs/AMR-Next/commit/754985015289201c190ae6e68f271ec84c94224f))
+
 ## [0.20.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.19.0...v0.20.0) (2026-08-23)
 
 
