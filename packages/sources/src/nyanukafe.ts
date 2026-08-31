@@ -94,9 +94,11 @@ function extractCover(html: string): string | undefined {
     return /^https?:\/\//i.test(og) ? og : undefined
 }
 
-// Chapter anchors on the series page carry "Chapter N.M" text next to the href.
+// Chapter anchors on the series page carry "Chapter N.M" text inside. The inner markup is
+// large (~1.4KB: per-chapter thumbnail + metadata), so match up to the first </a> with an
+// unbounded non-greedy group - a fixed cap silently misses every real chapter.
 function extractChapters(html: string, seriesId: string): Array<{ chapterId: string; number?: string }> {
-    const re = new RegExp(`<a\\b[^>]*href="/chapter/${seriesId}-([a-z0-9]+)/?"[^>]*>([\\s\\S]{0,400}?)</a>`, "gi")
+    const re = new RegExp(`<a\\b[^>]*href="/chapter/${seriesId}-([a-z0-9]+)/?"[^>]*>([\\s\\S]*?)</a>`, "gi")
     const out: Array<{ chapterId: string; number?: string }> = []
     const seen = new Set<string>()
     for (const m of html.matchAll(re)) {

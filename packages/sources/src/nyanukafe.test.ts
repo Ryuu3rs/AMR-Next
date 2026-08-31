@@ -24,13 +24,19 @@ function createContext(fixtures: Readonly<Record<string, string>>, requests: str
     }
 }
 
+// Real chapter anchors wrap ~1.4KB of nested markup (thumbnail + metadata) around the
+// number, so the fixture pads each inner past a naive fixed-window cap to guard that.
+function chapterAnchor(cid: string, label: string): string {
+    const pad = "x".repeat(500)
+    return `<a class="chapter-card" href="/chapter/${SID}-${cid}/"><div class="thumb"><img class="lazy" src="/assets/images/placeholder.svg" data-src="cdn.meowing.org/uploads/T${cid}"><!-- ${pad} --></div><div class="meta"><span class="num">${label}</span><span class="date">Jul 30, 2026</span><span class="views">1.2k</span></div></a>`
+}
 const seriesHtml = `<html><head>
 <meta property="og:title" content="Demon Lord City">
 <meta property="og:image" content="https://wsrv.nl/?url=cdn.meowing.org/uploads/CoVeR123&w=20">
 </head><body>
 <div id="chapters">
-  <a href="/chapter/${SID}-c2/"><span>Chapter 2</span><span>Jul 30, 2026</span></a>
-  <a href="/chapter/${SID}-c1/"><span>Chapter 1.5</span><span>Jul 29, 2026</span></a>
+  ${chapterAnchor("c2", "Chapter 2")}
+  ${chapterAnchor("c1", "Chapter 1.5")}
 </div></body></html>`
 
 const chapterHtml = `<html><head>
