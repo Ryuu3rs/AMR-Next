@@ -56,6 +56,22 @@ db.exec(`
         last_seen  INTEGER NOT NULL DEFAULT (unixepoch())
     );
     CREATE INDEX IF NOT EXISTS idx_installs_last_seen ON installs(last_seen);
+
+    -- Owner-authored broadcast messages shown as a banner in the app. Targeted to all
+    -- installs, or filtered by browser / extension version. starts_at/ends_at bound the
+    -- active window (ends_at NULL = no expiry).
+    CREATE TABLE IF NOT EXISTS announcements (
+        id           TEXT PRIMARY KEY,
+        title        TEXT NOT NULL,
+        body         TEXT NOT NULL,
+        level        TEXT NOT NULL DEFAULT 'info',
+        target_type  TEXT NOT NULL DEFAULT 'all',
+        target_value TEXT,
+        starts_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+        ends_at      INTEGER,
+        created_at   INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_announcements_window ON announcements(starts_at, ends_at);
 `)
 
 // Additive migration for existing DBs: consent bookkeeping on users. better-sqlite3's
@@ -353,4 +369,95 @@ export function getCommunityStats(): {
     const totalUsers = (db.prepare("SELECT COUNT(*) as n FROM users").get() as { n: number }).n
 
     return { leaderboard, trendingManga, topGenres, topRated: getTopRated(), totalUsers }
+}
+
+// --- Announcements (owner broadcast) + admin dashboard stats ---
+
+export type AnnouncementInput = {
+    title: string
+    body: string
+    level: string
+    targetType: string
+    targetValue: string | null
+    startsAt: number
+    endsAt: number | null
+}
+export type Announcement = AnnouncementInput & { id: string; createdAt: number }
+
+type AnnouncementRow = {
+    id: string
+    title: string
+    body: string
+    level: string
+    target_type: string
+    target_value: string | null
+    starts_at: number
+    ends_at: number | null
+    created_at: number
+}
+
+function rowToAnnouncement(r: AnnouncementRow): Announcement {
+    return {
+        id: r.id,
+        title: r.title,
+        body: r.body,
+        level: r.level,
+        targetType: r.target_type,
+        targetValue: r.target_value,
+        startsAt: r.starts_at,
+        endsAt: r.ends_at,
+        createdAt: r.created_at
+    }
+}
+
+export function createAnnouncement(id: string, a: AnnouncementInput): void {
+    db.prepare(
+        `INSERT INTO announcements (id, title, body, level, target_type, target_value, starts_at, ends_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, a.title, a.body, a.level, a.targetType, a.targetValue, a.startsAt, a.endsAt)
+}
+
+export function deleteAnnouncement(id: string): boolean {
+    return db.prepare("DELETE FROM announcements WHERE id = ?").run(id).changes > 0
+}
+
+export function listAllAnnouncements(): Announcement[] {
+    return (db.prepare("SELECT * FROM announcements ORDER BY created_at DESC").all() as AnnouncementRow[]).map(
+        rowToAnnouncement
+    )
+}
+
+// Public feed for the app: only announcements currently in their active window and matching
+// the caller's browser/version (or targeted at everyone).
+export function listActiveAnnouncements(browser: string | null, version: string | null): Announcement[] {
+    const now = Math.floor(Date.now() / 1000)
+    return (
+        db
+            .prepare(
+                `SELECT * FROM announcements
+                 WHERE starts_at <= ? AND (ends_at IS NULL OR ends_at > ?)
+                   AND (target_type = 'all'
+                        OR (target_type = 'browser' AND target_value = ?)
+                        OR (target_type = 'version' AND target_value = ?))
+                 ORDER BY created_at DESC`
+            )
+            .all(now, now, browser, version) as AnnouncementRow[]
+    ).map(rowToAnnouncement)
+}
+
+export function getAdminStats(): {
+    installs: ReturnType<typeof getInstallStats>
+    users: number
+    ratings: number
+    events: number
+    announcements: number
+} {
+    const count = (sql: string) => (db.prepare(sql).get() as { n: number }).n
+    return {
+        installs: getInstallStats(),
+        users: count("SELECT COUNT(*) as n FROM users"),
+        ratings: count("SELECT COUNT(*) as n FROM ratings"),
+        events: count("SELECT COUNT(*) as n FROM events"),
+        announcements: count("SELECT COUNT(*) as n FROM announcements")
+    }
 }

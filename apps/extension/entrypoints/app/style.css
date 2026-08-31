@@ -1828,6 +1828,46 @@ button:disabled {
     max-width: min(520px, calc(100vw - 32px));
 }
 
+/* Owner broadcast announcement banner. */
+.announce {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+}
+.announce-warning {
+    border-left-color: #f5a623;
+}
+.announce-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.announce-body span {
+    color: var(--muted);
+    font-size: 13px;
+    white-space: pre-wrap;
+}
+.announce-dismiss {
+    flex: 0 0 auto;
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+}
+.announce-dismiss:hover {
+    color: var(--text);
+}
+
 .genre-chip {
     padding: 2px 8px;
     border-radius: 99px;

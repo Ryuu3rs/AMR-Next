@@ -149,6 +149,28 @@ export async function apiPing(browserName: string, version: string): Promise<voi
     })
 }
 
+export type Announcement = {
+    id: string
+    title: string
+    body: string
+    level: string
+    startsAt: number
+    endsAt: number | null
+    createdAt: number
+}
+
+// Owner broadcast messages for this build's browser/version. A read-only fetch (like an
+// update check) - it sends no user data beyond the anonymous browser/version filter, so it
+// runs regardless of the community consent toggle, only gated on the server being configured.
+export async function apiGetAnnouncements(browserName: string, version: string): Promise<Announcement[]> {
+    if (!communityConfigured) return []
+    const url = `${COMMUNITY_API_BASE}/announcements?browser=${encodeURIComponent(browserName)}&version=${encodeURIComponent(version)}`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`Announcements fetch failed: ${res.status}`)
+    const data = (await res.json()) as { announcements?: Announcement[] }
+    return data.announcements ?? []
+}
+
 // GDPR erasure: delete all of this user's community data from the server.
 export async function apiDeleteMe(userId: string): Promise<void> {
     assertCommunityConfigured()

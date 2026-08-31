@@ -7,6 +7,8 @@ import {
     apiFetchMangaStats,
     apiPing,
     apiDeleteMe,
+    apiGetAnnouncements,
+    type Announcement,
     generateAnonymousUsername,
     getCommunityProfile,
     updateCommunityProfile,
@@ -220,5 +222,16 @@ export const communityHandlers: HandlerMap = {
     },
     "community:manga-stats": async request => {
         return await apiFetchMangaStats(request.mangaTitle)
+    },
+    // Owner broadcast messages for this build. Read-only, consent-independent, never throws.
+    "community:announcements": async (): Promise<Announcement[]> => {
+        try {
+            return await apiGetAnnouncements(
+                import.meta.env.BROWSER ?? "unknown",
+                browser.runtime.getManifest().version
+            )
+        } catch {
+            return []
+        }
     }
 }
