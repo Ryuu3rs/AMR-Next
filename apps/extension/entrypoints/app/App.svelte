@@ -2916,6 +2916,13 @@
     // Discover visit alongside the main suggestions; filtered of anything just quick-added.
     let nextInSeries = $state<Suggestion[]>([])
     const visibleNextInSeries = $derived(nextInSeries.filter(s => !quickAddedIds.has(s.anilistId)))
+    // "Trending in the community": most-read titles across all opted-in users (public
+    // aggregate). Owned titles are filtered out so it stays a discovery rail.
+    let trending = $state<{ title: string; sourceId: string; count: number }[]>([])
+    const visibleTrending = $derived.by(() => {
+        const owned = new Set(library.map(m => m.title.trim().toLocaleLowerCase("en")))
+        return trending.filter(t => !owned.has(t.title.trim().toLocaleLowerCase("en"))).slice(0, 15)
+    })
     const communitySuggestions = $derived(suggestions.filter(s => s.community))
     // Suggestions-tab filters. Genre keys are lowercased; a suggestion must carry ALL
     // selected genres (AND narrowing). Community-only keeps just the "readers also read"
@@ -3007,6 +3014,15 @@
             // A failed load just means no rail this visit - never blocks the rest of Discover.
         }
     }
+    async function loadTrending() {
+        try {
+            trending = await sendRuntimeMessage<{ title: string; sourceId: string; count: number }[]>({
+                type: "community:trending"
+            })
+        } catch {
+            // Community offline / not configured - just no trending rail this visit.
+        }
+    }
     $effect(() => {
         // One load attempt per visit to the tab: the flag guards against re-firing while
         // we stay on the tab, and resets when we leave, so a failed first load retries on
@@ -3016,6 +3032,7 @@
                 suggestionsRequestedForVisit = true
                 void loadSuggestions(false)
                 void loadNextInSeries()
+                void loadTrending()
             }
         } else {
             suggestionsRequestedForVisit = false
@@ -4027,6 +4044,25 @@
                          top-3 + genre-filter layout leads. Hidden while a filter is active. -->
                     {#if hiddenGems.length > 0}
                         {@render rail("Hidden gems", hiddenGems)}
+                    {/if}
+                    {#if visibleTrending.length > 0}
+                        <section class="disc-rail">
+                            <h2 class="disc-rail-head">Trending in the community</h2>
+                            <div class="disc-rail-track">
+                                {#each visibleTrending as t (t.title)}
+                                    <article class="disc-card trend-card">
+                                        <p class="poster-title">{t.title}</p>
+                                        <p class="poster-sub muted">{t.count} {t.count === 1 ? "reader" : "readers"}</p>
+                                        <div class="sug-actions">
+                                            <button
+                                                type="button"
+                                                class="btn-sm sug-find-btn"
+                                                onclick={() => findSuggestion(t.title)}>Find</button>
+                                        </div>
+                                    </article>
+                                {/each}
+                            </div>
+                        </section>
                     {/if}
                     {#each becauseYouReadRails as r (r.title)}
                         {@render rail(`Because you read ${r.title}`, r.items)}

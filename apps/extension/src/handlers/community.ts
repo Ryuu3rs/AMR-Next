@@ -233,5 +233,16 @@ export const communityHandlers: HandlerMap = {
         } catch {
             return []
         }
+    },
+    // What the community is reading right now, for the Discover "Trending" rail. Public
+    // aggregate data (no user data sent), so it needs no opt-in - only a configured API.
+    // Never throws: a failure just means no rail this visit.
+    "community:trending": async () => {
+        try {
+            const stats = await apiFetchCommunityStats()
+            return stats.trendingManga
+        } catch {
+            return []
+        }
     }
 }

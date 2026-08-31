@@ -1815,6 +1815,15 @@ button:disabled {
 .sug-menu-danger {
     color: var(--danger, #f87171);
 }
+/* Community trending cards carry no cover; give them body so they match the rail height. */
+.trend-card {
+    justify-content: flex-end;
+    min-height: 120px;
+    padding: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
 .disc-head-actions {
     display: flex;
     gap: 8px;

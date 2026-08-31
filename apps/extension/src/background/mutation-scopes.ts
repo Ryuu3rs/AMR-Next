@@ -145,6 +145,7 @@ export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<Runt
     "community:rate",
     "community:manga-stats",
     "community:announcements",
+    "community:trending",
     "suggestions:get",
     "suggestions:continue",
     // hide/unhide persist a small storage.local set the Discover tab re-reads on its own
