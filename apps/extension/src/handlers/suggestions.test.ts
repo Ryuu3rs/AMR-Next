@@ -114,15 +114,33 @@ describe("suggestions:get", () => {
         expect(second.map(s => s.anilistId)).toEqual([999])
     })
 
-    it("recomputes when force is set even with a fresh cache", async () => {
+    it("recomputes on force but reuses the cached AniList recs (no re-fetch)", async () => {
         await db.manga.put(ownedManga({ id: "m1", title: "Owned One", anilistId: 100 }))
         getRecommendations.mockResolvedValue([{ anilistId: 999, title: "Fresh Pick" }])
 
         await getSuggestions()
         expect(getRecommendations).toHaveBeenCalledTimes(1)
 
+        // Force bypasses the 6h suggestions cache and re-scores, but the per-seed rec cache is
+        // still fresh - so AniList is NOT hit again. This is the point of the rec cache: a
+        // recompute (Discover open, mark-as-read, revalidate) costs ~0 AniList calls once warm.
+        const forced = await getSuggestions(true)
+        expect(getRecommendations).toHaveBeenCalledTimes(1)
+        expect(forced.map(s => s.anilistId)).toEqual([999])
+    })
+
+    it("only calls AniList for a newly-added seed, not the whole cached set", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "One", anilistId: 100 }))
+        getRecommendations.mockResolvedValue([{ anilistId: 999, title: "Pick" }])
+        await getSuggestions()
+        expect(getRecommendations).toHaveBeenCalledTimes(1)
+
+        // Add a second seed and force: only the new seed (200) is fetched; 100 is served
+        // from the rec cache.
+        await db.manga.put(ownedManga({ id: "m2", title: "Two", anilistId: 200 }))
         await getSuggestions(true)
         expect(getRecommendations).toHaveBeenCalledTimes(2)
+        expect(getRecommendations).toHaveBeenLastCalledWith(200)
     })
 
     it("returns an empty list for an empty library without calling AniList", async () => {

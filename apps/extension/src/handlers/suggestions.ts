@@ -35,6 +35,41 @@ async function setSuggestionsCache(cache: SuggestionsCache): Promise<void> {
     await browser.storage.local.set({ [SUGGESTIONS_KEY]: cache })
 }
 
+// Per-seed AniList recommendations cache. AniList "readers also liked" lists are very
+// stable, so caching each seed's recs for two weeks means a recompute (a Discover open, a
+// mark-as-read, a background revalidate) only calls AniList for seeds it hasn't seen or that
+// have expired - instead of re-fetching every seed every time. This is the difference
+// between ~60 AniList requests per recompute and ~0 once warm.
+const REC_CACHE_KEY = "anilistRecCache"
+const REC_CACHE_TTL = 14 * 24 * 60 * 60 * 1000
+const REC_CACHE_MAX = 300
+
+type RecCacheEntry = { recs: RecCandidate[]; fetchedAt: number }
+type RecCache = Record<string, RecCacheEntry>
+
+async function getRecCache(): Promise<RecCache> {
+    const stored = await browser.storage.local.get(REC_CACHE_KEY)
+    const raw = stored[REC_CACHE_KEY] as RecCache | undefined
+    return raw && typeof raw === "object" ? raw : {}
+}
+
+async function setRecCache(cache: RecCache): Promise<void> {
+    let toStore = cache
+    const keys = Object.keys(cache)
+    if (keys.length > REC_CACHE_MAX) {
+        // Keep the most-recently-fetched entries; drop the oldest.
+        const kept = Object.entries(cache)
+            .sort((a, b) => b[1].fetchedAt - a[1].fetchedAt)
+            .slice(0, REC_CACHE_MAX)
+        toStore = Object.fromEntries(kept)
+    }
+    try {
+        await browser.storage.local.set({ [REC_CACHE_KEY]: toStore })
+    } catch (error) {
+        console.warn("[AMR] AniList rec cache write failed", error)
+    }
+}
+
 // Owned titles carrying an anilistId, deduped to the most recently read entry per id
 // and capped to the most-recent MAX_SEED_TITLES so the fan-out stays bounded.
 function selectSeedTitles(library: LibraryManga[]): LibraryManga[] {
@@ -67,12 +102,25 @@ async function computeSuggestions(): Promise<Suggestion[]> {
     const anilistRecs = new Map<number, RecCandidate[]>()
     const fetchRecs = anilistProvider.getRecommendations?.bind(anilistProvider)
     if (fetchRecs) {
+        const recCache = await getRecCache()
+        const now = Date.now()
+        let cacheDirty = false
         for (const seed of seeds) {
             const anilistId = seed.anilistId
             if (typeof anilistId !== "number" || anilistRecs.has(anilistId)) continue
+            const cached = recCache[anilistId]
+            if (cached && now - cached.fetchedAt < REC_CACHE_TTL) {
+                // Fresh cache hit - no AniList call. (Empty recs are cached too, so a
+                // no-recommendation title isn't re-fetched on every recompute.)
+                if (cached.recs.length > 0) anilistRecs.set(anilistId, cached.recs)
+                continue
+            }
             const recs = await fetchRecs(anilistId)
+            recCache[anilistId] = { recs, fetchedAt: now }
+            cacheDirty = true
             if (recs.length > 0) anilistRecs.set(anilistId, recs)
         }
+        if (cacheDirty) await setRecCache(recCache)
     }
 
     const communityRecs = await loadCommunityRecs()
