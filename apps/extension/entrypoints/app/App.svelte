@@ -2950,9 +2950,14 @@
             // Keep just-added titles out even if the (stale-while-revalidate) cache still
             // carries them - the user logged them as read/planning, so they must not reappear.
             suggestions = fetched.filter(s => !quickAddedIds.has(s.anilistId))
+            suggestionsFailed = false
         } catch {
-            suggestions = []
+            // A failed refresh (AniList unreachable / rate-limited) must NOT blank the page -
+            // keep whatever we already have. The empty-state error only shows on a genuine
+            // cold start (no suggestions at all). A manual Refresh gets a toast so the user
+            // knows it didn't take.
             suggestionsFailed = true
+            if (force && suggestions.length > 0) showSugToast("Couldn't refresh right now - showing your last picks")
         } finally {
             suggestionsLoading = false
         }
