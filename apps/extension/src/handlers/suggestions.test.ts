@@ -8,7 +8,7 @@ import type { Suggestion } from "../suggestions"
 vi.stubGlobal("browser", fakeBrowser)
 
 vi.mock("../metadata/anilist", () => ({
-    anilistProvider: { getRecommendations: vi.fn() }
+    anilistProvider: { getRecommendations: vi.fn(), browseByGenre: vi.fn() }
 }))
 
 vi.mock("../community", async () => {
@@ -23,6 +23,7 @@ vi.mock("../community", async () => {
 const { db } = await import("../database")
 const { anilistProvider } = await import("../metadata/anilist")
 const getRecommendations = vi.mocked(anilistProvider.getRecommendations!)
+const browseByGenre = vi.mocked(anilistProvider.browseByGenre!)
 const community = await import("../community")
 const getCommunityProfile = vi.mocked(community.getCommunityProfile)
 const { suggestionsHandlers } = await import("./suggestions")
@@ -68,8 +69,10 @@ beforeEach(async () => {
     fakeBrowser.reset()
     vi.clearAllMocks()
     getRecommendations.mockReset()
+    browseByGenre.mockReset()
     await db.manga.clear()
     getRecommendations.mockResolvedValue([])
+    browseByGenre.mockResolvedValue([])
     getCommunityProfile.mockResolvedValue(disabledProfile)
 })
 
@@ -281,5 +284,41 @@ describe("suggestions:get - bughunt regressions", () => {
         const stored = await fakeBrowser.storage.local.get("suggestions")
         const cache = stored["suggestions"] as { suggestions: Suggestion[] }
         expect(cache.suggestions.map(s => s.anilistId)).toEqual([999])
+    })
+})
+
+describe("suggestions:get - genre fill", () => {
+    it("backfills a thin pool with top-genre browse picks, excluding owned", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned Action", anilistId: 100, genres: ["Action"] }))
+        // Only one weak rec -> pool is under MIN_POOL, so genre-fill kicks in.
+        getRecommendations.mockResolvedValue([{ anilistId: 999, title: "Rec Pick", genres: ["Action"] }])
+        browseByGenre.mockResolvedValue([
+            { anilistId: 100, title: "Owned Action", genres: ["Action"] }, // owned -> excluded
+            { anilistId: 999, title: "Rec Pick", genres: ["Action"] }, // already scored -> excluded
+            { anilistId: 555, title: "Genre Fill", genres: ["Action"], averageScore: 80 }
+        ])
+
+        const result = await getSuggestions()
+        const ids = result.map(s => s.anilistId)
+
+        expect(browseByGenre).toHaveBeenCalledWith("Action", expect.any(Number))
+        expect(ids).toContain(555)
+        expect(ids).toContain(999)
+        expect(ids).not.toContain(100)
+        // The real recommendation outranks the genre-fill pick.
+        expect(ids.indexOf(999)).toBeLessThan(ids.indexOf(555))
+    })
+
+    it("does not browse when the pool is already large enough", async () => {
+        await db.manga.put(ownedManga({ id: "m1", title: "Owned", anilistId: 100, genres: ["Action"] }))
+        const many: RecCandidate[] = Array.from({ length: 30 }, (_, i) => ({
+            anilistId: 1000 + i,
+            title: `Rec ${i}`
+        }))
+        getRecommendations.mockResolvedValue(many)
+
+        await getSuggestions()
+
+        expect(browseByGenre).not.toHaveBeenCalled()
     })
 })

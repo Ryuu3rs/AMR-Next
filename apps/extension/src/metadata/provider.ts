@@ -41,4 +41,7 @@ export interface MetadataProvider {
     // Direct sequels/side-stories of a title, for the "continue the series" rail.
     // Returns [] on no match or any network/parse failure.
     getSequels?(id: number): Promise<RecCandidate[]>
+    // Highest-rated titles in a genre, used only to backfill a thin suggestions pool.
+    // Returns [] on no match or any network/parse failure.
+    browseByGenre?(genre: string, perPage?: number): Promise<RecCandidate[]>
 }

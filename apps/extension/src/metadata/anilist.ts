@@ -6,6 +6,7 @@ import {
     type RecommendationsResponse
 } from "./recommendations"
 import { mapSequels, RELATIONS_QUERY, type RelationsResponse } from "./relations"
+import { mapBrowse, BROWSE_QUERY, type BrowseResponse } from "./browse"
 
 const ANILIST_GRAPHQL = "https://graphql.anilist.co"
 const MIN_INTERVAL_MS = 700 // ~85 req/min, under AniList's 90/min limit
@@ -144,6 +145,15 @@ export const anilistProvider: MetadataProvider = {
         try {
             const data = await query<{ Media: RelationsResponse }>(RELATIONS_QUERY, { id })
             return data?.Media ? mapSequels(data.Media) : []
+        } catch {
+            return []
+        }
+    },
+
+    async browseByGenre(genre: string, perPage = 20): Promise<RecCandidate[]> {
+        try {
+            const data = await query<BrowseResponse>(BROWSE_QUERY, { genre, perPage })
+            return data ? mapBrowse(data) : []
         } catch {
             return []
         }

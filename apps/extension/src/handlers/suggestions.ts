@@ -75,6 +75,53 @@ async function setRecCache(cache: RecCache): Promise<void> {
     }
 }
 
+// Genre-fill: when the library is too small/niche for AniList co-recommendations to fill the
+// page, backfill with the highest-rated titles in the user's top genres. Only fires when the
+// scored pool is below MIN_POOL, so a rich library never triggers it (and never pays the
+// extra calls). Cached per genre for a week; top genres change slowly.
+const GENRE_FILL_CACHE_KEY = "anilistGenreFillCache"
+const GENRE_FILL_TTL = 7 * 24 * 60 * 60 * 1000
+const MIN_POOL = 24
+const GENRE_FILL_GENRES = 4
+const GENRE_FILL_PER_GENRE = 20
+
+type GenreFillEntry = { candidates: RecCandidate[]; fetchedAt: number }
+type GenreFillCache = Record<string, GenreFillEntry>
+
+async function getGenreFillCache(): Promise<GenreFillCache> {
+    const stored = await browser.storage.local.get(GENRE_FILL_CACHE_KEY)
+    const raw = stored[GENRE_FILL_CACHE_KEY] as GenreFillCache | undefined
+    return raw && typeof raw === "object" ? raw : {}
+}
+
+async function setGenreFillCache(cache: GenreFillCache): Promise<void> {
+    try {
+        await browser.storage.local.set({ [GENRE_FILL_CACHE_KEY]: cache })
+    } catch (error) {
+        console.warn("[AMR] Genre-fill cache write failed", error)
+    }
+}
+
+// The user's most-common genres, most-frequent first.
+function topGenres(library: LibraryManga[], limit: number): string[] {
+    const counts = new Map<string, { name: string; count: number }>()
+    for (const manga of library) {
+        const seen = new Set<string>()
+        for (const genre of manga.genres ?? []) {
+            const key = genre.toLocaleLowerCase("en")
+            if (seen.has(key)) continue
+            seen.add(key)
+            const entry = counts.get(key)
+            if (entry) entry.count += 1
+            else counts.set(key, { name: genre, count: 1 })
+        }
+    }
+    return [...counts.values()]
+        .sort((a, b) => b.count - a.count)
+        .map(e => e.name)
+        .slice(0, limit)
+}
+
 // "Not interested" set: candidate anilistIds the user hid from Discover. Persisted so a
 // recompute (and the score engine) permanently excludes them - a hidden pick never comes
 // back. Bounded so a user who hides hundreds doesn't grow storage without limit; the oldest
@@ -264,15 +311,78 @@ async function computeSuggestions(): Promise<Suggestion[]> {
     }
 
     const communityRecs = await loadCommunityRecs()
-    // Cap the surfaced list - a large library can aggregate 100+ candidates, which is slow
-    // to render and more than anyone browses. The top slice by score is what matters.
-    return scoreSuggestions({
+    const scored = scoreSuggestions({
         library,
         anilistRecs,
         seedWeights,
         hiddenIds,
         ...(communityRecs ? { communityRecs } : {})
-    }).slice(0, MAX_SUGGESTIONS)
+    })
+
+    // Backfill a thin pool with top-rated titles in the user's genres. Skipped entirely once
+    // there are already enough real recommendations, so a rich library pays nothing for it.
+    const filled = scored.length < MIN_POOL ? await genreFill(library, scored, hiddenIds) : scored
+
+    // Cap the surfaced list - a large library can aggregate 100+ candidates, which is slow
+    // to render and more than anyone browses. The top slice by score is what matters.
+    return filled.slice(0, MAX_SUGGESTIONS)
+}
+
+// Append genre-fill candidates to a thin scored pool. Fill picks score below real
+// recommendations (a fixed base plus a small rating nudge) so they sit beneath anything the
+// co-recommendation engine surfaced, and are deduped against owned/hidden/already-scored.
+async function genreFill(library: LibraryManga[], scored: Suggestion[], hiddenIds: Set<number>): Promise<Suggestion[]> {
+    const browse = anilistProvider.browseByGenre?.bind(anilistProvider)
+    const genres = topGenres(library, GENRE_FILL_GENRES)
+    if (!browse || genres.length === 0) return scored
+
+    const ownedAnilistIds = new Set<number>()
+    const ownedTitles = new Set<string>()
+    for (const manga of library) {
+        if (typeof manga.anilistId === "number") ownedAnilistIds.add(manga.anilistId)
+        ownedTitles.add(normalizeTitle(manga.title))
+    }
+    const present = new Set(scored.map(s => s.anilistId))
+
+    const cache = await getGenreFillCache()
+    const now = Date.now()
+    let cacheDirty = false
+    const out = [...scored]
+
+    for (const genre of genres) {
+        const key = genre.toLocaleLowerCase("en")
+        let entry = cache[key]
+        if (!entry || now - entry.fetchedAt >= GENRE_FILL_TTL) {
+            entry = { candidates: await browse(genre, GENRE_FILL_PER_GENRE), fetchedAt: now }
+            cache[key] = entry
+            cacheDirty = true
+        }
+        for (const candidate of entry.candidates) {
+            if (present.has(candidate.anilistId)) continue
+            if (ownedAnilistIds.has(candidate.anilistId)) continue
+            if (hiddenIds.has(candidate.anilistId)) continue
+            if (ownedTitles.has(normalizeTitle(candidate.title))) continue
+            present.add(candidate.anilistId)
+            out.push({
+                anilistId: candidate.anilistId,
+                title: candidate.title,
+                ...(candidate.coverUrl ? { coverUrl: candidate.coverUrl } : {}),
+                ...(candidate.genres ? { genres: candidate.genres } : {}),
+                frequency: 0,
+                overlapScore: 0,
+                community: false,
+                score: 0.5 + ((candidate.averageScore ?? 0) / 100) * 0.4,
+                reasons: [],
+                ...(candidate.averageScore !== undefined ? { averageScore: candidate.averageScore } : {}),
+                ...(candidate.popularity !== undefined ? { popularity: candidate.popularity } : {})
+            })
+            if (out.length >= MAX_SUGGESTIONS) break
+        }
+        if (out.length >= MAX_SUGGESTIONS) break
+    }
+    if (cacheDirty) await setGenreFillCache(cache)
+    // Keep the whole pool ordered by score so fills interleave correctly beneath real recs.
+    return out.sort((a, b) => b.score - a.score || a.anilistId - b.anilistId)
 }
 
 // Shared across concurrent suggestions:get calls so the AniList fan-out runs once, not
