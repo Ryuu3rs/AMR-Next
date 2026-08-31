@@ -1,8 +1,10 @@
 import { db, type LibraryManga } from "../database"
 import { anilistProvider } from "../metadata/anilist"
 import type { RecCandidate } from "../metadata/recommendations"
-import { scoreSuggestions, type CommunityRec, type Suggestion } from "../suggestions"
+import { scoreSuggestions, diversifyOrder, type CommunityRec, type Suggestion } from "../suggestions"
 import { communityConfigured, getCommunityProfile } from "../community"
+import { effectiveReadingStatus } from "../reading-status"
+import { getSettings } from "../settings"
 import type { HandlerMap } from "../background/handler-types"
 
 const SUGGESTIONS_KEY = "suggestions"
@@ -70,6 +72,45 @@ async function setRecCache(cache: RecCache): Promise<void> {
     }
 }
 
+// "Not interested" set: candidate anilistIds the user hid from Discover. Persisted so a
+// recompute (and the score engine) permanently excludes them - a hidden pick never comes
+// back. Bounded so a user who hides hundreds doesn't grow storage without limit; the oldest
+// hides fall off first (they're the least likely to resurface as a top candidate anyway).
+const HIDDEN_KEY = "hiddenSuggestions"
+const HIDDEN_MAX = 1000
+
+async function getHiddenIds(): Promise<Set<number>> {
+    const stored = await browser.storage.local.get(HIDDEN_KEY)
+    const raw = stored[HIDDEN_KEY]
+    return new Set(Array.isArray(raw) ? raw.filter((n): n is number => typeof n === "number") : [])
+}
+
+async function setHiddenIds(ids: Set<number>): Promise<void> {
+    const arr = [...ids]
+    const trimmed = arr.length > HIDDEN_MAX ? arr.slice(arr.length - HIDDEN_MAX) : arr
+    await browser.storage.local.set({ [HIDDEN_KEY]: trimmed })
+}
+
+// How much a seed's recommendations count, from how the user actually engaged that seed.
+// A title they rated highly or finished is a stronger taste signal than one they dropped or
+// only plan to read. Multiplicative around a neutral 1.0 so an unrated, actively-read seed
+// behaves exactly as before this weighting existed.
+function seedWeight(manga: LibraryManga, now: number): number {
+    const ratingFactor = manga.rating && manga.rating > 0 ? 0.5 + manga.rating / 5 : 1
+    const status = effectiveReadingStatus(manga, { autoPauseDays: 0, now })
+    const statusFactor =
+        status === "dropped"
+            ? 0.3
+            : status === "paused"
+              ? 0.7
+              : status === "planning"
+                ? 0.5
+                : status === "completed"
+                  ? 1.2
+                  : 1
+    return ratingFactor * statusFactor
+}
+
 // Owned titles carrying an anilistId, deduped to the most recently read entry per id
 // and capped to the most-recent MAX_SEED_TITLES so the fan-out stays bounded.
 function selectSeedTitles(library: LibraryManga[]): LibraryManga[] {
@@ -98,12 +139,17 @@ async function loadCommunityRecs(): Promise<CommunityRec[] | undefined> {
 async function computeSuggestions(): Promise<Suggestion[]> {
     const library = await db.manga.toArray()
     const seeds = selectSeedTitles(library)
+    const now = Date.now()
+    const seedWeights = new Map<number, number>()
+    for (const seed of seeds) {
+        if (typeof seed.anilistId === "number") seedWeights.set(seed.anilistId, seedWeight(seed, now))
+    }
+    const hiddenIds = await getHiddenIds()
 
     const anilistRecs = new Map<number, RecCandidate[]>()
     const fetchRecs = anilistProvider.getRecommendations?.bind(anilistProvider)
     if (fetchRecs) {
         const recCache = await getRecCache()
-        const now = Date.now()
         let cacheDirty = false
         for (const seed of seeds) {
             const anilistId = seed.anilistId
@@ -129,6 +175,8 @@ async function computeSuggestions(): Promise<Suggestion[]> {
     return scoreSuggestions({
         library,
         anilistRecs,
+        seedWeights,
+        hiddenIds,
         ...(communityRecs ? { communityRecs } : {})
     }).slice(0, MAX_SUGGESTIONS)
 }
@@ -151,6 +199,17 @@ async function computeAndCache(prevCache: SuggestionsCache | null): Promise<Sugg
     return suggestions
 }
 
+// Read-time view transform applied to every returned list, cached or freshly computed:
+// drop anything the user has since hidden (so a hide takes effect instantly without waiting
+// for a recompute), then optionally re-order for genre variety. Kept out of the cached
+// payload so toggling "mix it up" or hiding a title reflects immediately - the stored list
+// stays a pure highest-score-first ordering.
+async function present(list: Suggestion[]): Promise<Suggestion[]> {
+    const [hiddenIds, settings] = await Promise.all([getHiddenIds(), getSettings()])
+    const visible = hiddenIds.size > 0 ? list.filter(s => !hiddenIds.has(s.anilistId)) : list
+    return settings.discoverDiversify ? diversifyOrder(visible) : visible
+}
+
 export const suggestionsHandlers: HandlerMap = {
     "suggestions:get": async request => {
         let cache: SuggestionsCache | null = null
@@ -159,7 +218,7 @@ export const suggestionsHandlers: HandlerMap = {
             // instead of rejecting (the never-throw contract this handler advertises).
             cache = await getSuggestionsCache()
             if (cache && Date.now() - cache.updatedAt < STALE_MS && !request.force) {
-                return cache.suggestions
+                return await present(cache.suggestions)
             }
 
             // A force must always run a FRESH compute reflecting the current library. If a
@@ -179,12 +238,35 @@ export const suggestionsHandlers: HandlerMap = {
             // request. Only a cold start (no cache) or an explicit force waits for it.
             if (cache && !request.force) {
                 void inflightCompute.catch(() => {})
-                return cache.suggestions
+                return await present(cache.suggestions)
             }
-            return await inflightCompute
+            return await present(await inflightCompute)
         } catch (error) {
             console.warn("[AMR] Suggestions computation failed", error)
-            return cache?.suggestions ?? []
+            return cache ? await present(cache.suggestions).catch(() => cache!.suggestions) : []
         }
+    },
+    // "Not interested": permanently exclude a candidate. Returns the new hidden-set size so
+    // the UI can confirm. Also drops it from the cached list right away so the grid updates
+    // even before the next recompute reaches the score engine's exclusion.
+    "suggestions:hide": async request => {
+        const hidden = await getHiddenIds()
+        hidden.add(request.anilistId)
+        await setHiddenIds(hidden)
+        const cache = await getSuggestionsCache()
+        if (cache) {
+            const pruned = cache.suggestions.filter(s => s.anilistId !== request.anilistId)
+            if (pruned.length !== cache.suggestions.length) {
+                await setSuggestionsCache({ ...cache, suggestions: pruned })
+            }
+        }
+        return { hidden: hidden.size }
+    },
+    // Undo a hide (the toast's "Undo"). The title reappears on the next recompute; there's
+    // no need to re-inject it into the cache since a force/stale refresh will pick it up.
+    "suggestions:unhide": async request => {
+        const hidden = await getHiddenIds()
+        if (hidden.delete(request.anilistId)) await setHiddenIds(hidden)
+        return { hidden: hidden.size }
     }
 }

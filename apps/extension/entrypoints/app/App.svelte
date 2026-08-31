@@ -2891,13 +2891,23 @@
     // anilist ids the user quick-added this session; filtered out of every suggestions fetch
     // so a stale cache can't re-surface a title they've already logged.
     const quickAddedIds = new Set<number>()
-    // Transient confirmation after a quick-add (mark-read / plan-to-read).
+    // Transient confirmation after a quick-add (mark-read / plan-to-read). An optional
+    // action (label + handler) renders as a button in the toast, used for "Undo" after
+    // hiding a suggestion.
     let sugToast = $state("")
+    let sugToastAction = $state<{ label: string; run: () => void } | null>(null)
     let sugToastTimer: ReturnType<typeof setTimeout> | undefined
-    function showSugToast(msg: string) {
+    function showSugToast(msg: string, action: { label: string; run: () => void } | null = null) {
         sugToast = msg
+        sugToastAction = action
         clearTimeout(sugToastTimer)
-        sugToastTimer = setTimeout(() => (sugToast = ""), 2800)
+        sugToastTimer = setTimeout(
+            () => {
+                sugToast = ""
+                sugToastAction = null
+            },
+            action ? 6000 : 2800
+        )
     }
     let suggestionsRequestedForVisit = $state(false)
     let suggestionsLoading = $state(false)
@@ -3047,6 +3057,32 @@
         } catch (cause) {
             showSugToast(`Add failed: ${cause instanceof Error ? cause.message : String(cause)}`)
         }
+    }
+    // "Not interested": hide a suggestion so the engine never surfaces it again. Remove it
+    // from the on-screen list immediately and offer an Undo - a mis-click shouldn't cost the
+    // pick permanently. Undo re-shows it on the next refresh.
+    async function hideSuggestion(s: Suggestion) {
+        sugMenuFor = null
+        suggestions = suggestions.filter(x => x.anilistId !== s.anilistId)
+        try {
+            await sendRuntimeMessage<{ hidden: number }>({ type: "suggestions:hide", anilistId: s.anilistId })
+            showSugToast(`Hidden “${s.title}”`, {
+                label: "Undo",
+                run: () => {
+                    void sendRuntimeMessage({ type: "suggestions:unhide", anilistId: s.anilistId })
+                        .then(() => loadSuggestions(false))
+                        .catch(() => {})
+                }
+            })
+        } catch (cause) {
+            showSugToast(`Couldn't hide: ${cause instanceof Error ? cause.message : String(cause)}`)
+        }
+    }
+    // Flip the "mix it up" ordering and re-render from the (cheap, cached) handler so the
+    // change is visible immediately without a fresh AniList fetch.
+    async function toggleDiversify() {
+        await updateSetting({ discoverDiversify: !(settings?.discoverDiversify ?? true) })
+        void loadSuggestions(false)
     }
     function suggestionWhy(s: Suggestion): string {
         if (s.reasons.length > 0) return `Recommended because you read ${s.reasons.slice(0, 2).join(", ")}`
@@ -3758,6 +3794,11 @@
                                 >Mark as already read</button>
                             <button type="button" role="menuitem" onclick={() => void quickAddSuggestion(s, "planning")}
                                 >Add to plan-to-read</button>
+                            <button
+                                type="button"
+                                role="menuitem"
+                                class="sug-menu-danger"
+                                onclick={() => void hideSuggestion(s)}>Not interested</button>
                         </div>
                     {/if}
                 </div>
@@ -3793,13 +3834,22 @@
             {/snippet}
             <div class="page-head">
                 <h1>Discover</h1>
-                <button
-                    type="button"
-                    class="btn-sm"
-                    disabled={suggestionsLoading}
-                    onclick={() => void loadSuggestions(true)}>
-                    {suggestionsLoading ? "Refreshing…" : "Refresh"}
-                </button>
+                <div class="disc-head-actions">
+                    <button
+                        type="button"
+                        class="btn-sm sug-mix-btn"
+                        class:on={settings?.discoverDiversify ?? true}
+                        aria-pressed={settings?.discoverDiversify ?? true}
+                        title="Reorder picks to break up runs of the same genre"
+                        onclick={() => void toggleDiversify()}>Mix it up</button>
+                    <button
+                        type="button"
+                        class="btn-sm"
+                        disabled={suggestionsLoading}
+                        onclick={() => void loadSuggestions(true)}>
+                        {suggestionsLoading ? "Refreshing…" : "Refresh"}
+                    </button>
+                </div>
             </div>
             {#if discoverFocus}
                 <div class="disc-focus-head">
@@ -6583,7 +6633,19 @@
 {/if}
 
 {#if sugToast}
-    <div class="sug-toast" role="status" aria-live="polite">{sugToast}</div>
+    <div class="sug-toast" role="status" aria-live="polite">
+        <span>{sugToast}</span>
+        {#if sugToastAction}
+            <button
+                type="button"
+                class="sug-toast-action"
+                onclick={() => {
+                    sugToastAction?.run()
+                    sugToast = ""
+                    sugToastAction = null
+                }}>{sugToastAction.label}</button>
+        {/if}
+    </div>
 {/if}
 
 {#if showConsentCard}

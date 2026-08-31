@@ -1812,12 +1812,28 @@ button:disabled {
 .sug-menu button:hover {
     background: var(--surface-2);
 }
+.sug-menu-danger {
+    color: var(--danger, #f87171);
+}
+.disc-head-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+/* "Mix it up" is a toggle styled as a pressed/unpressed pill: dim when off, accented on. */
+.sug-mix-btn.on {
+    border-color: var(--accent);
+    color: var(--accent);
+}
 .sug-toast {
     position: fixed;
     left: 50%;
     bottom: 24px;
     transform: translateX(-50%);
     z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 14px;
     background: var(--accent);
     color: #fff;
     padding: 10px 18px;
@@ -1826,6 +1842,19 @@ button:disabled {
     font-weight: 600;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
     max-width: min(520px, calc(100vw - 32px));
+}
+.sug-toast-action {
+    flex: 0 0 auto;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    background: transparent;
+    color: #fff;
+    font: inherit;
+    padding: 4px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.sug-toast-action:hover {
+    background: rgba(255, 255, 255, 0.18);
 }
 
 /* Owner broadcast announcement banner. */

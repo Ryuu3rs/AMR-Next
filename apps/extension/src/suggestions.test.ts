@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { scoreSuggestions, type CommunityRec } from "./suggestions"
+import { scoreSuggestions, diversifyOrder, type CommunityRec, type Suggestion } from "./suggestions"
 import type { LibraryManga } from "./database"
 import type { RecCandidate } from "./metadata/recommendations"
 
@@ -112,6 +112,97 @@ describe("scoreSuggestions", () => {
         const result = scoreSuggestions({ library, anilistRecs })
 
         expect(result.map(s => s.anilistId)).toEqual([100, 200, 300])
+    })
+})
+
+describe("scoreSuggestions - seed weighting", () => {
+    it("ranks a candidate from a heavily-weighted seed above one from a light seed", () => {
+        const library = [lib({ title: "Loved", anilistId: 1 }), lib({ title: "Meh", anilistId: 2 })]
+        // Each candidate is recommended by exactly one seed, so without weighting they tie on
+        // frequency and fall back to anilistId order (100 before 200). Weighting seed 2 far
+        // above seed 1 must flip that.
+        const anilistRecs = new Map<number, RecCandidate[]>([
+            [1, [rec(100, "From Loved")]],
+            [2, [rec(200, "From Meh")]]
+        ])
+        const seedWeights = new Map<number, number>([
+            [1, 0.3],
+            [2, 1.5]
+        ])
+
+        const result = scoreSuggestions({ library, anilistRecs, seedWeights })
+
+        expect(result[0]?.anilistId).toBe(200)
+        expect(result[1]?.anilistId).toBe(100)
+    })
+
+    it("defaults every seed to weight 1 when no map is given (unchanged behaviour)", () => {
+        const library = [lib({ title: "A", anilistId: 1 }), lib({ title: "B", anilistId: 2 })]
+        const anilistRecs = new Map<number, RecCandidate[]>([
+            [1, [rec(100, "Shared")]],
+            [2, [rec(100, "Shared")]]
+        ])
+
+        const result = scoreSuggestions({ library, anilistRecs })
+
+        expect(result[0]?.frequency).toBe(2)
+        // weightedFrequency (2 * 1) drives a score of 2 with no overlap/community.
+        expect(result[0]?.score).toBe(2)
+    })
+})
+
+describe("scoreSuggestions - hidden candidates", () => {
+    it("excludes a candidate whose anilistId is in hiddenIds", () => {
+        const library = [lib({ title: "Owned", anilistId: 1 })]
+        const anilistRecs = new Map<number, RecCandidate[]>([[1, [rec(100, "Hidden"), rec(101, "Shown")]]])
+
+        const result = scoreSuggestions({ library, anilistRecs, hiddenIds: new Set([100]) })
+
+        expect(result.map(s => s.anilistId)).toEqual([101])
+    })
+})
+
+describe("diversifyOrder", () => {
+    function sug(anilistId: number, score: number, genres: string[]): Suggestion {
+        return {
+            anilistId,
+            title: `t${anilistId}`,
+            genres,
+            frequency: 1,
+            overlapScore: 0,
+            community: false,
+            score,
+            reasons: []
+        }
+    }
+
+    it("breaks up a run of the same genre near the top", () => {
+        // Four isekai then one romance, all close in score. A pure sort keeps the romance
+        // last; diversify must pull it up so the opening isn't four identical-genre picks.
+        const list = [
+            sug(1, 5.0, ["Isekai"]),
+            sug(2, 4.9, ["Isekai"]),
+            sug(3, 4.8, ["Isekai"]),
+            sug(4, 4.7, ["Isekai"]),
+            sug(5, 4.6, ["Romance"])
+        ]
+
+        const out = diversifyOrder(list)
+
+        expect(out[0]?.anilistId).toBe(1)
+        // The romance should no longer be dead last - it jumps ahead of at least one isekai.
+        expect(out.findIndex(s => s.anilistId === 5)).toBeLessThan(4)
+    })
+
+    it("leaves a clearly stronger pick on top (small penalty only reshuffles near-ties)", () => {
+        const list = [sug(1, 100, ["Isekai"]), sug(2, 5, ["Isekai"]), sug(3, 4, ["Romance"])]
+
+        expect(diversifyOrder(list)[0]?.anilistId).toBe(1)
+    })
+
+    it("is a no-op for lists shorter than 3", () => {
+        const list = [sug(1, 5, ["A"]), sug(2, 4, ["A"])]
+        expect(diversifyOrder(list).map(s => s.anilistId)).toEqual([1, 2])
     })
 })
 

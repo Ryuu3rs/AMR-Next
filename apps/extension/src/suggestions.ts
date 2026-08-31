@@ -30,6 +30,13 @@ export type SuggestionsInput = {
     library: LibraryManga[]
     anilistRecs: Map<number, RecCandidate[]>
     communityRecs?: CommunityRec[]
+    // Per-seed influence, keyed by the seed's own anilistId. A highly-rated or completed
+    // seed pushes its recommendations harder than a dropped or plan-to-read one. Absent
+    // entries (and the whole map) default to weight 1, so scoring is unchanged without it.
+    seedWeights?: Map<number, number>
+    // Candidate anilistIds the user explicitly hid ("Not interested"). Excluded from output
+    // exactly like an already-owned title, so a recompute never resurfaces them.
+    hiddenIds?: Set<number>
 }
 
 // Rank weights. Frequency is the primary signal (AniList co-recommendation), overlap is
@@ -41,7 +48,12 @@ const COMMUNITY_BOOST = 2
 
 type Aggregate = {
     candidate: RecCandidate
+    // Distinct owned titles that recommended this candidate - the integer shown on the card
+    // ("because you read X, Y") and a tiebreak.
     frequency: number
+    // Sum of the recommending seeds' weights - what the score actually uses, so a single
+    // 5-star seed can outrank two lukewarm ones. Equals frequency when all weights are 1.
+    weightedFrequency: number
     reasons: string[]
     seenOwners: Set<number>
 }
@@ -57,7 +69,7 @@ function overlap(terms: string[] | undefined, profile: Map<string, number>, tota
 }
 
 export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
-    const { library, anilistRecs, communityRecs } = input
+    const { library, anilistRecs, communityRecs, seedWeights, hiddenIds } = input
 
     const ownedAnilistIds = new Set<number>()
     const ownedTitles = new Set<string>()
@@ -93,12 +105,14 @@ export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
     const aggregates = new Map<number, Aggregate>()
     for (const [ownerId, candidates] of anilistRecs) {
         const ownerTitle = ownerTitleById.get(ownerId)
+        const ownerWeight = seedWeights?.get(ownerId) ?? 1
         for (const candidate of candidates) {
             const existing = aggregates.get(candidate.anilistId)
             if (existing) {
                 if (!existing.seenOwners.has(ownerId)) {
                     existing.seenOwners.add(ownerId)
                     existing.frequency += 1
+                    existing.weightedFrequency += ownerWeight
                     if (ownerTitle && !existing.reasons.includes(ownerTitle)) existing.reasons.push(ownerTitle)
                 }
                 continue
@@ -106,6 +120,7 @@ export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
             aggregates.set(candidate.anilistId, {
                 candidate,
                 frequency: 1,
+                weightedFrequency: ownerWeight,
                 reasons: ownerTitle ? [ownerTitle] : [],
                 seenOwners: new Set([ownerId])
             })
@@ -116,6 +131,7 @@ export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
     for (const agg of aggregates.values()) {
         const { candidate } = agg
         if (ownedAnilistIds.has(candidate.anilistId)) continue
+        if (hiddenIds?.has(candidate.anilistId)) continue
         if (ownedTitles.has(normalizeTitle(candidate.title))) continue
 
         const genreOverlap = overlap(candidate.genres, genreProfile, genreTotal)
@@ -123,7 +139,7 @@ export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
         const overlapScore = Math.min(1, genreOverlap + authorOverlap)
         const community = communityTitles.has(normalizeTitle(candidate.title))
         const score =
-            agg.frequency * WEIGHT_FREQUENCY + overlapScore * WEIGHT_OVERLAP + (community ? COMMUNITY_BOOST : 0)
+            agg.weightedFrequency * WEIGHT_FREQUENCY + overlapScore * WEIGHT_OVERLAP + (community ? COMMUNITY_BOOST : 0)
 
         suggestions.push({
             anilistId: candidate.anilistId,
@@ -146,4 +162,44 @@ export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
             a.title.localeCompare(b.title)
     )
     return suggestions
+}
+
+// How hard "mix it up" pushes back on genre repetition. A small value: it only reshuffles
+// near-ties, never buries a clearly stronger pick under a weaker off-genre one.
+const DIVERSITY_PENALTY = 0.5
+
+// Re-order an already-scored list to break up runs of the same genre, so the grid doesn't
+// open with fifteen isekai in a row when that's the biggest slice of someone's library.
+// Greedy: repeatedly take the highest score MINUS a penalty for each already-picked title
+// sharing a genre. Pure and deterministic (ties fall back to the incoming order, which
+// scoreSuggestions already made total), so it's a stable, testable transform over the
+// output rather than a change to the scoring itself.
+export function diversifyOrder(suggestions: Suggestion[]): Suggestion[] {
+    if (suggestions.length < 3) return suggestions.slice()
+    const remaining = suggestions.slice()
+    const picked: Suggestion[] = []
+    const genreUse = new Map<string, number>()
+    while (remaining.length > 0) {
+        let bestIdx = 0
+        let bestAdjusted = -Infinity
+        for (let i = 0; i < remaining.length; i++) {
+            const candidate = remaining[i]!
+            let penalty = 0
+            for (const genre of candidate.genres ?? []) {
+                penalty += genreUse.get(genre.toLocaleLowerCase("en")) ?? 0
+            }
+            const adjusted = candidate.score - penalty * DIVERSITY_PENALTY
+            if (adjusted > bestAdjusted) {
+                bestAdjusted = adjusted
+                bestIdx = i
+            }
+        }
+        const [chosen] = remaining.splice(bestIdx, 1)
+        picked.push(chosen!)
+        for (const genre of chosen!.genres ?? []) {
+            const key = genre.toLocaleLowerCase("en")
+            genreUse.set(key, (genreUse.get(key) ?? 0) + 1)
+        }
+    }
+    return picked
 }

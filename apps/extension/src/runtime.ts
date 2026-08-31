@@ -207,6 +207,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("community:manga-stats"), mangaTitle: z.string().min(1) }),
     z.object({ type: z.literal("community:announcements") }),
     z.object({ type: z.literal("suggestions:get"), force: z.boolean().optional() }),
+    z.object({ type: z.literal("suggestions:hide"), anilistId: z.number().int().positive() }),
+    z.object({ type: z.literal("suggestions:unhide"), anilistId: z.number().int().positive() }),
     z.object({ type: z.literal("settings:get") }),
     z.object({
         type: z.literal("settings:update"),
@@ -232,7 +234,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
             autoPauseDays: z.number().int().min(0).max(3650).optional(),
             anilistImportPaused: z.boolean().optional(),
             anilistImportDropped: z.boolean().optional(),
-            anilistImportPlanning: z.boolean().optional()
+            anilistImportPlanning: z.boolean().optional(),
+            discoverDiversify: z.boolean().optional()
         })
     })
 ])

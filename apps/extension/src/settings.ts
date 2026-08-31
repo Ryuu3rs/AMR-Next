@@ -38,6 +38,10 @@ export type AppSettings = {
     // (manga:search + the streaming Home search) skips these so a big library isn't
     // querying every adapter every time. Empty = search all (default).
     searchDisabledSourceIds: string[]
+    // Discover "mix it up": re-order suggestions to break up runs of the same genre so the
+    // grid isn't dominated by whatever the biggest slice of the library is. On by default;
+    // turn off for a pure highest-score-first ordering.
+    discoverDiversify: boolean
 }
 
 const settingsKey = "settings"
@@ -64,7 +68,8 @@ export const defaultSettings: AppSettings = {
     anilistImportPaused: true,
     anilistImportDropped: true,
     anilistImportPlanning: false,
-    searchDisabledSourceIds: []
+    searchDisabledSourceIds: [],
+    discoverDiversify: true
 }
 
 export async function getSettings(): Promise<AppSettings> {
