@@ -3294,7 +3294,7 @@
             <button
                 type="button"
                 class="discord-btn"
-                onclick={() => void browser.tabs.create({ url: "https://discord.gg/23kS4gDtr" })}>
+                onclick={() => void browser.tabs.create({ url: "https://discord.gg/mVx4W4AQKx" })}>
                 <svg
                     width="16"
                     height="16"
