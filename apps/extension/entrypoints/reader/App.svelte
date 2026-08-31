@@ -1395,7 +1395,7 @@
                 </button>
                 <p class="track-note">
                     Want this site added? Report it on
-                    <a href="https://discord.gg/23kS4gDtr" target="_blank" rel="noopener">Discord</a>
+                    <a href="https://discord.gg/mVx4W4AQKx" target="_blank" rel="noopener">Discord</a>
                     or
                     <a href="https://github.com/Ryuu3rs/AMR-Next/issues" target="_blank" rel="noopener">GitHub</a>.
                 </p>
@@ -1417,7 +1417,7 @@
                 </button>
                 <p class="track-note">
                     Still broken? Report it on
-                    <a href="https://discord.gg/23kS4gDtr" target="_blank" rel="noopener">Discord</a>
+                    <a href="https://discord.gg/mVx4W4AQKx" target="_blank" rel="noopener">Discord</a>
                     or
                     <a href="https://github.com/Ryuu3rs/AMR-Next/issues" target="_blank" rel="noopener">GitHub</a>.
                 </p>
