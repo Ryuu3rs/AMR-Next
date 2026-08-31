@@ -83,4 +83,32 @@ describe("mapRecommendations", () => {
         expect(mapRecommendations({ recommendations: { nodes: [] } })).toEqual([])
         expect(mapRecommendations({ recommendations: null })).toEqual([])
     })
+
+    it("carries edge rating (clamped >=0), averageScore, and popularity when present", () => {
+        const raw: RecommendationsResponse = {
+            recommendations: {
+                nodes: [
+                    {
+                        rating: 42,
+                        mediaRecommendation: {
+                            id: 1,
+                            title: { english: "Strong" },
+                            averageScore: 88,
+                            popularity: 12000
+                        }
+                    },
+                    // A downvoted edge (negative rating) clamps to 0; a 0 averageScore is
+                    // treated as "unknown" and dropped, not carried as a real 0.
+                    {
+                        rating: -5,
+                        mediaRecommendation: { id: 2, title: { english: "Weak" }, averageScore: 0, popularity: 0 }
+                    }
+                ]
+            }
+        }
+        expect(mapRecommendations(raw)).toEqual([
+            { anilistId: 1, title: "Strong", recStrength: 42, averageScore: 88, popularity: 12000 },
+            { anilistId: 2, title: "Weak", recStrength: 0, popularity: 0 }
+        ])
+    })
 })

@@ -19,6 +19,11 @@ export type Suggestion = {
     score: number
     // Owned titles that led here, for the card's "because you read X, Y" line.
     reasons: string[]
+    // AniList community rating (0-100) and popularity (users with it listed), passed through
+    // for the "hidden gems" rail (highly rated, not widely read). Absent when AniList didn't
+    // return them.
+    averageScore?: number
+    popularity?: number
 }
 
 export type CommunityRec = {
@@ -45,6 +50,16 @@ export type SuggestionsInput = {
 const WEIGHT_FREQUENCY = 1
 const WEIGHT_OVERLAP = 3
 const COMMUNITY_BOOST = 2
+// Contribution of AniList recommendation strength, applied to a [0,1]-normalized strength
+// (log-scaled, since edge ratings span single digits to hundreds). Modest, so a strongly
+// endorsed edge nudges a candidate up without overriding how many owned titles led there.
+const WEIGHT_STRENGTH = 1.5
+
+// Map an unbounded edge rating to [0,1]: 0 -> 0, ~9 -> 0.5, >=99 -> 1. Deterministic.
+function normalizeStrength(strength: number): number {
+    if (strength <= 0) return 0
+    return Math.min(1, Math.log10(1 + strength) / 2)
+}
 
 type Aggregate = {
     candidate: RecCandidate
@@ -54,6 +69,10 @@ type Aggregate = {
     // Sum of the recommending seeds' weights - what the score actually uses, so a single
     // 5-star seed can outrank two lukewarm ones. Equals frequency when all weights are 1.
     weightedFrequency: number
+    // Strongest single AniList endorsement across the seeds that recommended this candidate
+    // (max of the edge ratings). One heavily-upvoted "readers also liked" edge is a better
+    // signal than several weak ones, so max (not sum) is the right aggregate.
+    maxStrength: number
     reasons: string[]
     seenOwners: Set<number>
 }
@@ -107,8 +126,10 @@ export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
         const ownerTitle = ownerTitleById.get(ownerId)
         const ownerWeight = seedWeights?.get(ownerId) ?? 1
         for (const candidate of candidates) {
+            const strength = candidate.recStrength ?? 0
             const existing = aggregates.get(candidate.anilistId)
             if (existing) {
+                if (strength > existing.maxStrength) existing.maxStrength = strength
                 if (!existing.seenOwners.has(ownerId)) {
                     existing.seenOwners.add(ownerId)
                     existing.frequency += 1
@@ -121,6 +142,7 @@ export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
                 candidate,
                 frequency: 1,
                 weightedFrequency: ownerWeight,
+                maxStrength: strength,
                 reasons: ownerTitle ? [ownerTitle] : [],
                 seenOwners: new Set([ownerId])
             })
@@ -139,7 +161,10 @@ export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
         const overlapScore = Math.min(1, genreOverlap + authorOverlap)
         const community = communityTitles.has(normalizeTitle(candidate.title))
         const score =
-            agg.weightedFrequency * WEIGHT_FREQUENCY + overlapScore * WEIGHT_OVERLAP + (community ? COMMUNITY_BOOST : 0)
+            agg.weightedFrequency * WEIGHT_FREQUENCY +
+            overlapScore * WEIGHT_OVERLAP +
+            normalizeStrength(agg.maxStrength) * WEIGHT_STRENGTH +
+            (community ? COMMUNITY_BOOST : 0)
 
         suggestions.push({
             anilistId: candidate.anilistId,
@@ -150,7 +175,9 @@ export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
             overlapScore,
             community,
             score,
-            reasons: agg.reasons
+            reasons: agg.reasons,
+            ...(candidate.averageScore !== undefined ? { averageScore: candidate.averageScore } : {}),
+            ...(candidate.popularity !== undefined ? { popularity: candidate.popularity } : {})
         })
     }
 

@@ -151,6 +151,38 @@ describe("scoreSuggestions - seed weighting", () => {
     })
 })
 
+describe("scoreSuggestions - AniList rec strength", () => {
+    it("ranks a strongly-endorsed edge above a weak one at equal frequency", () => {
+        const library = [lib({ title: "Seed", anilistId: 1 })]
+        const anilistRecs = new Map<number, RecCandidate[]>([
+            [
+                1,
+                [
+                    { anilistId: 100, title: "Weak edge", recStrength: 0 },
+                    { anilistId: 200, title: "Strong edge", recStrength: 120 }
+                ]
+            ]
+        ])
+
+        const result = scoreSuggestions({ library, anilistRecs })
+
+        expect(result[0]?.anilistId).toBe(200)
+        expect(result[1]?.anilistId).toBe(100)
+    })
+
+    it("passes averageScore and popularity through to the suggestion", () => {
+        const library = [lib({ title: "Seed", anilistId: 1 })]
+        const anilistRecs = new Map<number, RecCandidate[]>([
+            [1, [{ anilistId: 100, title: "Gem", averageScore: 90, popularity: 4000 }]]
+        ])
+
+        const result = scoreSuggestions({ library, anilistRecs })
+
+        expect(result[0]?.averageScore).toBe(90)
+        expect(result[0]?.popularity).toBe(4000)
+    })
+})
+
 describe("scoreSuggestions - hidden candidates", () => {
     it("excludes a candidate whose anilistId is in hiddenIds", () => {
         const library = [lib({ title: "Owned", anilistId: 1 })]

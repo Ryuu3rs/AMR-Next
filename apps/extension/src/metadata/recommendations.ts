@@ -13,6 +13,14 @@ export type RecCandidate = {
     // AniList recommendation nodes do not carry authors; kept optional so the engine
     // can score author overlap when a candidate is enriched from another source.
     authors?: string[]
+    // How strongly AniList users endorsed THIS recommendation edge (the node's net vote
+    // count). A widely-upvoted "if you liked X, read Y" is a stronger signal than a lone
+    // suggestion; the engine folds it into the score. Clamped to >= 0 (downvoted edges).
+    recStrength?: number
+    // The recommended title's own community rating (0-100) and popularity (number of users
+    // with it on a list). Used to surface "hidden gems": highly rated but not widely read.
+    averageScore?: number
+    popularity?: number
 }
 
 type RecMedia = {
@@ -20,11 +28,13 @@ type RecMedia = {
     title?: { romaji?: string | null; english?: string | null; native?: string | null } | null
     coverImage?: { large?: string | null; extraLarge?: string | null } | null
     genres?: (string | null)[] | null
+    averageScore?: number | null
+    popularity?: number | null
 }
 
 export type RecommendationsResponse = {
     recommendations?: {
-        nodes?: ({ mediaRecommendation?: RecMedia | null } | null)[] | null
+        nodes?: ({ rating?: number | null; mediaRecommendation?: RecMedia | null } | null)[] | null
     } | null
 } | null
 
@@ -33,11 +43,14 @@ export const RECOMMENDATIONS_QUERY = `
         Media(id: $id, type: MANGA) {
             recommendations(sort: RATING_DESC) {
                 nodes {
+                    rating
                     mediaRecommendation {
                         id
                         title { romaji english native }
                         coverImage { large extraLarge }
                         genres
+                        averageScore
+                        popularity
                     }
                 }
             }
@@ -60,11 +73,18 @@ export function mapRecommendations(raw: RecommendationsResponse): RecCandidate[]
         seen.add(media.id)
         const coverUrl = media.coverImage?.extraLarge ?? media.coverImage?.large ?? undefined
         const genres = (media.genres ?? []).filter((g): g is string => typeof g === "string" && g.length > 0)
+        const recStrength = typeof node?.rating === "number" ? Math.max(0, node.rating) : undefined
+        const averageScore =
+            typeof media.averageScore === "number" && media.averageScore > 0 ? media.averageScore : undefined
+        const popularity = typeof media.popularity === "number" && media.popularity >= 0 ? media.popularity : undefined
         out.push({
             anilistId: media.id,
             title,
             ...(coverUrl ? { coverUrl } : {}),
-            ...(genres.length > 0 ? { genres } : {})
+            ...(genres.length > 0 ? { genres } : {}),
+            ...(recStrength !== undefined ? { recStrength } : {}),
+            ...(averageScore !== undefined ? { averageScore } : {}),
+            ...(popularity !== undefined ? { popularity } : {})
         })
     }
     return out

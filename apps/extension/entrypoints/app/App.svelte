@@ -3153,6 +3153,19 @@
         }
         return rails
     })
+    // "Hidden gems": highly rated on AniList but not widely read. Filter to well-scored picks
+    // that carry a popularity figure, then surface the LEAST popular of them - a great title
+    // most people haven't found. Needs a few to be worth a rail of its own.
+    const hiddenGems = $derived.by(() => {
+        const scored = suggestions.filter(s => (s.averageScore ?? 0) >= 75 && typeof s.popularity === "number")
+        if (scored.length < 4) return []
+        return [...scored]
+            .sort(
+                (a, b) =>
+                    (a.popularity as number) - (b.popularity as number) || (b.averageScore ?? 0) - (a.averageScore ?? 0)
+            )
+            .slice(0, 15)
+    })
     // Focus mode: "Find similar" on a library title opens Discover scoped to that title's
     // picks (the suggestions whose `reasons` cite it). Null = the full Discover page.
     let discoverFocus = $state<string | null>(null)
@@ -3997,6 +4010,9 @@
                 {#if !sugFiltersActive}
                     <!-- Supplementary discovery rails, below the main picks so the familiar
                          top-3 + genre-filter layout leads. Hidden while a filter is active. -->
+                    {#if hiddenGems.length > 0}
+                        {@render rail("Hidden gems", hiddenGems)}
+                    {/if}
                     {#each becauseYouReadRails as r (r.title)}
                         {@render rail(`Because you read ${r.title}`, r.items)}
                     {/each}
