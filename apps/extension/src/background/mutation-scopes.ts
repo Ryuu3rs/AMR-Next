@@ -146,6 +146,7 @@ export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<Runt
     "community:manga-stats",
     "community:announcements",
     "suggestions:get",
+    "suggestions:continue",
     // hide/unhide persist a small storage.local set the Discover tab re-reads on its own
     // suggestions:get; no live-bus scope covers Discover, so they belong here not in
     // MUTATION_SCOPES (same rationale as community profile writes).

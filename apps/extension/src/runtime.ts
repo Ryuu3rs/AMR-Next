@@ -207,6 +207,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("community:manga-stats"), mangaTitle: z.string().min(1) }),
     z.object({ type: z.literal("community:announcements") }),
     z.object({ type: z.literal("suggestions:get"), force: z.boolean().optional() }),
+    z.object({ type: z.literal("suggestions:continue") }),
     z.object({ type: z.literal("suggestions:hide"), anilistId: z.number().int().positive() }),
     z.object({ type: z.literal("suggestions:unhide"), anilistId: z.number().int().positive() }),
     z.object({ type: z.literal("settings:get") }),

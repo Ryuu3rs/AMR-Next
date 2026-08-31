@@ -2912,6 +2912,10 @@
     let suggestionsRequestedForVisit = $state(false)
     let suggestionsLoading = $state(false)
     let suggestionsFailed = $state(false)
+    // "Continue the series": sequels of read titles the user doesn't own. Loaded once per
+    // Discover visit alongside the main suggestions; filtered of anything just quick-added.
+    let nextInSeries = $state<Suggestion[]>([])
+    const visibleNextInSeries = $derived(nextInSeries.filter(s => !quickAddedIds.has(s.anilistId)))
     const communitySuggestions = $derived(suggestions.filter(s => s.community))
     // Suggestions-tab filters. Genre keys are lowercased; a suggestion must carry ALL
     // selected genres (AND narrowing). Community-only keeps just the "readers also read"
@@ -2996,6 +3000,13 @@
             suggestionsLoading = false
         }
     }
+    async function loadNextInSeries() {
+        try {
+            nextInSeries = await sendRuntimeMessage<Suggestion[]>({ type: "suggestions:continue" })
+        } catch {
+            // A failed load just means no rail this visit - never blocks the rest of Discover.
+        }
+    }
     $effect(() => {
         // One load attempt per visit to the tab: the flag guards against re-firing while
         // we stay on the tab, and resets when we leave, so a failed first load retries on
@@ -3004,6 +3015,7 @@
             if (!suggestionsRequestedForVisit) {
                 suggestionsRequestedForVisit = true
                 void loadSuggestions(false)
+                void loadNextInSeries()
             }
         } else {
             suggestionsRequestedForVisit = false
@@ -3889,6 +3901,9 @@
                         : "No suggestions yet. Add a few titles to your library so we can learn what you like."}
                 </p>
             {:else}
+                {#if visibleNextInSeries.length > 0 && !sugFiltersActive}
+                    {@render rail("Continue the series", visibleNextInSeries)}
+                {/if}
                 <h2 class="podium-heading">Top picks for you</h2>
                 <p class="muted" style="margin-top:-4px;text-align:center">Based on the genres and authors you read.</p>
                 <div class="sug-filters">

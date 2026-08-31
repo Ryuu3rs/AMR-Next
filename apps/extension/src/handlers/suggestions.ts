@@ -1,13 +1,16 @@
+import { normalizeTitle } from "@amr/normalize"
 import { db, type LibraryManga } from "../database"
 import { anilistProvider } from "../metadata/anilist"
 import type { RecCandidate } from "../metadata/recommendations"
 import { scoreSuggestions, diversifyOrder, type CommunityRec, type Suggestion } from "../suggestions"
 import { communityConfigured, getCommunityProfile } from "../community"
-import { effectiveReadingStatus } from "../reading-status"
+import { effectiveReadingStatus, neverRead } from "../reading-status"
 import { getSettings } from "../settings"
 import type { HandlerMap } from "../background/handler-types"
 
 const SUGGESTIONS_KEY = "suggestions"
+// Cached "continue the series" rail (same {suggestions, updatedAt} shape as SUGGESTIONS_KEY).
+const NEXT_KEY = "nextInSeries"
 
 // Stale-while-revalidate window: a fresh cache is returned as-is, an older one is
 // recomputed on the next request (or immediately when force is set).
@@ -109,6 +112,97 @@ function seedWeight(manga: LibraryManga, now: number): number {
                   ? 1.2
                   : 1
     return ratingFactor * statusFactor
+}
+
+// Per-seed sequel cache. Media relations almost never change, so a long TTL means the
+// "continue the series" rail costs at most one AniList call per read title, once. Only READ
+// titles are checked (planning/unread have nothing to continue), capped so a huge library
+// doesn't fan out - "what to read next" matters most for what you're actively reading.
+const SEQUEL_CACHE_KEY = "anilistSequelCache"
+const SEQUEL_CACHE_TTL = 30 * 24 * 60 * 60 * 1000
+const SEQUEL_CACHE_MAX = 300
+const MAX_SEQUEL_SEEDS = 25
+
+type SequelCacheEntry = { sequels: RecCandidate[]; fetchedAt: number }
+type SequelCache = Record<string, SequelCacheEntry>
+
+async function getSequelCache(): Promise<SequelCache> {
+    const stored = await browser.storage.local.get(SEQUEL_CACHE_KEY)
+    const raw = stored[SEQUEL_CACHE_KEY] as SequelCache | undefined
+    return raw && typeof raw === "object" ? raw : {}
+}
+
+async function setSequelCache(cache: SequelCache): Promise<void> {
+    let toStore = cache
+    const keys = Object.keys(cache)
+    if (keys.length > SEQUEL_CACHE_MAX) {
+        toStore = Object.fromEntries(
+            Object.entries(cache)
+                .sort((a, b) => b[1].fetchedAt - a[1].fetchedAt)
+                .slice(0, SEQUEL_CACHE_MAX)
+        )
+    }
+    try {
+        await browser.storage.local.set({ [SEQUEL_CACHE_KEY]: toStore })
+    } catch (error) {
+        console.warn("[AMR] AniList sequel cache write failed", error)
+    }
+}
+
+// "Continue the series": for the titles the user has actually read, find their direct sequels
+// that aren't already owned. Returned as Suggestion-shaped rows so the Discover rail can reuse
+// the same card. Bounded + long-cached (see the constants above) so it's near-free once warm.
+async function computeNextInSeries(): Promise<Suggestion[]> {
+    const fetchSequels = anilistProvider.getSequels?.bind(anilistProvider)
+    if (!fetchSequels) return []
+
+    const library = await db.manga.toArray()
+    const ownedAnilistIds = new Set<number>()
+    const ownedTitles = new Set<string>()
+    for (const manga of library) {
+        if (typeof manga.anilistId === "number") ownedAnilistIds.add(manga.anilistId)
+        ownedTitles.add(normalizeTitle(manga.title))
+    }
+
+    const readSeeds = library
+        .filter(m => typeof m.anilistId === "number" && !neverRead(m))
+        .sort((a, b) => (b.lastReadAt ?? 0) - (a.lastReadAt ?? 0))
+        .slice(0, MAX_SEQUEL_SEEDS)
+
+    const cache = await getSequelCache()
+    const now = Date.now()
+    let cacheDirty = false
+    const out: Suggestion[] = []
+    const emitted = new Set<number>()
+
+    for (const seed of readSeeds) {
+        const anilistId = seed.anilistId as number
+        let entry = cache[anilistId]
+        if (!entry || now - entry.fetchedAt >= SEQUEL_CACHE_TTL) {
+            entry = { sequels: await fetchSequels(anilistId), fetchedAt: now }
+            cache[anilistId] = entry
+            cacheDirty = true
+        }
+        for (const sequel of entry.sequels) {
+            if (ownedAnilistIds.has(sequel.anilistId)) continue
+            if (ownedTitles.has(normalizeTitle(sequel.title))) continue
+            if (emitted.has(sequel.anilistId)) continue
+            emitted.add(sequel.anilistId)
+            out.push({
+                anilistId: sequel.anilistId,
+                title: sequel.title,
+                ...(sequel.coverUrl ? { coverUrl: sequel.coverUrl } : {}),
+                ...(sequel.genres ? { genres: sequel.genres } : {}),
+                frequency: 1,
+                overlapScore: 0,
+                community: false,
+                score: 0,
+                reasons: [seed.title]
+            })
+        }
+    }
+    if (cacheDirty) await setSequelCache(cache)
+    return out
 }
 
 // Owned titles carrying an anilistId, deduped to the most recently read entry per id
@@ -268,5 +362,40 @@ export const suggestionsHandlers: HandlerMap = {
         const hidden = await getHiddenIds()
         if (hidden.delete(request.anilistId)) await setHiddenIds(hidden)
         return { hidden: hidden.size }
+    },
+    // "Continue the series" rail: sequels of read titles the user doesn't own yet. Same
+    // stale-while-revalidate discipline as suggestions:get - a fresh cache paints instantly,
+    // a stale one is returned while a background recompute refreshes it. Hidden titles are
+    // filtered here too so "Not interested" also suppresses a sequel.
+    "suggestions:continue": async () => {
+        let cache: SuggestionsCache | null = null
+        try {
+            const stored = await browser.storage.local.get(NEXT_KEY)
+            cache = (stored[NEXT_KEY] as SuggestionsCache | undefined) ?? null
+            const hidden = await getHiddenIds()
+            const filterHidden = (list: Suggestion[]) =>
+                hidden.size > 0 ? list.filter(s => !hidden.has(s.anilistId)) : list
+
+            if (cache && Date.now() - cache.updatedAt < STALE_MS) {
+                return filterHidden(cache.suggestions)
+            }
+            const compute = computeNextInSeries().then(async suggestions => {
+                if (suggestions.length === 0 && cache) return cache.suggestions
+                try {
+                    await browser.storage.local.set({ [NEXT_KEY]: { suggestions, updatedAt: Date.now() } })
+                } catch (error) {
+                    console.warn("[AMR] Continue-series cache write failed", error)
+                }
+                return suggestions
+            })
+            if (cache) {
+                void compute.catch(() => {})
+                return filterHidden(cache.suggestions)
+            }
+            return filterHidden(await compute)
+        } catch (error) {
+            console.warn("[AMR] Continue-series computation failed", error)
+            return cache?.suggestions ?? []
+        }
     }
 }

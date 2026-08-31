@@ -38,4 +38,7 @@ export interface MetadataProvider {
     // Titles that "readers who liked this also liked", for the Suggestions engine.
     // Returns [] on no match or any network/parse failure so callers can fall through.
     getRecommendations?(id: number): Promise<RecCandidate[]>
+    // Direct sequels/side-stories of a title, for the "continue the series" rail.
+    // Returns [] on no match or any network/parse failure.
+    getSequels?(id: number): Promise<RecCandidate[]>
 }
