@@ -3,6 +3,7 @@ import { addSyncedManga, applySyncedManga, db, removeManga, type LibraryManga } 
 import {
     AccountAuthError,
     apiAccountStatus,
+    apiLinkCommunity,
     apiPull,
     apiPush,
     clearAccountProfile,
@@ -17,6 +18,7 @@ import {
 } from "../account"
 import { accountAlarmName, configureAccountAlarm } from "../background/alarms"
 import type { HandlerMap } from "../background/handler-types"
+import { getCommunityProfile } from "../community"
 import { publishLive } from "../live"
 
 const PUSH_BATCH = 400
@@ -145,11 +147,15 @@ export async function runAccountSync(): Promise<AccountProfile> {
         for (const item of pulled.items) libraryChanged = (await applyRemoteItem(item)) || libraryChanged
 
         const status = await apiAccountStatus(token).catch(() => null)
+        const community = await getCommunityProfile()
+        const shouldLink = community.enabled && community.userId && community.userId !== profile.communityLinkedId
+        const linked = shouldLink ? await apiLinkCommunity(token, community.userId).catch(() => null) : null
         profile = await updateAccountProfile({
             lastPushAt: newestPushed,
             lastPullAt: pulled.serverTime,
             lastSyncAt: Date.now(),
-            ...(status ? statusPatch(status) : {})
+            ...(status ? statusPatch(status) : {}),
+            ...(linked?.ok ? { communityLinkedId: community.userId } : {})
         })
         if (libraryChanged) publishLive(["library", "chapters"])
         return profile

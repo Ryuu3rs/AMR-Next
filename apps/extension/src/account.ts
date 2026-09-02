@@ -25,6 +25,8 @@ export type AccountProfile = {
     // Set when the server rejected the token (revoked on the site). Sync stops until re-linked.
     invalid: boolean
     autoSync: boolean
+    // The community id last confirmed linked on the site; re-sent only when it changes.
+    communityLinkedId?: string
 }
 
 const defaultProfile: AccountProfile = { lastPushAt: 0, lastPullAt: 0, lastSyncAt: 0, invalid: false, autoSync: true }
@@ -145,4 +147,10 @@ export function apiPush(token: string, items: SyncItem[]): Promise<PushResult> {
 export function apiPull(token: string, since: number): Promise<{ items: SyncItem[]; serverTime: number }> {
     const q = since > 0 ? `?since=${since}` : ""
     return request(token, `/api/sync/library${q}`)
+}
+
+// Ties this device's anonymous community id (amr-api) to the account so the site can own the
+// community history. Only sent when community features are enabled here.
+export function apiLinkCommunity(token: string, communityUserId: string): Promise<{ ok: boolean }> {
+    return request(token, "/api/sync/link", { method: "POST", body: JSON.stringify({ communityUserId }) })
 }
