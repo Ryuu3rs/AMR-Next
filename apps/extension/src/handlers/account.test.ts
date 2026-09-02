@@ -81,7 +81,7 @@ describe("account:link", () => {
     it("links the community id once when community features are on", async () => {
         const { updateCommunityProfile } = await import("../community")
         await updateCommunityProfile({ enabled: true, userId: "reader-abc-123", username: "Reader1234" })
-        const link = vi.fn(() => json({ ok: true, communityUserId: "reader-abc-123" }))
+        const link = vi.fn((_init?: RequestInit) => json({ ok: true, communityUserId: "reader-abc-123" }))
         routeFetch({
             "GET /api/sync/status": () => json(statusBody),
             "POST /api/sync/library": () => json({ accepted: 0, rejected: [], serverTime: 5000 }),
@@ -90,9 +90,9 @@ describe("account:link", () => {
         })
 
         const profile = await accountHandlers["account:link"]!({ type: "account:link", token: TOKEN }, ctx)
-        expect(profile.communityLinkedId).toBe("reader-abc-123")
+        expect(profile).toMatchObject({ communityLinkedId: "reader-abc-123" })
         expect(link).toHaveBeenCalledTimes(1)
-        expect(JSON.parse(link.mock.calls[0]![0]!.body as string)).toEqual({ communityUserId: "reader-abc-123" })
+        expect(JSON.parse(String(link.mock.calls[0]![0]!.body))).toEqual({ communityUserId: "reader-abc-123" })
 
         await runAccountSync()
         expect(link).toHaveBeenCalledTimes(1)
