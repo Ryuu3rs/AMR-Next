@@ -108,3 +108,37 @@ test("delete + /admin/stats", async () => {
     assert.ok(typeof stats.users === "number")
     assert.ok(typeof stats.announcements === "number")
 })
+
+test("affiliate click tracking + admin aggregate", async () => {
+    assert.equal((await app.request("/admin/affiliate")).status, 403)
+
+    const post = (body: unknown) =>
+        app.request("/affiliate/click", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        })
+    assert.equal((await post({ title: "no source" })).status, 400)
+    assert.equal((await post({ source: "amazon", title: "Chainsaw Man", region: "GB" })).status, 200)
+    assert.equal((await post({ source: "amazon", title: "Chainsaw Man", region: "not-a-region" })).status, 200)
+    assert.equal((await post({ source: "viz", title: "Berserk" })).status, 200)
+
+    const stats = (await (await app.request("/admin/affiliate?days=7", { headers: AUTH })).json()) as {
+        days: number
+        total: number
+        window: number
+        bySource: Array<{ source: string; count: number }>
+        byRegion: Array<{ region: string; count: number }>
+        topTitles: Array<{ title: string; count: number }>
+    }
+    assert.equal(stats.days, 7)
+    assert.equal(stats.total, 3)
+    assert.equal(stats.window, 3)
+    assert.deepEqual(stats.bySource[0], { source: "amazon", count: 2 })
+    assert.deepEqual(stats.topTitles[0], { title: "Chainsaw Man", count: 2 })
+    assert.ok(stats.byRegion.some(r => r.region === "GB" && r.count === 1))
+    assert.ok(
+        stats.byRegion.some(r => r.region === "??" && r.count === 2),
+        "invalid region stored as null"
+    )
+})

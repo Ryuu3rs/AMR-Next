@@ -20,6 +20,8 @@ import {
     getRecommendations,
     getCoReadRecommendations,
     getCommunityStats,
+    recordAffiliateClick,
+    getAffiliateStats,
     upsertRating,
     getMangaStats,
     createAnnouncement,
@@ -264,6 +266,30 @@ app.get("/announcements", c => {
     const browser = c.req.query("browser")?.slice(0, MAX_BROWSER_LEN) ?? null
     const version = c.req.query("version")?.slice(0, MAX_VERSION_LEN) ?? null
     return c.json({ announcements: listActiveAnnouncements(browser, version) })
+})
+
+// Outbound click from the website's buy-legit gateway (server-to-server from weeb.ltd's
+// /api/out redirect). Anonymous by design; bounded + rate-limited so it can't be flooded.
+const MAX_AFFILIATE_SOURCE_LEN = 32
+app.post("/affiliate/click", async c => {
+    if (!withinRateLimit(c.req.header("x-forwarded-for"), "affiliate-click", 120, 60 * 1000)) {
+        return c.json({ error: "Too many requests" }, 429)
+    }
+    const body = await c.req
+        .json<{ source?: string; title?: string; region?: string }>()
+        .catch(() => ({}) as { source?: string; title?: string; region?: string })
+    if (!isBoundedString(body.source, MAX_AFFILIATE_SOURCE_LEN) || !isBoundedString(body.title, MAX_TITLE_LEN)) {
+        return c.json({ error: "source and title required" }, 400)
+    }
+    const region = typeof body.region === "string" && /^[A-Z]{2}$/.test(body.region) ? body.region : null
+    recordAffiliateClick(body.source, body.title, region)
+    return c.json({ ok: true })
+})
+
+app.get("/admin/affiliate", c => {
+    if (!isAdmin(c.req.header("authorization"))) return c.json({ error: "Forbidden" }, 403)
+    const days = Math.min(365, Math.max(1, Number(c.req.query("days")) || 30))
+    return c.json(getAffiliateStats(days))
 })
 
 app.post("/events", async c => {

@@ -72,6 +72,17 @@ db.exec(`
         created_at   INTEGER NOT NULL DEFAULT (unixepoch())
     );
     CREATE INDEX IF NOT EXISTS idx_announcements_window ON announcements(starts_at, ends_at);
+
+    -- Outbound affiliate / official-source clicks from the website's buy-legit gateway.
+    -- No user identity: just which source, which title, which storefront region, when.
+    CREATE TABLE IF NOT EXISTS affiliate_clicks (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        source     TEXT NOT NULL,
+        title      TEXT NOT NULL,
+        region     TEXT,
+        clicked_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_affiliate_clicks_time ON affiliate_clicks(clicked_at);
 `)
 
 // Additive migration for existing DBs: consent bookkeeping on users. better-sqlite3's
@@ -460,4 +471,46 @@ export function getAdminStats(): {
         events: count("SELECT COUNT(*) as n FROM events"),
         announcements: count("SELECT COUNT(*) as n FROM announcements")
     }
+}
+
+// --- Affiliate click tracking (website buy-legit gateway) ---
+
+export function recordAffiliateClick(source: string, title: string, region: string | null): void {
+    db.prepare("INSERT INTO affiliate_clicks (source, title, region) VALUES (?, ?, ?)").run(source, title, region)
+}
+
+export type AffiliateStats = {
+    days: number
+    total: number
+    window: number
+    bySource: Array<{ source: string; count: number }>
+    byRegion: Array<{ region: string; count: number }>
+    topTitles: Array<{ title: string; count: number }>
+}
+
+export function getAffiliateStats(days: number): AffiliateStats {
+    const since = Math.floor(Date.now() / 1000) - days * 86400
+    const total = (db.prepare("SELECT COUNT(*) as n FROM affiliate_clicks").get() as { n: number }).n
+    const window = (
+        db.prepare("SELECT COUNT(*) as n FROM affiliate_clicks WHERE clicked_at >= ?").get(since) as { n: number }
+    ).n
+    const bySource = db
+        .prepare(
+            `SELECT source, COUNT(*) as count FROM affiliate_clicks WHERE clicked_at >= ?
+             GROUP BY source ORDER BY count DESC`
+        )
+        .all(since) as Array<{ source: string; count: number }>
+    const byRegion = db
+        .prepare(
+            `SELECT COALESCE(region, '??') as region, COUNT(*) as count FROM affiliate_clicks
+             WHERE clicked_at >= ? GROUP BY region ORDER BY count DESC`
+        )
+        .all(since) as Array<{ region: string; count: number }>
+    const topTitles = db
+        .prepare(
+            `SELECT title, COUNT(*) as count FROM affiliate_clicks WHERE clicked_at >= ?
+             GROUP BY title ORDER BY count DESC LIMIT 25`
+        )
+        .all(since) as Array<{ title: string; count: number }>
+    return { days, total, window, bySource, byRegion, topTitles }
 }
