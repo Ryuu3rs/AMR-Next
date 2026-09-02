@@ -21,6 +21,8 @@ async function readEnvOrigin(name) {
 
 const communityApiOrigin = await readEnvOrigin("VITE_COMMUNITY_API_ORIGIN")
 const metadataApiOrigin = await readEnvOrigin("VITE_METADATA_API_ORIGIN")
+// Optional dev-server origin for weeb.ltd account sync; the production origin is required.
+const weebSiteOrigin = await readEnvOrigin("VITE_WEEB_SITE_ORIGIN")
 
 const allowedPermissions = [
     "alarms",
@@ -94,6 +96,7 @@ const allowedRequiredHosts = [
     "https://tritinia.org/*",
     "https://uploads.mangadex.org/*",
     "https://webtoons.com/*",
+    "https://weeb.ltd/*",
     "https://weebcentral.com/*",
     "https://www.comix.to/*",
     "https://www.dynasty-scans.com/*",
@@ -143,7 +146,7 @@ for (const [browserName, extensionDirectory] of [
         assert.equal(manifest.manifest_version, 3)
         assert.deepEqual([...manifest.permissions].sort(), allowedPermissions)
         const actualHosts = [...manifest.host_permissions]
-            .filter(h => h !== communityApiOrigin && h !== metadataApiOrigin)
+            .filter(h => h !== communityApiOrigin && h !== metadataApiOrigin && h !== weebSiteOrigin)
             .sort()
         assert.deepEqual(actualHosts, [...allowedRequiredHosts].sort())
         assert.equal(manifest.optional_host_permissions, undefined)

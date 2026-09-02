@@ -470,6 +470,16 @@ export async function clearHistory(): Promise<void> {
     })
 }
 
+// Account-sync writes (handlers/account.ts). A pulled server copy is applied only after the
+// caller has checked it is newer than the local row, so these are plain writes with no merge.
+export async function applySyncedManga(mangaId: string, patch: Partial<LibraryManga>): Promise<void> {
+    await db.manga.update(mangaId, patch)
+}
+
+export async function addSyncedManga(record: LibraryManga): Promise<void> {
+    await db.manga.put(record)
+}
+
 export async function removeManga(mangaId: string): Promise<void> {
     await db.transaction(
         "rw",

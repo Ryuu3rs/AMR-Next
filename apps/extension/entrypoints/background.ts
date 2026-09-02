@@ -26,6 +26,8 @@ import {
     anilistAlarmName,
     extensionUpdateAlarmName,
     backupAlarmName,
+    accountAlarmName,
+    configureAccountAlarm,
     configureUpdateAlarm,
     configureSyncAlarm,
     configureCommunityAlarm,
@@ -43,6 +45,7 @@ import {
     clearUpdatePending
 } from "../src/handlers/updates-sources"
 import { runCommunitySync } from "../src/handlers/community"
+import { runAccountSync } from "../src/handlers/account"
 import { runAniListSync, abortAniListSync } from "../src/handlers/anilist"
 import { autoPush, runAutoBackup } from "../src/handlers/data-sync-settings"
 import { getSettings } from "../src/settings"
@@ -79,6 +82,7 @@ export default defineBackground(() => {
         void configureUpdateAlarm()
         void configureSyncAlarm()
         void configureCommunityAlarm()
+        void configureAccountAlarm()
         void configureAniListAlarm()
         void getSettings().then(settings => configureBackupAlarm(settings.autoBackup))
         void configureExtensionUpdateAlarm()
@@ -109,6 +113,7 @@ export default defineBackground(() => {
         void configureUpdateAlarm()
         void configureSyncAlarm()
         void configureCommunityAlarm()
+        void configureAccountAlarm()
         void configureAniListAlarm()
         void getSettings().then(settings => configureBackupAlarm(settings.autoBackup))
         void configureExtensionUpdateAlarm()
@@ -131,6 +136,7 @@ export default defineBackground(() => {
             void run().catch(error => console.error(`[AMR] Scheduled ${name} crashed`, error))
         if (alarm.name === updateAlarmName) guard("update check", checkUpdates)
         if (alarm.name === communityAlarmName) guard("community sync", runCommunitySync)
+        if (alarm.name === accountAlarmName) guard("account sync", runAccountSync)
         if (alarm.name === syncAlarmName) guard("gist auto-push", autoPush)
         if (alarm.name === anilistAlarmName) guard("AniList sync", runAniListSync)
         if (alarm.name === extensionUpdateAlarmName) guard("extension-update check", checkExtensionUpdate)

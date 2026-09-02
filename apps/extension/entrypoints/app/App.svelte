@@ -9,6 +9,7 @@
         isOngoing
     } from "../../src/reading-status"
     import type { AppSettings } from "../../src/settings"
+    import { SITE_BASE, type AccountProfile } from "../../src/account"
     import { onDestroy, onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { runSettled } from "../../src/bulk"
@@ -1167,6 +1168,7 @@
         }
         await loadSyncStatus()
         await loadAniListStatus()
+        await loadAccountStatus()
         try {
             sourcesList = await sendRuntimeMessage<typeof sourcesList>({ type: "sources:list" })
         } catch {
@@ -1312,6 +1314,59 @@
             syncStatus = await sendRuntimeMessage<SyncStatus>({ type: "sync:config", config: { autoSync: on } })
         } catch {
             if (syncStatus) syncStatus = { ...syncStatus }
+        }
+    }
+
+    // weeb.ltd account link: a device token pasted from the site's Account page. Sync runs
+    // on link, on demand, and every 30 minutes via the account alarm.
+    let accountProfile = $state<AccountProfile | undefined>()
+    let accountToken = $state("")
+    let accountBusy = $state(false)
+    let accountMessage = $state("")
+
+    async function loadAccountStatus() {
+        try {
+            accountProfile = await sendRuntimeMessage<AccountProfile>({ type: "account:status" })
+        } catch {
+            // account link optional
+        }
+    }
+
+    async function linkAccount() {
+        const token = accountToken.trim()
+        if (!token) return
+        accountBusy = true
+        accountMessage = ""
+        try {
+            accountProfile = await sendRuntimeMessage<AccountProfile>({ type: "account:link", token })
+            accountToken = ""
+            accountMessage = `Linked as ${accountProfile.name ?? "your account"}. First sync done.`
+        } catch (cause) {
+            accountMessage = cause instanceof Error ? cause.message : "Link failed."
+        } finally {
+            accountBusy = false
+        }
+    }
+
+    async function unlinkAccount() {
+        if (!confirm("Unlink this device from your weeb.ltd account? Your local library stays as it is.")) return
+        accountProfile = await sendRuntimeMessage<AccountProfile>({ type: "account:unlink" })
+        accountMessage = "Unlinked."
+    }
+
+    async function syncAccountNow() {
+        accountBusy = true
+        accountMessage = ""
+        try {
+            accountProfile = await sendRuntimeMessage<AccountProfile>({ type: "account:sync" })
+            accountMessage = accountProfile.invalid
+                ? "This link token was revoked on the site. Create a new one to re-link."
+                : `Synced ${accountProfile.itemCount ?? 0} titles.`
+            await load()
+        } catch (cause) {
+            accountMessage = cause instanceof Error ? cause.message : "Sync failed."
+        } finally {
+            accountBusy = false
         }
     }
 
@@ -5562,6 +5617,63 @@
                     libScanIds = libScanIds.filter(lid => lid !== id)
                     scheduleLoad()
                 }} />
+
+            <h1 style="margin-top:32px">weeb.ltd account</h1>
+            <div class="data-list">
+                {#if accountProfile?.token}
+                    <div class="data-row">
+                        <div>
+                            <p class="row-label">
+                                Linked{accountProfile.name ? ` as ${accountProfile.name}` : ""}
+                                {#if accountProfile.invalid}<span class="muted"> · token revoked</span>{/if}
+                            </p>
+                            <p class="muted">
+                                {accountProfile.lastSyncAt
+                                    ? `Last synced ${new Date(accountProfile.lastSyncAt).toLocaleString()} · ${accountProfile.itemCount ?? 0} titles on the account.`
+                                    : "Not synced yet."}
+                            </p>
+                        </div>
+                        <div class="sync-actions">
+                            <button
+                                type="button"
+                                onclick={() => void syncAccountNow()}
+                                disabled={accountBusy || accountProfile.invalid}>
+                                {accountBusy ? "Syncing…" : "Sync now"}
+                            </button>
+                            <button type="button" class="btn-outline" onclick={() => void unlinkAccount()}
+                                >Unlink</button>
+                        </div>
+                    </div>
+                {:else}
+                    <div class="data-row">
+                        <div>
+                            <p class="row-label">Link this device</p>
+                            <p class="muted">
+                                Sync your library across browsers and devices. Create a link token at
+                                <a href={`${SITE_BASE}/account`} target="_blank" rel="noopener noreferrer"
+                                    >weeb.ltd/account</a>
+                                and paste it here. Stored locally on this device only.
+                            </p>
+                        </div>
+                        <div class="sync-token">
+                            <input
+                                type="password"
+                                placeholder="weeb_…"
+                                bind:value={accountToken}
+                                onkeydown={e => {
+                                    if (e.key === "Enter") void linkAccount()
+                                }} />
+                            <button
+                                type="button"
+                                onclick={() => void linkAccount()}
+                                disabled={!accountToken.trim() || accountBusy}>
+                                {accountBusy ? "Linking…" : "Link"}
+                            </button>
+                        </div>
+                    </div>
+                {/if}
+            </div>
+            {#if accountMessage}<p class="notice">{accountMessage}</p>{/if}
 
             <h1 style="margin-top:32px">GitHub Gist sync</h1>
             <div class="data-list">

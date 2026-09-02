@@ -2,6 +2,7 @@ import type { ChapterRecord, MangaRecord, SourceLinkRecord } from "@amr/contract
 import { SourceError, UNNUMBERED_SORT_KEY, latestNumberedChapter } from "@amr/source-sdk"
 import { sourceRegistry } from "@amr/sources"
 import { normalizeTitle } from "@amr/normalize"
+import { recordTombstone } from "../account"
 import {
     db,
     addImportedManga,
@@ -386,6 +387,8 @@ export const libraryHandlers: HandlerMap = {
         const existing = await db.manga.get(request.mangaId)
         await removeManga(request.mangaId)
         void removeFromAniList(existing?.anilistId)
+        // Parked until the next account sync pushes it as a tombstone (no-op when unlinked).
+        void recordTombstone(request.mangaId)
         return null
     },
 

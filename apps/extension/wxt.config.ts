@@ -71,6 +71,10 @@ export default defineConfig({
             ...METADATA_COVER_ORIGINS,
             ...(process.env.VITE_COMMUNITY_API_ORIGIN ? [process.env.VITE_COMMUNITY_API_ORIGIN] : []),
             ...(process.env.VITE_METADATA_API_ORIGIN ? [process.env.VITE_METADATA_API_ORIGIN] : []),
+            // weeb.ltd account sync. The production origin is public; VITE_WEEB_SITE_ORIGIN adds a
+            // dev server origin on top when set.
+            "https://weeb.ltd/*",
+            ...(process.env.VITE_WEEB_SITE_ORIGIN ? [process.env.VITE_WEEB_SITE_ORIGIN] : []),
             ...ALL_OPTIONAL_ORIGINS
         ],
         icons: {

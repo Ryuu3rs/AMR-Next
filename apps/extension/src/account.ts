@@ -1,0 +1,148 @@
+import type { LibraryManga } from "./database"
+
+const ACCOUNT_KEY = "account"
+const TOMBSTONES_KEY = "accountTombstones"
+
+// The weeb.ltd site base. Public, so the production URL is a safe default; VITE_WEEB_SITE_URL
+// overrides it for local development against a dev server.
+export const SITE_BASE = ((import.meta.env.VITE_WEEB_SITE_URL as string | undefined) ?? "https://weeb.ltd").replace(
+    /\/+$/,
+    ""
+)
+
+export type AccountProfile = {
+    // The device link token pasted from weeb.ltd/account. Absent = not linked.
+    token?: string
+    userId?: string
+    name?: string
+    image?: string
+    itemCount?: number
+    // Local clock of the newest item pushed; the next push sends items updated after it.
+    lastPushAt: number
+    // Server time from the last successful pull; the next pull asks for changes since it.
+    lastPullAt: number
+    lastSyncAt: number
+    // Set when the server rejected the token (revoked on the site). Sync stops until re-linked.
+    invalid: boolean
+    autoSync: boolean
+}
+
+const defaultProfile: AccountProfile = { lastPushAt: 0, lastPullAt: 0, lastSyncAt: 0, invalid: false, autoSync: true }
+
+export async function getAccountProfile(): Promise<AccountProfile> {
+    const stored = await browser.storage.local.get(ACCOUNT_KEY)
+    return { ...defaultProfile, ...((stored[ACCOUNT_KEY] as Partial<AccountProfile> | undefined) ?? {}) }
+}
+
+export async function updateAccountProfile(patch: Partial<AccountProfile>): Promise<AccountProfile> {
+    const next = { ...(await getAccountProfile()), ...patch }
+    await browser.storage.local.set({ [ACCOUNT_KEY]: next })
+    return next
+}
+
+export async function clearAccountProfile(): Promise<AccountProfile> {
+    await browser.storage.local.remove([ACCOUNT_KEY])
+    return { ...defaultProfile }
+}
+
+// Local removals must reach the server as tombstones, but library:remove deletes the row
+// outright, so the id is parked here until the next successful push.
+export async function recordTombstone(mangaId: string): Promise<void> {
+    const profile = await getAccountProfile()
+    if (!profile.token) return
+    const list = await getTombstones()
+    list[mangaId] = Date.now()
+    await browser.storage.local.set({ [TOMBSTONES_KEY]: list })
+}
+
+export async function getTombstones(): Promise<Record<string, number>> {
+    const stored = await browser.storage.local.get(TOMBSTONES_KEY)
+    const raw = stored[TOMBSTONES_KEY]
+    return raw && typeof raw === "object" ? (raw as Record<string, number>) : {}
+}
+
+export async function clearTombstones(ids: string[]): Promise<void> {
+    const list = await getTombstones()
+    for (const id of ids) delete list[id]
+    await browser.storage.local.set({ [TOMBSTONES_KEY]: list })
+}
+
+export type SyncItem = {
+    clientId: string
+    title: string
+    normalizedTitle: string
+    anilistId?: number | null
+    sourceId?: string | null
+    sourceMangaId?: string | null
+    mangaUrl?: string | null
+    coverUrl?: string | null
+    genres?: string[] | null
+    status?: string | null
+    readingStatus?: string | null
+    rating?: number | null
+    lastReadChapterNumber?: number | null
+    latestChapterNumber?: number | null
+    lastReadAt?: number | null
+    deleted?: boolean
+    clientUpdatedAt: number
+}
+
+const isHttpUrl = (v: string | undefined): v is string => typeof v === "string" && /^https?:\/\//.test(v)
+
+export function toSyncItem(m: LibraryManga): SyncItem {
+    const mangaUrl = m.mangaUrl ?? m.sourceUrl
+    return {
+        clientId: m.id,
+        title: m.title,
+        normalizedTitle: m.normalizedTitle,
+        anilistId: m.anilistId ?? null,
+        sourceId: m.sourceId,
+        sourceMangaId: m.sourceMangaId ?? null,
+        mangaUrl: isHttpUrl(mangaUrl) ? mangaUrl : null,
+        coverUrl: isHttpUrl(m.coverUrl) ? m.coverUrl : null,
+        genres: m.genres ?? null,
+        status: m.status,
+        readingStatus: m.readingStatus ?? null,
+        rating: m.rating ?? null,
+        lastReadChapterNumber: m.lastReadChapterNumber ?? null,
+        latestChapterNumber: m.latestChapterNumber ?? null,
+        lastReadAt: m.lastReadAt ?? null,
+        clientUpdatedAt: m.updatedAt
+    }
+}
+
+export class AccountAuthError extends Error {}
+
+async function request<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+    const res = await fetch(`${SITE_BASE}${path}`, {
+        ...init,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(init.headers ?? {}) }
+    })
+    if (res.status === 401) throw new AccountAuthError("This link token is no longer valid.")
+    if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error ?? `weeb.ltd request failed: ${res.status}`)
+    }
+    return res.json() as Promise<T>
+}
+
+export type AccountStatus = { userId: string; name: string | null; image: string | null; itemCount: number }
+
+export function apiAccountStatus(token: string): Promise<AccountStatus> {
+    return request<AccountStatus>(token, "/api/sync/status")
+}
+
+export type PushResult = {
+    accepted: number
+    rejected: Array<{ clientId: string; server: SyncItem }>
+    serverTime: number
+}
+
+export function apiPush(token: string, items: SyncItem[]): Promise<PushResult> {
+    return request<PushResult>(token, "/api/sync/library", { method: "POST", body: JSON.stringify({ items }) })
+}
+
+export function apiPull(token: string, since: number): Promise<{ items: SyncItem[]; serverTime: number }> {
+    const q = since > 0 ? `?since=${since}` : ""
+    return request(token, `/api/sync/library${q}`)
+}

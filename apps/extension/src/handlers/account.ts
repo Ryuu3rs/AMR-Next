@@ -1,0 +1,188 @@
+import { normalizeTitle } from "@amr/normalize"
+import { addSyncedManga, applySyncedManga, db, removeManga, type LibraryManga } from "../database"
+import {
+    AccountAuthError,
+    apiAccountStatus,
+    apiPull,
+    apiPush,
+    clearAccountProfile,
+    clearTombstones,
+    getAccountProfile,
+    getTombstones,
+    toSyncItem,
+    updateAccountProfile,
+    type AccountProfile,
+    type AccountStatus,
+    type SyncItem
+} from "../account"
+import { accountAlarmName, configureAccountAlarm } from "../background/alarms"
+import type { HandlerMap } from "../background/handler-types"
+import { publishLive } from "../live"
+
+const PUSH_BATCH = 400
+const STATUSES = new Set(["unknown", "ongoing", "completed", "hiatus", "cancelled"])
+const READING = new Set(["paused", "dropped", "planning"])
+
+type Status = LibraryManga["status"]
+
+function pickStatus(v: string | null | undefined): Status {
+    return STATUSES.has(v ?? "") ? (v as Status) : "unknown"
+}
+
+function pickReading(v: string | null | undefined): LibraryManga["readingStatus"] {
+    return READING.has(v ?? "") ? (v as LibraryManga["readingStatus"]) : undefined
+}
+
+function pickRating(v: number | null | undefined): number | undefined {
+    if (typeof v !== "number") return undefined
+    const r = Math.round(v)
+    return r >= 1 && r <= 5 ? r : undefined
+}
+
+// Apply one server-side item locally. The server copy wins only when it is newer than the
+// local row (same last-writer rule the server applies to pushes), so a pull never clobbers
+// an edit made here since the last sync. Returns true when the library changed.
+export async function applyRemoteItem(item: SyncItem): Promise<boolean> {
+    const local = await db.manga.get(item.clientId)
+    if (item.deleted) {
+        if (!local || local.updatedAt > item.clientUpdatedAt) return false
+        await removeManga(item.clientId)
+        return true
+    }
+    const reading = pickReading(item.readingStatus)
+    const rating = pickRating(item.rating)
+    if (local) {
+        if (local.updatedAt >= item.clientUpdatedAt) return false
+        await applySyncedManga(item.clientId, {
+            title: item.title,
+            normalizedTitle: item.normalizedTitle || normalizeTitle(item.title),
+            ...(item.coverUrl ? { coverUrl: item.coverUrl } : {}),
+            ...(item.genres ? { genres: item.genres } : {}),
+            status: pickStatus(item.status),
+            ...(reading ? { readingStatus: reading } : {}),
+            ...(rating ? { rating } : {}),
+            ...(item.anilistId ? { anilistId: item.anilistId } : {}),
+            ...(typeof item.lastReadChapterNumber === "number"
+                ? { lastReadChapterNumber: item.lastReadChapterNumber }
+                : {}),
+            ...(typeof item.latestChapterNumber === "number" ? { latestChapterNumber: item.latestChapterNumber } : {}),
+            ...(typeof item.lastReadAt === "number" ? { lastReadAt: item.lastReadAt } : {}),
+            updatedAt: item.clientUpdatedAt
+        })
+        return true
+    }
+    if (!item.sourceId || !item.mangaUrl) return false
+    await addSyncedManga({
+        id: item.clientId,
+        title: item.title,
+        normalizedTitle: item.normalizedTitle || normalizeTitle(item.title),
+        sourceId: item.sourceId,
+        sourceUrl: item.mangaUrl,
+        mangaUrl: item.mangaUrl,
+        ...(item.sourceMangaId ? { sourceMangaId: item.sourceMangaId } : {}),
+        ...(item.coverUrl ? { coverUrl: item.coverUrl } : {}),
+        ...(item.genres ? { genres: item.genres } : {}),
+        authors: [],
+        status: pickStatus(item.status),
+        ...(reading ? { readingStatus: reading } : {}),
+        ...(rating ? { rating } : {}),
+        ...(item.anilistId ? { anilistId: item.anilistId } : {}),
+        ...(typeof item.lastReadChapterNumber === "number"
+            ? { lastReadChapterNumber: item.lastReadChapterNumber }
+            : {}),
+        ...(typeof item.latestChapterNumber === "number" ? { latestChapterNumber: item.latestChapterNumber } : {}),
+        ...(typeof item.lastReadAt === "number" ? { lastReadAt: item.lastReadAt } : {}),
+        addedAt: Date.now(),
+        updatedAt: item.clientUpdatedAt
+    })
+    return true
+}
+
+function statusPatch(status: AccountStatus): Partial<AccountProfile> {
+    return {
+        userId: status.userId,
+        itemCount: status.itemCount,
+        ...(status.name ? { name: status.name } : {}),
+        ...(status.image ? { image: status.image } : {})
+    }
+}
+
+let running = false
+
+// Push local changes since the last push (plus parked removals), then pull server changes
+// since the last pull. Rejected pushes carry the newer server copy, which is applied like a
+// pull. A revoked token flips `invalid` and stops future runs until the user re-links.
+export async function runAccountSync(): Promise<AccountProfile> {
+    let profile = await getAccountProfile()
+    if (!profile.token || profile.invalid || running) return profile
+    running = true
+    const token = profile.token
+    try {
+        const changed = (await db.manga.toArray()).filter(m => m.updatedAt > profile.lastPushAt)
+        const tombstones = await getTombstones()
+        const items: SyncItem[] = [
+            ...changed.map(toSyncItem),
+            ...Object.entries(tombstones).map(([clientId, at]) => ({
+                clientId,
+                title: clientId,
+                normalizedTitle: clientId,
+                deleted: true,
+                clientUpdatedAt: at
+            }))
+        ]
+
+        let libraryChanged = false
+        let newestPushed = profile.lastPushAt
+        for (let i = 0; i < items.length; i += PUSH_BATCH) {
+            const batch = items.slice(i, i + PUSH_BATCH)
+            const result = await apiPush(token, batch)
+            for (const r of result.rejected) libraryChanged = (await applyRemoteItem(r.server)) || libraryChanged
+            for (const b of batch) if (!b.deleted && b.clientUpdatedAt > newestPushed) newestPushed = b.clientUpdatedAt
+        }
+        if (Object.keys(tombstones).length > 0) await clearTombstones(Object.keys(tombstones))
+
+        const pulled = await apiPull(token, profile.lastPullAt)
+        for (const item of pulled.items) libraryChanged = (await applyRemoteItem(item)) || libraryChanged
+
+        const status = await apiAccountStatus(token).catch(() => null)
+        profile = await updateAccountProfile({
+            lastPushAt: newestPushed,
+            lastPullAt: pulled.serverTime,
+            lastSyncAt: Date.now(),
+            ...(status ? statusPatch(status) : {})
+        })
+        if (libraryChanged) publishLive(["library", "chapters"])
+        return profile
+    } catch (error) {
+        if (error instanceof AccountAuthError) {
+            await browser.alarms.clear(accountAlarmName)
+            return updateAccountProfile({ invalid: true })
+        }
+        console.warn("[AMR] Account sync failed", error)
+        return profile
+    } finally {
+        running = false
+    }
+}
+
+export const accountHandlers: HandlerMap = {
+    "account:status": async () => getAccountProfile(),
+
+    // Validate the pasted token against the site, store it, then run a first sync so the
+    // library appears on the account straight away.
+    "account:link": async request => {
+        const token = request.token.trim()
+        const status = await apiAccountStatus(token)
+        await updateAccountProfile({ token, ...statusPatch(status), invalid: false, lastPushAt: 0, lastPullAt: 0 })
+        await configureAccountAlarm()
+        return runAccountSync()
+    },
+
+    "account:unlink": async () => {
+        await browser.alarms.clear(accountAlarmName)
+        await browser.storage.local.remove(["accountTombstones"])
+        return clearAccountProfile()
+    },
+
+    "account:sync": async () => runAccountSync()
+}

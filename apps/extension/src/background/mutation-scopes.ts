@@ -82,7 +82,10 @@ export const MUTATION_SCOPES: Partial<Record<RuntimeRequest["type"], LiveScope[]
     "bookmark:remove": ["progress"],
     "chapter:download": ["library"],
     "chapter:download:remove": ["library"],
-    "chapter:track": ["library", "chapters"]
+    "chapter:track": ["library", "chapters"],
+    // Linking runs a first sync inline; a manual sync may create/update/remove titles.
+    "account:link": ["library", "chapters"],
+    "account:sync": ["library", "chapters"]
 }
 
 // Every RuntimeRequest type that either performs no mutation, or mutates data
@@ -146,6 +149,9 @@ export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<Runt
     "community:manga-stats",
     "community:announcements",
     "community:trending",
+    // account profile reads/writes live in storage.local; no live-bus scope covers them.
+    "account:status",
+    "account:unlink",
     "suggestions:get",
     "suggestions:continue",
     // hide/unhide persist a small storage.local set the Discover tab re-reads on its own

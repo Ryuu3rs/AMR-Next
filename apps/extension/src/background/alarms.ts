@@ -1,3 +1,4 @@
+import { getAccountProfile } from "../account"
 import { getAniListConfig } from "../anilist"
 import { getCommunityProfile } from "../community"
 import { getSettings } from "../settings"
@@ -9,6 +10,7 @@ export const syncAlarmName = "sync-push"
 export const anilistAlarmName = "anilist-sync"
 export const extensionUpdateAlarmName = "check-extension-update"
 export const backupAlarmName = "amr-daily-backup"
+export const accountAlarmName = "account-sync"
 
 export const EXTENSION_UPDATE_INTERVAL_HOURS = 24
 export const GITHUB_RELEASES_URL = "https://api.github.com/repos/Ryuu3rs/AMR-Next/releases/latest"
@@ -70,6 +72,15 @@ export async function configureCommunityAlarm(): Promise<void> {
         await ensureAlarm(communityAlarmName, 60)
     } else {
         await browser.alarms.clear(communityAlarmName)
+    }
+}
+
+export async function configureAccountAlarm(): Promise<void> {
+    const profile = await getAccountProfile()
+    if (profile.token && profile.autoSync && !profile.invalid) {
+        await ensureAlarm(accountAlarmName, 30)
+    } else {
+        await browser.alarms.clear(accountAlarmName)
     }
 }
 
