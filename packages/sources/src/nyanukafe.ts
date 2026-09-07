@@ -143,7 +143,9 @@ export const nyanukafeAdapter: SourceAdapter = {
         capabilities: ["pages", "chapters"],
         requestRateLimit: { requests: 3, intervalMs: 1000 },
         fixtureVersion: 1,
-        homepage: ORIGIN
+        homepage: ORIGIN,
+        // Ko-fi + Patreon in the site footer, verified 2026-09-07.
+        supportUrl: "https://ko-fi.com/nyanukafe"
     },
 
     match(url: URL): SourcePageMatch {

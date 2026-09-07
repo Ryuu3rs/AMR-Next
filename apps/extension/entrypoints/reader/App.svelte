@@ -3,7 +3,7 @@
     import type { ResolvedChapter } from "@amr/source-sdk"
     import { onDestroy, onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
-    import { AMR_KOFI_URL, AMR_SUPPORT_LABEL } from "../../src/support"
+    import { AMR_KOFI_URL, AMR_SUPPORT_LABEL, supportPlatform } from "../../src/support"
     import { subscribeLive } from "../../src/live"
     import { createProgressReporter } from "../../src/throttle"
     import { spreadView } from "../../src/reader-spread"
@@ -1146,7 +1146,7 @@
                 <button
                     class="source-link kofi kofi-site"
                     type="button"
-                    title="Support {sourceInfo.name} (this site's team) on Ko-fi"
+                    title="Support {sourceInfo.name} (this site's team) on {supportPlatform(sourceInfo.supportUrl)}"
                     onclick={() => openExternal(sourceInfo?.supportUrl)}>
                     ☕ {sourceInfo.name}
                 </button>
@@ -1154,7 +1154,7 @@
             <button
                 class="source-link kofi kofi-amr"
                 type="button"
-                title="Support {AMR_SUPPORT_LABEL} (this extension) on Ko-fi"
+                title="Support {AMR_SUPPORT_LABEL} (this extension) on {supportPlatform(AMR_KOFI_URL)}"
                 onclick={() => openExternal(AMR_KOFI_URL)}>
                 ☕ {AMR_SUPPORT_LABEL}
             </button>

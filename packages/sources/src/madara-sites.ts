@@ -23,7 +23,14 @@ const SITES: MadaraConfig[] = [
     // { id: "manhuaplus", name: "ManhuaPlus", origin: "https://manhuaplus.org", domains: ["manhuaplus.org"] }, // retired 2026-07-14: fully migrated off WordPress/Madara to a custom "liliana" theme - verified live: no wp-content/wp-json/wp-admin markers anywhere on the site, chapter pages have zero wp-manga-chapter/reading-content/wp-manga-chapter-img markup, and POSTing to /wp-admin/admin-ajax.php (both manga_get_chapters and manga_get_chapter_img_list) 302-redirects to /home since the endpoint no longer exists - matches the user's reported redirect exactly. Not a same-engine rebrand like aryascans; the whole template changed, so re-adding needs a bespoke adapter, not a config row.
     // { id: "rawkuma", name: "Rawkuma", origin: "https://rawkuma.com", domains: ["rawkuma.com"] }, // retired 2026-07-19: rawkuma moved its catalog to rawkuma.net with a non-Madara query-string URL scheme; rawkuma.com no longer serves manga content (no wp-manga /manga/<slug>/ pages). Re-adding the .net site needs a bespoke adapter, not this config row. Verified live 2026-07-19.
     // { id: "hivetoon", name: "HiveToon", origin: "https://hivetoon.com", domains: ["hivetoon.com"], imageOrigins: ["*://*.hivetoon.com/*"] }, // retired 2026-07-16: hivetoon.com 301-redirects to a different domain, hivetoons.org - verified live it is NOT a same-engine rebrand like aryascans->brainrotcomics: hivetoons.org runs Astro (astro-view-transitions markers, astro-island hydration islands, /_vcomics/*.js module scripts), zero wp-manga-chapter/reading-content/c-tabs-item/manga-chapters-holder markup anywhere, and chapter URLs are /series/<slug>/chapter-N with no trailing slash - a full engine change like the manhuaplus/templescan precedent above, so re-adding needs a bespoke adapter, not a config row.
-    { id: "lhtranslation", name: "LHTranslation", origin: "https://lhtranslation.net", domains: ["lhtranslation.net"] },
+    {
+        id: "lhtranslation",
+        name: "LHTranslation",
+        origin: "https://lhtranslation.net",
+        domains: ["lhtranslation.net"],
+        // From their /donate/ page (Ko-fi + Patreon), verified 2026-09-07.
+        supportUrl: "https://ko-fi.com/lhtranslation"
+    },
     // Added 2026-09-07 (user request). Translation group publishing both manga (/manga/) and
     // novels (/novel/); novel chapters are text, so the reader shows "open on site" for them
     // while tracking and the on-page panel work. Cloudflare-gated for headless fetches, fine
@@ -38,7 +45,14 @@ const SITES: MadaraConfig[] = [
     },
     // { id: "harimanga", name: "HariManga", origin: "https://harimanga.me", domains: ["harimanga.me"] }, // retired: site down 2026-06 - re-enable when back
     // { id: "utoon", name: "UToon", origin: "https://utoon.net", domains: ["utoon.net"] }, // retired 2026-07-19: utoon.net hijacked - serves a fake ransom/invoice page, no Madara markup or manga content. Verified live 2026-07-19.
-    { id: "mangasushi", name: "MangaSushi", origin: "https://mangasushi.org", domains: ["mangasushi.org"] },
+    {
+        id: "mangasushi",
+        name: "MangaSushi",
+        origin: "https://mangasushi.org",
+        domains: ["mangasushi.org"],
+        // From their /donations/ page (Ko-fi + Patreon), verified 2026-09-07.
+        supportUrl: "https://ko-fi.com/mangasushi"
+    },
     // chapters-only: chapter pages are ad-gated; sidebar tracking works, reader shows "open on site"
     {
         id: "manhuatop",
@@ -82,6 +96,8 @@ const SITES: MadaraConfig[] = [
     // { id: "mangagalaxy", name: "Manga Galaxy", origin: "https://mangagalaxy.me", domains: ["mangagalaxy.me"] }, // retired: domain hijacked 2026-07 - homepage 200s with a JS redirect chain that lands on an unrelated TikTok video, verified 2026-07-11
     {
         id: "tritinia",
+        // Patreon link in the site footer, verified 2026-09-07.
+        supportUrl: "https://www.patreon.com/tritiniascans",
         name: "Tritinia Scans",
         origin: "https://tritinia.org",
         domains: ["tritinia.org", "tritinia.com"],

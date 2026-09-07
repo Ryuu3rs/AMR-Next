@@ -152,14 +152,23 @@ export function injectChapterPrompt(chapterUrl: string, support?: ChapterPromptS
     // clear which one goes to the site's team and which one keeps this extension going.
     const supWrap = mk("div")
     if (support) {
-        const cap = mk("div", { className: "sup-cap", textContent: "Say thanks on Ko-fi" })
+        const platform = (url: string) => {
+            const afterScheme = url.includes("//") ? url.slice(url.indexOf("//") + 2) : url
+            const rawHost = afterScheme.split("/")[0] ?? ""
+            const host = rawHost.startsWith("www.") ? rawHost.slice(4) : rawHost
+            if (host === "ko-fi.com") return "Ko-fi"
+            if (host === "patreon.com") return "Patreon"
+            if (host === "buymeacoffee.com") return "Buy Me a Coffee"
+            return "their donate page"
+        }
+        const cap = mk("div", { className: "sup-cap", textContent: "Say thanks" })
         const sup = mk("div", { className: "sup" })
         if (support.sourceUrl) {
             const siteUrl = support.sourceUrl
             const bsite = mk("button", {
                 className: "btn btn-site",
                 textContent: "☕ " + support.sourceName,
-                title: "Support " + support.sourceName + " (this site's team) on Ko-fi"
+                title: "Support " + support.sourceName + " (this site's team) on " + platform(siteUrl)
             })
             bsite.addEventListener("click", () => window.open(siteUrl, "_blank", "noopener"))
             sup.appendChild(bsite)
@@ -167,7 +176,7 @@ export function injectChapterPrompt(chapterUrl: string, support?: ChapterPromptS
         const bamr = mk("button", {
             className: "btn btn-amr",
             textContent: "☕ " + support.amrLabel,
-            title: "Support " + support.amrLabel + " (this extension) on Ko-fi"
+            title: "Support " + support.amrLabel + " (this extension) on " + platform(support.amrUrl)
         })
         bamr.addEventListener("click", () => window.open(support.amrUrl, "_blank", "noopener"))
         sup.appendChild(bamr)

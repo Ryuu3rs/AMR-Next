@@ -174,6 +174,8 @@ export const flameComicsAdapter: SourceAdapter = {
         requestRateLimit: { requests: 3, intervalMs: 1000 },
         fixtureVersion: 1,
         homepage: ORIGIN,
+        // Their own donate page (crypto only, no Ko-fi/Patreon), verified 2026-09-07.
+        supportUrl: "https://flamecomics.xyz/donate",
         imageOrigins: [`https://cdn.${DOMAIN}/*`]
     },
 
