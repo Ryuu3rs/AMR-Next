@@ -66,6 +66,74 @@
         "Settings"
     ] as const
     let activeSection = $state<(typeof sections)[number]>("Home")
+
+    // Settings page: rail + filter + scroll-spy. Sections are literal markup below; this
+    // index only drives the rail and the "find a setting" filter.
+    const SETTINGS_SECTIONS = [
+        {
+            id: "library",
+            label: "Library & updates",
+            labels: [
+                "Auto-add manga",
+                "Update schedule",
+                "Auto-pause after N days",
+                "New-chapter notifications",
+                "Daily automatic backup",
+                "Extension updates"
+            ]
+        },
+        {
+            id: "reader",
+            label: "Reader",
+            labels: [
+                "Reading direction",
+                "Page fit",
+                "Page width",
+                "Show page number",
+                "Double-page gap",
+                "Remove gaps between pages (continuous mode)",
+                "Preload pages",
+                "Open chapters in",
+                "Chapter language"
+            ]
+        },
+        { id: "appearance", label: "Appearance & habits", labels: ["Theme", "Daily reading goal", "Blur NSFW covers"] },
+        {
+            id: "community",
+            label: "Privacy & community",
+            labels: ["Community features", "What we collect", "Community username", "Delete my community data"]
+        },
+        { id: "danger", label: "Danger zone", labels: ["Clear reading history", "Clear entire library"] }
+    ] as const
+    type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]["id"]
+    let settingsQuery = $state("")
+    let settingsActive = $state<SettingsSectionId>("library")
+    function settingMatches(label: string): boolean {
+        const q = settingsQuery.trim().toLowerCase()
+        return !q || label.toLowerCase().includes(q)
+    }
+    function sectionVisible(id: string): boolean {
+        const s = SETTINGS_SECTIONS.find(x => x.id === id)
+        return !s || s.labels.some(settingMatches)
+    }
+    function jumpToSettings(id: SettingsSectionId): void {
+        settingsActive = id
+        document.getElementById("settings-" + id)?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+    function settingsScrollSpy(node: HTMLElement): { destroy(): void } {
+        const io = new IntersectionObserver(
+            entries => {
+                for (const entry of entries) {
+                    if (!entry.isIntersecting) continue
+                    const id = (entry.target as HTMLElement).dataset.settingsSection
+                    if (id) settingsActive = id as SettingsSectionId
+                }
+            },
+            { rootMargin: "-15% 0px -70% 0px" }
+        )
+        for (const el of node.querySelectorAll("[data-settings-section]")) io.observe(el)
+        return { destroy: () => io.disconnect() }
+    }
     let library = $state<LibraryManga[]>([])
     let settings = $state<AppSettings | undefined>()
     // Local optimistic mirrors of specific settings controls - driven synchronously by
@@ -3475,7 +3543,7 @@
         </div>
     </aside>
 
-    <main class:full={activeSection === "Discover"}>
+    <main class:full={activeSection === "Discover" || activeSection === "Settings"}>
         {#each visibleAnnouncements as a (a.id)}
             <div class="announce announce-{a.level}" role="status">
                 <div class="announce-body">
@@ -5954,471 +6022,609 @@
             {#if anilistMessage}<p class="notice">{anilistMessage}</p>{/if}
         {:else}
             <h1>Settings</h1>
-            <div class="settings-list">
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Auto-add manga</p>
-                        <p class="muted">Save titles automatically when a supported chapter is opened.</p>
-                    </div>
-                    <label class="toggle">
-                        <input
-                            type="checkbox"
-                            checked={settings?.autoAdd ?? true}
-                            onchange={e => changeAutoAdd(e.currentTarget.checked)} />
-                        <span class="track"></span>
-                    </label>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Update schedule</p>
-                        <p class="muted">How often background checks run for new chapters.</p>
-                    </div>
-                    <div style="display:flex;gap:8px;align-items:center">
-                        <select
-                            aria-label="Update schedule"
-                            value={updateIntervalSelection}
-                            onchange={e => changeUpdateInterval(e.currentTarget.value)}>
-                            <option value={0}>Manual only</option>
-                            <option value={6}>Every 6 h</option>
-                            <option value={12}>Every 12 h</option>
-                            <option value={24}>Daily</option>
-                        </select>
-                        {#if updateIntervalSaved}<span class="saved-flash">✓ Saved</span>{/if}
-                    </div>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Auto-pause after N days</p>
-                        <p class="muted">
-                            Titles with no reading for this many days show as paused. 0 disables auto-pause.
-                        </p>
-                    </div>
+            <div class="settings-shell">
+                <aside class="settings-rail">
                     <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        aria-label="Auto-pause after days of no reading"
-                        style="width:96px"
-                        value={autoPauseDays}
-                        onchange={e => void changeAutoPauseDays(e.currentTarget.value)} />
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Extension updates</p>
-                        <p class="muted">
-                            {#if extensionUpdate?.available}
-                                v{extensionUpdate.latestVersion} is available.
-                            {:else if extensionUpdate}
-                                Up to date (v{extensionUpdate.latestVersion}).
-                            {:else}
-                                Check for a new version of AMR.
-                            {/if}
-                        </p>
-                    </div>
-                    <div style="display:flex;gap:8px;align-items:center">
-                        {#if extensionUpdate?.available}
+                        class="settings-search"
+                        type="search"
+                        placeholder="Find a setting"
+                        aria-label="Find a setting"
+                        bind:value={settingsQuery} />
+                    <nav aria-label="Settings sections">
+                        {#each SETTINGS_SECTIONS as s (s.id)}
                             <button
                                 type="button"
-                                class="btn-sm"
-                                onclick={() => void browser.tabs.create({ url: extensionUpdate!.releaseUrl })}>
-                                Download ↗
+                                class:active={settingsActive === s.id}
+                                class:danger={s.id === "danger"}
+                                hidden={!sectionVisible(s.id)}
+                                onclick={() => jumpToSettings(s.id)}>
+                                {s.label}
                             </button>
-                        {/if}
-                        <button
-                            type="button"
-                            class="btn-outline btn-sm"
-                            disabled={checkingExtUpdate}
-                            onclick={() => void checkForExtensionUpdate()}>
-                            {checkingExtUpdate ? "Checking…" : "Check now"}
-                        </button>
-                    </div>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Reading direction</p>
-                        <p class="muted">Left-to-right, right-to-left (manga), or vertical (webtoon).</p>
-                    </div>
-                    <select
-                        aria-label="Reading direction"
-                        value={settings?.readingDirection ?? "ltr"}
-                        onchange={e =>
-                            void updateSetting({
-                                readingDirection: e.currentTarget.value as "ltr" | "rtl" | "vertical"
-                            })}>
-                        <option value="ltr">Left to right</option>
-                        <option value="rtl">Right to left</option>
-                        <option value="vertical">Vertical</option>
-                    </select>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Page fit</p>
-                        <p class="muted">How pages are scaled to the viewport.</p>
-                    </div>
-                    <select
-                        aria-label="Page fit"
-                        value={settings?.pageFit ?? "width"}
-                        onchange={e =>
-                            void updateSetting({
-                                pageFit: e.currentTarget.value as "width" | "height" | "contain" | "original" | "actual"
-                            })}>
-                        <option value="width">Fit width</option>
-                        <option value="height">Fit height</option>
-                        <option value="contain">Fit screen</option>
-                        <option value="original">Original size</option>
-                        <option value="actual">Actual size (native resolution)</option>
-                    </select>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Page width</p>
-                        <p class="muted">
-                            How much of the width Fit-width fills: {settings?.pageWidthPct ?? 100}%. Lower it for long
-                            strips, raise it to fill the screen.
-                        </p>
-                    </div>
-                    <input
-                        type="range"
-                        min="30"
-                        max="100"
-                        step="5"
-                        aria-label="Page width percent"
-                        value={settings?.pageWidthPct ?? 100}
-                        onchange={e => void updateSetting({ pageWidthPct: Number(e.currentTarget.value) })} />
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Show page number</p>
-                        <p class="muted">Overlay the current page number while reading.</p>
-                    </div>
-                    <label class="toggle">
-                        <input
-                            type="checkbox"
-                            checked={settings?.showPageNumber ?? true}
-                            onchange={e => void updateSetting({ showPageNumber: e.currentTarget.checked })} />
-                        <span class="track"></span>
-                    </label>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Double-page gap</p>
-                        <p class="muted">
-                            Space between the two pages in Double-page mode: {settings?.spreadGapPx ?? 8}px. Seamless
-                            spreads ignore this.
-                        </p>
-                    </div>
-                    <input
-                        type="range"
-                        min="0"
-                        max="40"
-                        step="1"
-                        aria-label="Double-page gap in pixels"
-                        value={settings?.spreadGapPx ?? 8}
-                        onchange={e => void updateSetting({ spreadGapPx: Number(e.currentTarget.value) })} />
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">New-chapter notifications</p>
-                        <p class="muted">Show a desktop notification when an update check finds new chapters.</p>
-                    </div>
-                    <label class="toggle">
-                        <input
-                            type="checkbox"
-                            checked={settings?.notifyNewChapters ?? true}
-                            onchange={e => void updateSetting({ notifyNewChapters: e.currentTarget.checked })} />
-                        <span class="track"></span>
-                    </label>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Daily automatic backup</p>
-                        <p class="muted">
-                            Keep a rolling on-device restore point, refreshed daily when your library changes. Restore
-                            from Data.
-                        </p>
-                    </div>
-                    <label class="toggle">
-                        <input
-                            type="checkbox"
-                            checked={settings?.autoBackup !== false}
-                            onchange={e => void updateSetting({ autoBackup: e.currentTarget.checked })} />
-                        <span class="track"></span>
-                    </label>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Remove gaps between pages (continuous mode)</p>
-                        <p class="muted">Seamless webtoon-style scroll with no vertical gap between page images.</p>
-                    </div>
-                    <div style="display:flex;gap:8px;align-items:center">
-                        <label class="toggle">
-                            <input
-                                type="checkbox"
-                                checked={noGapSelection}
-                                onchange={e => void changeNoGapContinuous(e.currentTarget.checked)} />
-                            <span class="track"></span>
-                        </label>
-                        {#if noGapSelectionSaved}<span class="saved-flash">✓ Saved</span>{/if}
-                    </div>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Preload pages</p>
-                        <p class="muted">How many upcoming pages load eagerly (0-10).</p>
-                    </div>
-                    <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        aria-label="Preload pages"
-                        value={settings?.preloadPages ?? 3}
-                        onchange={e =>
-                            void updateSetting({
-                                preloadPages: Math.max(0, Math.min(10, Number(e.currentTarget.value) || 0))
-                            })} />
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Open chapters in</p>
-                        <p class="muted">
-                            The built-in reader, or the source site in your browser. (Ctrl/middle-click always opens the
-                            source.)
-                        </p>
-                    </div>
-                    <select
-                        aria-label="Open chapters in"
-                        value={settings?.openChapterIn ?? "reader"}
-                        onchange={e =>
-                            void updateSetting({ openChapterIn: e.currentTarget.value as "reader" | "browser" })}>
-                        <option value="reader">Built-in reader</option>
-                        <option value="browser">Source site</option>
-                    </select>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Theme</p>
-                        <p class="muted">Dark, light, or follow your system setting.</p>
-                    </div>
-                    <select
-                        aria-label="Theme"
-                        value={settings?.theme ?? "dark"}
-                        onchange={e =>
-                            void updateSetting({ theme: e.currentTarget.value as "dark" | "light" | "system" })}>
-                        <option value="dark">Dark</option>
-                        <option value="light">Light</option>
-                        <option value="system">System</option>
-                    </select>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Chapter language</p>
-                        <p class="muted">Preferred translation language for MangaDex chapter listings.</p>
-                    </div>
-                    <select
-                        aria-label="Chapter language"
-                        value={settings?.language ?? "en"}
-                        onchange={e => void updateSetting({ language: e.currentTarget.value })}>
-                        <option value="en">English</option>
-                        <option value="es">Spanish</option>
-                        <option value="es-la">Spanish (Latin America)</option>
-                        <option value="fr">French</option>
-                        <option value="pt-br">Portuguese (Brazil)</option>
-                        <option value="de">German</option>
-                        <option value="ru">Russian</option>
-                        <option value="id">Indonesian</option>
-                        <option value="it">Italian</option>
-                        <option value="pl">Polish</option>
-                        <option value="ja">Japanese</option>
-                        <option value="ko">Korean</option>
-                        <option value="zh">Chinese</option>
-                        <option value="zh-hk">Chinese (Hong Kong)</option>
-                        <option value="ar">Arabic</option>
-                        <option value="vi">Vietnamese</option>
-                    </select>
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Daily reading goal</p>
-                        <p class="muted">Chapters per day to aim for (0 disables). Shown on the Stats tab.</p>
-                    </div>
-                    <input
-                        type="number"
-                        min="0"
-                        max="50"
-                        aria-label="Daily reading goal"
-                        value={settings?.dailyGoal ?? 0}
-                        onchange={e =>
-                            void updateSetting({
-                                dailyGoal: Math.max(0, Math.min(50, Number(e.currentTarget.value) || 0))
-                            })} />
-                </div>
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Blur NSFW covers</p>
-                        <p class="muted">Blur covers of titles you've marked NSFW (from the detail view).</p>
-                    </div>
-                    <label class="toggle">
-                        <input
-                            type="checkbox"
-                            checked={settings?.blurNsfw ?? true}
-                            onchange={e => void updateSetting({ blurNsfw: e.currentTarget.checked })} />
-                        <span class="track"></span>
-                    </label>
-                </div>
-
-                <p class="shelf-label" style="margin-top:28px">Privacy &amp; Community</p>
-                {#if !communityConfigured}
-                    <p class="muted">Community features are not configured in this build.</p>
-                {/if}
-                <div class="settings-row">
-                    <div>
-                        <p class="row-label">Community features</p>
-                        <p class="muted">
-                            Send anonymous usage and a username you choose to power install counts, leaderboards, and
-                            recommendations. We never sell your data.
-                        </p>
-                    </div>
-                    <label class="toggle">
-                        <input
-                            type="checkbox"
-                            checked={communityProfile?.enabled ?? false}
-                            onchange={e => void toggleCommunity(e.currentTarget.checked)} />
-                        <span class="track"></span>
-                    </label>
-                </div>
-                <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">
-                    <p class="row-label">What we collect</p>
-                    <ul class="policy-list">
-                        {#each DATA_COLLECTED as item}<li>{item}</li>{/each}
-                    </ul>
-                    <button type="button" class="link-btn" onclick={() => (showPolicy = !showPolicy)}>
-                        {showPolicy ? "Hide privacy policy" : "Read the full privacy policy"}
-                    </button>
-                    {#if showPolicy}
-                        <div class="policy-doc">
-                            {#each PRIVACY_POLICY as section}
-                                <h4>{section.heading}</h4>
-                                {#each section.body as line}<p class="muted">{line}</p>{/each}
-                            {/each}
+                        {/each}
+                    </nav>
+                </aside>
+                <div class="settings-body" use:settingsScrollSpy>
+                    <section
+                        id="settings-library"
+                        class="settings-section"
+                        data-settings-section="library"
+                        hidden={!sectionVisible("library")}>
+                        <header>
+                            <h2>Library &amp; updates</h2>
                             <p class="muted">
-                                Hosted copy:
-                                <a href={POLICY_URL} target="_blank" rel="noopener noreferrer">{POLICY_URL}</a>
+                                What gets saved, how often we look for new chapters, and how the extension itself
+                                updates.
                             </p>
-                        </div>
-                    {/if}
-                    {#if communityProfile}
-                        <p class="muted">
-                            {#if communityProfile.consentVersion > 0}
-                                You accepted v{communityProfile.consentVersion} on {new Date(
-                                    communityProfile.consentAt
-                                ).toLocaleDateString()}.
-                            {:else}
-                                Community features are off. Nothing is collected.
-                            {/if}
-                        </p>
-                    {/if}
-                </div>
-                {#if communityProfile?.enabled}
-                    <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px">
-                        <div>
-                            <p class="row-label">Community username</p>
-                            <p class="muted">
-                                {#if communityProfile.userId}
-                                    Registered as <strong>{communityProfile.username}</strong>. Your reading data syncs
-                                    hourly.
-                                {:else}
-                                    Choose a display name for the leaderboard. Letters, numbers, emoji, _ and - allowed.
-                                {/if}
-                            </p>
-                        </div>
-                        {#if !communityProfile.userId}
-                            <div style="display:flex;gap:8px;align-items:center;width:100%">
+                        </header>
+                        <div class="settings-grid">
+                            <div class="settings-row" hidden={!settingMatches("Auto-add manga")}>
+                                <div>
+                                    <p class="row-label">Auto-add manga</p>
+                                    <p class="muted">Save titles automatically when a supported chapter is opened.</p>
+                                </div>
+                                <label class="toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings?.autoAdd ?? true}
+                                        onchange={e => changeAutoAdd(e.currentTarget.checked)} />
+                                    <span class="track"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Update schedule")}>
+                                <div>
+                                    <p class="row-label">Update schedule</p>
+                                    <p class="muted">How often background checks run for new chapters.</p>
+                                </div>
+                                <div style="display:flex;gap:8px;align-items:center">
+                                    <select
+                                        aria-label="Update schedule"
+                                        value={updateIntervalSelection}
+                                        onchange={e => changeUpdateInterval(e.currentTarget.value)}>
+                                        <option value={0}>Manual only</option>
+                                        <option value={6}>Every 6 h</option>
+                                        <option value={12}>Every 12 h</option>
+                                        <option value={24}>Daily</option>
+                                    </select>
+                                    {#if updateIntervalSaved}<span class="saved-flash">✓ Saved</span>{/if}
+                                </div>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Auto-pause after N days")}>
+                                <div>
+                                    <p class="row-label">Auto-pause after N days</p>
+                                    <p class="muted">
+                                        Titles with no reading for this many days show as paused. 0 disables auto-pause.
+                                    </p>
+                                </div>
                                 <input
-                                    type="text"
-                                    placeholder="your-username"
-                                    maxlength="30"
-                                    style="flex:1"
-                                    bind:value={communityUsernameInput}
-                                    onkeydown={e => {
-                                        if (e.key === "Enter") void registerCommunity()
-                                    }} />
-                                <button onclick={() => void registerCommunity()}>Join</button>
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    aria-label="Auto-pause after days of no reading"
+                                    style="width:96px"
+                                    value={autoPauseDays}
+                                    onchange={e => void changeAutoPauseDays(e.currentTarget.value)} />
                             </div>
-                            {#if communityRegisterError}
-                                <p class="muted" style="color:var(--color-warn)">{communityRegisterError}</p>
-                            {/if}
-                        {/if}
-                    </div>
-                {/if}
-                {#if communityProfile?.userId}
-                    <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:8px">
-                        <div>
-                            <p class="row-label">Delete my community data</p>
+                            <div class="settings-row" hidden={!settingMatches("New-chapter notifications")}>
+                                <div>
+                                    <p class="row-label">New-chapter notifications</p>
+                                    <p class="muted">
+                                        Show a desktop notification when an update check finds new chapters.
+                                    </p>
+                                </div>
+                                <label class="toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings?.notifyNewChapters ?? true}
+                                        onchange={e =>
+                                            void updateSetting({ notifyNewChapters: e.currentTarget.checked })} />
+                                    <span class="track"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Daily automatic backup")}>
+                                <div>
+                                    <p class="row-label">Daily automatic backup</p>
+                                    <p class="muted">
+                                        Keep a rolling on-device restore point, refreshed daily when your library
+                                        changes. Restore from Data.
+                                    </p>
+                                </div>
+                                <label class="toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings?.autoBackup !== false}
+                                        onchange={e => void updateSetting({ autoBackup: e.currentTarget.checked })} />
+                                    <span class="track"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Extension updates")}>
+                                <div>
+                                    <p class="row-label">Extension updates</p>
+                                    <p class="muted">
+                                        {#if extensionUpdate?.available}
+                                            v{extensionUpdate.latestVersion} is available.
+                                        {:else if extensionUpdate}
+                                            Up to date (v{extensionUpdate.latestVersion}).
+                                        {:else}
+                                            Check for a new version of AMR.
+                                        {/if}
+                                    </p>
+                                </div>
+                                <div style="display:flex;gap:8px;align-items:center">
+                                    {#if extensionUpdate?.available}
+                                        <button
+                                            type="button"
+                                            class="btn-sm"
+                                            onclick={() =>
+                                                void browser.tabs.create({ url: extensionUpdate!.releaseUrl })}>
+                                            Download ↗
+                                        </button>
+                                    {/if}
+                                    <button
+                                        type="button"
+                                        class="btn-outline btn-sm"
+                                        disabled={checkingExtUpdate}
+                                        onclick={() => void checkForExtensionUpdate()}>
+                                        {checkingExtUpdate ? "Checking…" : "Check now"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section
+                        id="settings-reader"
+                        class="settings-section"
+                        data-settings-section="reader"
+                        hidden={!sectionVisible("reader")}>
+                        <header>
+                            <h2>Reader</h2>
                             <p class="muted">
-                                Permanently removes your username, votes, and reading events from our server.
+                                Defaults for the reader. Each can still be changed per chapter from the reader toolbar.
                             </p>
-                        </div>
-                        {#if deleteDataConfirm}
-                            <div style="display:flex;gap:8px">
-                                <button
-                                    type="button"
-                                    class="btn-sm confirm-remove-btn armed"
-                                    disabled={deleteDataWorking}
-                                    onclick={() => void deleteCommunityData()}
-                                    >{deleteDataWorking ? "Deleting…" : "Confirm delete"}</button>
-                                <button type="button" class="btn-sm" onclick={() => (deleteDataConfirm = false)}
-                                    >Cancel</button>
+                        </header>
+                        <div class="settings-grid">
+                            <div class="settings-row" hidden={!settingMatches("Reading direction")}>
+                                <div>
+                                    <p class="row-label">Reading direction</p>
+                                    <p class="muted">Left-to-right, right-to-left (manga), or vertical (webtoon).</p>
+                                </div>
+                                <select
+                                    aria-label="Reading direction"
+                                    value={settings?.readingDirection ?? "ltr"}
+                                    onchange={e =>
+                                        void updateSetting({
+                                            readingDirection: e.currentTarget.value as "ltr" | "rtl" | "vertical"
+                                        })}>
+                                    <option value="ltr">Left to right</option>
+                                    <option value="rtl">Right to left</option>
+                                    <option value="vertical">Vertical</option>
+                                </select>
                             </div>
-                        {:else}
-                            <button type="button" class="btn-sm" onclick={() => (deleteDataConfirm = true)}
-                                >Delete my community data</button>
-                        {/if}
-                    </div>
-                {/if}
-                <p class="shelf-label" style="margin-top:28px">Danger zone</p>
-                <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:10px">
-                    <div>
-                        <p class="row-label">Clear reading history</p>
-                        <p class="muted">
-                            Removes all history events and reading progress. Library manga and chapters are kept.
-                        </p>
-                    </div>
-                    {#if clearConfirm === "history"}
-                        <p class="muted" style="color:var(--color-warn)">
-                            This removes all history and progress and cannot be undone.
-                        </p>
-                        <div style="display:flex;gap:8px">
-                            <button class="btn-outline" onclick={() => (clearConfirm = "")}>Cancel</button>
-                            <button
-                                class="btn-danger"
-                                disabled={clearWorking}
-                                onclick={() => void executeClear("history")}>
-                                {clearWorking ? "Clearing…" : "Yes, clear history"}
-                            </button>
+                            <div class="settings-row" hidden={!settingMatches("Page fit")}>
+                                <div>
+                                    <p class="row-label">Page fit</p>
+                                    <p class="muted">How pages are scaled to the viewport.</p>
+                                </div>
+                                <select
+                                    aria-label="Page fit"
+                                    value={settings?.pageFit ?? "width"}
+                                    onchange={e =>
+                                        void updateSetting({
+                                            pageFit: e.currentTarget.value as
+                                                | "width"
+                                                | "height"
+                                                | "contain"
+                                                | "original"
+                                                | "actual"
+                                        })}>
+                                    <option value="width">Fit width</option>
+                                    <option value="height">Fit height</option>
+                                    <option value="contain">Fit screen</option>
+                                    <option value="original">Original size</option>
+                                    <option value="actual">Actual size (native resolution)</option>
+                                </select>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Page width")}>
+                                <div>
+                                    <p class="row-label">Page width</p>
+                                    <p class="muted">
+                                        How much of the width Fit-width fills: {settings?.pageWidthPct ?? 100}%. Lower
+                                        it for long strips, raise it to fill the screen.
+                                    </p>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="30"
+                                    max="100"
+                                    step="5"
+                                    aria-label="Page width percent"
+                                    value={settings?.pageWidthPct ?? 100}
+                                    onchange={e =>
+                                        void updateSetting({ pageWidthPct: Number(e.currentTarget.value) })} />
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Show page number")}>
+                                <div>
+                                    <p class="row-label">Show page number</p>
+                                    <p class="muted">Overlay the current page number while reading.</p>
+                                </div>
+                                <label class="toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings?.showPageNumber ?? true}
+                                        onchange={e =>
+                                            void updateSetting({ showPageNumber: e.currentTarget.checked })} />
+                                    <span class="track"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Double-page gap")}>
+                                <div>
+                                    <p class="row-label">Double-page gap</p>
+                                    <p class="muted">
+                                        Space between the two pages in Double-page mode: {settings?.spreadGapPx ?? 8}px.
+                                        Seamless spreads ignore this.
+                                    </p>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="40"
+                                    step="1"
+                                    aria-label="Double-page gap in pixels"
+                                    value={settings?.spreadGapPx ?? 8}
+                                    onchange={e =>
+                                        void updateSetting({ spreadGapPx: Number(e.currentTarget.value) })} />
+                            </div>
+                            <div
+                                class="settings-row"
+                                hidden={!settingMatches("Remove gaps between pages (continuous mode)")}>
+                                <div>
+                                    <p class="row-label">Remove gaps between pages (continuous mode)</p>
+                                    <p class="muted">
+                                        Seamless webtoon-style scroll with no vertical gap between page images.
+                                    </p>
+                                </div>
+                                <div style="display:flex;gap:8px;align-items:center">
+                                    <label class="toggle">
+                                        <input
+                                            type="checkbox"
+                                            checked={noGapSelection}
+                                            onchange={e => void changeNoGapContinuous(e.currentTarget.checked)} />
+                                        <span class="track"></span>
+                                    </label>
+                                    {#if noGapSelectionSaved}<span class="saved-flash">✓ Saved</span>{/if}
+                                </div>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Preload pages")}>
+                                <div>
+                                    <p class="row-label">Preload pages</p>
+                                    <p class="muted">How many upcoming pages load eagerly (0-10).</p>
+                                </div>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    aria-label="Preload pages"
+                                    value={settings?.preloadPages ?? 3}
+                                    onchange={e =>
+                                        void updateSetting({
+                                            preloadPages: Math.max(0, Math.min(10, Number(e.currentTarget.value) || 0))
+                                        })} />
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Open chapters in")}>
+                                <div>
+                                    <p class="row-label">Open chapters in</p>
+                                    <p class="muted">
+                                        The built-in reader, or the source site in your browser. (Ctrl/middle-click
+                                        always opens the source.)
+                                    </p>
+                                </div>
+                                <select
+                                    aria-label="Open chapters in"
+                                    value={settings?.openChapterIn ?? "reader"}
+                                    onchange={e =>
+                                        void updateSetting({
+                                            openChapterIn: e.currentTarget.value as "reader" | "browser"
+                                        })}>
+                                    <option value="reader">Built-in reader</option>
+                                    <option value="browser">Source site</option>
+                                </select>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Chapter language")}>
+                                <div>
+                                    <p class="row-label">Chapter language</p>
+                                    <p class="muted">Preferred translation language for MangaDex chapter listings.</p>
+                                </div>
+                                <select
+                                    aria-label="Chapter language"
+                                    value={settings?.language ?? "en"}
+                                    onchange={e => void updateSetting({ language: e.currentTarget.value })}>
+                                    <option value="en">English</option>
+                                    <option value="es">Spanish</option>
+                                    <option value="es-la">Spanish (Latin America)</option>
+                                    <option value="fr">French</option>
+                                    <option value="pt-br">Portuguese (Brazil)</option>
+                                    <option value="de">German</option>
+                                    <option value="ru">Russian</option>
+                                    <option value="id">Indonesian</option>
+                                    <option value="it">Italian</option>
+                                    <option value="pl">Polish</option>
+                                    <option value="ja">Japanese</option>
+                                    <option value="ko">Korean</option>
+                                    <option value="zh">Chinese</option>
+                                    <option value="zh-hk">Chinese (Hong Kong)</option>
+                                    <option value="ar">Arabic</option>
+                                    <option value="vi">Vietnamese</option>
+                                </select>
+                            </div>
                         </div>
-                    {:else}
-                        <button class="btn-outline" onclick={() => (clearConfirm = "history")}>Clear history</button>
-                    {/if}
-                </div>
-                <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:10px">
-                    <div>
-                        <p class="row-label">Clear entire library</p>
-                        <p class="muted">
-                            Wipes all manga, chapters, history, bookmarks, and covers from local storage. Cannot be
-                            undone.
-                        </p>
-                    </div>
-                    {#if clearConfirm === "all"}
-                        <p class="muted" style="color:var(--color-warn)">Everything will be deleted permanently.</p>
-                        <div style="display:flex;gap:8px">
-                            <button class="btn-outline" onclick={() => (clearConfirm = "")}>Cancel</button>
-                            <button class="btn-danger" disabled={clearWorking} onclick={() => void executeClear("all")}>
-                                {clearWorking ? "Clearing…" : "Yes, wipe everything"}
-                            </button>
+                    </section>
+                    <section
+                        id="settings-appearance"
+                        class="settings-section"
+                        data-settings-section="appearance"
+                        hidden={!sectionVisible("appearance")}>
+                        <header>
+                            <h2>Appearance &amp; habits</h2>
+                            <p class="muted">Theme, your daily goal, and what stays blurred on the shelf.</p>
+                        </header>
+                        <div class="settings-grid">
+                            <div class="settings-row" hidden={!settingMatches("Theme")}>
+                                <div>
+                                    <p class="row-label">Theme</p>
+                                    <p class="muted">Dark, light, or follow your system setting.</p>
+                                </div>
+                                <select
+                                    aria-label="Theme"
+                                    value={settings?.theme ?? "dark"}
+                                    onchange={e =>
+                                        void updateSetting({
+                                            theme: e.currentTarget.value as "dark" | "light" | "system"
+                                        })}>
+                                    <option value="dark">Dark</option>
+                                    <option value="light">Light</option>
+                                    <option value="system">System</option>
+                                </select>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Daily reading goal")}>
+                                <div>
+                                    <p class="row-label">Daily reading goal</p>
+                                    <p class="muted">
+                                        Chapters per day to aim for (0 disables). Shown on the Stats tab.
+                                    </p>
+                                </div>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="50"
+                                    aria-label="Daily reading goal"
+                                    value={settings?.dailyGoal ?? 0}
+                                    onchange={e =>
+                                        void updateSetting({
+                                            dailyGoal: Math.max(0, Math.min(50, Number(e.currentTarget.value) || 0))
+                                        })} />
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Blur NSFW covers")}>
+                                <div>
+                                    <p class="row-label">Blur NSFW covers</p>
+                                    <p class="muted">
+                                        Blur covers of titles you've marked NSFW (from the detail view).
+                                    </p>
+                                </div>
+                                <label class="toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings?.blurNsfw ?? true}
+                                        onchange={e => void updateSetting({ blurNsfw: e.currentTarget.checked })} />
+                                    <span class="track"></span>
+                                </label>
+                            </div>
                         </div>
-                    {:else}
-                        <button class="btn-danger" onclick={() => (clearConfirm = "all")}>Clear library</button>
-                    {/if}
+                    </section>
+                    <section
+                        id="settings-community"
+                        class="settings-section"
+                        data-settings-section="community"
+                        hidden={!sectionVisible("community")}>
+                        <header>
+                            <h2>Privacy &amp; community</h2>
+                            <p class="muted">Opt-in only. Nothing leaves this device until you switch it on here.</p>
+                        </header>
+                        <div class="settings-grid">
+                            {#if !communityConfigured}
+                                <p class="muted">Community features are not configured in this build.</p>
+                            {/if}
+                            <div class="settings-row" hidden={!settingMatches("Community features")}>
+                                <div>
+                                    <p class="row-label">Community features</p>
+                                    <p class="muted">
+                                        Send anonymous usage and a username you choose to power install counts,
+                                        leaderboards, and recommendations. We never sell your data.
+                                    </p>
+                                </div>
+                                <label class="toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={communityProfile?.enabled ?? false}
+                                        onchange={e => void toggleCommunity(e.currentTarget.checked)} />
+                                    <span class="track"></span>
+                                </label>
+                            </div>
+                            <div
+                                class="settings-row"
+                                style="flex-direction:column;align-items:flex-start;gap:6px"
+                                hidden={!settingMatches("What we collect")}>
+                                <p class="row-label">What we collect</p>
+                                <ul class="policy-list">
+                                    {#each DATA_COLLECTED as item}<li>{item}</li>{/each}
+                                </ul>
+                                <button type="button" class="link-btn" onclick={() => (showPolicy = !showPolicy)}>
+                                    {showPolicy ? "Hide privacy policy" : "Read the full privacy policy"}
+                                </button>
+                                {#if showPolicy}
+                                    <div class="policy-doc">
+                                        {#each PRIVACY_POLICY as section}
+                                            <h4>{section.heading}</h4>
+                                            {#each section.body as line}<p class="muted">{line}</p>{/each}
+                                        {/each}
+                                        <p class="muted">
+                                            Hosted copy:
+                                            <a href={POLICY_URL} target="_blank" rel="noopener noreferrer"
+                                                >{POLICY_URL}</a>
+                                        </p>
+                                    </div>
+                                {/if}
+                                {#if communityProfile}
+                                    <p class="muted">
+                                        {#if communityProfile.consentVersion > 0}
+                                            You accepted v{communityProfile.consentVersion} on {new Date(
+                                                communityProfile.consentAt
+                                            ).toLocaleDateString()}.
+                                        {:else}
+                                            Community features are off. Nothing is collected.
+                                        {/if}
+                                    </p>
+                                {/if}
+                            </div>
+                            {#if communityProfile?.enabled}
+                                <div
+                                    class="settings-row"
+                                    style="flex-direction:column;align-items:flex-start;gap:8px"
+                                    hidden={!settingMatches("Community username")}>
+                                    <div>
+                                        <p class="row-label">Community username</p>
+                                        <p class="muted">
+                                            {#if communityProfile.userId}
+                                                Registered as <strong>{communityProfile.username}</strong>. Your reading
+                                                data syncs hourly.
+                                            {:else}
+                                                Choose a display name for the leaderboard. Letters, numbers, emoji, _
+                                                and - allowed.
+                                            {/if}
+                                        </p>
+                                    </div>
+                                    {#if !communityProfile.userId}
+                                        <div style="display:flex;gap:8px;align-items:center;width:100%">
+                                            <input
+                                                type="text"
+                                                placeholder="your-username"
+                                                maxlength="30"
+                                                style="flex:1"
+                                                bind:value={communityUsernameInput}
+                                                onkeydown={e => {
+                                                    if (e.key === "Enter") void registerCommunity()
+                                                }} />
+                                            <button onclick={() => void registerCommunity()}>Join</button>
+                                        </div>
+                                        {#if communityRegisterError}
+                                            <p class="muted" style="color:var(--color-warn)">
+                                                {communityRegisterError}
+                                            </p>
+                                        {/if}
+                                    {/if}
+                                </div>
+                            {/if}
+                            {#if communityProfile?.userId}
+                                <div
+                                    class="settings-row"
+                                    style="flex-direction:column;align-items:flex-start;gap:8px"
+                                    hidden={!settingMatches("Delete my community data")}>
+                                    <div>
+                                        <p class="row-label">Delete my community data</p>
+                                        <p class="muted">
+                                            Permanently removes your username, votes, and reading events from our
+                                            server.
+                                        </p>
+                                    </div>
+                                    {#if deleteDataConfirm}
+                                        <div style="display:flex;gap:8px">
+                                            <button
+                                                type="button"
+                                                class="btn-sm confirm-remove-btn armed"
+                                                disabled={deleteDataWorking}
+                                                onclick={() => void deleteCommunityData()}
+                                                >{deleteDataWorking ? "Deleting…" : "Confirm delete"}</button>
+                                            <button
+                                                type="button"
+                                                class="btn-sm"
+                                                onclick={() => (deleteDataConfirm = false)}>Cancel</button>
+                                        </div>
+                                    {:else}
+                                        <button type="button" class="btn-sm" onclick={() => (deleteDataConfirm = true)}
+                                            >Delete my community data</button>
+                                    {/if}
+                                </div>
+                            {/if}
+                        </div>
+                    </section>
+                    <section
+                        id="settings-danger"
+                        class="settings-section danger"
+                        data-settings-section="danger"
+                        hidden={!sectionVisible("danger")}>
+                        <header>
+                            <h2>Danger zone</h2>
+                            <p class="muted">These cannot be undone. Take a backup from the Data tab first.</p>
+                        </header>
+                        <div class="settings-grid">
+                            <div
+                                class="settings-row"
+                                style="flex-direction:column;align-items:flex-start;gap:10px"
+                                hidden={!settingMatches("Clear reading history")}>
+                                <div>
+                                    <p class="row-label">Clear reading history</p>
+                                    <p class="muted">
+                                        Removes all history events and reading progress. Library manga and chapters are
+                                        kept.
+                                    </p>
+                                </div>
+                                {#if clearConfirm === "history"}
+                                    <p class="muted" style="color:var(--color-warn)">
+                                        This removes all history and progress and cannot be undone.
+                                    </p>
+                                    <div style="display:flex;gap:8px">
+                                        <button class="btn-outline" onclick={() => (clearConfirm = "")}>Cancel</button>
+                                        <button
+                                            class="btn-danger"
+                                            disabled={clearWorking}
+                                            onclick={() => void executeClear("history")}>
+                                            {clearWorking ? "Clearing…" : "Yes, clear history"}
+                                        </button>
+                                    </div>
+                                {:else}
+                                    <button class="btn-outline" onclick={() => (clearConfirm = "history")}
+                                        >Clear history</button>
+                                {/if}
+                            </div>
+                            <div
+                                class="settings-row"
+                                style="flex-direction:column;align-items:flex-start;gap:10px"
+                                hidden={!settingMatches("Clear entire library")}>
+                                <div>
+                                    <p class="row-label">Clear entire library</p>
+                                    <p class="muted">
+                                        Wipes all manga, chapters, history, bookmarks, and covers from local storage.
+                                        Cannot be undone.
+                                    </p>
+                                </div>
+                                {#if clearConfirm === "all"}
+                                    <p class="muted" style="color:var(--color-warn)">
+                                        Everything will be deleted permanently.
+                                    </p>
+                                    <div style="display:flex;gap:8px">
+                                        <button class="btn-outline" onclick={() => (clearConfirm = "")}>Cancel</button>
+                                        <button
+                                            class="btn-danger"
+                                            disabled={clearWorking}
+                                            onclick={() => void executeClear("all")}>
+                                            {clearWorking ? "Clearing…" : "Yes, wipe everything"}
+                                        </button>
+                                    </div>
+                                {:else}
+                                    <button class="btn-danger" onclick={() => (clearConfirm = "all")}
+                                        >Clear library</button>
+                                {/if}
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </div>
         {/if}
