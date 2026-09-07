@@ -3927,8 +3927,7 @@
                     </div>
                 </section>
             {/snippet}
-            <div class="page-head">
-                <h1>Discover</h1>
+            <div class="page-head no-title">
                 <div class="disc-head-actions">
                     <button
                         type="button"
@@ -4126,9 +4125,6 @@
                 {/if}
             {/if}
         {:else if activeSection === "Library"}
-            <div class="page-head">
-                <h1>Library</h1>
-            </div>
             <div class="library-toolbar">
                 <div class="toolbar-row toolbar-primary">
                     <input
@@ -4631,7 +4627,6 @@
                 </div>
             {/if}
         {:else if activeSection === "Bookmarks"}
-            <h1>Bookmarks</h1>
             <p class="muted search-hint">
                 Pages you've saved while reading. Click a bookmark to jump straight to that page.
             </p>
@@ -4666,8 +4661,7 @@
                 </ul>
             {/if}
         {:else if activeSection === "Updates"}
-            <div class="page-head">
-                <h1>Updates</h1>
+            <div class="page-head no-title">
                 <button
                     type="button"
                     onclick={() => void checkForUpdates()}
@@ -4822,8 +4816,7 @@
                 {/if}
             {/if}
         {:else if activeSection === "History"}
-            <div class="page-head">
-                <h1>Reading history</h1>
+            <div class="page-head no-title">
                 <button type="button" class="btn-sm" onclick={() => void loadHistory()}>Refresh</button>
             </div>
             {#if !historyLoaded}
@@ -4883,7 +4876,6 @@
                 </div>
             {/if}
         {:else if activeSection === "Stats"}
-            <h1>Stats &amp; achievements</h1>
             <div class="stat-row">
                 <div class="stat-box"><strong>{stats?.completedChapters ?? 0}</strong><span>Completed</span></div>
                 <div class="stat-box"><strong>{stats?.mangaCount ?? 0}</strong><span>Saved</span></div>
@@ -5176,8 +5168,6 @@
                 </p>
             {/if}
         {:else if activeSection === "Sources"}
-            <h1>Sources</h1>
-
             {#if !hasPermission}
                 <div class="permission-banner">
                     <div>

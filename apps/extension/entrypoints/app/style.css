@@ -154,6 +154,25 @@ nav button.active {
     font-weight: 600;
 }
 
+/* The sidebar names the page, so most pages carry no heading; a caret on the active
+   tab is the "you are here" cue instead. */
+nav button {
+    position: relative;
+}
+
+nav button.active::after {
+    content: "";
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    width: 7px;
+    height: 7px;
+    border-top: 2px solid var(--accent);
+    border-right: 2px solid var(--accent);
+    transform: translateY(-50%) rotate(45deg);
+    opacity: 0.9;
+}
+
 main {
     padding: 52px 60px;
     max-width: 1140px;
@@ -714,6 +733,12 @@ button:disabled {
 
 .page-head h1 {
     margin: 0;
+}
+
+/* Action row for pages without a heading: actions sit right, less vertical space. */
+.page-head.no-title {
+    justify-content: flex-end;
+    margin-bottom: 20px;
 }
 
 .library-toolbar {
