@@ -151,6 +151,7 @@ export const READ_ONLY_TYPES: ReadonlySet<RuntimeRequest["type"]> = new Set<Runt
     "community:trending",
     // account profile reads/writes live in storage.local; no live-bus scope covers them.
     "account:status",
+    "source:info",
     "account:unlink",
     "suggestions:get",
     "suggestions:continue",

@@ -567,3 +567,31 @@ describe("createMadaraAdapter", () => {
         expect(results[0]?.coverUrl).toBe("https://cdn.example/real-cool.jpg")
     })
 })
+
+describe("createMadaraAdapter altMangaPaths + supportUrl", () => {
+    const multi = createMadaraAdapter({
+        id: "multi",
+        name: "Multi",
+        origin: "https://multi.example",
+        domains: ["multi.example"],
+        altMangaPaths: ["novel"],
+        supportUrl: "https://ko-fi.com/multi"
+    })
+    it("matches chapters and series under every listed base", () => {
+        expect(multi.match(new URL("https://multi.example/novel/evolution-starting-from-a-lake/chapter-2/"))).toBe(
+            "chapter"
+        )
+        expect(multi.match(new URL("https://multi.example/manga/cool-manga/chapter-2/"))).toBe("chapter")
+        expect(multi.match(new URL("https://multi.example/novel/evolution-starting-from-a-lake/"))).toBe("manga")
+        expect(multi.match(new URL("https://multi.example/blog/evolution-starting-from-a-lake/chapter-2/"))).toBe(
+            "none"
+        )
+        expect(multi.parseMangaUrl?.(new URL("https://multi.example/novel/some-novel/chapter-9/"))).toMatchObject({
+            sourceMangaId: "some-novel"
+        })
+    })
+    it("exposes the tip link on the manifest and omits it when unset", () => {
+        expect(multi.manifest.supportUrl).toBe("https://ko-fi.com/multi")
+        expect(adapter.manifest.supportUrl).toBeUndefined()
+    })
+})

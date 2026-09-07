@@ -24,6 +24,18 @@ const SITES: MadaraConfig[] = [
     // { id: "rawkuma", name: "Rawkuma", origin: "https://rawkuma.com", domains: ["rawkuma.com"] }, // retired 2026-07-19: rawkuma moved its catalog to rawkuma.net with a non-Madara query-string URL scheme; rawkuma.com no longer serves manga content (no wp-manga /manga/<slug>/ pages). Re-adding the .net site needs a bespoke adapter, not this config row. Verified live 2026-07-19.
     // { id: "hivetoon", name: "HiveToon", origin: "https://hivetoon.com", domains: ["hivetoon.com"], imageOrigins: ["*://*.hivetoon.com/*"] }, // retired 2026-07-16: hivetoon.com 301-redirects to a different domain, hivetoons.org - verified live it is NOT a same-engine rebrand like aryascans->brainrotcomics: hivetoons.org runs Astro (astro-view-transitions markers, astro-island hydration islands, /_vcomics/*.js module scripts), zero wp-manga-chapter/reading-content/c-tabs-item/manga-chapters-holder markup anywhere, and chapter URLs are /series/<slug>/chapter-N with no trailing slash - a full engine change like the manhuaplus/templescan precedent above, so re-adding needs a bespoke adapter, not a config row.
     { id: "lhtranslation", name: "LHTranslation", origin: "https://lhtranslation.net", domains: ["lhtranslation.net"] },
+    // Added 2026-09-07 (user request). Translation group publishing both manga (/manga/) and
+    // novels (/novel/); novel chapters are text, so the reader shows "open on site" for them
+    // while tracking and the on-page panel work. Cloudflare-gated for headless fetches, fine
+    // from the user's own browser. Ko-fi surfaced via supportUrl.
+    {
+        id: "dragontea",
+        name: "DragonTea",
+        origin: "https://dragontea.ink",
+        domains: ["dragontea.ink"],
+        altMangaPaths: ["novel"],
+        supportUrl: "https://ko-fi.com/dragontea"
+    },
     // { id: "harimanga", name: "HariManga", origin: "https://harimanga.me", domains: ["harimanga.me"] }, // retired: site down 2026-06 - re-enable when back
     // { id: "utoon", name: "UToon", origin: "https://utoon.net", domains: ["utoon.net"] }, // retired 2026-07-19: utoon.net hijacked - serves a fake ransom/invoice page, no Madara markup or manga content. Verified live 2026-07-19.
     { id: "mangasushi", name: "MangaSushi", origin: "https://mangasushi.org", domains: ["mangasushi.org"] },

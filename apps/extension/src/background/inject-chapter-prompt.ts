@@ -1,6 +1,8 @@
 // Self-contained - serialized and injected into the page via scripting.executeScript.
 // Must not reference any external variables or imports.
-export function injectChapterPrompt(chapterUrl: string): void {
+export type ChapterPromptSupport = { sourceName: string; sourceUrl: string | null; amrUrl: string; amrLabel: string }
+
+export function injectChapterPrompt(chapterUrl: string, support?: ChapterPromptSupport): void {
     const BANNER_ID = "__amr-chapter-prompt__"
     if (document.getElementById(BANNER_ID)) return
 
@@ -94,6 +96,11 @@ export function injectChapterPrompt(chapterUrl: string): void {
         .btn-p { background: #6366f1; border-color: transparent; }
         .btn-p:hover:not(:disabled) { background: #818cf8; }
         .btn-moon { font-size: 14px; padding: 7px 8px; flex: 0 0 auto; }
+        .sup-cap { font-size: 10px; color: #64748b; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 5px; }
+        .sup { display: flex; gap: 6px; }
+        .sup .btn { padding: 5px 8px; font-size: 11px; background: rgba(255,255,255,0.05); }
+        .sup .btn-site { border-color: rgba(250,204,21,0.45); color: #fde68a; }
+        .sup .btn-amr { border-color: rgba(99,102,241,0.6); color: #c7d2fe; }
         .dark-active { background: #1e3a8a; border-color: #3b82f6; }
     `
 
@@ -141,8 +148,34 @@ export function injectChapterPrompt(chapterUrl: string): void {
 
     const btrack = mk("button", { id: "btrack", className: "btn", textContent: "Mark read" })
 
+    // Tip links, above the chapter nav. Each button carries its own name so it is always
+    // clear which one goes to the site's team and which one keeps this extension going.
+    const supWrap = mk("div")
+    if (support) {
+        const cap = mk("div", { className: "sup-cap", textContent: "Say thanks on Ko-fi" })
+        const sup = mk("div", { className: "sup" })
+        if (support.sourceUrl) {
+            const siteUrl = support.sourceUrl
+            const bsite = mk("button", {
+                className: "btn btn-site",
+                textContent: "☕ " + support.sourceName,
+                title: "Support " + support.sourceName + " (this site's team) on Ko-fi"
+            })
+            bsite.addEventListener("click", () => window.open(siteUrl, "_blank", "noopener"))
+            sup.appendChild(bsite)
+        }
+        const bamr = mk("button", {
+            className: "btn btn-amr",
+            textContent: "☕ " + support.amrLabel,
+            title: "Support " + support.amrLabel + " (this extension) on Ko-fi"
+        })
+        bamr.addEventListener("click", () => window.open(support.amrUrl, "_blank", "noopener"))
+        sup.appendChild(bamr)
+        supWrap.append(cap, sup)
+    }
+
     const inner = mk("div", { className: "inner" })
-    inner.append(hd, sep, row1, row2, btrack)
+    inner.append(hd, sep, ...(support ? [supWrap] : []), row1, row2, btrack)
 
     const panel = mk("div", { className: "panel" })
     panel.append(progTrack, inner)

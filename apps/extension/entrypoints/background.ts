@@ -16,7 +16,8 @@ import { findSource, searchMangaStreaming } from "../src/sources"
 import { success, failure, type HandlerContext } from "../src/background/handler-types"
 import { captureChapter, clearAddedBadge, ADD_BADGE_ALARM_NAME } from "../src/background/capture"
 import { isInternalTab, isInternalUrl } from "../src/background/tab-fetch"
-import { injectChapterPrompt } from "../src/background/inject-chapter-prompt"
+import { injectChapterPrompt, type ChapterPromptSupport } from "../src/background/inject-chapter-prompt"
+import { AMR_KOFI_URL, AMR_SUPPORT_LABEL } from "../src/support"
 import { NEW_CHAPTERS_NOTIFICATION_ID } from "../src/notifications"
 import { createBackup } from "../src/database"
 import {
@@ -188,8 +189,14 @@ export default defineBackground(() => {
             }
             const source = findSource(parsedUrl)
             if (source?.match(parsedUrl) === "chapter") {
+                const support: ChapterPromptSupport = {
+                    sourceName: source.manifest.name,
+                    sourceUrl: source.manifest.supportUrl ?? null,
+                    amrUrl: AMR_KOFI_URL,
+                    amrLabel: AMR_SUPPORT_LABEL
+                }
                 void browser.scripting
-                    .executeScript({ target: { tabId }, func: injectChapterPrompt, args: [tab.url] })
+                    .executeScript({ target: { tabId }, func: injectChapterPrompt, args: [tab.url, support] })
                     .catch(() => {})
             }
         }

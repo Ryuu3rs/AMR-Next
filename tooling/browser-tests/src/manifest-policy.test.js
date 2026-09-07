@@ -65,6 +65,7 @@ const allowedRequiredHosts = [
     "https://brainrotcomics.com/*",
     "https://cdn.myanimelist.net/*",
     "https://comix.to/*",
+    "https://dragontea.ink/*",
     "https://dynasty-scans.com/*",
     "https://en-thunderscans.com/*",
     "https://fanfox.net/*",

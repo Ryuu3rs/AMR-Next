@@ -3,6 +3,7 @@
     import type { ResolvedChapter } from "@amr/source-sdk"
     import { onDestroy, onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
+    import { AMR_KOFI_URL, AMR_SUPPORT_LABEL } from "../../src/support"
     import { subscribeLive } from "../../src/live"
     import { createProgressReporter } from "../../src/throttle"
     import { spreadView } from "../../src/reader-spread"
@@ -43,6 +44,22 @@
     let chromeHidden = $state(false)
     let mangaId = $state("")
     let showHelp = $state(false)
+    type SourceInfo = { id: string; name: string; homepage: string | null; supportUrl: string | null }
+    let sourceInfo = $state<SourceInfo | null>(null)
+    $effect(() => {
+        const sourceId = chapter?.manga.sourceId
+        if (!sourceId) {
+            sourceInfo = null
+            return
+        }
+        void sendRuntimeMessage<SourceInfo | null>({ type: "source:info", sourceId })
+            .then(info => {
+                if (chapter?.manga.sourceId === sourceId) sourceInfo = info
+            })
+            .catch(() => {
+                sourceInfo = null
+            })
+    })
 
     // Fallback: when a chapter fails to resolve or its page images won't load,
     // let the user search every source for a working mirror.
@@ -1125,6 +1142,22 @@
                     {sourceDomain}
                 </button>
             {/if}
+            {#if sourceInfo?.supportUrl}
+                <button
+                    class="source-link kofi kofi-site"
+                    type="button"
+                    title="Support {sourceInfo.name} (this site's team) on Ko-fi"
+                    onclick={() => openExternal(sourceInfo?.supportUrl)}>
+                    ☕ {sourceInfo.name}
+                </button>
+            {/if}
+            <button
+                class="source-link kofi kofi-amr"
+                type="button"
+                title="Support {AMR_SUPPORT_LABEL} (this extension) on Ko-fi"
+                onclick={() => openExternal(AMR_KOFI_URL)}>
+                ☕ {AMR_SUPPORT_LABEL}
+            </button>
         {/if}
     </div>
     <div class="header-right">
@@ -1663,5 +1696,17 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    .kofi {
+        white-space: nowrap;
+    }
+    .kofi-site {
+        color: #fde68a;
+        border-color: rgba(250, 204, 21, 0.45);
+    }
+    .kofi-amr {
+        color: #c7d2fe;
+        border-color: rgba(99, 102, 241, 0.6);
     }
 </style>

@@ -17,6 +17,9 @@ export type SourceManifest = {
     }
     fixtureVersion: number
     homepage?: string
+    // Where readers can tip the site's own team (Ko-fi, Patreon...). Shown next to the
+    // extension's own support link, always labelled so the two are never confused.
+    supportUrl?: string
     // Optional extra host-permission origin patterns for cover/page-image CDN hosts
     // that differ from the adapter's own site domain(s) - e.g. a separate subdomain
     // (storage.example.com) or an entirely different CDN host. Additive: adapters

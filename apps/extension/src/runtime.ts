@@ -211,6 +211,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("account:link"), token: z.string().trim().min(10).max(200) }),
     z.object({ type: z.literal("account:unlink") }),
     z.object({ type: z.literal("account:sync") }),
+    z.object({ type: z.literal("source:info"), sourceId: z.string().min(1).max(64) }),
     z.object({ type: z.literal("suggestions:get"), force: z.boolean().optional() }),
     z.object({ type: z.literal("suggestions:continue") }),
     z.object({ type: z.literal("suggestions:hide"), anilistId: z.number().int().positive() }),

@@ -67,6 +67,17 @@ async function findChapterByNumberInUrl(rawUrl: string) {
 }
 
 export const readerHandlers: HandlerMap = {
+    // Name + tip link of a source, for the reader header's support buttons.
+    "source:info": async request => {
+        const source = getSourceById(request.sourceId)
+        if (!source) return null
+        return {
+            id: source.manifest.id,
+            name: source.manifest.name,
+            homepage: source.manifest.homepage ?? null,
+            supportUrl: source.manifest.supportUrl ?? null
+        }
+    },
     "page:current": async (_request, ctx) => {
         const tab = ctx.sender.tab ?? (await browser.tabs.query({ active: true, currentWindow: true }))[0]
         const url = tab?.url

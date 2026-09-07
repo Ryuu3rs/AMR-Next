@@ -29,8 +29,14 @@ export type MadaraConfig = {
     domains: string[]
     // URL base segment for series, e.g. "manga" -> /manga/<slug>/. Default "manga".
     mangaPath?: string
+    // Extra series bases accepted by match()/parse in addition to mangaPath, for sites that
+    // publish under several post types (e.g. /manga/ and /novel/). Search and series URLs
+    // still use mangaPath.
+    altMangaPaths?: readonly string[]
     // Chapter slug prefix, e.g. "chapter" -> chapter-12. Default "chapter".
     chapterPrefix?: string
+    // Tip link for the site's own team; surfaces in the reader and on-page panel.
+    supportUrl?: string
     // Some Madara sites nest chapters under a volume segment, e.g.
     // /manga/<slug>/volume-9/chapter-71/. Set true to accept an optional
     // volume-<x>/ segment between the series slug and the chapter slug so
@@ -407,13 +413,14 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
     const mangaPath = config.mangaPath ?? "manga"
     const chapterPrefix = config.chapterPrefix ?? "chapter"
     const language = config.language ?? "en"
-    const escapedPath = mangaPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const escapePart = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const escapedPath = [mangaPath, ...(config.altMangaPaths ?? [])].map(escapePart).join("|")
     const escapedPrefix = chapterPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     // Optionally accept a Madara volume segment (e.g. /volume-9/) between the series
     // slug and the chapter slug for sites that nest chapters under volumes.
     const volumeSegment = config.volumePath ? "(?:vol(?:ume)?[-_][^/]+/)?" : ""
-    const chapterRe = new RegExp(`^/${escapedPath}/([^/]+)/${volumeSegment}(${escapedPrefix}[^/]+)(?:/|$)`)
-    const mangaRe = new RegExp(`^/${escapedPath}/([^/]+)/?$`)
+    const chapterRe = new RegExp(`^/(?:${escapedPath})/([^/]+)/${volumeSegment}(${escapedPrefix}[^/]+)(?:/|$)`)
+    const mangaRe = new RegExp(`^/(?:${escapedPath})/([^/]+)/?$`)
     const chapterNumberRe = new RegExp(`${escapedPrefix}-(\\d+(?:[.-]\\d+)?)`, "i")
 
     const browserHeaders = {
@@ -500,6 +507,7 @@ export function createMadaraAdapter(config: MadaraConfig): SourceAdapter {
             requestRateLimit: config.rateLimit ?? { requests: 3, intervalMs: 1000 },
             fixtureVersion: 1,
             homepage: config.origin,
+            ...(config.supportUrl ? { supportUrl: config.supportUrl } : {}),
             ...(config.imageOrigins ? { imageOrigins: config.imageOrigins } : {})
         },
 

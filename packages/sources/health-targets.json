@@ -161,5 +161,10 @@
         "seriesUrl": "https://mangak.io/semantic-error",
         "expectTitle": "Semantic Error",
         "note": "server-rendered Next.js; series at /{slug}, chapters at /{slug}/chapter-{N}; page images on rotating rx.*.org CDN"
+    },
+    "dragontea": {
+        "seriesUrl": "https://dragontea.ink/novel/evolution-starting-from-a-lake/",
+        "expectTitle": "Evolution Starting",
+        "note": "user-supplied 2026-09-07; novel post type (altMangaPaths); Cloudflare challenges headless probes"
     }
 }
