@@ -195,8 +195,9 @@ See [docs/README.md](docs/README.md) for architecture, source adapter authoring,
 
 ## License
 
-Licensed under the **GNU General Public License v3.0 or later** (see [LICENSE](LICENSE)).
+Licensed under the **Apache License, Version 2.0** (see [LICENSE](LICENSE) and [NOTICE](NOTICE)).
 
-This is a ground-up rewrite of the original All Mangas Reader and remains GPL-3.0 as a
-derivative work. If you distribute a modified version, you must keep it under the GPL
-and make the source available.
+AMR-Next is an original codebase. It shares the "All Mangas Reader" name with an earlier,
+unmaintained extension of that name but contains none of its code. You may use, modify and
+redistribute it under the Apache-2.0 terms; the AMR-Next name and logo are not part of that
+grant.
