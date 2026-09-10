@@ -540,33 +540,33 @@
 ### Features
 
 * cross-browser extension rewrite (WXT + Svelte) with source adapters, reliability, and release automation ([#1](https://github.com/Ryuu3rs/AMR-Next/issues/1)) ([624a636](https://github.com/Ryuu3rs/AMR-Next/commit/624a6367639ad27dbc3453e3f970bade36645966))
-* **lab:** add BatchTester and MirrorDiagnostics for mirror testing ([8d422ca](https://github.com/Ryuu3rs/AMR-Next/commit/8d422ca1bb989b6ccdd53f9ee87313cd05c00294))
-* **mirrors:** add disabledForSearch flag to disable search-only ([ded0b1d](https://github.com/Ryuu3rs/AMR-Next/commit/ded0b1da7a5210f4076d9723def92ec037dacc82))
-* **ui:** add MangaHealth component for site status checking ([625372a](https://github.com/Ryuu3rs/AMR-Next/commit/625372a09903139d72ac487223d909987bf35f31))
-* **v4.0.1:** Quick category button & notification click fix ([7991514](https://github.com/Ryuu3rs/AMR-Next/commit/7991514163364bcc2b5f47c906dbe275c0f2088c))
-* **v4.0.3:** Add manga by URL feature for Cloudflare-protected sites ([d490d27](https://github.com/Ryuu3rs/AMR-Next/commit/d490d27b6bff7feef8e2998fa86d0a534c10b00b))
-* **v4.0.4:** Add Weeb Central mirror ([ced2a99](https://github.com/Ryuu3rs/AMR-Next/commit/ced2a996d82486438fd8cb320872e08aab2043bc))
+* **lab:** add BatchTester and MirrorDiagnostics for mirror testing (8d422ca)
+* **mirrors:** add disabledForSearch flag to disable search-only (ded0b1d)
+* **ui:** add MangaHealth component for site status checking (625372a)
+* **v4.0.1:** Quick category button & notification click fix (7991514)
+* **v4.0.3:** Add manga by URL feature for Cloudflare-protected sites (d490d27)
+* **v4.0.4:** Add Weeb Central mirror (ced2a99)
 
 
 ### Bug Fixes
 
-* app isn't fully initialized using firefox ([6206bbc](https://github.com/Ryuu3rs/AMR-Next/commit/6206bbcf01fdc37cb3e4428cc9f5a19b7887acdc))
-* calling map to undefined variable ([95c2d57](https://github.com/Ryuu3rs/AMR-Next/commit/95c2d57b4a2fedd826926b4839214f02da183ce3))
-* can't enable gist without restarting browser ([806b365](https://github.com/Ryuu3rs/AMR-Next/commit/806b365879874881af4c53b573d5e6f866f588bb))
-* chapter list loading in reader and popup views ([2399d0c](https://github.com/Ryuu3rs/AMR-Next/commit/2399d0c651106dc3a0b674759d8e9aa0972059a3))
-* database persistence and Vue 3 Proxy serialization issues ([aed45f2](https://github.com/Ryuu3rs/AMR-Next/commit/aed45f2dfe83b3f31f01e9eb6fc5d5dfb9ffe3f7))
-* database persistence, dashboard components, and infrastructure updates ([2e0a2f7](https://github.com/Ryuu3rs/AMR-Next/commit/2e0a2f72d79190f3220a494ffd3870dd190eb99b))
-* image loading for MangaHere and protocol-relative URLs ([a3a5dc0](https://github.com/Ryuu3rs/AMR-Next/commit/a3a5dc04b18bd89f5c6a1f8e6065a8c53ecb38fb))
-* **mirrors:** add null checks to base classes to prevent crashes ([08b529f](https://github.com/Ryuu3rs/AMR-Next/commit/08b529fa7754397cb3fe22bf69d04597e3c00465))
-* **mirrors:** fix MangaBuddy variable name typo ([fe642e7](https://github.com/Ryuu3rs/AMR-Next/commit/fe642e7df1def2515169ee478cf400650cc13cde))
-* UI components and debug logging improvements ([f74bd4e](https://github.com/Ryuu3rs/AMR-Next/commit/f74bd4e527636931b5eebcf60672badc960092be))
+* app isn't fully initialized using firefox (6206bbc)
+* calling map to undefined variable (95c2d57)
+* can't enable gist without restarting browser (806b365)
+* chapter list loading in reader and popup views (2399d0c)
+* database persistence and Vue 3 Proxy serialization issues (aed45f2)
+* database persistence, dashboard components, and infrastructure updates (2e0a2f7)
+* image loading for MangaHere and protocol-relative URLs (a3a5dc0)
+* **mirrors:** add null checks to base classes to prevent crashes (08b529f)
+* **mirrors:** fix MangaBuddy variable name typo (fe642e7)
+* UI components and debug logging improvements (f74bd4e)
 
 
 ### Performance Improvements
 
-* **reader:** centralize scroll handling with throttled event broadcasting ([eca7928](https://github.com/Ryuu3rs/AMR-Next/commit/eca7928763dabd87daaf3693756892d15fc51bb2))
-* **reader:** implement quick performance wins for scan lookup and state saves ([c17fe0c](https://github.com/Ryuu3rs/AMR-Next/commit/c17fe0c1bc519e802dce365ce9850736dc2dd4f9))
-* **reader:** memoize thumbnails and gate debug logs ([e8aa153](https://github.com/Ryuu3rs/AMR-Next/commit/e8aa1534ec8a33220ee1af92f72823a74f0e1d21))
+* **reader:** centralize scroll handling with throttled event broadcasting (eca7928)
+* **reader:** implement quick performance wins for scan lookup and state saves (c17fe0c)
+* **reader:** memoize thumbnails and gate debug logs (e8aa153)
 
 ## Changelog
 
