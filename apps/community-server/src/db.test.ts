@@ -245,3 +245,29 @@ test("ratings are stored under the normalized title so they join reads (bughunt 
     // getMangaStats normalizes its argument too, so a raw or normalized lookup hits the same rows.
     assert.deepEqual(getMangaStats("Rate Norm Saga | Weeb Central"), getMangaStats("Rate Norm Saga"))
 })
+
+test("aggregation queries tolerate a corrupt genres row instead of 500ing (bughunt json_valid)", async () => {
+    const { getCommunityStats } = await import("./db.js")
+    const Database = (await import("better-sqlite3")).default
+    const today = new Date().toISOString().slice(0, 10)
+    const rw = new Database(join(process.env.DATA_DIR!, "community.db"))
+    createUser("jv_other", "user_jv_other")
+    // A genres value the write path can never produce - only manual edit / corruption could.
+    rw.prepare("INSERT INTO events (id, user_id, source_id, manga_title, genres, date) VALUES (?, ?, ?, ?, ?, ?)").run(
+        "jv_bad",
+        "jv_other",
+        "src",
+        "Corrupt Genres Saga",
+        "not-json",
+        today
+    )
+    rw.close()
+    createUser("jv_me", "user_jv_me")
+    insertEvents("jv_me", [
+        { id: "jv_a", sourceId: "src", mangaTitle: "JV Title", genres: ["Action"], date: today, chapter: "1" }
+    ])
+    // json_each over the corrupt row would throw without the json_valid guard.
+    assert.doesNotThrow(() => getCommunityStats())
+    assert.doesNotThrow(() => getRecommendations("jv_me"))
+    assert.doesNotThrow(() => getCoReadRecommendations("jv_me"))
+})

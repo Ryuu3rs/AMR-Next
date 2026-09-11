@@ -103,6 +103,26 @@ describe("runCommunitySync watermark", () => {
         const eventsArg = apiSyncEvents.mock.calls[0]![1]
         expect(eventsArg.length).toBe(1)
     })
+
+    it("includes an event whose occurredAt lands exactly on the previous watermark (bughunt aboveOrEqual)", async () => {
+        await db.manga.put(manga)
+        // Previous sync left the watermark at exactly this event's millisecond.
+        await updateCommunityProfile({ enabled: true, userId: "user-1", username: "tester", lastSyncAt: 500 })
+        await db.historyEvents.add({
+            mangaId: manga.id,
+            chapterId: "mangadex:chapter:boundary",
+            type: "completed",
+            occurredAt: 500
+        })
+        apiSyncEvents.mockClear()
+        apiSyncEvents.mockResolvedValueOnce({ rank: 1, newAchievements: [], recommendations: [] })
+
+        await runCommunitySync()
+
+        // A strict `.above(500)` would drop it and never call the API; `.aboveOrEqual` sends it.
+        expect(apiSyncEvents).toHaveBeenCalledTimes(1)
+        expect(apiSyncEvents.mock.calls[0]![1].length).toBe(1)
+    })
 })
 
 describe("runCommunitySync concurrency", () => {

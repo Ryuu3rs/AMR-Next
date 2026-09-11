@@ -141,7 +141,7 @@ export async function runAccountSync(): Promise<AccountProfile> {
             for (const r of result.rejected) libraryChanged = (await applyRemoteItem(r.server)) || libraryChanged
             for (const b of batch) if (!b.deleted && b.clientUpdatedAt > newestPushed) newestPushed = b.clientUpdatedAt
         }
-        if (Object.keys(tombstones).length > 0) await clearTombstones(Object.keys(tombstones))
+        if (Object.keys(tombstones).length > 0) await clearTombstones(tombstones)
 
         const pulled = await apiPull(token, profile.lastPullAt)
         for (const item of pulled.items) libraryChanged = (await applyRemoteItem(item)) || libraryChanged

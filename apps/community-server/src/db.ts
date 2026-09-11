@@ -387,7 +387,7 @@ export function getRecommendations(userId: string): Array<{ title: string; sourc
             `WITH user_genres AS (
                 SELECT value as genre, COUNT(*) as cnt
                 FROM events, json_each(genres)
-                WHERE user_id = ? GROUP BY genre ORDER BY cnt DESC LIMIT 3
+                WHERE user_id = ? AND json_valid(genres) GROUP BY genre ORDER BY cnt DESC LIMIT 3
             ),
             user_titles AS (
                 SELECT DISTINCT manga_title FROM events WHERE user_id = ?
@@ -396,6 +396,7 @@ export function getRecommendations(userId: string): Array<{ title: string; sourc
             FROM events e
             WHERE e.user_id != ?
                 AND e.manga_title NOT IN (SELECT manga_title FROM user_titles)
+                AND json_valid(e.genres)
                 AND EXISTS (
                     SELECT 1 FROM json_each(e.genres) g
                     JOIN user_genres ug ON g.value = ug.genre
@@ -515,7 +516,7 @@ export function getCommunityStats(): {
         .prepare(
             `SELECT value as genre, COUNT(*) as count
             FROM events, json_each(genres)
-            WHERE date >= ? AND date <= ?
+            WHERE date >= ? AND date <= ? AND json_valid(genres)
             GROUP BY genre ORDER BY count DESC LIMIT 10`
         )
         .all(start, end) as Array<{ genre: string; count: number }>

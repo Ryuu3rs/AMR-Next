@@ -49,12 +49,29 @@ export async function clearAccountProfile(): Promise<AccountProfile> {
 
 // Local removals must reach the server as tombstones, but library:remove deletes the row
 // outright, so the id is parked here until the next successful push.
+// The tombstone map is a read-modify-write on one storage key, and both recordTombstone
+// (fired unawaited from library:remove) and clearTombstones (end of a sync push) touch it.
+// Without serialization a removal made DURING an in-flight sync is clobbered when clear writes
+// back its stale snapshot, so that deletion never reaches the server and the title resurrects
+// on the next pull. This lock chains every mutation so their get+set pairs cannot interleave.
+let tombstoneLock: Promise<unknown> = Promise.resolve()
+function withTombstoneLock<T>(fn: () => Promise<T>): Promise<T> {
+    const next = tombstoneLock.then(fn, fn)
+    tombstoneLock = next.then(
+        () => {},
+        () => {}
+    )
+    return next
+}
+
 export async function recordTombstone(mangaId: string): Promise<void> {
     const profile = await getAccountProfile()
     if (!profile.token) return
-    const list = await getTombstones()
-    list[mangaId] = Date.now()
-    await browser.storage.local.set({ [TOMBSTONES_KEY]: list })
+    await withTombstoneLock(async () => {
+        const list = await getTombstones()
+        list[mangaId] = Date.now()
+        await browser.storage.local.set({ [TOMBSTONES_KEY]: list })
+    })
 }
 
 export async function getTombstones(): Promise<Record<string, number>> {
@@ -63,10 +80,21 @@ export async function getTombstones(): Promise<Record<string, number>> {
     return raw && typeof raw === "object" ? (raw as Record<string, number>) : {}
 }
 
-export async function clearTombstones(ids: string[]): Promise<void> {
-    const list = await getTombstones()
-    for (const id of ids) delete list[id]
-    await browser.storage.local.set({ [TOMBSTONES_KEY]: list })
+// Clear only the tombstones that were actually pushed, and only if their timestamp is still
+// the one we pushed - a re-removal that landed during the sync (a newer timestamp, or a
+// brand-new id) is left parked for the next sync rather than dropped.
+export async function clearTombstones(pushed: Record<string, number>): Promise<void> {
+    await withTombstoneLock(async () => {
+        const list = await getTombstones()
+        let changed = false
+        for (const [id, at] of Object.entries(pushed)) {
+            if (list[id] === at) {
+                delete list[id]
+                changed = true
+            }
+        }
+        if (changed) await browser.storage.local.set({ [TOMBSTONES_KEY]: list })
+    })
 }
 
 export type SyncItem = {

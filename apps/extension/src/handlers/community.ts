@@ -94,14 +94,16 @@ export async function runCommunitySync() {
         }
 
         // Capture the watermark before the read/network calls below, not after - a
-        // history event recorded while this sync is in flight has occurredAt before
-        // syncStartedAt, so the next sync's "above(lastSyncAt)" query still picks it up.
-        // Using Date.now() captured at the END would silently skip it forever.
+        // history event recorded while this sync is in flight has occurredAt <= syncStartedAt,
+        // so the next sync still picks it up. The read uses aboveOrEqual (not the strict above)
+        // so an event whose occurredAt lands exactly on the previous watermark millisecond is
+        // not skipped forever; the one-event re-send that creates is absorbed by the server's
+        // per-chapter INSERT OR IGNORE dedup. Using Date.now() at the END would skip it.
         const syncStartedAt = Date.now()
 
         const newHistory = await db.historyEvents
             .where("occurredAt")
-            .above(profile.lastSyncAt)
+            .aboveOrEqual(profile.lastSyncAt)
             .filter(h => h.type === "completed")
             .toArray()
 

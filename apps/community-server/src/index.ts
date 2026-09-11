@@ -314,9 +314,15 @@ app.post("/events", async c => {
     if (!getUserById(body.userId)) return c.json({ error: "User not found" }, 404)
 
     const today = new Date().toISOString().slice(0, 10)
-    const rows: EventRow[] = (body.events ?? [])
+    // Guard the shape before iterating: a non-array `events`, or a null/non-object element,
+    // must yield zero rows (clean 2xx with an empty batch) rather than throwing an unguarded
+    // 500 - matching the field-by-field validation every other route already does.
+    const incoming = Array.isArray(body.events) ? body.events : []
+    const rows: EventRow[] = incoming
         .filter(
             e =>
+                e != null &&
+                typeof e === "object" &&
                 e.type === "chapter_read" &&
                 isBoundedString(e.sourceId, MAX_SOURCE_LEN) &&
                 isBoundedString(e.mangaTitle, MAX_TITLE_LEN) &&

@@ -10,7 +10,7 @@ const fetchMock = vi.fn<typeof fetch>()
 vi.stubGlobal("fetch", fetchMock)
 
 const { db } = await import("../database")
-const { getAccountProfile, getTombstones, recordTombstone } = await import("../account")
+const { getAccountProfile, getTombstones, recordTombstone, clearTombstones } = await import("../account")
 const { accountHandlers, runAccountSync, applyRemoteItem } = await import("./account")
 
 const ctx = { sender: {} as never }
@@ -212,5 +212,32 @@ describe("account:unlink", () => {
         const profile = (await accountHandlers["account:unlink"]!({ type: "account:unlink" }, ctx)) as AccountProfile
         expect(profile.token).toBeUndefined()
         expect(await getTombstones()).toEqual({})
+    })
+})
+
+describe("tombstone concurrency (bughunt)", () => {
+    beforeEach(async () => {
+        await fakeBrowser.storage.local.set({
+            account: { token: TOKEN, lastPushAt: 0, lastPullAt: 0, invalid: false, autoSync: true }
+        })
+    })
+
+    it("a removal fired while clearTombstones runs is not lost", async () => {
+        await recordTombstone("A")
+        const parked = await getTombstones()
+        // Clear the pushed set and record a new removal concurrently - the lock must keep B.
+        await Promise.all([clearTombstones(parked), recordTombstone("B")])
+        const after = await getTombstones()
+        expect(Object.keys(after)).toContain("B")
+        expect(after.A).toBeUndefined()
+    })
+
+    it("clearTombstones only removes ids whose timestamp still matches", async () => {
+        await recordTombstone("A")
+        const pushed = await getTombstones()
+        // Simulate A being re-removed with a newer timestamp while the sync's push was in flight.
+        await fakeBrowser.storage.local.set({ accountTombstones: { A: (pushed.A as number) + 1000 } })
+        await clearTombstones(pushed) // pushed timestamp no longer matches the stored one -> keep it parked
+        expect((await getTombstones()).A).toBeDefined()
     })
 })

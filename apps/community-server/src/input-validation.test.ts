@@ -69,3 +69,17 @@ test("/manga rejects an over-long title", async () => {
     const res = await app.request(`/manga?title=${"a".repeat(5000)}`)
     assert.equal(res.status, 400)
 })
+
+test("/events does not 500 on a malformed events field or element (bughunt)", async () => {
+    const userId = await newUser("shape-events")
+    const post = (events: unknown) =>
+        app.request("/events", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, events })
+        })
+    for (const events of ["not-an-array", 123, [null], [42]]) {
+        const res = await post(events)
+        assert.ok(res.status < 500, `events=${JSON.stringify(events)} -> ${res.status}`)
+    }
+})
