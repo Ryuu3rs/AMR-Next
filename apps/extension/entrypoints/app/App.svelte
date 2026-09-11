@@ -400,6 +400,14 @@
     }
 
     let showDuplicates = $state(false)
+    // A group's stable key = its lexicographically-smallest member id (independent of which
+    // copy is chosen to keep). Tracks which group's "keep which copy?" menu is open, and
+    // which groups have a merge in flight so the button disables + shows progress.
+    function groupKeyOf(group: LibraryManga[]): string {
+        return [...group].map(m => m.id).sort()[0] ?? ""
+    }
+    let dupMenuFor = $state<string | null>(null)
+    let mergingGroups = $state<Set<string>>(new Set())
 
     // Group duplicates by title AND by source + rotation-stable slug, unioned. The slug key
     // catches the Asura class where a rotated per-series hash forks a second entry whose title
@@ -464,14 +472,33 @@
     // downloads/pageBookmarks onto the chosen primary and folds every field-merge
     // rule (numbers, categories, rating, notes, nsfw, etc.) into one atomic write,
     // instead of the multi-message replay this used to do.
-    async function mergeDuplicates(group: LibraryManga[]) {
-        const primary = primaryOfGroup(group)
+    async function mergeDuplicates(group: LibraryManga[], keepId?: string) {
+        dupMenuFor = null
+        // keepId lets the user override the suggested primary via the dropdown.
+        const primary = keepId ? group.find(m => m.id === keepId) : primaryOfGroup(group)
         if (!primary) return
+        // loserIds is a fresh plain string[] (map over the $derived group), not a $state proxy,
+        // so it structured-clones across the message boundary cleanly.
         const loserIds = group.filter(m => m.id !== primary.id).map(m => m.id)
         if (loserIds.length === 0) return
-        await sendRuntimeMessage({ type: "library:merge", primaryId: primary.id, loserIds })
-        clearSelection()
-        await refresh()
+        const key = groupKeyOf(group)
+        if (mergingGroups.has(key)) return
+        mergingGroups = new Set(mergingGroups).add(key)
+        try {
+            await sendRuntimeMessage({ type: "library:merge", primaryId: primary.id, loserIds })
+            // Optimistically drop the merged-away copies so the row disappears immediately,
+            // instead of waiting on the full refresh() round-trip (the old code left the row
+            // sitting there for a beat and made Merge feel like it did nothing).
+            const gone = new Set(loserIds)
+            library = library.filter(m => !gone.has(m.id))
+            clearSelection()
+        } catch (error) {
+            showSugToast(`Merge failed: ${error instanceof Error ? error.message : String(error)}`)
+        } finally {
+            mergingGroups = new Set([...mergingGroups].filter(k => k !== key))
+        }
+        // Reconcile merged numbers/progress/covers in the background - never block the click.
+        void refresh()
     }
     let failedCovers = $state<Set<string>>(new Set())
     let coverSrcs = $state<Record<string, string>>({})
@@ -4420,6 +4447,7 @@
                     {#each duplicateGroups as group}
                         {@const primary = primaryOfGroup(group)}
                         {@const distinctTitles = [...new Set(group.map(m => m.title.trim()))]}
+                        {@const groupKey = groupKeyOf(group)}
                         <div class="dup-group">
                             <span class="dup-title">{distinctTitles.join("  ·  ")}</span>
                             {#if distinctTitles.length > 1}
@@ -4437,9 +4465,33 @@
                                     Keeps: {primary.sourceId}
                                 </span>
                             {/if}
-                            <button type="button" class="btn-sm" onclick={() => void mergeDuplicates(group)}>
-                                Merge {group.length}
-                            </button>
+                            <div class="dup-actions">
+                                <button
+                                    type="button"
+                                    class="btn-sm"
+                                    disabled={mergingGroups.has(groupKey)}
+                                    aria-haspopup="menu"
+                                    aria-expanded={dupMenuFor === groupKey}
+                                    onclick={() => (dupMenuFor = dupMenuFor === groupKey ? null : groupKey)}>
+                                    {mergingGroups.has(groupKey) ? "Merging…" : `Merge ${group.length} ▾`}
+                                </button>
+                                {#if dupMenuFor === groupKey}
+                                    <div class="dup-menu" role="menu">
+                                        <p class="dup-menu-head">Keep which copy?</p>
+                                        {#each group as m (m.id)}
+                                            <button
+                                                type="button"
+                                                role="menuitem"
+                                                onclick={() => void mergeDuplicates(group, m.id)}>
+                                                <span class="dup-menu-src">{m.sourceId}</span>
+                                                {#if distinctTitles.length > 1}<span class="dup-menu-t">{m.title}</span
+                                                    >{/if}
+                                                {#if m.id === primary?.id}<span class="muted">suggested</span>{/if}
+                                            </button>
+                                        {/each}
+                                    </div>
+                                {/if}
+                            </div>
                         </div>
                     {/each}
                 </div>

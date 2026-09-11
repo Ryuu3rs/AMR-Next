@@ -862,6 +862,57 @@ button:disabled {
     flex: 1;
 }
 
+.dup-actions {
+    position: relative;
+    flex: 0 0 auto;
+}
+.dup-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 30;
+    min-width: 180px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    background: var(--surface, #1b2129);
+    border: 1px solid var(--border, #29313b);
+    border-radius: 10px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+}
+.dup-menu-head {
+    margin: 2px 6px 4px;
+    font-size: 11px;
+    color: var(--muted, #8b95a3);
+}
+.dup-menu button {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    text-align: left;
+    padding: 7px 9px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    border-radius: 7px;
+    font-size: 12px;
+    cursor: pointer;
+}
+.dup-menu button:hover {
+    background: var(--surface-2, #232b35);
+}
+.dup-menu-src {
+    font-weight: 600;
+}
+.dup-menu-t {
+    color: var(--muted, #8b95a3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 160px;
+}
+
 .poster-grid article.selected .poster {
     outline: 3px solid var(--accent);
     outline-offset: 2px;
