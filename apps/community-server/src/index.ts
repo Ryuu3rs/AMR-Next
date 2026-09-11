@@ -305,6 +305,7 @@ app.post("/events", async c => {
                 mangaTitle?: string
                 genres?: string[]
                 date?: string
+                chapter?: string
             }>
         }>()
         .catch(() => ({}))
@@ -329,7 +330,8 @@ app.post("/events", async c => {
             sourceId: e.sourceId!,
             mangaTitle: e.mangaTitle!,
             genres: Array.isArray(e.genres) ? e.genres.filter(g => isBoundedString(g, MAX_GENRE_LEN)).slice(0, 20) : [],
-            date: e.date!.slice(0, 10)
+            date: e.date!.slice(0, 10),
+            ...(isBoundedString(e.chapter, 32) ? { chapter: e.chapter! } : {})
         }))
 
     if (rows.length > 0) insertEvents(body.userId, rows)

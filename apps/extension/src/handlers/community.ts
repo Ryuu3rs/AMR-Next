@@ -65,6 +65,15 @@ async function ensureRegistered(profile: CommunityProfile): Promise<CommunityPro
     }
 }
 
+// A per-chapter dedup key for the community server. The chapter number when the source
+// numbers its chapters, otherwise a short hash of the chapter id so no URL leaves the device.
+export function chapterLabel(chapterId: string, sortKey: number | undefined): string {
+    if (sortKey !== undefined && Number.isFinite(sortKey)) return String(sortKey)
+    let h = 5381
+    for (let i = 0; i < chapterId.length; i++) h = ((h * 33) ^ chapterId.charCodeAt(i)) >>> 0
+    return "h" + h.toString(16)
+}
+
 export async function runCommunitySync() {
     if (communityRunning) return
     communityRunning = true
@@ -99,9 +108,12 @@ export async function runCommunitySync() {
         const mangaIds = [...new Set(newHistory.map(h => h.mangaId))]
         const mangaList = await db.manga.where("id").anyOf(mangaIds).toArray()
         const mangaMap = new Map(mangaList.map(m => [m.id, m]))
+        const chapterIds = [...new Set(newHistory.map(h => h.chapterId))]
+        const chapterList = await db.chapters.where("id").anyOf(chapterIds).toArray()
+        const chapterMap = new Map(chapterList.map(c => [c.id, c]))
 
         const events: CommunityEvent[] = newHistory
-            .map(h => {
+            .map((h): CommunityEvent | null => {
                 const manga = mangaMap.get(h.mangaId)
                 if (!manga) return null
                 return {
@@ -109,7 +121,8 @@ export async function runCommunitySync() {
                     sourceId: manga.sourceId,
                     mangaTitle: manga.title,
                     genres: manga.genres ?? [],
-                    date: new Date(h.occurredAt).toISOString().slice(0, 10)
+                    date: new Date(h.occurredAt).toISOString().slice(0, 10),
+                    chapter: chapterLabel(h.chapterId, chapterMap.get(h.chapterId)?.sortKey)
                 }
             })
             .filter((e): e is CommunityEvent => e !== null)

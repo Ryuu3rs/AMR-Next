@@ -304,3 +304,42 @@ describe("community:toggle handler", () => {
         expect((result as { userId: string }).userId).toBe("auto-toggle-1")
     })
 })
+
+describe("runCommunitySync chapter labels", () => {
+    it("sends the chapter number when known and a URL-free hash otherwise", async () => {
+        const { chapterLabel } = await import("./community")
+        expect(chapterLabel("x", 12)).toBe("12")
+        expect(chapterLabel("x", 12.5)).toBe("12.5")
+        expect(chapterLabel("src:chapter:https://example.com/c/9", undefined)).toMatch(/^h[0-9a-f]+$/)
+        expect(chapterLabel("src:chapter:https://example.com/c/9", Number.POSITIVE_INFINITY)).toMatch(/^h[0-9a-f]+$/)
+
+        await updateCommunityProfile({ enabled: true, userId: "user-1", username: "tester", lastSyncAt: 0 })
+        await db.manga.put(manga)
+        await db.chapters.put({
+            id: "mangadex:chapter:1",
+            mangaId: manga.id,
+            sourceId: manga.sourceId,
+            title: "Chapter 12",
+            url: "https://example.com/c/12",
+            sortKey: 12
+        } as never)
+        await db.historyEvents.add({
+            mangaId: manga.id,
+            chapterId: "mangadex:chapter:1",
+            type: "completed",
+            occurredAt: 100
+        })
+        await db.historyEvents.add({
+            mangaId: manga.id,
+            chapterId: "mangadex:chapter:zzz",
+            type: "completed",
+            occurredAt: 101
+        })
+
+        apiSyncEvents.mockClear()
+        apiSyncEvents.mockResolvedValueOnce({ rank: 1, newAchievements: [], recommendations: [] })
+        await runCommunitySync()
+        const events = apiSyncEvents.mock.calls[0]![1]
+        expect(events.map(e => e.chapter)).toEqual(["12", expect.stringMatching(/^h[0-9a-f]+$/)])
+    })
+})

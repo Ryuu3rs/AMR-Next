@@ -101,6 +101,8 @@ export type CommunityEvent = {
     mangaTitle: string
     genres: string[]
     date: string
+    // Chapter number, or a short hash of the chapter id when the source has no numbering.
+    chapter?: string
 }
 
 // Silent auto-registration uses a generic, clearly-anonymous handle - never

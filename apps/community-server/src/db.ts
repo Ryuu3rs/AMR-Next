@@ -23,8 +23,6 @@ db.exec(`
         synced_at  INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedup
-        ON events(user_id, manga_title, date, source_id);
     CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
     CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id);
 
@@ -83,6 +81,34 @@ db.exec(`
         clicked_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
     CREATE INDEX IF NOT EXISTS idx_affiliate_clicks_time ON affiliate_clicks(clicked_at);
+`)
+
+// Schema additions kept idempotent so a restart on an older database upgrades in place.
+const eventCols = (db.prepare("PRAGMA table_info(events)").all() as Array<{ name: string }>).map(c => c.name)
+if (!eventCols.includes("chapter")) db.exec("ALTER TABLE events ADD COLUMN chapter TEXT")
+// Dedup used to be one row per title per day, which collapsed a 20-chapter binge into a
+// single "chapter read". Rows now dedup per chapter; rows without a chapter keep the old
+// per-day behaviour through COALESCE so older clients still cannot double-count.
+db.exec(`
+    DROP INDEX IF EXISTS idx_events_dedup;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedup_chapter
+        ON events(user_id, manga_title, date, source_id, COALESCE(chapter, ''));
+`)
+
+// Some sources append their own name to the title ("Foo | Weeb Central"). Strip that so
+// the same series groups together across sources and the trending list is not split.
+export function normalizeTitle(title: string): string {
+    const cut = title.replace(/\s*\|\s*[^|]{2,40}$/, "").trim()
+    return cut.length >= 2 ? cut : title.trim()
+}
+
+// One-time cleanup of rows stored before normalization existed. OR IGNORE: if the cleaned
+// title collides with an existing row for the same user/day the duplicate is dropped.
+db.exec(`
+    UPDATE OR IGNORE events
+    SET manga_title = TRIM(SUBSTR(manga_title, 1, INSTR(manga_title, ' | ') - 1))
+    WHERE INSTR(manga_title, ' | ') > 2;
+    DELETE FROM events WHERE INSTR(manga_title, ' | ') > 2;
 `)
 
 // Additive migration for existing DBs: consent bookkeeping on users. better-sqlite3's
@@ -184,15 +210,28 @@ export type EventRow = {
     mangaTitle: string
     genres: string[]
     date: string
+    chapter?: string
 }
 
 const _insertEvent = db.prepare(
-    "INSERT OR IGNORE INTO events (id, user_id, source_id, manga_title, genres, date) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT OR IGNORE INTO events (id, user_id, source_id, manga_title, genres, date, chapter) VALUES (?, ?, ?, ?, ?, ?, ?)"
 )
+const _knownGenres = db.prepare("SELECT genres FROM events WHERE manga_title = ? AND genres != '[]' LIMIT 1")
+const _backfillGenres = db.prepare("UPDATE events SET genres = ? WHERE manga_title = ? AND genres = '[]'")
 
+// Genres ride along on each event but the extension only knows them once a title has been
+// enriched, so many rows arrive empty. Any row that does carry genres fills the gaps for
+// every other row of the same title, in both directions, so genre stats stop under-counting.
 export const insertEvents = db.transaction((userId: string, rows: EventRow[]) => {
     for (const e of rows) {
-        _insertEvent.run(e.id, userId, e.sourceId, e.mangaTitle, JSON.stringify(e.genres), e.date)
+        const title = normalizeTitle(e.mangaTitle)
+        let genres = e.genres
+        if (genres.length === 0) {
+            const known = _knownGenres.get(title) as { genres: string } | undefined
+            if (known) genres = JSON.parse(known.genres) as string[]
+        }
+        _insertEvent.run(e.id, userId, e.sourceId, title, JSON.stringify(genres), e.date, e.chapter ?? null)
+        if (genres.length > 0) _backfillGenres.run(JSON.stringify(genres), title)
     }
 })
 

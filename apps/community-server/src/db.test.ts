@@ -134,3 +134,36 @@ test("genre recommender applies the k-anonymity floor", () => {
     assert.ok(titles.includes("gr_popular"))
     assert.ok(!titles.includes("gr_solo"))
 })
+
+test("normalizeTitle strips a trailing source name but leaves real pipes-less titles alone", async () => {
+    const { normalizeTitle } = await import("./db.js")
+    assert.equal(normalizeTitle("Villain To Kill | Weeb Central"), "Villain To Kill")
+    assert.equal(normalizeTitle("  Blame!  "), "Blame!")
+    assert.equal(normalizeTitle("A | B"), "A | B")
+})
+
+test("events dedup per chapter, and genres backfill across rows of the same title", async () => {
+    const { getCommunityStats } = await import("./db.js")
+    createUser("t9_me", "user_t9_me")
+    const base = { sourceId: "src", mangaTitle: "Backfill Saga | Weeb Central", date: "2026-08-02" }
+    insertEvents("t9_me", [
+        { id: "t9_a", ...base, genres: [], chapter: "1" },
+        { id: "t9_b", ...base, genres: [], chapter: "2" },
+        { id: "t9_c", ...base, genres: [], chapter: "2" }
+    ])
+    insertEvents("t9_me", [{ id: "t9_d", ...base, genres: ["Action", "Drama"], chapter: "3" }])
+    insertEvents("t9_me", [{ id: "t9_e", ...base, genres: [], chapter: "4" }])
+
+    const Database = (await import("better-sqlite3")).default
+    const raw = new Database(join(process.env.DATA_DIR!, "community.db"), { readonly: true })
+    const rows = raw
+        .prepare("SELECT manga_title, genres, chapter FROM events WHERE user_id = ? ORDER BY chapter")
+        .all("t9_me") as Array<{ manga_title: string; genres: string; chapter: string }>
+    assert.equal(rows.length, 4, "chapter 2 twice collapses to one row; chapters 1-4 all kept")
+    assert.ok(rows.every(r => r.manga_title === "Backfill Saga"))
+    assert.ok(
+        rows.every(r => r.genres === JSON.stringify(["Action", "Drama"])),
+        "earlier and later empties filled"
+    )
+    assert.equal(typeof getCommunityStats().topGenres, "object")
+})
