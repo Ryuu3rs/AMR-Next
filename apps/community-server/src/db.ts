@@ -95,21 +95,99 @@ db.exec(`
         ON events(user_id, manga_title, date, source_id, COALESCE(chapter, ''));
 `)
 
-// Some sources append their own name to the title ("Foo | Weeb Central"). Strip that so
-// the same series groups together across sources and the trending list is not split.
-export function normalizeTitle(title: string): string {
-    const cut = title.replace(/\s*\|\s*[^|]{2,40}$/, "").trim()
-    return cut.length >= 2 ? cut : title.trim()
-}
+// Known source display names (mirrors the adapter manifest names in packages/sources). Used
+// to strip a trailing " | <source>" that some adapters append to a title. Matching a fixed
+// name list - rather than "any short trailing segment" - is what keeps a real subtitle like
+// "Attack on Titan | Before the Fall" intact while still collapsing "One Piece | Weeb Central"
+// onto "One Piece". A source missing from this list just isn't stripped (a harmless split),
+// never a wrong merge. community-server is built in isolation (no @amr/sources import), so the
+// list is inlined; add new source names here when adapters are added.
+const SOURCE_NAMES = new Set(
+    [
+        "AGR Comics",
+        "Aqua Manga",
+        "Aqua Scans",
+        "Arven Comics",
+        "Arven Scans",
+        "Asura Comic",
+        "Asura Scans",
+        "BrainRotComics",
+        "Casa Comic",
+        "Comix",
+        "DragonTea",
+        "Drake Comic",
+        "Dynasty Scans",
+        "EA Hentai",
+        "FanFox",
+        "Flame Comics",
+        "GD Scans",
+        "HariManga",
+        "HenTalk",
+        "Hentai20",
+        "HentaiRead",
+        "HiveToon",
+        "Kagane",
+        "Kappa Beast",
+        "KunManga",
+        "LHTranslation",
+        "LikeManga",
+        "Manga District",
+        "Manga Galaxy",
+        "MangaBuddy",
+        "MangaDex",
+        "MangaFreak",
+        "MangaHere",
+        "MangaHub",
+        "MangaK",
+        "MangaKatana",
+        "MangaMirror",
+        "MangaNato",
+        "MangaPark",
+        "MangaPuma",
+        "MangaRead",
+        "MangaSushi",
+        "ManhuaPlus",
+        "ManhuaTop",
+        "ManhuaUS",
+        "Manhwa Hentai",
+        "ManhwaTop",
+        "ManyToon",
+        "MgRead",
+        "Mgeko",
+        "NatoManga",
+        "Novelmic",
+        "Nyanu Kafe",
+        "OlympusStaff",
+        "Omega Scans",
+        "Oppai Stream",
+        "Phoenix Scans",
+        "Rawkuma",
+        "S2Manga",
+        "SauceManhwa",
+        "Spider Scans",
+        "Surya Toon",
+        "Temple Scan",
+        "Thunder Scans EN",
+        "Tritinia Scans",
+        "UToon",
+        "WEBTOON",
+        "Weeb Central"
+    ].map(n => n.toLowerCase())
+)
 
-// One-time cleanup of rows stored before normalization existed. OR IGNORE: if the cleaned
-// title collides with an existing row for the same user/day the duplicate is dropped.
-db.exec(`
-    UPDATE OR IGNORE events
-    SET manga_title = TRIM(SUBSTR(manga_title, 1, INSTR(manga_title, ' | ') - 1))
-    WHERE INSTR(manga_title, ' | ') > 2;
-    DELETE FROM events WHERE INSTR(manga_title, ' | ') > 2;
-`)
+// Strip a trailing " | <source name>" (ASCII or fullwidth pipe) so the same series groups
+// across sources and the trending list is not split. Only the LAST segment is considered, and
+// only when it is a known source name, so a real subtitle is never removed. Idempotent: a title
+// already stripped has no trailing source segment left to match.
+export function normalizeTitle(title: string): string {
+    const match = title.match(/^(.*)[|｜]\s*([^|｜]+?)\s*$/)
+    const tail = match?.[2]
+    if (match && tail && SOURCE_NAMES.has(tail.toLowerCase())) {
+        const head = match[1]!.trim()
+        if (head.length >= 2) return head
+    }
+    return title.trim()
+}
 
 // Additive migration for existing DBs: consent bookkeeping on users. better-sqlite3's
 // ALTER TABLE throws "duplicate column" if the column already exists, so guard on
@@ -228,9 +306,31 @@ export const insertEvents = db.transaction((userId: string, rows: EventRow[]) =>
         let genres = e.genres
         if (genres.length === 0) {
             const known = _knownGenres.get(title) as { genres: string } | undefined
-            if (known) genres = JSON.parse(known.genres) as string[]
+            // Guard the parse: a single malformed stored value must not abort the whole
+            // transaction (which would 500 the /events batch and drop every sibling row).
+            if (known) {
+                try {
+                    genres = JSON.parse(known.genres) as string[]
+                } catch {
+                    genres = []
+                }
+            }
         }
-        _insertEvent.run(e.id, userId, e.sourceId, title, JSON.stringify(genres), e.date, e.chapter ?? null)
+        // Canonicalize the chapter before it forms the dedup key: trim (so "5" / " 5" / "5 "
+        // are one key), fold a numeric chapter ("05" / "5.0" -> "5"), and treat empty as
+        // no-chapter (NULL -> per-day dedup). A non-numeric label like the extension's
+        // "h<hash>" for an unnumbered chapter passes through untouched.
+        let chapter = typeof e.chapter === "string" ? e.chapter.trim() : ""
+        if (/^\d+(\.\d+)?$/.test(chapter)) chapter = String(Number(chapter))
+        _insertEvent.run(
+            e.id,
+            userId,
+            e.sourceId,
+            title,
+            JSON.stringify(genres),
+            e.date,
+            chapter.length > 0 ? chapter : null
+        )
         if (genres.length > 0) _backfillGenres.run(JSON.stringify(genres), title)
     }
 })
@@ -338,10 +438,13 @@ export function getCoReadRecommendations(userId: string): Array<{ title: string;
 }
 
 export function upsertRating(userId: string, mangaTitle: string, rating: number): void {
+    // Normalize on the same rule as events, so a rating and a read of the same series key on
+    // the same title - otherwise ratings (raw) and reader counts (normalized) never join.
+    const title = normalizeTitle(mangaTitle)
     db.prepare(
         `INSERT INTO ratings (user_id, manga_title, rating, updated_at) VALUES (?, ?, ?, unixepoch())
          ON CONFLICT (user_id, manga_title) DO UPDATE SET rating = excluded.rating, updated_at = unixepoch()`
-    ).run(userId, mangaTitle, rating)
+    ).run(userId, title, rating)
 }
 
 export function getMangaStats(mangaTitle: string): {
@@ -349,10 +452,11 @@ export function getMangaStats(mangaTitle: string): {
     ratingCount: number
     readerCount: number
 } {
+    const title = normalizeTitle(mangaTitle)
     const r = db
         .prepare("SELECT ROUND(AVG(rating), 1) as avg, COUNT(*) as cnt FROM ratings WHERE manga_title = ?")
-        .get(mangaTitle) as { avg: number | null; cnt: number }
-    const u = db.prepare("SELECT COUNT(DISTINCT user_id) as cnt FROM events WHERE manga_title = ?").get(mangaTitle) as {
+        .get(title) as { avg: number | null; cnt: number }
+    const u = db.prepare("SELECT COUNT(DISTINCT user_id) as cnt FROM events WHERE manga_title = ?").get(title) as {
         cnt: number
     }
     // Apply the same k-anonymity floor the recommenders use. This endpoint is public and

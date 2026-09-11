@@ -331,6 +331,8 @@ app.post("/events", async c => {
             mangaTitle: e.mangaTitle!,
             genres: Array.isArray(e.genres) ? e.genres.filter(g => isBoundedString(g, MAX_GENRE_LEN)).slice(0, 20) : [],
             date: e.date!.slice(0, 10),
+            // insertEvents trims + canonicalizes the chapter before it becomes part of the
+            // dedup key; here we only bound its length.
             ...(isBoundedString(e.chapter, 32) ? { chapter: e.chapter! } : {})
         }))
 
