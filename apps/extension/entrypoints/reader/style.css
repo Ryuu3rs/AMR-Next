@@ -9,9 +9,15 @@ body {
 }
 
 header {
-    position: sticky;
+    /* Fixed overlay, not sticky: a sticky header keeps its box in the layout flow (and the
+       page-fit rules below then subtract it), so the image was always shrunk by the bar's
+       height. As a fixed overlay it floats over the top edge, auto-hides on scroll / tap, and
+       the image gets the full viewport height. */
+    position: fixed;
     z-index: 2;
     top: 0;
+    left: 0;
+    right: 0;
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
@@ -182,14 +188,14 @@ main.fit-width .page img {
 main.fit-height .page img {
     width: auto;
     max-width: 100%;
-    height: calc(100vh - 96px);
+    height: 100vh;
 }
 
 main.fit-contain .page img {
     width: auto;
     height: auto;
     max-width: 100%;
-    max-height: calc(100vh - 80px);
+    max-height: 100vh;
     object-fit: contain;
 }
 
@@ -215,7 +221,7 @@ main.fit-original .page img {
 }
 
 main.single {
-    min-height: calc(100vh - 73px);
+    min-height: 100vh;
     align-items: center;
 }
 
@@ -224,7 +230,7 @@ main.single {
    shrinking it to fit the height, which is what "Fit width" should do. */
 main.single.fit-original .page img {
     max-width: 100%;
-    max-height: calc(100vh - 80px);
+    max-height: 100vh;
     width: auto;
     object-fit: contain;
 }

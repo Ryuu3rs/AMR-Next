@@ -655,8 +655,14 @@
         if (target !== start) {
             recordProgress(target)
             // Start each freshly-flipped page at the top so a tall (Actual size) page is read
-            // from its beginning rather than wherever the previous page was scrolled to.
-            if (effectiveMode === "single") window.scrollTo({ top: 0 })
+            // from its beginning rather than wherever the previous page was scrolled to. Also
+            // tuck the overlay bar away on a page turn - single mode has no scroll to trigger
+            // the auto-hide, so without this the fixed header would sit over every page's top.
+            // Mouse-to-top, `h`, or Escape brings it back.
+            if (effectiveMode === "single") {
+                window.scrollTo({ top: 0 })
+                chromeHidden = true
+            }
         }
     }
 
