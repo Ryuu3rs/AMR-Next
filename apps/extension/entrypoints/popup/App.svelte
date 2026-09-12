@@ -2,6 +2,8 @@
     import { onMount } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { sourceOrigins } from "../../src/permissions"
+    import { getCachedCovers, type LibraryManga } from "../../src/database"
+    import { hasNewerChapters, neverRead, readChapterLabel } from "../../src/reading-status"
 
     type PageState = {
         supported: boolean
@@ -13,17 +15,106 @@
     let page = $state<PageState | undefined>()
     let message = $state("")
     let busy = $state(false)
+    let library = $state<LibraryManga[]>([])
+    let libraryLoaded = $state(false)
+    let opening = $state<string | null>(null)
+    // Covers hotlinked from source CDNs are blocked on an extension page, so use the same
+    // cached blobs the app renders from (read straight out of IndexedDB).
+    let coverSrcs = $state<Record<string, string>>({})
 
-    onMount(async () => {
-        try {
-            page = await sendRuntimeMessage<PageState>({ type: "page:current" })
-        } catch {
-            page = { supported: false }
-        }
+    onMount(() => {
+        // Page detection and the library overview load in parallel; neither blocks the other.
+        void sendRuntimeMessage<PageState>({ type: "page:current" })
+            .then(p => (page = p))
+            .catch(() => (page = { supported: false }))
+        void sendRuntimeMessage<LibraryManga[]>({ type: "library:list" })
+            .then(list => {
+                library = list
+                void loadCovers(list)
+            })
+            .catch(() => (library = []))
+            .finally(() => (libraryLoaded = true))
     })
+
+    async function loadCovers(list: LibraryManga[]): Promise<void> {
+        try {
+            const covers = await getCachedCovers(list.map(m => m.id))
+            const next: Record<string, string> = {}
+            for (const [id, record] of covers) next[id] = URL.createObjectURL(record.blob)
+            coverSrcs = next
+        } catch {
+            // No covers is fine - rows fall back to a title initial.
+        }
+    }
+
+    // Unread-first overview: titles with new chapters float to the top (the review's core ask),
+    // then everything else by most-recently-updated. Seed/demo rows and the "already read"
+    // synthetic anilist.co adds are dropped - they aren't things you open to read next.
+    const overview = $derived.by(() => {
+        const rows = library.filter(m => !(m.sourceId === "anilist.co" && !neverRead(m)))
+        return [...rows].sort(
+            (a, b) =>
+                Number(hasNewerChapters(b)) - Number(hasNewerChapters(a)) ||
+                (b.latestChapterAt ?? b.updatedAt ?? 0) - (a.latestChapterAt ?? a.updatedAt ?? 0)
+        )
+    })
+    const unreadCount = $derived(overview.filter(hasNewerChapters).length)
+
+    function ago(ts?: number): string {
+        if (!ts) return ""
+        const s = Math.floor((Date.now() - ts) / 1000)
+        if (s < 60) return "just now"
+        const m = Math.floor(s / 60)
+        if (m < 60) return `${m}m ago`
+        const h = Math.floor(m / 60)
+        if (h < 24) return `${h}h ago`
+        const d = Math.floor(h / 24)
+        if (d < 30) return `${d}d ago`
+        const mo = Math.floor(d / 30)
+        if (mo < 12) return `${mo}mo ago`
+        return `${Math.floor(mo / 12)}y ago`
+    }
+
+    // Count of unread chapters when both numbers are known, else null (show a plain "New" badge).
+    function newCount(m: LibraryManga): number | null {
+        if (typeof m.latestChapterNumber === "number" && typeof m.lastReadChapterNumber === "number") {
+            const n = Math.round(m.latestChapterNumber - m.lastReadChapterNumber)
+            return n > 0 ? n : null
+        }
+        return null
+    }
+
+    function chapterLine(m: LibraryManga): string {
+        const read = readChapterLabel(m)
+        const latest = m.latestChapterNumber
+        if (typeof latest === "number") return `${read} of ${latest}`
+        return read
+    }
 
     function openApp() {
         void browser.tabs.create({ url: browser.runtime.getURL("/app.html") })
+    }
+
+    // Open a title at its resume position in the reader (same logic as the full app): resolve the
+    // last-read chapter, fall back to the source URL. Manual/anilist entries have no readable
+    // source, so they open the full library instead of a dead reader tab.
+    async function openTitle(m: LibraryManga) {
+        if (opening) return
+        if (m.manualTracking && m.sourceId.includes(".")) {
+            openApp()
+            return
+        }
+        opening = m.id
+        let target = m.sourceUrl
+        try {
+            const resumed = await sendRuntimeMessage<{ url?: string }>({ type: "chapter:resume", mangaId: m.id })
+            if (resumed?.url) target = resumed.url
+        } catch {
+            // fall back to sourceUrl
+        } finally {
+            opening = null
+        }
+        void browser.tabs.create({ url: browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(target)}`) })
     }
 
     async function grantAndRead() {
@@ -31,20 +122,16 @@
         busy = true
         message = ""
         const granted = await browser.permissions.request({ origins: sourceOrigins() })
-
         if (!granted) {
             message = "Site access is required to resolve this chapter."
             busy = false
             return
         }
-
         try {
-            const result = await sendRuntimeMessage<{ added?: boolean }>({
-                type: "page:capture",
-                url: page.url
+            const result = await sendRuntimeMessage<{ added?: boolean }>({ type: "page:capture", url: page.url })
+            await browser.tabs.create({
+                url: browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(page.url)}`)
             })
-            const readerUrl = browser.runtime.getURL(`/reader.html?url=${encodeURIComponent(page.url)}`)
-            await browser.tabs.create({ url: readerUrl })
             message = result.added ? "Added to your library." : ""
         } catch (cause) {
             message = cause instanceof Error ? cause.message : "The chapter could not be opened."
@@ -57,43 +144,59 @@
 <main>
     <header>
         <img src="/icons/icon_48.png" alt="" />
-        <div>
+        <div class="brand">
             <h1>All Mangas Reader</h1>
-            <p>Local-first manga reading</p>
+            <p>{unreadCount > 0 ? `${unreadCount} with new chapters` : "Your library"}</p>
         </div>
-        <button class="icon" type="button" onclick={openApp} title="Open AMR settings">Open</button>
+        <button class="icon" type="button" onclick={openApp} title="Open the full library">Library</button>
     </header>
 
-    {#if !page}
-        <section class="card"><p>Checking this page...</p></section>
-    {:else if page.supported && page.pageType === "chapter"}
+    {#if page?.supported && page.pageType === "chapter"}
         <section class="card">
             <span class="source">{page.sourceName ?? "Supported source"} · chapter</span>
-            <h2>Ready to read</h2>
-            <p>Open this chapter in the AMR reader and add the title to your library.</p>
-            <button type="button" onclick={grantAndRead} disabled={busy}>
-                {busy ? "Resolving chapter..." : "Read in AMR"}
+            <button type="button" class="primary" onclick={grantAndRead} disabled={busy}>
+                {busy ? "Resolving chapter…" : "Read this chapter in AMR"}
             </button>
         </section>
-    {:else if page.supported}
-        <section class="card">
-            <span class="source">{page.sourceName ?? "Supported source"}</span>
-            <h2>Manga page detected</h2>
-            <p>Open a chapter to read it and automatically add the title to your library.</p>
-        </section>
-    {:else}
-        <section class="card">
-            <h2>Not a supported manga page</h2>
-            <p>
-                Open a chapter on a supported source — MangaDex, MangaRead, Mgeko, and many Madara / MangaStream sites —
-                or manage your library.
-            </p>
-        </section>
     {/if}
-
     {#if message}<p class="notice">{message}</p>{/if}
 
-    <footer>
-        <button type="button" onclick={openApp}>Open library</button>
-    </footer>
+    {#if !libraryLoaded}
+        <p class="muted pad">Loading your library…</p>
+    {:else if overview.length === 0}
+        <div class="empty">
+            <p>Your library is empty.</p>
+            <p class="muted">Open a chapter on a supported source, or browse Discover in the library.</p>
+            <button type="button" class="primary" onclick={openApp}>Open library</button>
+        </div>
+    {:else}
+        <ul class="titles">
+            {#each overview as m (m.id)}
+                {@const unread = hasNewerChapters(m)}
+                {@const count = newCount(m)}
+                <li>
+                    <button
+                        type="button"
+                        class="row"
+                        class:opening={opening === m.id}
+                        onclick={() => void openTitle(m)}>
+                        {#if coverSrcs[m.id]}
+                            <img class="cover" src={coverSrcs[m.id]} alt="" loading="lazy" />
+                        {:else}
+                            <span class="cover placeholder">{m.title.slice(0, 1)}</span>
+                        {/if}
+                        <span class="meta">
+                            <span class="title">{m.title}</span>
+                            <span class="sub"
+                                >{chapterLine(m)}{#if ago(m.latestChapterAt ?? m.updatedAt)}
+                                    · {ago(m.latestChapterAt ?? m.updatedAt)}{/if}</span>
+                        </span>
+                        {#if unread}
+                            <span class="badge">{count ?? "new"}{count ? " new" : ""}</span>
+                        {/if}
+                    </button>
+                </li>
+            {/each}
+        </ul>
+    {/if}
 </main>
