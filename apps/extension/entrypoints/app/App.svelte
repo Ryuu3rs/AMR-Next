@@ -53,19 +53,13 @@
         viewerName?: string
     }
 
-    const sections = [
-        "Home",
-        "Discover",
-        "Library",
-        "Bookmarks",
-        "Updates",
-        "History",
-        "Stats",
-        "Sources",
-        "Data",
-        "Settings"
-    ] as const
-    let activeSection = $state<(typeof sections)[number]>("Home")
+    const sections = ["Discover", "Library", "Activity", "Stats", "Sources", "Data", "Settings"] as const
+    let activeSection = $state<(typeof sections)[number]>("Discover")
+    // Bookmarks + Updates + History are folded into one "Activity" tab with these sub-tabs.
+    let activityTab = $state<"Updates" | "History" | "Bookmarks">("Updates")
+    // The configured start page (Discover / Library) is applied once on first load, never on
+    // later refreshes - so it can't yank the user off a tab they navigated to.
+    let startPageApplied = false
 
     // Settings page: rail + filter + scroll-spy. Sections are literal markup below; this
     // index only drives the rail and the "find a setting" filter.
@@ -97,7 +91,11 @@
                 "Chapter language"
             ]
         },
-        { id: "appearance", label: "Appearance & habits", labels: ["Theme", "Daily reading goal", "Blur NSFW covers"] },
+        {
+            id: "appearance",
+            label: "Appearance & habits",
+            labels: ["Theme", "Start page", "Daily reading goal", "Blur NSFW covers"]
+        },
         { id: "account", label: "weeb.ltd account", labels: ["weeb.ltd account", "Link this device"] },
         {
             id: "community",
@@ -1172,7 +1170,7 @@
 
     // Auto-refresh history every time the tab is opened.
     $effect(() => {
-        if (activeSection === "History") void loadHistory()
+        if (activeSection === "Activity" && activityTab === "History") void loadHistory()
     })
 
     async function loadBookmarks() {
@@ -1186,7 +1184,7 @@
     }
 
     $effect(() => {
-        if (activeSection === "Bookmarks") void loadBookmarks()
+        if (activeSection === "Activity" && activityTab === "Bookmarks") void loadBookmarks()
     })
 
     async function deleteBookmark(id: string) {
@@ -1690,6 +1688,10 @@
             noGapSelection = settings.noGapContinuous
             autoPauseDays = settings.autoPauseDays ?? 0
             searchDisabledSourceIds = settings.searchDisabledSourceIds ?? []
+            if (!startPageApplied) {
+                startPageApplied = true
+                activeSection = settings.startPage === "library" ? "Library" : "Discover"
+            }
             // stats:get scans the whole progress/history tables and isn't needed to paint
             // the library - fetch it in the background instead of blocking the grid on it.
             void sendRuntimeMessage<typeof stats>({ type: "stats:get" }).then(result => {
@@ -2729,16 +2731,6 @@
         selectedIds.size > 0 ? [...selectedIds] : visibleLibrary.filter(m => !m.manualTracking).map(m => m.id)
     )
 
-    // Home: continue-reading = most recently read; recently-added by addedAt.
-    const continueReading = $derived.by(() => {
-        const read = library.filter(m => m.lastReadAt).sort((a, b) => (b.lastReadAt ?? 0) - (a.lastReadAt ?? 0))
-        return read[0] ?? library[0]
-    })
-    const recentlyAdded = $derived([...library].sort((a, b) => b.addedAt - a.addedAt).slice(0, 12))
-    const missingCoverCount = $derived(
-        library.filter(m => !isSeedData(m) && ((!coverSrcs[m.id] && !m.coverUrl) || failedCovers.has(m.id))).length
-    )
-
     // Library view: grid (covers) or list (rows), with a user-set page size so
     // large libraries don't render everything at once.
     let libraryView = $state<"grid" | "list">("grid")
@@ -3222,7 +3214,7 @@
     // add it from whichever mirror carries it.
     function findSuggestion(title: string) {
         browseQuery = title
-        activeSection = "Home"
+        activeSection = "Discover"
         doSearch()
     }
     // Quick-add a suggestion to the library as already-read/completed or plan-to-read, without
@@ -3634,7 +3626,7 @@
             </div>
         {/if}
 
-        {#if activeSection === "Home"}
+        {#if activeSection === "Discover"}
             {#if !hasPermission && !onboardingDismissed}
                 <div class="onboarding">
                     <h2>Welcome to AMR Next</h2>
@@ -3844,391 +3836,275 @@
                     <p class="muted">No results across any source.</p>
                 {/if}
             {/if}
-
-            {#if loading}
-                <p class="muted">Loading...</p>
-            {:else if library.length === 0}
-                <div class="empty-state">
-                    <div class="empty-icon">📖</div>
-                    <h2>Your shelf is empty</h2>
-                    <p>Open a MangaDex chapter and click "Read in AMR", or paste a chapter URL below.</p>
-                    <form
-                        class="url-form"
-                        onsubmit={e => {
-                            e.preventDefault()
-                            void addByUrl()
-                        }}>
-                        <input bind:value={addUrl} type="url" required placeholder="https://mangadex.org/chapter/..." />
-                        <button type="submit" disabled={adding}>{adding ? "Adding..." : "Add chapter"}</button>
-                    </form>
-                    {#if addMessage}<p class="notice">{addMessage}</p>{/if}
-                </div>
-            {:else}
-                {#if !searchActive}
-                    {#if continueReading}
-                        <div class="home-feature">
-                            <div class="home-feature-cover">
-                                {#if (coverSrcs[continueReading.id] ?? continueReading.coverUrl) && !failedCovers.has(continueReading.id)}<img
-                                        src={coverSrcs[continueReading.id] ?? continueReading.coverUrl}
-                                        alt=""
-                                        class:nsfw-blur={continueReading.nsfw && (settings?.blurNsfw ?? true)}
-                                        onerror={() =>
-                                            continueReading && coverFailed(continueReading.id)} />{:else}<span
-                                        class="cover-initial">{continueReading.title[0]}</span
-                                    >{/if}
-                            </div>
-                            <div class="home-feature-body">
-                                <p class="eyebrow">Continue reading</p>
-                                <h2 class="feature-title">{continueReading.title}</h2>
-                                <p class="muted">
-                                    {#if continueReading.mangaUrl}
-                                        <button
-                                            class="source-link"
-                                            type="button"
-                                            title="Open on source site"
-                                            onclick={e => {
-                                                e.stopPropagation()
-                                                openExternal(continueReading!.mangaUrl)
-                                            }}>
-                                            {sourceMeta.get(continueReading.sourceId)?.name ?? continueReading.sourceId}
-                                        </button>
-                                    {:else}
-                                        {sourceMeta.get(continueReading.sourceId)?.name ?? continueReading.sourceId}
-                                    {/if}
-                                    {#if continueReading.lastReadChapterNumber !== undefined}
-                                        · ch {continueReading.lastReadChapterNumber}{/if}
-                                </p>
-                                <button type="button" onclick={() => continueReading && read(continueReading)}
-                                    >Open reader</button>
-                            </div>
-                        </div>
-                    {/if}
-
-                    {#if missingCoverCount > 0 && hasPermission}
+            {#if !searchActive}
+                {#snippet sugActions(s: Suggestion)}
+                    <div class="sug-actions">
+                        <button type="button" class="btn-sm sug-find-btn" onclick={() => findSuggestion(s.title)}
+                            >Find</button>
                         <button
                             type="button"
-                            class="cover-hint"
-                            onclick={() => void backfillCovers()}
-                            disabled={refreshingCovers}>
-                            {refreshingCovers
-                                ? coverProgress
-                                    ? `Fetching… ${coverProgress.done}/${coverProgress.total}`
-                                    : "Fetching covers…"
-                                : `Load ${missingCoverCount} missing cover${missingCoverCount === 1 ? "" : "s"}`}
-                        </button>
-                    {/if}
-
-                    {#if recentlyAdded.length > 0}
-                        <p class="shelf-label">Recently added</p>
-                        <div class="poster-grid">
-                            {#each recentlyAdded as manga (manga.id)}
-                                <article>
-                                    <div class="poster-wrap">
-                                        <button
-                                            type="button"
-                                            class="poster"
-                                            onclick={e => read(manga, e)}
-                                            onauxclick={e => read(manga, e)}>
-                                            {#if (coverSrcs[manga.id] ?? manga.coverUrl) && !failedCovers.has(manga.id)}<img
-                                                    src={coverSrcs[manga.id] ?? manga.coverUrl}
-                                                    alt={manga.title}
-                                                    data-source={manga.sourceId}
-                                                    class:nsfw-blur={manga.nsfw && (settings?.blurNsfw ?? true)}
-                                                    onerror={() => coverFailed(manga.id)} />{:else}<span
-                                                    class="cover-initial">{manga.title[0]}</span
-                                                >{/if}
-                                        </button>
-                                        <div class="poster-hover"><span>Open</span></div>
-                                    </div>
-                                    <p class="poster-title">{manga.title}</p>
-                                </article>
-                            {/each}
-                        </div>
-                    {/if}
-                {/if}
-
-                <form
-                    class="url-form"
-                    onsubmit={e => {
-                        e.preventDefault()
-                        void addByUrl()
-                    }}>
-                    <input bind:value={addUrl} type="url" required placeholder="Add chapter by URL..." />
-                    <button type="submit" disabled={adding}>{adding ? "Adding..." : "Add"}</button>
-                </form>
-                {#if addMessage}<p class="notice">{addMessage}</p>{/if}
-
-                <div class="support-card">
-                    <p class="row-label">Enjoying AMR Next?</p>
-                    <p class="muted">
-                        If you like the work, please consider donating. Request features and report issues in the AMR
-                        Discord.
-                    </p>
-                    <button
-                        type="button"
-                        class="kofi-btn"
-                        onclick={() => void browser.tabs.create({ url: AMR_KOFI_URL })}>
-                        ☕ Support on Ko-fi
-                    </button>
-                </div>
-            {/if}
-        {:else if activeSection === "Discover"}
-            {#snippet sugActions(s: Suggestion)}
-                <div class="sug-actions">
-                    <button type="button" class="btn-sm sug-find-btn" onclick={() => findSuggestion(s.title)}
-                        >Find</button>
-                    <button
-                        type="button"
-                        class="btn-sm sug-more-btn"
-                        aria-haspopup="menu"
-                        aria-expanded={sugMenuFor === s.anilistId}
-                        onclick={() => (sugMenuFor = sugMenuFor === s.anilistId ? null : s.anilistId)}>More ▾</button>
-                    {#if sugMenuFor === s.anilistId}
-                        <div class="sug-menu" role="menu">
-                            <button
-                                type="button"
-                                role="menuitem"
-                                onclick={() => {
-                                    sugMenuFor = null
-                                    findSuggestion(s.title)
-                                }}>Find on a source</button>
-                            <button type="button" role="menuitem" onclick={() => void quickAddSuggestion(s, "read")}
-                                >Mark as already read</button>
-                            <button type="button" role="menuitem" onclick={() => void quickAddSuggestion(s, "planning")}
-                                >Add to plan-to-read</button>
-                            <button
-                                type="button"
-                                role="menuitem"
-                                class="sug-menu-danger"
-                                onclick={() => void hideSuggestion(s)}>Not interested</button>
-                        </div>
-                    {/if}
-                </div>
-            {/snippet}
-            {#snippet sugCard(s: Suggestion)}
-                <article class="disc-card">
-                    <div class="poster-wrap">
-                        <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
-                            {#if s.coverUrl}<img
-                                    src={s.coverUrl}
-                                    alt={s.title}
-                                    loading="lazy"
-                                    decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span>{/if}
-                            {#if s.community}
-                                <div class="poster-badges"><span class="updated-chip">Readers also read</span></div>
-                            {/if}
-                        </button>
+                            class="btn-sm sug-more-btn"
+                            aria-haspopup="menu"
+                            aria-expanded={sugMenuFor === s.anilistId}
+                            onclick={() => (sugMenuFor = sugMenuFor === s.anilistId ? null : s.anilistId)}
+                            >More ▾</button>
+                        {#if sugMenuFor === s.anilistId}
+                            <div class="sug-menu" role="menu">
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    onclick={() => {
+                                        sugMenuFor = null
+                                        findSuggestion(s.title)
+                                    }}>Find on a source</button>
+                                <button type="button" role="menuitem" onclick={() => void quickAddSuggestion(s, "read")}
+                                    >Mark as already read</button>
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    onclick={() => void quickAddSuggestion(s, "planning")}>Add to plan-to-read</button>
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    class="sug-menu-danger"
+                                    onclick={() => void hideSuggestion(s)}>Not interested</button>
+                            </div>
+                        {/if}
                     </div>
-                    <p class="poster-title">{s.title}</p>
-                    <p class="poster-sub muted">{suggestionWhy(s)}</p>
-                    {@render sugActions(s)}
-                </article>
-            {/snippet}
-            {#snippet rail(heading: string, items: Suggestion[])}
-                <section class="disc-rail">
-                    <h2 class="disc-rail-head">{heading}</h2>
-                    <div class="disc-rail-track">
-                        {#each items as s (s.anilistId)}
-                            {@render sugCard(s)}
-                        {/each}
-                    </div>
-                </section>
-            {/snippet}
-            <div class="page-head no-title">
-                <div class="disc-head-actions">
-                    <button
-                        type="button"
-                        class="btn-sm sug-mix-btn"
-                        class:on={settings?.discoverDiversify ?? true}
-                        aria-pressed={settings?.discoverDiversify ?? true}
-                        title="Reorder picks to break up runs of the same genre"
-                        onclick={() => void toggleDiversify()}>Mix it up</button>
-                    <button
-                        type="button"
-                        class="btn-sm"
-                        disabled={suggestionsLoading}
-                        onclick={() => void loadSuggestions(true)}>
-                        {suggestionsLoading ? "Refreshing…" : "Refresh"}
-                    </button>
-                </div>
-            </div>
-            {#if discoverFocus}
-                <div class="disc-focus-head">
-                    <button type="button" class="link-btn" onclick={clearDiscoverFocus}>‹ Back to Discover</button>
-                    <h2>More like {discoverFocus}</h2>
-                </div>
-                {#if focusedSuggestions.length === 0}
-                    <p class="muted">
-                        No similar picks for {discoverFocus} yet. Read a bit more of it, then hit Refresh.
-                    </p>
-                {:else}
-                    <div class="poster-grid">
-                        {#each focusedSuggestions as s (s.anilistId)}
-                            {@render sugCard(s)}
-                        {/each}
-                    </div>
-                {/if}
-            {:else if suggestionsLoading && suggestions.length === 0}
-                <p class="muted">Finding titles you might like…</p>
-            {:else if suggestions.length === 0}
-                <p class="muted">
-                    {suggestionsFailed
-                        ? "Couldn't reach AniList for recommendations right now. Try Refresh again later."
-                        : "No suggestions yet. Add a few titles to your library so we can learn what you like."}
-                </p>
-            {:else}
-                {#if visibleNextInSeries.length > 0 && !sugFiltersActive}
-                    {@render rail("Continue the series", visibleNextInSeries)}
-                {/if}
-                <h2 class="podium-heading">Top picks for you</h2>
-                <p class="muted" style="margin-top:-4px;text-align:center">Based on the genres and authors you read.</p>
-                <div class="sug-filters">
-                    <input
-                        class="sug-search"
-                        type="search"
-                        placeholder="Filter by title…"
-                        bind:value={sugQuery}
-                        oninput={() => (suggestionsShown = SUGGESTIONS_PAGE)} />
-                    <label class="sug-control">
-                        <span>Sort</span>
-                        <select bind:value={sugSort} onchange={() => (suggestionsShown = SUGGESTIONS_PAGE)}>
-                            <option value="score">Best match</option>
-                            <option value="frequency">Most recommended</option>
-                            <option value="title">Title A-Z</option>
-                        </select>
-                    </label>
-                    <label class="sug-control sug-toggle">
-                        <input
-                            type="checkbox"
-                            bind:checked={sugCommunityOnly}
-                            onchange={() => (suggestionsShown = SUGGESTIONS_PAGE)} />
-                        <span>Community picks</span>
-                    </label>
-                    {#if sugFiltersActive}
-                        <button type="button" class="btn-sm" onclick={clearSugFilters}>
-                            Clear ({filteredSuggestions.length})
-                        </button>
-                    {/if}
-                </div>
-                {#if suggestionGenreOptions.length > 0}
-                    <div class="sug-genre-chips">
-                        {#each suggestionGenreOptions as g (g.name)}
-                            {@const key = g.name.toLocaleLowerCase("en")}
-                            <button
-                                type="button"
-                                class="genre-chip genre-chip-btn"
-                                class:genre-chip-on={sugGenres.includes(key)}
-                                aria-pressed={sugGenres.includes(key)}
-                                onclick={() => toggleSugGenre(key)}>
-                                {g.name} <span class="genre-chip-count">{g.count}</span>
+                {/snippet}
+                {#snippet sugCard(s: Suggestion)}
+                    <article class="disc-card">
+                        <div class="poster-wrap">
+                            <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
+                                {#if s.coverUrl}<img
+                                        src={s.coverUrl}
+                                        alt={s.title}
+                                        loading="lazy"
+                                        decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span>{/if}
+                                {#if s.community}
+                                    <div class="poster-badges"><span class="updated-chip">Readers also read</span></div>
+                                {/if}
                             </button>
-                        {/each}
-                    </div>
-                {/if}
-                {#if filteredSuggestions.length === 0}
-                    <p class="muted">
-                        No suggestions match these filters.
-                        <button type="button" class="link-btn" onclick={clearSugFilters}>Clear filters</button>
-                    </p>
-                {:else}
-                    <div class="podium">
-                        {#each filteredSuggestions.slice(0, 3) as s, i (s.anilistId)}
-                            {@const matched = matchedGenres(s)}
-                            <article class="podium-item" class:podium-first={i === 0}>
-                                <div class="poster-wrap">
-                                    <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
-                                        {#if s.coverUrl}<img
-                                                src={s.coverUrl}
-                                                alt={s.title}
-                                                loading="lazy"
-                                                decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span
-                                            >{/if}
-                                        <span class="podium-rank podium-rank-{i + 1}"
-                                            >{i === 0 ? "1st" : i === 1 ? "2nd" : "3rd"}</span>
-                                        {#if s.community}
-                                            <div class="poster-badges">
-                                                <span class="updated-chip">Readers also read</span>
-                                            </div>
-                                        {/if}
-                                    </button>
-                                </div>
-                                <p class="poster-title">{s.title}</p>
-                                {#if s.reasons.length > 0}
-                                    <p class="poster-sub muted">Because you read {s.reasons.slice(0, 2).join(", ")}</p>
-                                {:else if matched.length === 0}
-                                    <p class="poster-sub muted">Popular with readers like you</p>
-                                {/if}
-                                {#if matched.length > 0}
-                                    <div class="podium-chips">
-                                        {#each matched as g}<span class="genre-chip">{g}</span>{/each}
-                                    </div>
-                                {/if}
-                                {@render sugActions(s)}
-                            </article>
-                        {/each}
-                    </div>
-                    {#if restSuggestionsCount > 0}
-                        <div class="poster-grid">
-                            {#each filteredSuggestions.slice(3, 3 + suggestionsShown) as s (s.anilistId)}
+                        </div>
+                        <p class="poster-title">{s.title}</p>
+                        <p class="poster-sub muted">{suggestionWhy(s)}</p>
+                        {@render sugActions(s)}
+                    </article>
+                {/snippet}
+                {#snippet rail(heading: string, items: Suggestion[])}
+                    <section class="disc-rail">
+                        <h2 class="disc-rail-head">{heading}</h2>
+                        <div class="disc-rail-track">
+                            {#each items as s (s.anilistId)}
                                 {@render sugCard(s)}
                             {/each}
                         </div>
-                        {#if suggestionsShown < restSuggestionsCount}
-                            <div bind:this={suggestionsSentinel} class="suggestions-sentinel">
+                    </section>
+                {/snippet}
+                <div class="page-head no-title">
+                    <div class="disc-head-actions">
+                        <button
+                            type="button"
+                            class="btn-sm sug-mix-btn"
+                            class:on={settings?.discoverDiversify ?? true}
+                            aria-pressed={settings?.discoverDiversify ?? true}
+                            title="Reorder picks to break up runs of the same genre"
+                            onclick={() => void toggleDiversify()}>Mix it up</button>
+                        <button
+                            type="button"
+                            class="btn-sm"
+                            disabled={suggestionsLoading}
+                            onclick={() => void loadSuggestions(true)}>
+                            {suggestionsLoading ? "Refreshing…" : "Refresh"}
+                        </button>
+                    </div>
+                </div>
+                {#if discoverFocus}
+                    <div class="disc-focus-head">
+                        <button type="button" class="link-btn" onclick={clearDiscoverFocus}>‹ Back to Discover</button>
+                        <h2>More like {discoverFocus}</h2>
+                    </div>
+                    {#if focusedSuggestions.length === 0}
+                        <p class="muted">
+                            No similar picks for {discoverFocus} yet. Read a bit more of it, then hit Refresh.
+                        </p>
+                    {:else}
+                        <div class="poster-grid">
+                            {#each focusedSuggestions as s (s.anilistId)}
+                                {@render sugCard(s)}
+                            {/each}
+                        </div>
+                    {/if}
+                {:else if suggestionsLoading && suggestions.length === 0}
+                    <p class="muted">Finding titles you might like…</p>
+                {:else if suggestions.length === 0}
+                    <p class="muted">
+                        {suggestionsFailed
+                            ? "Couldn't reach AniList for recommendations right now. Try Refresh again later."
+                            : "No suggestions yet. Add a few titles to your library so we can learn what you like."}
+                    </p>
+                {:else}
+                    {#if visibleNextInSeries.length > 0 && !sugFiltersActive}
+                        {@render rail("Continue the series", visibleNextInSeries)}
+                    {/if}
+                    <h2 class="podium-heading">Top picks for you</h2>
+                    <p class="muted" style="margin-top:-4px;text-align:center">
+                        Based on the genres and authors you read.
+                    </p>
+                    <div class="sug-filters">
+                        <input
+                            class="sug-search"
+                            type="search"
+                            placeholder="Filter by title…"
+                            bind:value={sugQuery}
+                            oninput={() => (suggestionsShown = SUGGESTIONS_PAGE)} />
+                        <label class="sug-control">
+                            <span>Sort</span>
+                            <select bind:value={sugSort} onchange={() => (suggestionsShown = SUGGESTIONS_PAGE)}>
+                                <option value="score">Best match</option>
+                                <option value="frequency">Most recommended</option>
+                                <option value="title">Title A-Z</option>
+                            </select>
+                        </label>
+                        <label class="sug-control sug-toggle">
+                            <input
+                                type="checkbox"
+                                bind:checked={sugCommunityOnly}
+                                onchange={() => (suggestionsShown = SUGGESTIONS_PAGE)} />
+                            <span>Community picks</span>
+                        </label>
+                        {#if sugFiltersActive}
+                            <button type="button" class="btn-sm" onclick={clearSugFilters}>
+                                Clear ({filteredSuggestions.length})
+                            </button>
+                        {/if}
+                    </div>
+                    {#if suggestionGenreOptions.length > 0}
+                        <div class="sug-genre-chips">
+                            {#each suggestionGenreOptions as g (g.name)}
+                                {@const key = g.name.toLocaleLowerCase("en")}
                                 <button
                                     type="button"
-                                    class="btn-sm"
-                                    onclick={() =>
-                                        (suggestionsShown = Math.min(
-                                            suggestionsShown + SUGGESTIONS_PAGE,
-                                            restSuggestionsCount
-                                        ))}>
-                                    Load more ({restSuggestionsCount - suggestionsShown} remaining)
+                                    class="genre-chip genre-chip-btn"
+                                    class:genre-chip-on={sugGenres.includes(key)}
+                                    aria-pressed={sugGenres.includes(key)}
+                                    onclick={() => toggleSugGenre(key)}>
+                                    {g.name} <span class="genre-chip-count">{g.count}</span>
                                 </button>
-                            </div>
-                        {/if}
+                            {/each}
+                        </div>
                     {/if}
-                {/if}
-                {#if !sugFiltersActive && communitySuggestions.length > 0}
-                    <h2 style="margin-top:8px">Readers also read</h2>
-                    <p class="muted">Popular with readers who share your library.</p>
-                    <div class="poster-grid">
-                        {#each communitySuggestions as s (s.anilistId)}
-                            {@render sugCard(s)}
-                        {/each}
-                    </div>
-                {/if}
-                {#if !sugFiltersActive}
-                    <!-- Supplementary discovery rails, below the main picks so the familiar
-                         top-3 + genre-filter layout leads. Hidden while a filter is active. -->
-                    {#if hiddenGems.length > 0}
-                        {@render rail("Hidden gems", hiddenGems)}
-                    {/if}
-                    {#if visibleTrending.length > 0}
-                        <section class="disc-rail">
-                            <h2 class="disc-rail-head">Trending in the community</h2>
-                            <div class="disc-rail-track">
-                                {#each visibleTrending as t (t.title)}
-                                    <article class="disc-card trend-card">
-                                        <p class="poster-title">{t.title}</p>
-                                        <p class="poster-sub muted">{t.count} {t.count === 1 ? "reader" : "readers"}</p>
-                                        <div class="sug-actions">
-                                            <button
-                                                type="button"
-                                                class="btn-sm sug-find-btn"
-                                                onclick={() => findSuggestion(t.title)}>Find</button>
+                    {#if filteredSuggestions.length === 0}
+                        <p class="muted">
+                            No suggestions match these filters.
+                            <button type="button" class="link-btn" onclick={clearSugFilters}>Clear filters</button>
+                        </p>
+                    {:else}
+                        <div class="podium">
+                            {#each filteredSuggestions.slice(0, 3) as s, i (s.anilistId)}
+                                {@const matched = matchedGenres(s)}
+                                <article class="podium-item" class:podium-first={i === 0}>
+                                    <div class="poster-wrap">
+                                        <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
+                                            {#if s.coverUrl}<img
+                                                    src={s.coverUrl}
+                                                    alt={s.title}
+                                                    loading="lazy"
+                                                    decoding="async" />{:else}<span class="cover-initial"
+                                                    >{s.title[0]}</span
+                                                >{/if}
+                                            <span class="podium-rank podium-rank-{i + 1}"
+                                                >{i === 0 ? "1st" : i === 1 ? "2nd" : "3rd"}</span>
+                                            {#if s.community}
+                                                <div class="poster-badges">
+                                                    <span class="updated-chip">Readers also read</span>
+                                                </div>
+                                            {/if}
+                                        </button>
+                                    </div>
+                                    <p class="poster-title">{s.title}</p>
+                                    {#if s.reasons.length > 0}
+                                        <p class="poster-sub muted">
+                                            Because you read {s.reasons.slice(0, 2).join(", ")}
+                                        </p>
+                                    {:else if matched.length === 0}
+                                        <p class="poster-sub muted">Popular with readers like you</p>
+                                    {/if}
+                                    {#if matched.length > 0}
+                                        <div class="podium-chips">
+                                            {#each matched as g}<span class="genre-chip">{g}</span>{/each}
                                         </div>
-                                    </article>
+                                    {/if}
+                                    {@render sugActions(s)}
+                                </article>
+                            {/each}
+                        </div>
+                        {#if restSuggestionsCount > 0}
+                            <div class="poster-grid">
+                                {#each filteredSuggestions.slice(3, 3 + suggestionsShown) as s (s.anilistId)}
+                                    {@render sugCard(s)}
                                 {/each}
                             </div>
-                        </section>
+                            {#if suggestionsShown < restSuggestionsCount}
+                                <div bind:this={suggestionsSentinel} class="suggestions-sentinel">
+                                    <button
+                                        type="button"
+                                        class="btn-sm"
+                                        onclick={() =>
+                                            (suggestionsShown = Math.min(
+                                                suggestionsShown + SUGGESTIONS_PAGE,
+                                                restSuggestionsCount
+                                            ))}>
+                                        Load more ({restSuggestionsCount - suggestionsShown} remaining)
+                                    </button>
+                                </div>
+                            {/if}
+                        {/if}
                     {/if}
-                    {#each becauseYouReadRails as r (r.title)}
-                        {@render rail(`Because you read ${r.title}`, r.items)}
-                    {/each}
-                    {#each byGenreRails as r (r.genre)}
-                        {@render rail(`More ${r.genre}`, r.items)}
-                    {/each}
+                    {#if !sugFiltersActive && communitySuggestions.length > 0}
+                        <h2 style="margin-top:8px">Readers also read</h2>
+                        <p class="muted">Popular with readers who share your library.</p>
+                        <div class="poster-grid">
+                            {#each communitySuggestions as s (s.anilistId)}
+                                {@render sugCard(s)}
+                            {/each}
+                        </div>
+                    {/if}
+                    {#if !sugFiltersActive}
+                        <!-- Supplementary discovery rails, below the main picks so the familiar
+                         top-3 + genre-filter layout leads. Hidden while a filter is active. -->
+                        {#if hiddenGems.length > 0}
+                            {@render rail("Hidden gems", hiddenGems)}
+                        {/if}
+                        {#if visibleTrending.length > 0}
+                            <section class="disc-rail">
+                                <h2 class="disc-rail-head">Trending in the community</h2>
+                                <div class="disc-rail-track">
+                                    {#each visibleTrending as t (t.title)}
+                                        <article class="disc-card trend-card">
+                                            <p class="poster-title">{t.title}</p>
+                                            <p class="poster-sub muted">
+                                                {t.count}
+                                                {t.count === 1 ? "reader" : "readers"}
+                                            </p>
+                                            <div class="sug-actions">
+                                                <button
+                                                    type="button"
+                                                    class="btn-sm sug-find-btn"
+                                                    onclick={() => findSuggestion(t.title)}>Find</button>
+                                            </div>
+                                        </article>
+                                    {/each}
+                                </div>
+                            </section>
+                        {/if}
+                        {#each becauseYouReadRails as r (r.title)}
+                            {@render rail(`Because you read ${r.title}`, r.items)}
+                        {/each}
+                        {#each byGenreRails as r (r.genre)}
+                            {@render rail(`More ${r.genre}`, r.items)}
+                        {/each}
+                    {/if}
                 {/if}
             {/if}
         {:else if activeSection === "Library"}
@@ -4758,254 +4634,269 @@
                     </button>
                 </div>
             {/if}
-        {:else if activeSection === "Bookmarks"}
-            <p class="muted search-hint">
-                Pages you've saved while reading. Click a bookmark to jump straight to that page.
-            </p>
-            {#if !bookmarksLoaded}
-                <p class="muted">Loading…</p>
-            {:else if bookmarks.length === 0}
-                <p class="muted">No bookmarks yet. Use the ☆ button in the reader to save a page.</p>
-            {:else}
-                <ul class="bookmark-list">
-                    {#each bookmarks as bm (bm.id)}
-                        <li class="bookmark-card">
-                            <div class="bookmark-info">
-                                <span class="bookmark-manga">{bm.mangaTitle}</span>
-                                <span class="bookmark-chapter muted">{bm.chapterTitle} - page {bm.pageIndex + 1}</span>
-                                <span class="bookmark-date muted">{new Date(bm.addedAt).toLocaleDateString()}</span>
-                            </div>
-                            <div class="bookmark-actions">
-                                <a
-                                    href={bookmarkReaderUrl(bm)}
-                                    class="btn-sm btn-outline"
-                                    onclick={e => {
-                                        e.preventDefault()
-                                        void browser.tabs.create({ url: bookmarkReaderUrl(bm) })
-                                    }}>Open</a>
-                                <button
-                                    type="button"
-                                    class="btn-sm btn-ghost-danger"
-                                    onclick={() => void deleteBookmark(bm.id)}>Remove</button>
-                            </div>
-                        </li>
-                    {/each}
-                </ul>
-            {/if}
-        {:else if activeSection === "Updates"}
-            <div class="page-head no-title">
+        {:else if activeSection === "Activity"}
+            <div class="activity-tabs">
+                <button type="button" class:active={activityTab === "Updates"} onclick={() => (activityTab = "Updates")}
+                    >Updates</button>
+                <button type="button" class:active={activityTab === "History"} onclick={() => (activityTab = "History")}
+                    >History</button>
                 <button
                     type="button"
-                    onclick={() => void checkForUpdates()}
-                    disabled={checkingUpdates}
-                    aria-busy={checkingUpdates}>
-                    {checkingUpdates ? "Checking..." : "Check all"}
-                </button>
+                    class:active={activityTab === "Bookmarks"}
+                    onclick={() => (activityTab = "Bookmarks")}>Bookmarks</button>
             </div>
-            {#if librarySources.length > 1}
-                <div class="source-refresh">
-                    <span class="muted">Refresh one source:</span>
-                    {#each librarySources as src}
-                        <button
-                            type="button"
-                            class="btn-sm"
-                            disabled={checkingUpdates}
-                            onclick={() => void checkForUpdates(src)}>
-                            {src}
-                        </button>
-                    {/each}
-                </div>
-            {/if}
-            {#if updateProgress && (updateProgress.running || updateProgress.done > 0)}
-                <div class="update-progress-wrap">
-                    <div class="progress-track">
-                        <div class="progress-fill" style="width: {updateProgressPct}%"></div>
-                    </div>
-                    <div class="progress-meta">
-                        <span class="progress-count">
-                            {updateProgress.done} / {updateProgress.total} checked
-                            {#if updateProgress.sourceId}
-                                <span class="muted">({updateProgress.sourceId})</span>
-                            {/if}
-                        </span>
-                        {#if updateProgress.running && updateProgress.currentTitle}
-                            <span class="progress-current muted"
-                                >- currently checking {updateProgress.currentTitle}</span>
-                        {:else if !updateProgress.running}
-                            <span class="progress-done">Done ✓</span>
-                        {/if}
-                    </div>
-                </div>
-            {/if}
-            <p class="muted" style="margin-bottom:20px">
-                {updateStatus
-                    ? `Last checked ${new Date(updateStatus.checkedAt).toLocaleString()} - ${updateStatus.updated} updated, ${updateStatus.failed} failed`
-                    : "No update check has run yet. Click Check all to scan for new chapters."}
-            </p>
-            {@const skippedEntries = Object.entries(updateStatus?.skippedSources ?? {}).sort((a, b) => b[1] - a[1])}
-            {#if (updateStatus?.errors && updateStatus.errors.length > 0) || skippedEntries.length > 0}
-                <div class="error-panel">
-                    <div class="error-panel-head">
-                        <p class="row-label">Update check details</p>
-                        <button type="button" class="btn-sm" onclick={() => void copyUpdateFailureLog()}>
-                            {updateLogCopyState === "ok"
-                                ? "Copied ✓"
-                                : updateLogCopyState === "fail"
-                                  ? "Copy failed"
-                                  : "Copy log"}
-                        </button>
-                    </div>
-                    {#if updateStatus?.errors && updateStatus.errors.length > 0}
-                        <p class="row-sublabel">Titles that failed to update</p>
-                        {#each updateStatus.errors as err}
-                            <div class="error-row">
-                                <span class="error-title">{err.title}</span>
-                                <span class="muted">{err.message}</span>
-                            </div>
+            {#if activityTab === "Bookmarks"}
+                <p class="muted search-hint">
+                    Pages you've saved while reading. Click a bookmark to jump straight to that page.
+                </p>
+                {#if !bookmarksLoaded}
+                    <p class="muted">Loading…</p>
+                {:else if bookmarks.length === 0}
+                    <p class="muted">No bookmarks yet. Use the ☆ button in the reader to save a page.</p>
+                {:else}
+                    <ul class="bookmark-list">
+                        {#each bookmarks as bm (bm.id)}
+                            <li class="bookmark-card">
+                                <div class="bookmark-info">
+                                    <span class="bookmark-manga">{bm.mangaTitle}</span>
+                                    <span class="bookmark-chapter muted"
+                                        >{bm.chapterTitle} - page {bm.pageIndex + 1}</span>
+                                    <span class="bookmark-date muted">{new Date(bm.addedAt).toLocaleDateString()}</span>
+                                </div>
+                                <div class="bookmark-actions">
+                                    <a
+                                        href={bookmarkReaderUrl(bm)}
+                                        class="btn-sm btn-outline"
+                                        onclick={e => {
+                                            e.preventDefault()
+                                            void browser.tabs.create({ url: bookmarkReaderUrl(bm) })
+                                        }}>Open</a>
+                                    <button
+                                        type="button"
+                                        class="btn-sm btn-ghost-danger"
+                                        onclick={() => void deleteBookmark(bm.id)}>Remove</button>
+                                </div>
+                            </li>
                         {/each}
-                    {/if}
-                    {#if skippedEntries.length > 0}
-                        <p class="row-sublabel">Skipped - these sites block automated checks (not a failure)</p>
-                        {#each skippedEntries as [source, count]}
-                            <div class="error-row">
-                                <span class="error-title">{source}</span>
-                                <span class="muted">{count} title(s) skipped; chapters still load in the reader</span>
-                            </div>
-                        {/each}
-                    {/if}
-                </div>
-            {/if}
-            {#if library.length === 0}
-                <p class="muted">No manga in library to check.</p>
-            {:else if updatedManga.length === 0}
-                <p class="muted">Everything is up to date.</p>
-            {:else}
-                <div class="update-groups">
-                    {#each pagedUpdates as manga (manga.id)}
-                        {@const open = expandedUpdates.has(manga.id)}
-                        {@const titleNeverRead = neverRead(manga)}
-                        {@const chapters = updatesNewChapters[manga.id]}
-                        <div class="update-group" class:open>
-                            <button type="button" class="update-group-head" onclick={() => toggleUpdate(manga.id)}>
-                                <div class="update-cover">
-                                    {#if coverSrcs[manga.id] ?? manga.coverUrl}
-                                        <img src={coverSrcs[manga.id] ?? manga.coverUrl} alt={manga.title} />
-                                    {:else}
-                                        <span>{manga.title[0]}</span>
-                                    {/if}
-                                </div>
-                                <div class="update-info">
-                                    <span class="update-title">{manga.title}</span>
-                                    <span class="muted update-when"
-                                        >{new Date(manga.updatedAt).toLocaleDateString()}</span>
-                                </div>
-                                {#if titleNeverRead}
-                                    <span class="badge-unread">Unread</span>
-                                {:else if manga.latestChapterNumber != null && manga.lastReadChapterNumber != null}
-                                    <span class="badge-new">
-                                        +{Math.max(
-                                            1,
-                                            Math.round(manga.latestChapterNumber - manga.lastReadChapterNumber)
-                                        )} ch
-                                    </span>
-                                {:else}
-                                    <span class="badge-new">New</span>
-                                {/if}
-                                <span class="update-caret">{open ? "▾" : "▸"}</span>
-                            </button>
-                            {#if open}
-                                <div class="update-chapters">
-                                    {#if !chapters}
-                                        <p class="muted update-loading">Loading…</p>
-                                    {:else if chapters.length === 0}
-                                        <p class="muted update-loading">
-                                            No cached chapters - open the manga page to load them.
-                                        </p>
-                                    {:else}
-                                        {#each chapters.slice().reverse() as ch (ch.id)}
-                                            <div
-                                                class="update-chapter-row clickable"
-                                                role="button"
-                                                tabindex="0"
-                                                onclick={() => void readChapter(ch.url)}
-                                                onkeydown={e => e.key === "Enter" && void readChapter(ch.url)}>
-                                                <span class="update-ch-title">{ch.title}</span>
-                                                <span class="badge-new-sm">Read ›</span>
-                                            </div>
-                                        {/each}
-                                    {/if}
-                                </div>
-                            {/if}
-                        </div>
-                    {/each}
-                </div>
-                {#if updatedManga.length > updatesLimit}
-                    <div class="load-more">
-                        <button type="button" class="btn-sm" onclick={() => (updatesLimit += UPDATES_INITIAL)}>
-                            Load more ({updatedManga.length - updatesLimit} left)
-                        </button>
-                    </div>
+                    </ul>
                 {/if}
-            {/if}
-        {:else if activeSection === "History"}
-            <div class="page-head no-title">
-                <button type="button" class="btn-sm" onclick={() => void loadHistory()}>Refresh</button>
-            </div>
-            {#if !historyLoaded}
-                <p class="muted">Loading…</p>
-            {:else if historyGroups.length === 0}
-                <p class="muted">No reading activity yet. Open a chapter to start tracking.</p>
-            {:else}
-                <div class="history-groups">
-                    {#each historyGroups as group (group.mangaId)}
-                        {@const open = expandedHistory.has(group.mangaId)}
-                        {@const last = group.events[0]}
-                        <div class="history-group" class:open>
+            {:else if activityTab === "Updates"}
+                <div class="page-head no-title">
+                    <button
+                        type="button"
+                        onclick={() => void checkForUpdates()}
+                        disabled={checkingUpdates}
+                        aria-busy={checkingUpdates}>
+                        {checkingUpdates ? "Checking..." : "Check all"}
+                    </button>
+                </div>
+                {#if librarySources.length > 1}
+                    <div class="source-refresh">
+                        <span class="muted">Refresh one source:</span>
+                        {#each librarySources as src}
                             <button
                                 type="button"
-                                class="history-group-head"
-                                onclick={() => toggleHistoryGroup(group.mangaId)}>
-                                <span class="history-caret">{open ? "▾" : "▸"}</span>
-                                <span class="history-title">{group.title}</span>
-                                <span class="muted history-count">{group.events.length}</span>
-                                <span class="muted history-when">
-                                    {last
-                                        ? `${last.type === "completed" ? "read" : "started"} ${last.chapterNumber != null ? `ch ${last.chapterNumber} · ` : ""}${new Date(group.latest).toLocaleDateString()}`
-                                        : ""}
-                                </span>
+                                class="btn-sm"
+                                disabled={checkingUpdates}
+                                onclick={() => void checkForUpdates(src)}>
+                                {src}
                             </button>
-                            {#if open}
-                                <div class="history-events">
-                                    {#each group.events as event}
-                                        <div
-                                            class="history-row"
-                                            class:clickable={!!event.chapterUrl}
-                                            role={event.chapterUrl ? "button" : undefined}
-                                            tabindex={event.chapterUrl ? 0 : undefined}
-                                            onclick={() => event.chapterUrl && void readChapter(event.chapterUrl)}
-                                            onkeydown={e =>
-                                                e.key === "Enter" &&
-                                                event.chapterUrl &&
-                                                void readChapter(event.chapterUrl)}>
-                                            <span class="history-dot" class:done={event.type === "completed"}></span>
-                                            <span class="history-ev-title">
-                                                {event.chapterNumber != null
-                                                    ? `Chapter ${event.chapterNumber}`
-                                                    : (event.chapterTitle ?? "Chapter")}
-                                            </span>
-                                            <span class="muted">
-                                                {event.type === "completed" ? "Completed" : "Started"}
-                                            </span>
-                                            <span class="muted history-when">
-                                                {new Date(event.occurredAt).toLocaleString()}
-                                            </span>
-                                        </div>
-                                    {/each}
-                                </div>
+                        {/each}
+                    </div>
+                {/if}
+                {#if updateProgress && (updateProgress.running || updateProgress.done > 0)}
+                    <div class="update-progress-wrap">
+                        <div class="progress-track">
+                            <div class="progress-fill" style="width: {updateProgressPct}%"></div>
+                        </div>
+                        <div class="progress-meta">
+                            <span class="progress-count">
+                                {updateProgress.done} / {updateProgress.total} checked
+                                {#if updateProgress.sourceId}
+                                    <span class="muted">({updateProgress.sourceId})</span>
+                                {/if}
+                            </span>
+                            {#if updateProgress.running && updateProgress.currentTitle}
+                                <span class="progress-current muted"
+                                    >- currently checking {updateProgress.currentTitle}</span>
+                            {:else if !updateProgress.running}
+                                <span class="progress-done">Done ✓</span>
                             {/if}
                         </div>
-                    {/each}
+                    </div>
+                {/if}
+                <p class="muted" style="margin-bottom:20px">
+                    {updateStatus
+                        ? `Last checked ${new Date(updateStatus.checkedAt).toLocaleString()} - ${updateStatus.updated} updated, ${updateStatus.failed} failed`
+                        : "No update check has run yet. Click Check all to scan for new chapters."}
+                </p>
+                {@const skippedEntries = Object.entries(updateStatus?.skippedSources ?? {}).sort((a, b) => b[1] - a[1])}
+                {#if (updateStatus?.errors && updateStatus.errors.length > 0) || skippedEntries.length > 0}
+                    <div class="error-panel">
+                        <div class="error-panel-head">
+                            <p class="row-label">Update check details</p>
+                            <button type="button" class="btn-sm" onclick={() => void copyUpdateFailureLog()}>
+                                {updateLogCopyState === "ok"
+                                    ? "Copied ✓"
+                                    : updateLogCopyState === "fail"
+                                      ? "Copy failed"
+                                      : "Copy log"}
+                            </button>
+                        </div>
+                        {#if updateStatus?.errors && updateStatus.errors.length > 0}
+                            <p class="row-sublabel">Titles that failed to update</p>
+                            {#each updateStatus.errors as err}
+                                <div class="error-row">
+                                    <span class="error-title">{err.title}</span>
+                                    <span class="muted">{err.message}</span>
+                                </div>
+                            {/each}
+                        {/if}
+                        {#if skippedEntries.length > 0}
+                            <p class="row-sublabel">Skipped - these sites block automated checks (not a failure)</p>
+                            {#each skippedEntries as [source, count]}
+                                <div class="error-row">
+                                    <span class="error-title">{source}</span>
+                                    <span class="muted"
+                                        >{count} title(s) skipped; chapters still load in the reader</span>
+                                </div>
+                            {/each}
+                        {/if}
+                    </div>
+                {/if}
+                {#if library.length === 0}
+                    <p class="muted">No manga in library to check.</p>
+                {:else if updatedManga.length === 0}
+                    <p class="muted">Everything is up to date.</p>
+                {:else}
+                    <div class="update-groups">
+                        {#each pagedUpdates as manga (manga.id)}
+                            {@const open = expandedUpdates.has(manga.id)}
+                            {@const titleNeverRead = neverRead(manga)}
+                            {@const chapters = updatesNewChapters[manga.id]}
+                            <div class="update-group" class:open>
+                                <button type="button" class="update-group-head" onclick={() => toggleUpdate(manga.id)}>
+                                    <div class="update-cover">
+                                        {#if coverSrcs[manga.id] ?? manga.coverUrl}
+                                            <img src={coverSrcs[manga.id] ?? manga.coverUrl} alt={manga.title} />
+                                        {:else}
+                                            <span>{manga.title[0]}</span>
+                                        {/if}
+                                    </div>
+                                    <div class="update-info">
+                                        <span class="update-title">{manga.title}</span>
+                                        <span class="muted update-when"
+                                            >{new Date(manga.updatedAt).toLocaleDateString()}</span>
+                                    </div>
+                                    {#if titleNeverRead}
+                                        <span class="badge-unread">Unread</span>
+                                    {:else if manga.latestChapterNumber != null && manga.lastReadChapterNumber != null}
+                                        <span class="badge-new">
+                                            +{Math.max(
+                                                1,
+                                                Math.round(manga.latestChapterNumber - manga.lastReadChapterNumber)
+                                            )} ch
+                                        </span>
+                                    {:else}
+                                        <span class="badge-new">New</span>
+                                    {/if}
+                                    <span class="update-caret">{open ? "▾" : "▸"}</span>
+                                </button>
+                                {#if open}
+                                    <div class="update-chapters">
+                                        {#if !chapters}
+                                            <p class="muted update-loading">Loading…</p>
+                                        {:else if chapters.length === 0}
+                                            <p class="muted update-loading">
+                                                No cached chapters - open the manga page to load them.
+                                            </p>
+                                        {:else}
+                                            {#each chapters.slice().reverse() as ch (ch.id)}
+                                                <div
+                                                    class="update-chapter-row clickable"
+                                                    role="button"
+                                                    tabindex="0"
+                                                    onclick={() => void readChapter(ch.url)}
+                                                    onkeydown={e => e.key === "Enter" && void readChapter(ch.url)}>
+                                                    <span class="update-ch-title">{ch.title}</span>
+                                                    <span class="badge-new-sm">Read ›</span>
+                                                </div>
+                                            {/each}
+                                        {/if}
+                                    </div>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                    {#if updatedManga.length > updatesLimit}
+                        <div class="load-more">
+                            <button type="button" class="btn-sm" onclick={() => (updatesLimit += UPDATES_INITIAL)}>
+                                Load more ({updatedManga.length - updatesLimit} left)
+                            </button>
+                        </div>
+                    {/if}
+                {/if}
+            {:else if activityTab === "History"}
+                <div class="page-head no-title">
+                    <button type="button" class="btn-sm" onclick={() => void loadHistory()}>Refresh</button>
                 </div>
+                {#if !historyLoaded}
+                    <p class="muted">Loading…</p>
+                {:else if historyGroups.length === 0}
+                    <p class="muted">No reading activity yet. Open a chapter to start tracking.</p>
+                {:else}
+                    <div class="history-groups">
+                        {#each historyGroups as group (group.mangaId)}
+                            {@const open = expandedHistory.has(group.mangaId)}
+                            {@const last = group.events[0]}
+                            <div class="history-group" class:open>
+                                <button
+                                    type="button"
+                                    class="history-group-head"
+                                    onclick={() => toggleHistoryGroup(group.mangaId)}>
+                                    <span class="history-caret">{open ? "▾" : "▸"}</span>
+                                    <span class="history-title">{group.title}</span>
+                                    <span class="muted history-count">{group.events.length}</span>
+                                    <span class="muted history-when">
+                                        {last
+                                            ? `${last.type === "completed" ? "read" : "started"} ${last.chapterNumber != null ? `ch ${last.chapterNumber} · ` : ""}${new Date(group.latest).toLocaleDateString()}`
+                                            : ""}
+                                    </span>
+                                </button>
+                                {#if open}
+                                    <div class="history-events">
+                                        {#each group.events as event}
+                                            <div
+                                                class="history-row"
+                                                class:clickable={!!event.chapterUrl}
+                                                role={event.chapterUrl ? "button" : undefined}
+                                                tabindex={event.chapterUrl ? 0 : undefined}
+                                                onclick={() => event.chapterUrl && void readChapter(event.chapterUrl)}
+                                                onkeydown={e =>
+                                                    e.key === "Enter" &&
+                                                    event.chapterUrl &&
+                                                    void readChapter(event.chapterUrl)}>
+                                                <span class="history-dot" class:done={event.type === "completed"}
+                                                ></span>
+                                                <span class="history-ev-title">
+                                                    {event.chapterNumber != null
+                                                        ? `Chapter ${event.chapterNumber}`
+                                                        : (event.chapterTitle ?? "Chapter")}
+                                                </span>
+                                                <span class="muted">
+                                                    {event.type === "completed" ? "Completed" : "Started"}
+                                                </span>
+                                                <span class="muted history-when">
+                                                    {new Date(event.occurredAt).toLocaleString()}
+                                                </span>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
             {/if}
         {:else if activeSection === "Stats"}
             <div class="stat-row">
@@ -6389,6 +6280,22 @@
                                     <option value="dark">Dark</option>
                                     <option value="light">Light</option>
                                     <option value="system">System</option>
+                                </select>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Start page")}>
+                                <div>
+                                    <p class="row-label">Start page</p>
+                                    <p class="muted">Which page AMR opens to.</p>
+                                </div>
+                                <select
+                                    aria-label="Start page"
+                                    value={settings?.startPage ?? "discover"}
+                                    onchange={e =>
+                                        void updateSetting({
+                                            startPage: e.currentTarget.value as "discover" | "library"
+                                        })}>
+                                    <option value="discover">Discover</option>
+                                    <option value="library">Library</option>
                                 </select>
                             </div>
                             <div class="settings-row" hidden={!settingMatches("Daily reading goal")}>

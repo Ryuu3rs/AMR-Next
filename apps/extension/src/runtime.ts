@@ -242,7 +242,8 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
             anilistImportPaused: z.boolean().optional(),
             anilistImportDropped: z.boolean().optional(),
             anilistImportPlanning: z.boolean().optional(),
-            discoverDiversify: z.boolean().optional()
+            discoverDiversify: z.boolean().optional(),
+            startPage: z.enum(["discover", "library"]).optional()
         })
     })
 ])

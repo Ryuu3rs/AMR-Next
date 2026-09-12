@@ -42,6 +42,8 @@ export type AppSettings = {
     // grid isn't dominated by whatever the biggest slice of the library is. On by default;
     // turn off for a pure highest-score-first ordering.
     discoverDiversify: boolean
+    // Which page the app opens to. Discover (default) or the Library.
+    startPage: "discover" | "library"
 }
 
 const settingsKey = "settings"
@@ -69,7 +71,8 @@ export const defaultSettings: AppSettings = {
     anilistImportDropped: true,
     anilistImportPlanning: false,
     searchDisabledSourceIds: [],
-    discoverDiversify: true
+    discoverDiversify: true,
+    startPage: "discover"
 }
 
 export async function getSettings(): Promise<AppSettings> {
