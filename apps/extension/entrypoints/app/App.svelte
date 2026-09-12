@@ -98,6 +98,7 @@
             ]
         },
         { id: "appearance", label: "Appearance & habits", labels: ["Theme", "Daily reading goal", "Blur NSFW covers"] },
+        { id: "account", label: "weeb.ltd account", labels: ["weeb.ltd account", "Link this device"] },
         {
             id: "community",
             label: "Privacy & community",
@@ -5737,63 +5738,6 @@
                     scheduleLoad()
                 }} />
 
-            <h1 style="margin-top:32px">weeb.ltd account</h1>
-            <div class="data-list">
-                {#if accountProfile?.token}
-                    <div class="data-row">
-                        <div>
-                            <p class="row-label">
-                                Linked{accountProfile.name ? ` as ${accountProfile.name}` : ""}
-                                {#if accountProfile.invalid}<span class="muted"> · token revoked</span>{/if}
-                            </p>
-                            <p class="muted">
-                                {accountProfile.lastSyncAt
-                                    ? `Last synced ${new Date(accountProfile.lastSyncAt).toLocaleString()} · ${accountProfile.itemCount ?? 0} titles on the account.`
-                                    : "Not synced yet."}
-                            </p>
-                        </div>
-                        <div class="sync-actions">
-                            <button
-                                type="button"
-                                onclick={() => void syncAccountNow()}
-                                disabled={accountBusy || accountProfile.invalid}>
-                                {accountBusy ? "Syncing…" : "Sync now"}
-                            </button>
-                            <button type="button" class="btn-outline" onclick={() => void unlinkAccount()}
-                                >Unlink</button>
-                        </div>
-                    </div>
-                {:else}
-                    <div class="data-row">
-                        <div>
-                            <p class="row-label">Link this device</p>
-                            <p class="muted">
-                                Sync your library across browsers and devices. Create a link token at
-                                <a href={`${SITE_BASE}/account`} target="_blank" rel="noopener noreferrer"
-                                    >weeb.ltd/account</a>
-                                and paste it here. Stored locally on this device only.
-                            </p>
-                        </div>
-                        <div class="sync-token">
-                            <input
-                                type="password"
-                                placeholder="weeb_…"
-                                bind:value={accountToken}
-                                onkeydown={e => {
-                                    if (e.key === "Enter") void linkAccount()
-                                }} />
-                            <button
-                                type="button"
-                                onclick={() => void linkAccount()}
-                                disabled={!accountToken.trim() || accountBusy}>
-                                {accountBusy ? "Linking…" : "Link"}
-                            </button>
-                        </div>
-                    </div>
-                {/if}
-            </div>
-            {#if accountMessage}<p class="notice">{accountMessage}</p>{/if}
-
             <h1 style="margin-top:32px">GitHub Gist sync</h1>
             <div class="data-list">
                 <div class="data-row">
@@ -6481,6 +6425,73 @@
                                 </label>
                             </div>
                         </div>
+                    </section>
+                    <section
+                        id="settings-account"
+                        class="settings-section"
+                        data-settings-section="account"
+                        hidden={!sectionVisible("account")}>
+                        <header>
+                            <h2>weeb.ltd account</h2>
+                            <p class="muted">
+                                Sync your library across browsers and devices through your weeb.ltd account.
+                            </p>
+                        </header>
+                        <div class="settings-grid">
+                            {#if accountProfile?.token}
+                                <div class="settings-row" hidden={!settingMatches("weeb.ltd account")}>
+                                    <div>
+                                        <p class="row-label">
+                                            Linked{accountProfile.name ? ` as ${accountProfile.name}` : ""}
+                                            {#if accountProfile.invalid}<span class="muted"> · token revoked</span>{/if}
+                                        </p>
+                                        <p class="muted">
+                                            {accountProfile.lastSyncAt
+                                                ? `Last synced ${new Date(accountProfile.lastSyncAt).toLocaleString()} · ${accountProfile.itemCount ?? 0} titles on the account.`
+                                                : "Not synced yet."}
+                                        </p>
+                                    </div>
+                                    <div class="sync-actions">
+                                        <button
+                                            type="button"
+                                            onclick={() => void syncAccountNow()}
+                                            disabled={accountBusy || accountProfile.invalid}>
+                                            {accountBusy ? "Syncing…" : "Sync now"}
+                                        </button>
+                                        <button type="button" class="btn-outline" onclick={() => void unlinkAccount()}
+                                            >Unlink</button>
+                                    </div>
+                                </div>
+                            {:else}
+                                <div class="settings-row" hidden={!settingMatches("Link this device")}>
+                                    <div>
+                                        <p class="row-label">Link this device</p>
+                                        <p class="muted">
+                                            Sync your library across browsers and devices. Create a link token at
+                                            <a href={`${SITE_BASE}/account`} target="_blank" rel="noopener noreferrer"
+                                                >weeb.ltd/account</a>
+                                            and paste it here. Stored locally on this device only.
+                                        </p>
+                                    </div>
+                                    <div class="sync-token">
+                                        <input
+                                            type="password"
+                                            placeholder="weeb_…"
+                                            bind:value={accountToken}
+                                            onkeydown={e => {
+                                                if (e.key === "Enter") void linkAccount()
+                                            }} />
+                                        <button
+                                            type="button"
+                                            onclick={() => void linkAccount()}
+                                            disabled={!accountToken.trim() || accountBusy}>
+                                            {accountBusy ? "Linking…" : "Link"}
+                                        </button>
+                                    </div>
+                                </div>
+                            {/if}
+                        </div>
+                        {#if accountMessage}<p class="notice">{accountMessage}</p>{/if}
                     </section>
                     <section
                         id="settings-community"
