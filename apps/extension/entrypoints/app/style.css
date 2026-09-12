@@ -753,6 +753,55 @@ button:disabled {
 }
 
 /* Activity page sub-tabs (Updates / History / Bookmarks folded into one section). */
+.tools-menu {
+    position: relative;
+    display: inline-block;
+}
+.tools-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 40;
+    min-width: 190px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    background: var(--surface, #1b2129);
+    border: 1px solid var(--border, #29313b);
+    border-radius: 10px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+}
+.tools-dropdown button {
+    text-align: left;
+    padding: 8px 10px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    border-radius: 7px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+.tools-dropdown button:hover:not(:disabled) {
+    background: var(--surface-2, #232b35);
+}
+.tools-dropdown button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.chip-count {
+    margin-left: 6px;
+    font-size: 0.85em;
+    font-weight: 700;
+    opacity: 0.6;
+    font-variant-numeric: tabular-nums;
+}
+.chip.active .chip-count {
+    opacity: 0.85;
+}
+
 .activity-tabs {
     display: flex;
     gap: 6px;

@@ -150,9 +150,9 @@
     let autoPauseDays = $state(0)
     let loading = $state(true)
     let query = $state("")
-    let librarySort = $state<"recent-read" | "recent-added" | "recently-updated" | "title" | "latest-chapter">(
-        "recent-read"
-    )
+    let librarySort = $state<
+        "updates-first" | "recent-read" | "recent-added" | "recently-updated" | "title" | "latest-chapter"
+    >("updates-first")
     // Persist the chosen sort so the library reopens the same way. Saved on change only
     // (never via an effect) so the default can't clobber the stored value on startup.
     function persistLibrarySort() {
@@ -1228,11 +1228,6 @@
         )
     }
 
-    function isRecentlyUpdated(manga: LibraryManga): boolean {
-        if (manga.updatedAt <= Date.now() - DAY_MS) return false
-        return hasUpdates(manga)
-    }
-
     // When a dashboard tab that's already open regains focus (e.g. the reader's
     // "back to dashboard" refocuses it rather than opening a fresh one), pick up any
     // progress changes from the reading session with a cheap indexed re-query -
@@ -1266,6 +1261,7 @@
         try {
             const v = (await browser.storage.local.get("librarySort"))["librarySort"]
             if (
+                v === "updates-first" ||
                 v === "recent-read" ||
                 v === "recent-added" ||
                 v === "recently-updated" ||
@@ -2657,11 +2653,11 @@
         activeSection = "Library"
     }
 
-    function matchesFilter(m: LibraryManga): boolean {
-        if (sourceFilter && m.sourceId !== sourceFilter) return false
-        if (ratingFilter > 0 && (m.rating ?? 0) < ratingFilter) return false
-        if (updatedSinceFilter > 0 && m.updatedAt < Date.now() - updatedSinceFilter * 86_400_000) return false
-        switch (libraryFilter) {
+    // The status-chip predicate for a given filter value, independent of the active chip and of
+    // the search/tag/advanced filters - so it can drive both the current filter and the per-chip
+    // counts shown next to each status.
+    function matchesStatus(m: LibraryManga, f: string): boolean {
+        switch (f) {
             case "all":
                 return true
             case "manual":
@@ -2669,12 +2665,17 @@
             case "on-hold":
                 return Boolean(m.onHold)
         }
-        if (libraryFilter === "updates") {
-            const eff = effectiveReadingStatus(m, { autoPauseDays, now: Date.now() })
-            return hasUpdates(m) && eff !== "paused" && eff !== "dropped" && eff !== "completed" && !m.onHold
-        }
         const effective = effectiveReadingStatus(m, { autoPauseDays, now: Date.now() })
-        switch (libraryFilter) {
+        if (f === "updates") {
+            return (
+                hasUpdates(m) &&
+                effective !== "paused" &&
+                effective !== "dropped" &&
+                effective !== "completed" &&
+                !m.onHold
+            )
+        }
+        switch (f) {
             case "ongoing":
                 return isOngoing(effective)
             case "unread":
@@ -2682,10 +2683,17 @@
             case "completed":
             case "paused":
             case "dropped":
-                return effective === libraryFilter
+                return effective === f
             default:
                 return true
         }
+    }
+
+    function matchesFilter(m: LibraryManga): boolean {
+        if (sourceFilter && m.sourceId !== sourceFilter) return false
+        if (ratingFilter > 0 && (m.rating ?? 0) < ratingFilter) return false
+        if (updatedSinceFilter > 0 && m.updatedAt < Date.now() - updatedSinceFilter * 86_400_000) return false
+        return matchesStatus(m, libraryFilter)
     }
 
     const advancedFilterCount = $derived(
@@ -2711,6 +2719,15 @@
         )
         const sorted = [...filtered]
         switch (librarySort) {
+            case "updates-first":
+                // Titles with a new/unread chapter first, then by freshest update - the default,
+                // so what needs reading floats to the top.
+                sorted.sort(
+                    (a, b) =>
+                        Number(hasNewerChapters(b)) - Number(hasNewerChapters(a)) ||
+                        (b.latestChapterAt ?? b.updatedAt) - (a.latestChapterAt ?? a.updatedAt)
+                )
+                break
             case "recent-read":
                 sorted.sort((a, b) => (b.lastReadAt ?? 0) - (a.lastReadAt ?? 0) || b.updatedAt - a.updatedAt)
                 break
@@ -2741,6 +2758,11 @@
     // Library view: grid (covers) or list (rows), with a user-set page size so
     // large libraries don't render everything at once.
     let libraryView = $state<"grid" | "list">("grid")
+    // Collapsible "Tools" menu in the library toolbar (Manage tags / covers / Find sources / etc).
+    let toolsOpen = $state(false)
+    const missingCoverCount = $derived(
+        library.filter(m => !isSeedData(m) && ((!coverSrcs[m.id] && !m.coverUrl) || failedCovers.has(m.id))).length
+    )
     let libraryFilter = $state<
         "all" | "ongoing" | "updates" | "unread" | "reading" | "completed" | "paused" | "dropped" | "manual" | "on-hold"
     >("ongoing")
@@ -2756,6 +2778,30 @@
         "on-hold",
         "manual"
     ] as const
+    // Per-chip counts shown next to each status. Counted over the library narrowed by the
+    // search + tag/genre + advanced filters (but NOT the active status chip), so each number is
+    // "how many you'd see if you clicked this chip".
+    const statusCountBase = $derived.by(() => {
+        const q = query.trim().toLowerCase()
+        const now = Date.now()
+        return library.filter(
+            m =>
+                m.normalizedTitle.includes(q) &&
+                (!categoryFilter || (m.categories ?? []).includes(categoryFilter)) &&
+                (!genreFilter || (m.genres ?? []).includes(genreFilter)) &&
+                (!sourceFilter || m.sourceId === sourceFilter) &&
+                (ratingFilter === 0 || (m.rating ?? 0) >= ratingFilter) &&
+                (updatedSinceFilter === 0 || m.updatedAt >= now - updatedSinceFilter * 86_400_000)
+        )
+    })
+    const statusCounts = $derived.by(() => {
+        const counts: Record<string, number> = {}
+        for (const f of LIBRARY_FILTERS) counts[f] = 0
+        for (const m of statusCountBase) {
+            for (const f of LIBRARY_FILTERS) if (matchesStatus(m, f)) counts[f] = (counts[f] ?? 0) + 1
+        }
+        return counts
+    })
     let libraryPageSize = $state(50)
     let libraryLimit = $state(50)
     const pagedLibrary = $derived(visibleLibrary.slice(0, libraryLimit))
@@ -4140,6 +4186,7 @@
                                 onclick={() => (libraryView = "list")}>List</button>
                         </div>
                         <select aria-label="Sort library" bind:value={librarySort} onchange={persistLibrarySort}>
+                            <option value="updates-first">Updates first</option>
                             <option value="recent-read">Recently read</option>
                             <option value="recently-updated">Recently updated</option>
                             <option value="recent-added">Recently added</option>
@@ -4171,6 +4218,7 @@
                                       : f === "unread"
                                         ? "Never opened"
                                         : f[0]?.toUpperCase() + f.slice(1)}
+                                <span class="chip-count">{statusCounts[f] ?? 0}</span>
                             </button>
                         {/each}
                     </div>
@@ -4203,57 +4251,78 @@
                 </div>
                 <div class="toolbar-row toolbar-action-row">
                     <div class="toolbar-group toolbar-actions">
-                        {#if allCategories.length > 0}
-                            <button
-                                type="button"
-                                class="btn-sm btn-outline"
-                                class:active={manageTags}
-                                aria-pressed={manageTags}
-                                onclick={() => (manageTags = !manageTags)}>Manage tags</button>
-                        {/if}
-                        <button
-                            type="button"
-                            class="btn-sm btn-outline"
-                            onclick={() => void backfillCovers()}
-                            disabled={refreshingCovers || !hasPermission}
-                            title={hasPermission ? "Fetch missing covers" : "Grant source access first"}>
-                            {refreshingCovers
-                                ? coverProgress
-                                    ? `Fetching… ${coverProgress.done}/${coverProgress.total}`
-                                    : "Fetching…"
-                                : "Refresh covers"}
-                        </button>
-                        <button
-                            type="button"
-                            class="btn-sm btn-outline"
-                            title="Search all sources for better matches, scoped to your current selection or filter"
-                            disabled={relinkScopeIds.length === 0}
-                            onclick={() => {
-                                libScanIds = relinkScopeIds
-                                activeSection = "Data"
-                            }}>
-                            Find better sources ({relinkScopeIds.length})
-                        </button>
                         <button
                             type="button"
                             class="btn-sm btn-outline"
                             onclick={() => (selectMode ? clearSelection() : (selectMode = true))}>
                             {selectMode ? "Cancel" : "Select"}
                         </button>
-                        {#if duplicateGroups.length > 0}
+                        <div class="tools-menu">
                             <button
                                 type="button"
                                 class="btn-sm btn-outline"
-                                onclick={() => (showDuplicates = !showDuplicates)}>
-                                Duplicates ({duplicateGroups.length})
-                            </button>
-                        {/if}
-                        <button
-                            type="button"
-                            class="btn-sm btn-outline"
-                            title="Open a random unread title"
-                            disabled={library.length === 0}
-                            onclick={surpriseMe}>🎲 Surprise me</button>
+                                aria-haspopup="menu"
+                                aria-expanded={toolsOpen}
+                                onclick={() => (toolsOpen = !toolsOpen)}>Tools ▾</button>
+                            {#if toolsOpen}
+                                <div class="tools-dropdown" role="menu">
+                                    {#if allCategories.length > 0}
+                                        <button
+                                            type="button"
+                                            role="menuitem"
+                                            onclick={() => {
+                                                manageTags = !manageTags
+                                                toolsOpen = false
+                                            }}>Manage tags</button>
+                                    {/if}
+                                    <button
+                                        type="button"
+                                        role="menuitem"
+                                        disabled={refreshingCovers || !hasPermission}
+                                        title={hasPermission ? "Fetch missing covers" : "Grant source access first"}
+                                        onclick={() => {
+                                            void backfillCovers()
+                                            toolsOpen = false
+                                        }}>
+                                        {refreshingCovers
+                                            ? coverProgress
+                                                ? `Fetching… ${coverProgress.done}/${coverProgress.total}`
+                                                : "Fetching…"
+                                            : missingCoverCount > 0
+                                              ? `Missing covers (${missingCoverCount})`
+                                              : "Refresh covers"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        role="menuitem"
+                                        disabled={relinkScopeIds.length === 0}
+                                        onclick={() => {
+                                            libScanIds = relinkScopeIds
+                                            activeSection = "Data"
+                                            toolsOpen = false
+                                        }}>
+                                        Find better sources ({relinkScopeIds.length})
+                                    </button>
+                                    {#if duplicateGroups.length > 0}
+                                        <button
+                                            type="button"
+                                            role="menuitem"
+                                            onclick={() => {
+                                                showDuplicates = !showDuplicates
+                                                toolsOpen = false
+                                            }}>Duplicates ({duplicateGroups.length})</button>
+                                    {/if}
+                                    <button
+                                        type="button"
+                                        role="menuitem"
+                                        disabled={library.length === 0}
+                                        onclick={() => {
+                                            surpriseMe()
+                                            toolsOpen = false
+                                        }}>🎲 Surprise me</button>
+                                </div>
+                            {/if}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -4473,9 +4542,9 @@
                                         {#if manga.manualTracking}<span class="manual-chip">Manual</span>{/if}
                                         {#if !isSeedData(manga) && hasNewerChapters(manga)}
                                             <span class="new-chip">New ch</span>
+                                        {:else if isRecentlyAdded(manga)}
+                                            <span class="added-chip">New</span>
                                         {/if}
-                                        {#if isRecentlyAdded(manga)}<span class="added-chip">New</span>{/if}
-                                        {#if isRecentlyUpdated(manga)}<span class="updated-chip">Updated</span>{/if}
                                     </div>
                                 </button>
                                 <button
@@ -4590,15 +4659,13 @@
                                     {#if manga.manualTracking}· manual{/if}
                                     {#if manga.notes}· 📝{/if}
                                 </p>
-                                {#if (!isSeedData(manga) && hasNewerChapters(manga)) || isRecentlyAdded(manga) || isRecentlyUpdated(manga)}
+                                {#if (!isSeedData(manga) && hasNewerChapters(manga)) || isRecentlyAdded(manga)}
                                     <div class="list-badges">
                                         {#if !isSeedData(manga) && hasNewerChapters(manga)}
                                             <span class="list-badge badge-unread">New ch</span>
+                                        {:else if isRecentlyAdded(manga)}
+                                            <span class="list-badge badge-added">New</span>
                                         {/if}
-                                        {#if isRecentlyAdded(manga)}<span class="list-badge badge-added">New</span>{/if}
-                                        {#if isRecentlyUpdated(manga)}<span class="list-badge badge-updated"
-                                                >Updated</span
-                                            >{/if}
                                     </div>
                                 {/if}
                                 {#if rowMessage && rowMessage.id === manga.id}
