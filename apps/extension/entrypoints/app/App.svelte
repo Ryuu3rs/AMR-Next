@@ -467,6 +467,15 @@
         )[0]
     }
 
+    // A title added from Discover as "already read" is a synthetic anilist.co entry with read
+    // progress and no live source. The user logged it as read, so it does NOT need a source and
+    // must not appear in the "needs a source" reconcile panel - if they want to re-read it they
+    // can add a source from the library. Planning/unread synthetic entries still get offered a
+    // source (neverRead is true for those).
+    function isReadOnlyDiscoverAdd(m: LibraryManga): boolean {
+        return m.sourceId === "anilist.co" && !neverRead(m)
+    }
+
     // Merging duplicates is a single backend transaction (library:merge - see
     // mergeMangaRecords in src/database.ts) that re-points progress/historyEvents/
     // downloads/pageBookmarks onto the chosen primary and folds every field-merge
@@ -1702,7 +1711,7 @@
             // source. Adapter IDs like "madara"/"mangadex" never contain dots, so this
             // correctly skips titles the user deliberately marked manual.
             const libraryNeedsAttention = library
-                .filter(m => m.manualTracking && m.sourceId.includes("."))
+                .filter(m => m.manualTracking && m.sourceId.includes(".") && !isReadOnlyDiscoverAdd(m))
                 .map(m => m.id)
             if (libraryNeedsAttention.length > 0) {
                 reconcileIds = [...new Set([...reconcileIds, ...libraryNeedsAttention])]
@@ -1751,7 +1760,9 @@
         void sendRuntimeMessage<typeof extensionUpdate>({ type: "extension-update:check" }).then(result => {
             if (result) extensionUpdate = result
         })
-        const libraryNeedsAttention = library.filter(m => m.manualTracking && m.sourceId.includes(".")).map(m => m.id)
+        const libraryNeedsAttention = library
+            .filter(m => m.manualTracking && m.sourceId.includes(".") && !isReadOnlyDiscoverAdd(m))
+            .map(m => m.id)
         if (libraryNeedsAttention.length > 0) {
             reconcileIds = [...new Set([...reconcileIds, ...libraryNeedsAttention])]
         }
@@ -5707,7 +5718,7 @@
             {/if}
 
             <ImportReconcile
-                mangas={library.filter(m => reconcileIds.includes(m.id))}
+                mangas={library.filter(m => reconcileIds.includes(m.id) && !isReadOnlyDiscoverAdd(m))}
                 onLinked={id => {
                     reconcileIds = reconcileIds.filter(rid => rid !== id)
                     if (reconcileIds.length === 0 && dataMessage.includes("need a live source")) {
