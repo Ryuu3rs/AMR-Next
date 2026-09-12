@@ -460,6 +460,13 @@
 
     // Deterministic primary pick, shared by mergeDuplicates and the merge-suggestion UI
     // so the badge shown before confirming always matches who actually wins the merge.
+    // Deterministic hue (0-359) from a title, so each placeholder cover gets its own colour.
+    function coverHue(title: string): number {
+        let h = 0
+        for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) >>> 0
+        return h % 360
+    }
+
     function primaryOfGroup(group: LibraryManga[]): LibraryManga | undefined {
         return [...group].sort(
             (a, b) => (b.lastReadChapterNumber ?? 0) - (a.lastReadChapterNumber ?? 0) || b.updatedAt - a.updatedAt
@@ -3880,7 +3887,10 @@
                                         src={s.coverUrl}
                                         alt={s.title}
                                         loading="lazy"
-                                        decoding="async" />{:else}<span class="cover-initial">{s.title[0]}</span>{/if}
+                                        decoding="async" />{:else}<span
+                                        class="cover-initial"
+                                        style="--ph-hue:{coverHue(s.title)}">{s.title[0]}</span
+                                    >{/if}
                                 {#if s.community}
                                     <div class="poster-badges"><span class="updated-chip">Readers also read</span></div>
                                 {/if}
@@ -4010,8 +4020,9 @@
                                                     src={s.coverUrl}
                                                     alt={s.title}
                                                     loading="lazy"
-                                                    decoding="async" />{:else}<span class="cover-initial"
-                                                    >{s.title[0]}</span
+                                                    decoding="async" />{:else}<span
+                                                    class="cover-initial"
+                                                    style="--ph-hue:{coverHue(s.title)}">{s.title[0]}</span
                                                 >{/if}
                                             <span class="podium-rank podium-rank-{i + 1}"
                                                 >{i === 0 ? "1st" : i === 1 ? "2nd" : "3rd"}</span>
@@ -4453,8 +4464,9 @@
                                             alt={manga.title}
                                             data-source={manga.sourceId}
                                             class:nsfw-blur={manga.nsfw && (settings?.blurNsfw ?? true)}
-                                            onerror={() => coverFailed(manga.id)} />{:else}<span class="cover-initial"
-                                            >{manga.title[0]}</span
+                                            onerror={() => coverFailed(manga.id)} />{:else}<span
+                                            class="cover-initial"
+                                            style="--ph-hue:{coverHue(manga.title)}">{manga.title[0]}</span
                                         >{/if}
                                     {#if isSeedData(manga)}<span class="sample-chip">Sample</span>{/if}
                                     <div class="poster-badges">
@@ -4552,8 +4564,9 @@
                                         alt=""
                                         data-source={manga.sourceId}
                                         class:nsfw-blur={manga.nsfw && (settings?.blurNsfw ?? true)}
-                                        onerror={() => coverFailed(manga.id)} />{:else}<span class="cover-initial"
-                                        >{manga.title[0]}</span
+                                        onerror={() => coverFailed(manga.id)} />{:else}<span
+                                        class="cover-initial"
+                                        style="--ph-hue:{coverHue(manga.title)}">{manga.title[0]}</span
                                     >{/if}
                             </button>
                             <div class="list-main">
@@ -4780,7 +4793,8 @@
                                         {#if coverSrcs[manga.id] ?? manga.coverUrl}
                                             <img src={coverSrcs[manga.id] ?? manga.coverUrl} alt={manga.title} />
                                         {:else}
-                                            <span>{manga.title[0]}</span>
+                                            <span class="cover-initial" style="--ph-hue:{coverHue(manga.title)}"
+                                                >{manga.title[0]}</span>
                                         {/if}
                                     </div>
                                     <div class="update-info">
@@ -6633,8 +6647,9 @@
                         src={coverSrcs[detailManga.id] ?? detailManga.coverUrl}
                         alt=""
                         class:nsfw-blur={detailManga.nsfw && (settings?.blurNsfw ?? true)}
-                        onerror={() => detailManga && coverFailed(detailManga.id)} />{:else}<span class="cover-initial"
-                        >{detailManga.title[0]}</span
+                        onerror={() => detailManga && coverFailed(detailManga.id)} />{:else}<span
+                        class="cover-initial"
+                        style="--ph-hue:{coverHue(detailManga.title)}">{detailManga.title[0]}</span
                     >{/if}
             </div>
             <div class="detail-body">
