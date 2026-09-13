@@ -155,7 +155,12 @@ describe("effectiveReadingStatus", () => {
 
     it("returns paused for an explicit paused override (still behind)", () => {
         const m = manga({ readingStatus: "paused", lastReadChapterNumber: 4, latestChapterNumber: 9 })
-        expect(effectiveReadingStatus(m, opts)).toBe("paused")
+        expect(effectiveReadingStatus(m, opts)).toBe("on-hold")
+    })
+
+    it("returns on-hold for the onHold flag, unifying it with the old paused status", () => {
+        const m = manga({ onHold: true, lastReadChapterNumber: 4, latestChapterNumber: 9 })
+        expect(effectiveReadingStatus(m, opts)).toBe("on-hold")
     })
 
     it("returns dropped for an explicit dropped override (still behind)", () => {
@@ -197,7 +202,7 @@ describe("effectiveReadingStatus", () => {
 
     it("honours a stored paused for a read title with unknown latest", () => {
         const m = manga({ readingStatus: "paused", lastReadChapterNumber: 5 })
-        expect(effectiveReadingStatus(m, opts)).toBe("paused")
+        expect(effectiveReadingStatus(m, opts)).toBe("on-hold")
     })
 
     it("reads a read title with unknown latest and no override as reading, not completed", () => {
@@ -244,7 +249,7 @@ describe("effectiveReadingStatus", () => {
                 latestChapterNumber: 9,
                 lastReadAt: NOW - 31 * 86_400_000
             })
-            expect(effectiveReadingStatus(m, { autoPauseDays: 30, now: NOW })).toBe("paused")
+            expect(effectiveReadingStatus(m, { autoPauseDays: 30, now: NOW })).toBe("on-hold")
         })
 
         it("does not auto-pause a title read within the window", () => {
@@ -283,7 +288,7 @@ describe("isOngoing", () => {
     })
 
     it("treats paused/dropped/completed as not ongoing", () => {
-        expect(isOngoing("paused")).toBe(false)
+        expect(isOngoing("on-hold")).toBe(false)
         expect(isOngoing("dropped")).toBe(false)
         expect(isOngoing("completed")).toBe(false)
     })

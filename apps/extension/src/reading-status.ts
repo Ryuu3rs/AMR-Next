@@ -54,7 +54,11 @@ export function statusOf(m: LibraryManga): LibraryStatus {
 // (paused/dropped/planning). One day in milliseconds, used for the auto-pause window.
 const DAY_MS = 86_400_000
 
-export type ReadingStatus = "unread" | "reading" | "paused" | "dropped" | "completed" | "planning"
+// "on-hold" unifies what used to be two separate signals - the `onHold` boolean and a stored
+// readingStatus of "paused" (incl. the inactivity auto-pause). Both surface as On Hold; the
+// stored values are left untouched (so AniList sync of "paused" still works), only the derived
+// status is unified.
+export type ReadingStatus = "unread" | "reading" | "on-hold" | "dropped" | "completed" | "planning"
 
 // Effective status with LOCAL ACTIVITY WINS precedence: a title the user has caught up
 // on reads as "completed" even if it still carries a stored paused/dropped override, and
@@ -72,10 +76,11 @@ export function effectiveReadingStatus(m: LibraryManga, opts: { autoPauseDays: n
     if (hasRead && hasKnownLatest(m) && !hasNewerChapters(m) && seriesFinished(m)) return "completed"
     // 2. Explicit dropped.
     if (m.readingStatus === "dropped") return "dropped"
-    // 3. Paused: explicit override, or inactive past the auto-pause window.
+    // 3. On hold: the explicit onHold flag, a stored "paused" override, or inactivity past the
+    // auto-pause window - all now presented as a single On Hold state.
     const autoPaused =
         opts.autoPauseDays > 0 && m.lastReadAt !== undefined && opts.now - m.lastReadAt > opts.autoPauseDays * DAY_MS
-    if (m.readingStatus === "paused" || autoPaused) return "paused"
+    if (m.onHold || m.readingStatus === "paused" || autoPaused) return "on-hold"
     // 4. Planning only applies to a title not yet started.
     if (m.readingStatus === "planning" && !hasRead) return "planning"
     // 5. Started but not caught up.

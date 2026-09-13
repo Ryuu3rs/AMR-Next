@@ -2011,13 +2011,17 @@
         }
     })
 
-    // Genre suggestions not already applied as tags.
-    const suggestedTags = $derived.by(() => {
-        const dm = detailManga
-        if (!dm) return []
-        const existing = tagsOf(dm)
-        return genreSuggestions.filter(g => !existing.includes(g))
-    })
+    // Genres shown read-only in the detail modal: the stored (auto-enriched) genres unioned
+    // with any freshly fetched from the source. Genres are enrichment data, distinct from the
+    // user's own tags - no longer offered as "tags to add".
+    function detailGenres(dm: LibraryManga): string[] {
+        return [...new Set([...(dm.genres ?? []), ...genreSuggestions])]
+    }
+
+    // Effective status of the title open in the detail modal, for the Status button row.
+    const detailEff = $derived(
+        detailManga ? effectiveReadingStatus(detailManga, { autoPauseDays, now: Date.now() }) : "reading"
+    )
 
     async function rate(manga: LibraryManga, value: number) {
         const next = manga.rating === value ? 0 : value
@@ -2059,22 +2063,22 @@
         }
     }
 
-    async function setHold(manga: LibraryManga, onHold: boolean) {
+    // The detail-modal Status buttons, kept mutually exclusive: On Hold sets the onHold flag and
+    // clears any stored override; the others clear onHold and set (or clear, for Reading) the
+    // readingStatus. Reading = the default derived state.
+    async function detailSetStatus(manga: LibraryManga, kind: "reading" | "on-hold" | "dropped" | "planning") {
         try {
-            await sendRuntimeMessage({ type: "library:hold", mangaId: manga.id, onHold })
-            library = library.map(m => (m.id === manga.id ? { ...m, onHold } : m))
-            if (detailManga && detailManga.id === manga.id) detailManga = { ...detailManga, onHold }
-        } catch {
-            revertControls()
-        }
-    }
-
-    // Sets or clears a title's explicit reading-status override. null clears it (back to
-    // derived "Reading"). Reloads afterward so the effective status - which folds in read
-    // progress and the auto-pause window - is recomputed from the persisted value.
-    async function setReadingStatusOverride(manga: LibraryManga, status: "paused" | "dropped" | "planning" | null) {
-        try {
-            await sendRuntimeMessage({ type: "library:status", mangaId: manga.id, status })
+            if (kind === "on-hold") {
+                await sendRuntimeMessage({ type: "library:status", mangaId: manga.id, status: null })
+                await sendRuntimeMessage({ type: "library:hold", mangaId: manga.id, onHold: true })
+            } else {
+                await sendRuntimeMessage({ type: "library:hold", mangaId: manga.id, onHold: false })
+                await sendRuntimeMessage({
+                    type: "library:status",
+                    mangaId: manga.id,
+                    status: kind === "reading" ? null : kind
+                })
+            }
             await load()
         } catch {
             revertControls()
@@ -2697,36 +2701,15 @@
     // the search/tag/advanced filters - so it can drive both the current filter and the per-chip
     // counts shown next to each status.
     function matchesStatus(m: LibraryManga, f: string): boolean {
-        switch (f) {
-            case "all":
-                return true
-            case "manual":
-                return Boolean(m.manualTracking)
-            case "on-hold":
-                return Boolean(m.onHold)
-        }
+        if (f === "all") return true
+        if (f === "manual") return Boolean(m.manualTracking)
         const effective = effectiveReadingStatus(m, { autoPauseDays, now: Date.now() })
         if (f === "updates") {
-            return (
-                hasUpdates(m) &&
-                effective !== "paused" &&
-                effective !== "dropped" &&
-                effective !== "completed" &&
-                !m.onHold
-            )
+            return hasUpdates(m) && effective !== "on-hold" && effective !== "dropped" && effective !== "completed"
         }
-        switch (f) {
-            case "ongoing":
-                return isOngoing(effective)
-            case "unread":
-            case "reading":
-            case "completed":
-            case "paused":
-            case "dropped":
-                return effective === f
-            default:
-                return true
-        }
+        if (f === "ongoing") return isOngoing(effective)
+        // "unread" | "reading" | "completed" | "on-hold" | "dropped" map 1:1 to the effective status.
+        return effective === f
     }
 
     function matchesFilter(m: LibraryManga): boolean {
@@ -2804,7 +2787,7 @@
         library.filter(m => !isSeedData(m) && ((!coverSrcs[m.id] && !m.coverUrl) || failedCovers.has(m.id))).length
     )
     let libraryFilter = $state<
-        "all" | "ongoing" | "updates" | "unread" | "reading" | "completed" | "paused" | "dropped" | "manual" | "on-hold"
+        "all" | "ongoing" | "updates" | "unread" | "reading" | "completed" | "dropped" | "manual" | "on-hold"
     >("ongoing")
     const LIBRARY_FILTERS = [
         "all",
@@ -2813,9 +2796,8 @@
         "unread",
         "reading",
         "completed",
-        "paused",
-        "dropped",
         "on-hold",
+        "dropped",
         "manual"
     ] as const
     // Per-chip counts shown next to each status. Counted over the library narrowed by the
@@ -2937,7 +2919,7 @@
     const unreadPool = $derived(
         library.filter(m => {
             const status = effectiveReadingStatus(m, { autoPauseDays, now: Date.now() })
-            return status !== "completed" && status !== "paused" && status !== "dropped" && !m.onHold
+            return status !== "completed" && status !== "on-hold" && status !== "dropped"
         })
     )
     function surpriseMe() {
@@ -6855,32 +6837,18 @@
                             onclick={() => detailManga && void addTagDraft(detailManga)}>Add</button>
                     </div>
 
-                    <div class="tag-suggested">
-                        <span class="muted suggested-label">
-                            {#if genresLoading}
-                                Loading suggested tags…
-                            {:else if suggestedTags.length > 0}
-                                Suggested from source - click to add:
-                            {:else}
-                                Sorry, we couldn't find recommended tags for this title.
-                            {/if}
-                        </span>
-                        {#if suggestedTags.length > 0}
+                    {#if detailGenres(detailManga).length > 0}
+                        <div class="tag-suggested">
+                            <span class="muted suggested-label">Genres (from source / AniList):</span>
                             <div class="tag-chips">
-                                {#each suggestedTags as g}
-                                    <button
-                                        type="button"
-                                        class="tag-chip add"
-                                        onclick={() => detailManga && void addTags(detailManga, [g])}>+ {g}</button>
+                                {#each detailGenres(detailManga) as g}
+                                    <span class="tag-chip genre-chip-ro">{g}</span>
                                 {/each}
-                                <button
-                                    type="button"
-                                    class="btn-sm"
-                                    onclick={() => detailManga && void addTags(detailManga, suggestedTags)}
-                                    >Add all</button>
                             </div>
-                        {/if}
-                    </div>
+                        </div>
+                    {:else if genresLoading}
+                        <p class="muted" style="font-size:12px">Loading genres…</p>
+                    {/if}
                 </div>
                 <div class="detail-section">
                     <div class="detail-options-row">
@@ -6892,15 +6860,6 @@
                                     onchange={e =>
                                         detailManga && void setManual(detailManga, e.currentTarget.checked)} />
                                 Manual tracking
-                            </label>
-                            <label
-                                class="menu-toggle"
-                                title="Skips update checks and hides from the Reading tab without removing the title">
-                                <input
-                                    type="checkbox"
-                                    checked={detailManga.onHold ?? false}
-                                    onchange={e => detailManga && void setHold(detailManga, e.currentTarget.checked)} />
-                                On hold
                             </label>
                             <label class="menu-toggle">
                                 <input
@@ -6958,34 +6917,33 @@
                             <button
                                 type="button"
                                 class="btn-sm"
-                                class:active={!detailManga.readingStatus}
+                                class:active={detailEff === "reading" ||
+                                    detailEff === "unread" ||
+                                    detailEff === "completed"}
                                 title="Clear override (back to reading)"
-                                onclick={() => detailManga && void setReadingStatusOverride(detailManga, null)}
+                                onclick={() => detailManga && void detailSetStatus(detailManga, "reading")}
                                 >Reading</button>
                             <button
                                 type="button"
                                 class="btn-sm"
-                                class:active={detailManga.readingStatus === "paused"}
-                                onclick={() => detailManga && void setReadingStatusOverride(detailManga, "paused")}
-                                >Paused</button>
+                                class:active={detailEff === "on-hold"}
+                                title="Skips update checks and hides from the Reading tab without removing the title"
+                                onclick={() => detailManga && void detailSetStatus(detailManga, "on-hold")}
+                                >On Hold</button>
                             <button
                                 type="button"
                                 class="btn-sm"
-                                class:active={detailManga.readingStatus === "dropped"}
-                                onclick={() => detailManga && void setReadingStatusOverride(detailManga, "dropped")}
+                                class:active={detailEff === "dropped"}
+                                onclick={() => detailManga && void detailSetStatus(detailManga, "dropped")}
                                 >Dropped</button>
                             <button
                                 type="button"
                                 class="btn-sm"
-                                class:active={detailManga.readingStatus === "planning"}
-                                onclick={() => detailManga && void setReadingStatusOverride(detailManga, "planning")}
+                                class:active={detailEff === "planning"}
+                                onclick={() => detailManga && void detailSetStatus(detailManga, "planning")}
                                 >Planning</button>
                         </div>
-                        <span
-                            class="list-status status-{effectiveReadingStatus(detailManga, {
-                                autoPauseDays,
-                                now: Date.now()
-                            })}">{effectiveReadingStatus(detailManga, { autoPauseDays, now: Date.now() })}</span>
+                        <span class="list-status status-{detailEff}">{detailEff}</span>
                     </div>
                 </div>
                 <div class="detail-categories detail-section">

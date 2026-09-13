@@ -3453,7 +3453,8 @@ button:disabled {
 .status-completed {
     color: var(--success);
 }
-.status-paused {
+.status-paused,
+.status-on-hold {
     color: #a855f7;
 }
 .status-dropped {

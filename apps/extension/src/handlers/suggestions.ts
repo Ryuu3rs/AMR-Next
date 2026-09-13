@@ -151,7 +151,7 @@ function seedWeight(manga: LibraryManga, now: number): number {
     const statusFactor =
         status === "dropped"
             ? 0.3
-            : status === "paused"
+            : status === "on-hold"
               ? 0.7
               : status === "planning"
                 ? 0.5
