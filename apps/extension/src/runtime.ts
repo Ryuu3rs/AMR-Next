@@ -85,6 +85,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         mode: z.enum(["read", "planning"])
     }),
     z.object({ type: z.literal("library:covers:backfill"), mangaId: z.string().optional() }),
+    z.object({ type: z.literal("library:metadata:backfill") }),
     z.object({ type: z.literal("stats:get") }),
     z.object({ type: z.literal("history:list") }),
     z.object({ type: z.literal("chapter:adjacent"), mangaId: z.string().min(1) }),

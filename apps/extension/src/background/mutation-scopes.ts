@@ -70,6 +70,7 @@ export const MUTATION_SCOPES: Partial<Record<RuntimeRequest["type"], LiveScope[]
     "library:add": ["library", "chapters"],
     "library:quick-add": ["library"],
     "library:covers:backfill": ["library"],
+    "library:metadata:backfill": ["library"],
     "library:note": ["library"],
     "library:reading-prefs": ["library"],
     "data:import": ["all"],

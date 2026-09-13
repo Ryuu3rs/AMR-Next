@@ -3,6 +3,7 @@ import { SourceError, UNNUMBERED_SORT_KEY, latestNumberedChapter } from "@amr/so
 import { sourceRegistry } from "@amr/sources"
 import { normalizeTitle } from "@amr/normalize"
 import { recordTombstone } from "../account"
+import { backfillMangaGenres } from "./updates-sources"
 import {
     db,
     addImportedManga,
@@ -1120,6 +1121,15 @@ export const libraryHandlers: HandlerMap = {
             nsfw: request.nsfw ? true : undefined
         } as Partial<LibraryManga>)
         return null
+    },
+
+    // Manual trigger for the metadata enrichment pass (genres, cover, publication status) over
+    // every title that's missing them. Additive - only fills empty fields, never removes a title
+    // or a user's own tags. Fire-and-forget: the pass is a long rate-limited loop, so we start it
+    // and return rather than blocking the message.
+    "library:metadata:backfill": async () => {
+        void backfillMangaGenres()
+        return { started: true }
     },
 
     "library:covers:backfill": async request => {

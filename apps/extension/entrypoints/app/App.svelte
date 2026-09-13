@@ -1660,6 +1660,17 @@
         void backfillCovers()
     }
 
+    // Manually kick the metadata enrichment pass (genres/cover/status) over the whole library.
+    async function backfillMetadata() {
+        toolsOpen = false
+        try {
+            await sendRuntimeMessage({ type: "library:metadata:backfill" })
+            showSugToast("Filling in genres, covers & status in the background…")
+        } catch {
+            showSugToast("Couldn't start the metadata refresh")
+        }
+    }
+
     async function backfillCovers() {
         if (refreshingCovers) return
         refreshingCovers = true
@@ -4314,6 +4325,11 @@
                                               ? `Missing covers (${missingCoverCount})`
                                               : "Refresh covers"}
                                     </button>
+                                    <button
+                                        type="button"
+                                        role="menuitem"
+                                        title="Fetch genres, covers and publication status for titles missing them"
+                                        onclick={() => void backfillMetadata()}>Fill genres &amp; metadata</button>
                                     <button
                                         type="button"
                                         role="menuitem"
