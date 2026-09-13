@@ -398,6 +398,46 @@
         }
     }
 
+    // Bulk-set a reading status (or On Hold, or clear both) across the selection - the multi-
+    // select equivalent of the detail modal's status buttons.
+    async function bulkStatus(kind: "on-hold" | "planning" | "dropped" | "clear") {
+        const ids = selectedVisibleIds()
+        bulkMessage = ""
+        bulkWorking = true
+        let succeeded: string[] = []
+        let failed: string[] = []
+        try {
+            ;({ succeeded, failed } = await runSettled(ids, async id => {
+                if (kind === "on-hold") {
+                    await sendRuntimeMessage({ type: "library:hold", mangaId: id, onHold: true })
+                } else if (kind === "clear") {
+                    await sendRuntimeMessage({ type: "library:status", mangaId: id, status: null })
+                    await sendRuntimeMessage({ type: "library:hold", mangaId: id, onHold: false })
+                } else {
+                    await sendRuntimeMessage({ type: "library:status", mangaId: id, status: kind })
+                }
+            }))
+        } finally {
+            bulkWorking = false
+        }
+        const done = new Set(succeeded)
+        library = library.map(m => {
+            if (!done.has(m.id)) return m
+            if (kind === "on-hold") return { ...m, onHold: true }
+            if (kind === "clear") {
+                const { readingStatus: _drop, ...rest } = m
+                return { ...rest, onHold: false }
+            }
+            return { ...m, readingStatus: kind }
+        })
+        if (failed.length > 0) {
+            selectedIds = new Set([...selectedIds].filter(id => !done.has(id)))
+            bulkMessage = `Updated ${done.size}. ${failed.length} failed - still selected, try again.`
+        } else {
+            clearSelection()
+        }
+    }
+
     let showDuplicates = $state(false)
     // A group's stable key = its lexicographically-smallest member id (independent of which
     // copy is chosen to keep). Tracks which group's "keep which copy?" menu is open, and
@@ -4496,6 +4536,21 @@
                         disabled={selectedIds.size === 0 || bulkWorking}
                         title="Set each selected title's progress to its latest chapter"
                         onclick={() => void bulkCaughtUp()}>{bulkWorking ? "Working…" : "Mark caught up"}</button>
+                    <select
+                        class="bulk-status-select"
+                        aria-label="Set status for selected"
+                        disabled={selectedIds.size === 0 || bulkWorking}
+                        onchange={e => {
+                            const v = e.currentTarget.value
+                            e.currentTarget.value = ""
+                            if (v) void bulkStatus(v as "on-hold" | "planning" | "dropped" | "clear")
+                        }}>
+                        <option value="">Set status…</option>
+                        <option value="on-hold">On Hold</option>
+                        <option value="planning">Plan to read</option>
+                        <option value="dropped">Dropped</option>
+                        <option value="clear">Clear status</option>
+                    </select>
                     <button
                         type="button"
                         class="btn-sm confirm-remove-btn"
