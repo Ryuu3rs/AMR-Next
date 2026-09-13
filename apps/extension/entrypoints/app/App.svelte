@@ -61,6 +61,16 @@
     // later refreshes - so it can't yank the user off a tab they navigated to.
     let startPageApplied = false
 
+    // weeb.ltd companion site. The Community nav entry + footer link only show when the user
+    // hasn't turned them off AND the site actually answered a reachability probe - so if the
+    // site is ever down or retired (the project changes, no one maintains it), the links simply
+    // disappear rather than dangling.
+    const WEEB_SITE_URL = (import.meta.env.VITE_WEEB_SITE_URL as string | undefined) || "https://weeb.ltd"
+    let siteReachable = $state(false)
+    function openWeebSite() {
+        void browser.tabs.create({ url: WEEB_SITE_URL })
+    }
+
     // Settings page: rail + filter + scroll-spy. Sections are literal markup below; this
     // index only drives the rail and the "find a setting" filter.
     const SETTINGS_SECTIONS = [
@@ -135,6 +145,7 @@
     }
     let library = $state<LibraryManga[]>([])
     let settings = $state<AppSettings | undefined>()
+    const showCommunityLink = $derived((settings?.showCommunity ?? true) && siteReachable)
     // Local optimistic mirrors of specific settings controls - driven synchronously by
     // user interaction rather than by the settings:update round trip, so the displayed
     // value never appears to "go blank" or reset on any timing hiccup while it saves.
@@ -1281,6 +1292,11 @@
     onMount(async () => {
         document.addEventListener("visibilitychange", onVisibilityChange)
         unsubscribeLive = subscribeLive(["library", "chapters", "progress", "all"], () => void refresh())
+        // Probe the companion site once. A no-cors HEAD resolves (opaquely) when the site
+        // answers and rejects when it's unreachable, gating the Community links either way.
+        void fetch(WEEB_SITE_URL, { method: "HEAD", mode: "no-cors" })
+            .then(() => (siteReachable = true))
+            .catch(() => {})
         void loadAnnouncements()
         await load()
         hasPermission = await sendRuntimeMessage<boolean>({ type: "source:permission:check" })
@@ -3635,6 +3651,11 @@
                     onclick={() => (activeSection = section)}>
                     {section}
                 </button>
+                {#if section === "Activity" && showCommunityLink}
+                    <button type="button" class="nav-external" onclick={openWeebSite} title="Open weeb.ltd">
+                        Community <span class="nav-ext-arrow" aria-hidden="true">↗</span>
+                    </button>
+                {/if}
             {/each}
         </nav>
         <div class="sidebar-footer">
@@ -3657,6 +3678,9 @@
             <button type="button" class="kofi-btn" onclick={() => void browser.tabs.create({ url: AMR_KOFI_URL })}>
                 ☕ Support on Ko-fi
             </button>
+            {#if showCommunityLink}
+                <button type="button" class="weeb-btn" onclick={openWeebSite}>🌐 weeb.ltd</button>
+            {/if}
         </div>
     </aside>
 
@@ -6431,6 +6455,22 @@
                                     <option value="discover">Discover</option>
                                     <option value="library">Library</option>
                                 </select>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Community link")}>
+                                <div>
+                                    <p class="row-label">Show weeb.ltd Community link</p>
+                                    <p class="muted">
+                                        Adds a Community link to the sidebar and footer. Hides automatically if the site
+                                        is unreachable.
+                                    </p>
+                                </div>
+                                <label class="menu-toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings?.showCommunity ?? true}
+                                        onchange={e =>
+                                            void updateSetting({ showCommunity: e.currentTarget.checked })} />
+                                </label>
                             </div>
                             <div class="settings-row" hidden={!settingMatches("Daily reading goal")}>
                                 <div>

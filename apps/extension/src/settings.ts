@@ -44,6 +44,10 @@ export type AppSettings = {
     discoverDiversify: boolean
     // Which page the app opens to. Discover (default) or the Library.
     startPage: "discover" | "library"
+    // Show the weeb.ltd Community link (sidebar nav + footer). On by default; the links also
+    // hide automatically whenever the site is unreachable, so a dead/retired site never leaves
+    // a broken button behind.
+    showCommunity: boolean
 }
 
 const settingsKey = "settings"
@@ -72,7 +76,8 @@ export const defaultSettings: AppSettings = {
     anilistImportPlanning: false,
     searchDisabledSourceIds: [],
     discoverDiversify: true,
-    startPage: "discover"
+    startPage: "discover",
+    showCommunity: true
 }
 
 export async function getSettings(): Promise<AppSettings> {
