@@ -1565,12 +1565,9 @@ button:disabled {
 
 /* Community nav entry: a normal nav button that opens the external site. */
 .nav-external {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    gap: 5px;
 }
 .nav-ext-arrow {
-    margin-left: auto;
     opacity: 0.6;
     font-size: 0.85em;
 }
