@@ -1014,6 +1014,7 @@ export async function saveResolvedChapter(input: {
             ...(existing?.notes !== undefined ? { notes: existing.notes } : {}),
             ...(existing?.readingDirection !== undefined ? { readingDirection: existing.readingDirection } : {}),
             ...(existing?.pageFit !== undefined ? { pageFit: existing.pageFit } : {}),
+            ...(existing?.pageWidthPct !== undefined ? { pageWidthPct: existing.pageWidthPct } : {}),
             ...(existing?.noGapContinuous !== undefined ? { noGapContinuous: existing.noGapContinuous } : {}),
             // Enrichment / sort fields that live only on LibraryManga (the incoming source
             // MangaRecord can't carry them): preserve them so a re-capture doesn't break

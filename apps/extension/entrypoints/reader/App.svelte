@@ -835,11 +835,20 @@
                 const modeOverride = stored[modeKey]
                 const dirOverride = stored[dirKey]
                 mode = modeOverride === "single" || modeOverride === "continuous" ? modeOverride : settings.readingMode
-                // No per-title spread yet -> fall back to the global default (readingSpread), so the
-                // first open of a title honours the "Default view" setting; a later per-title choice
-                // is stored under spreadKey and wins here.
+                // Per-title spread wins. With none stored, only a genuinely new title (no per-title
+                // mode stored either) inherits the global "Default view" default; a title configured
+                // before spread was tracked keeps the old single-page default rather than being
+                // flipped to Double by a later global change.
                 spread =
-                    stored[spreadKey] === 2 ? 2 : stored[spreadKey] === 1 ? 1 : settings.readingSpread === 2 ? 2 : 1
+                    stored[spreadKey] === 2
+                        ? 2
+                        : stored[spreadKey] === 1
+                          ? 1
+                          : modeOverride !== undefined
+                            ? 1
+                            : settings.readingSpread === 2
+                              ? 2
+                              : 1
                 spreadOffset = stored[spreadOffsetKey] === true
                 spreadSeamless = stored[spreadSeamlessKey] === true
                 // Per-series DB override wins, then the local per-title override, then global.

@@ -112,6 +112,26 @@ describe("saveResolvedChapter", () => {
         expect(stored?.chapterNumberingUnreliable).toBe(true)
     })
 
+    it("preserves per-title reader overrides across a re-capture", async () => {
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+        await db.manga.update(manga.id, {
+            readingDirection: "rtl",
+            pageFit: "height",
+            pageWidthPct: 50,
+            noGapContinuous: true
+        })
+
+        // A re-read/capture hands a plain source MangaRecord with none of these per-title
+        // reader settings; the full-record put must not wipe the user's overrides.
+        await saveResolvedChapter({ manga, chapter, sourceLink })
+
+        const stored = await db.manga.get(manga.id)
+        expect(stored?.readingDirection).toBe("rtl")
+        expect(stored?.pageFit).toBe("height")
+        expect(stored?.pageWidthPct).toBe(50)
+        expect(stored?.noGapContinuous).toBe(true)
+    })
+
     it("keeps a clean stored series title when a capture carries a chapter-suffixed one (S4)", async () => {
         await saveResolvedChapter({ manga, chapter, sourceLink })
         await saveResolvedChapter({

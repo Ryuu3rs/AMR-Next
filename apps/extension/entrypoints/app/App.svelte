@@ -65,7 +65,13 @@
     // hasn't turned them off AND the site actually answered a reachability probe - so if the
     // site is ever down or retired (the project changes, no one maintains it), the links simply
     // disappear rather than dangling.
-    const WEEB_SITE_URL = (import.meta.env.VITE_WEEB_SITE_URL as string | undefined) || "https://weeb.ltd"
+    // Prefer VITE_WEEB_SITE_ORIGIN (the SAME var wxt.config adds to host_permissions), stripped of a
+    // trailing "/*" match-pattern suffix, so the probe/link target is always a granted origin. A dev
+    // pointing at a staging origin sets that one var and both the manifest grant and this agree.
+    const WEEB_SITE_URL =
+        (import.meta.env.VITE_WEEB_SITE_ORIGIN as string | undefined)?.replace(/\/\*$/, "") ||
+        (import.meta.env.VITE_WEEB_SITE_URL as string | undefined) ||
+        "https://weeb.ltd"
     let siteReachable = $state(false)
     function openWeebSite() {
         void browser.tabs.create({ url: WEEB_SITE_URL })
@@ -1147,6 +1153,10 @@
     }
     let searchResults = $state<SearchResult[]>([])
     let searchLoading = $state(false)
+    // True once a search has been run this session and not yet cleared. Keeps the results
+    // popover open even when a search settles with zero matches, so the "No results" message
+    // shows instead of the popover silently unmounting (searchResults stays empty then).
+    let hasSearched = $state(false)
     let searchTotal = $state(0)
     let searchSettled = $state(0)
     let expandedSourceGroups = $state<Set<string>>(new Set())
@@ -1168,7 +1178,8 @@
     // continue-reading/recently-added shelves aren't relevant then and would otherwise
     // render directly underneath with no separation, reading as a layout glitch.
     const searchActive = $derived(
-        Boolean(selectedManga) || (browseQuery.trim().length > 0 && (searchLoading || searchResults.length > 0))
+        Boolean(selectedManga) ||
+            (browseQuery.trim().length > 0 && (searchLoading || searchResults.length > 0 || hasSearched))
     )
     // If the title being browsed in the chapters panel is already in the library,
     // match it by normalized title so the last-read chapter can be highlighted.
@@ -2538,6 +2549,8 @@
         }
         searchLoading = true
         searchResults = []
+        hasSearched = true
+        searchAddMessage = ""
         autoExpandSourceId = null
         searchTotal = 0
         searchSettled = 0
@@ -2592,6 +2605,7 @@
         browseQuery = ""
         searchResults = []
         searchLoading = false
+        hasSearched = false
         searchTotal = 0
         searchSettled = 0
         selectedManga = null
@@ -4157,7 +4171,7 @@
                 {:else if suggestionsLoading && suggestions.length === 0}
                     <p class="muted">Finding titles you might like…</p>
                 {:else if suggestions.length === 0}
-                    {#if suggestionsFailed}
+                    {#if suggestionsFailed && library.length > 0}
                         <p class="muted">
                             Couldn't reach AniList for recommendations right now. Try Refresh again later.
                         </p>
