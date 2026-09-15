@@ -30,6 +30,10 @@
     let spreadGapPx = $state(8)
     // Percent of the viewport width the Fit-width fit fills (30-100; from settings).
     let pageWidthPct = $state(100)
+    // Per-series page-width override: null = inherit the global default, else an explicit
+    // per-title percent saved via library:reading-prefs. When set, a change to the global
+    // page-width setting must not clobber it.
+    let pageWidthOverride = $state<number | null>(null)
     // Per-series "Webtoon view" override: null = no override (inherits the global
     // default), true/false = explicit per-series value saved via library:reading-prefs.
     let noGapOverride = $state<boolean | null>(null)
@@ -647,7 +651,11 @@
         return { atStart: view.prevStart === start, atEnd: view.nextStart === start }
     })
 
-    function pageNav(dir: "prev" | "next") {
+    // hideChrome defaults true (keyboard / wheel turns tuck the overlay away). The on-screen
+    // arrow buttons pass false: they live IN the overlay bar, so hiding it on every turn made
+    // the button vanish mid-sequence and rapid clicks landed on whatever was underneath (pages
+    // appearing to "jump around"). Keeping the bar under the cursor lets fast clicking work.
+    function pageNav(dir: "prev" | "next", hideChrome = true) {
         if (!chapter) return
         const view = spreadView(currentPage, effectiveSpread, effectiveOffset, chapter.pages.length)
         const start = view.indices[0]!
@@ -655,13 +663,10 @@
         if (target !== start) {
             recordProgress(target)
             // Start each freshly-flipped page at the top so a tall (Actual size) page is read
-            // from its beginning rather than wherever the previous page was scrolled to. Also
-            // tuck the overlay bar away on a page turn - single mode has no scroll to trigger
-            // the auto-hide, so without this the fixed header would sit over every page's top.
-            // Mouse-to-top, `h`, or Escape brings it back.
+            // from its beginning rather than wherever the previous page was scrolled to.
             if (effectiveMode === "single") {
                 window.scrollTo({ top: 0 })
-                chromeHidden = true
+                if (hideChrome) chromeHidden = true
             }
         }
     }
@@ -808,6 +813,7 @@
                 const [settings, stored, libraryManga] = await Promise.all([
                     sendRuntimeMessage<{
                         readingMode: "continuous" | "single"
+                        readingSpread: 1 | 2
                         readingDirection: ReadingDirection
                         pageFit: PageFit
                         showPageNumber: boolean
@@ -822,13 +828,18 @@
                     sendRuntimeMessage<{
                         readingDirection?: ReadingDirection
                         pageFit?: PageFit
+                        pageWidthPct?: number
                         noGapContinuous?: boolean
                     } | null>({ type: "library:get", mangaId }).catch(() => null)
                 ])
                 const modeOverride = stored[modeKey]
                 const dirOverride = stored[dirKey]
                 mode = modeOverride === "single" || modeOverride === "continuous" ? modeOverride : settings.readingMode
-                spread = stored[spreadKey] === 2 ? 2 : 1
+                // No per-title spread yet -> fall back to the global default (readingSpread), so the
+                // first open of a title honours the "Default view" setting; a later per-title choice
+                // is stored under spreadKey and wins here.
+                spread =
+                    stored[spreadKey] === 2 ? 2 : stored[spreadKey] === 1 ? 1 : settings.readingSpread === 2 ? 2 : 1
                 spreadOffset = stored[spreadOffsetKey] === true
                 spreadSeamless = stored[spreadSeamlessKey] === true
                 // Per-series DB override wins, then the local per-title override, then global.
@@ -840,7 +851,8 @@
                 pageFit = libraryManga?.pageFit ?? settings.pageFit
                 showPageNumber = settings.showPageNumber
                 spreadGapPx = settings.spreadGapPx ?? 8
-                pageWidthPct = settings.pageWidthPct ?? 100
+                pageWidthPct = libraryManga?.pageWidthPct ?? settings.pageWidthPct ?? 100
+                pageWidthOverride = libraryManga?.pageWidthPct ?? null
                 noGapDefault = settings.noGapContinuous
                 noGapOverride = libraryManga?.noGapContinuous ?? null
                 noGapContinuous = libraryManga?.noGapContinuous ?? settings.noGapContinuous
@@ -913,7 +925,7 @@
             // dragging the Page-width / Double-page-gap slider updates an open reader instead
             // of waiting for a reload.
             if (next.spreadGapPx !== undefined) spreadGapPx = next.spreadGapPx
-            if (next.pageWidthPct !== undefined) pageWidthPct = next.pageWidthPct
+            if (next.pageWidthPct !== undefined && pageWidthOverride === null) pageWidthPct = next.pageWidthPct
         }
         browser.storage.onChanged.addListener(settingsListener)
 
@@ -1189,7 +1201,7 @@
                     disabled={pageNavState.atStart}
                     title="Previous page"
                     aria-label="Previous page"
-                    onclick={() => pageNav("prev")}>◀</button>
+                    onclick={() => pageNav("prev", false)}>◀</button>
             {/if}
             <span class="page-count">{currentPage + 1} / {chapter.pages.length}</span>
             {#if viewMode === "single" || viewMode === "double"}
@@ -1199,7 +1211,7 @@
                     disabled={pageNavState.atEnd}
                     title="Next page"
                     aria-label="Next page"
-                    onclick={() => pageNav("next")}>▶</button>
+                    onclick={() => pageNav("next", false)}>▶</button>
             {/if}
             <div class="seg" role="group" aria-label="View mode">
                 <button

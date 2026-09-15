@@ -1410,10 +1410,12 @@ export const libraryHandlers: HandlerMap = {
         const patch: {
             readingDirection?: LibraryManga["readingDirection"] | undefined
             pageFit?: LibraryManga["pageFit"] | undefined
+            pageWidthPct?: number | undefined
             noGapContinuous?: boolean | undefined
         } = {}
         if (request.readingDirection !== undefined) patch.readingDirection = request.readingDirection ?? undefined
         if (request.pageFit !== undefined) patch.pageFit = request.pageFit ?? undefined
+        if (request.pageWidthPct !== undefined) patch.pageWidthPct = request.pageWidthPct ?? undefined
         if (request.noGapContinuous !== undefined) patch.noGapContinuous = request.noGapContinuous ?? undefined
         if (Object.keys(patch).length > 0) {
             await updateManga(request.mangaId, patch as Partial<LibraryManga>)

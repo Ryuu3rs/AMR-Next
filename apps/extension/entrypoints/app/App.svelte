@@ -90,6 +90,7 @@
             id: "reader",
             label: "Reader",
             labels: [
+                "Default view",
                 "Reading direction",
                 "Page fit",
                 "Page width",
@@ -104,7 +105,7 @@
         {
             id: "appearance",
             label: "Appearance & habits",
-            labels: ["Theme", "Start page", "Daily reading goal", "Blur NSFW covers"]
+            labels: ["Theme", "Start page", "Community link", "Daily reading goal", "Blur NSFW covers"]
         },
         { id: "account", label: "weeb.ltd account", labels: ["weeb.ltd account", "Link this device"] },
         {
@@ -2156,6 +2157,24 @@
                 const next = { ...m }
                 if (value === null) delete next.pageFit
                 else next.pageFit = value
+                return next
+            }
+            library = library.map(m => (m.id === manga.id ? apply(m) : m))
+            if (detailManga && detailManga.id === manga.id) detailManga = apply(detailManga)
+        } catch {
+            revertControls()
+        }
+    }
+
+    async function setReadingPageWidth(manga: LibraryManga, raw: string) {
+        const n = raw === "" ? null : Number(raw)
+        const value = n === null || !Number.isFinite(n) ? null : Math.max(30, Math.min(100, Math.round(n)))
+        try {
+            await sendRuntimeMessage({ type: "library:reading-prefs", mangaId: manga.id, pageWidthPct: value })
+            const apply = (m: LibraryManga): LibraryManga => {
+                const next = { ...m }
+                if (value === null) delete next.pageWidthPct
+                else next.pageWidthPct = value
                 return next
             }
             library = library.map(m => (m.id === manga.id ? apply(m) : m))
@@ -6238,6 +6257,37 @@
                             </p>
                         </header>
                         <div class="settings-grid">
+                            <div class="settings-row" hidden={!settingMatches("Default view")}>
+                                <div>
+                                    <p class="row-label">Default view</p>
+                                    <p class="muted">
+                                        How a title opens the first time. Strip is one continuous scroll; Single is one
+                                        page at a time; Double shows two-page spreads. Your per-title choice in the
+                                        reader is remembered and overrides this.
+                                    </p>
+                                </div>
+                                <select
+                                    aria-label="Default view"
+                                    value={(settings?.readingSpread ?? 1) === 2
+                                        ? "double"
+                                        : (settings?.readingMode ?? "continuous") === "single"
+                                          ? "single"
+                                          : "strip"}
+                                    onchange={e => {
+                                        const v = e.currentTarget.value
+                                        void updateSetting(
+                                            v === "strip"
+                                                ? { readingMode: "continuous", readingSpread: 1 }
+                                                : v === "single"
+                                                  ? { readingMode: "single", readingSpread: 1 }
+                                                  : { readingMode: "single", readingSpread: 2 }
+                                        )
+                                    }}>
+                                    <option value="strip">Strip (continuous scroll)</option>
+                                    <option value="single">Single page</option>
+                                    <option value="double">Double page</option>
+                                </select>
+                            </div>
                             <div class="settings-row" hidden={!settingMatches("Reading direction")}>
                                 <div>
                                     <p class="row-label">Reading direction</p>
@@ -7029,6 +7079,22 @@
                                 <option value="contain">Contain</option>
                                 <option value="original">Original size</option>
                                 <option value="actual">Actual size</option>
+                            </select>
+                        </label>
+                        <label class="menu-num">
+                            Page width
+                            <select
+                                value={detailManga.pageWidthPct != null ? String(detailManga.pageWidthPct) : ""}
+                                onchange={e =>
+                                    detailManga && void setReadingPageWidth(detailManga, e.currentTarget.value)}>
+                                <option value="">Global default</option>
+                                <option value="100">100%</option>
+                                <option value="90">90%</option>
+                                <option value="80">80%</option>
+                                <option value="70">70%</option>
+                                <option value="60">60%</option>
+                                <option value="50">50%</option>
+                                <option value="40">40%</option>
                             </select>
                         </label>
                     </div>

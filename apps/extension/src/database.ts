@@ -71,6 +71,9 @@ export type LibraryManga = MangaRecord & {
     // the global reading settings for chapters of this title.
     readingDirection?: "ltr" | "rtl" | "vertical"
     pageFit?: "width" | "height" | "contain" | "original" | "actual"
+    // Per-series override for the global "Page width" (Fit-width fill percent, 30-100).
+    // undefined means "no override, use the global default".
+    pageWidthPct?: number
     // Per-series override for the global "no gap continuous" reader setting -
     // undefined means "no override, use the global default".
     noGapContinuous?: boolean
@@ -547,6 +550,7 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                 const readingStatus = next.readingStatus ?? existing.readingStatus
                 const readingDirection = next.readingDirection ?? existing.readingDirection
                 const pageFit = next.pageFit ?? existing.pageFit
+                const pageWidthPct = next.pageWidthPct ?? existing.pageWidthPct
                 const noGapContinuous = next.noGapContinuous ?? existing.noGapContinuous
                 next = {
                     ...next,
@@ -563,6 +567,7 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                     ...(readingStatus !== undefined ? { readingStatus } : {}),
                     ...(readingDirection !== undefined ? { readingDirection } : {}),
                     ...(pageFit !== undefined ? { pageFit } : {}),
+                    ...(pageWidthPct !== undefined ? { pageWidthPct } : {}),
                     ...(noGapContinuous !== undefined ? { noGapContinuous } : {})
                 }
             }
@@ -695,6 +700,7 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                 const readingStatus = merged.readingStatus ?? loser.readingStatus
                 const readingDirection = merged.readingDirection ?? loser.readingDirection
                 const pageFit = merged.pageFit ?? loser.pageFit
+                const pageWidthPct = merged.pageWidthPct ?? loser.pageWidthPct
                 const noGapContinuous = merged.noGapContinuous ?? loser.noGapContinuous
 
                 merged = {
@@ -722,6 +728,7 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                     ...(readingStatus !== undefined ? { readingStatus } : {}),
                     ...(readingDirection !== undefined ? { readingDirection } : {}),
                     ...(pageFit !== undefined ? { pageFit } : {}),
+                    ...(pageWidthPct !== undefined ? { pageWidthPct } : {}),
                     ...(noGapContinuous !== undefined ? { noGapContinuous } : {})
                 }
 

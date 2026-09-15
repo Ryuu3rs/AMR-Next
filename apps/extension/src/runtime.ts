@@ -96,6 +96,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         mangaId: z.string().min(1),
         readingDirection: z.union([z.enum(["ltr", "rtl", "vertical"]), z.null()]).optional(),
         pageFit: z.union([z.enum(["width", "height", "contain", "original", "actual"]), z.null()]).optional(),
+        pageWidthPct: z.union([z.number().int().min(30).max(100), z.null()]).optional(),
         noGapContinuous: z.union([z.boolean(), z.null()]).optional()
     }),
     z.object({ type: z.literal("activity:get"), days: z.number().int().positive().optional() }),
@@ -223,6 +224,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         settings: z.object({
             autoAdd: z.boolean().optional(),
             readingMode: z.enum(["continuous", "single"]).optional(),
+            readingSpread: z.union([z.literal(1), z.literal(2)]).optional(),
             readingDirection: z.enum(["ltr", "rtl", "vertical"]).optional(),
             pageFit: z.enum(["width", "height", "contain", "original", "actual"]).optional(),
             showPageNumber: z.boolean().optional(),

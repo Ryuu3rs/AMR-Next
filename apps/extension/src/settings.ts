@@ -6,6 +6,11 @@ export type OpenChapterIn = "reader" | "browser"
 export type AppSettings = {
     autoAdd: boolean
     readingMode: "continuous" | "single"
+    // Default pages-per-view for the paged reader: 1 (single) or 2 (double spread). Combined with
+    // readingMode this expresses the reader's 3-way default view (Strip = continuous+1, Single =
+    // single+1, Double = single+2). Applied on the FIRST open of a title; a per-title choice made
+    // in the reader afterwards is remembered and wins.
+    readingSpread: 1 | 2
     readingDirection: ReadingDirection
     pageFit: PageFit
     showPageNumber: boolean
@@ -55,6 +60,7 @@ const settingsKey = "settings"
 export const defaultSettings: AppSettings = {
     autoAdd: true,
     readingMode: "continuous",
+    readingSpread: 1,
     readingDirection: "ltr",
     pageFit: "width",
     showPageNumber: true,
