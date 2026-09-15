@@ -3208,6 +3208,20 @@
     // arrive folded into the same list with a `community` marker. Empty/unreachable
     // AniList degrades to an empty state, never an error.
     let suggestions = $state<Suggestion[]>([])
+    // Cold-start editor picks: shown only when the library is empty and there are no
+    // recommendations yet. Clicking one runs a full source search so it can be added.
+    const EDITOR_PICKS = [
+        "One Piece",
+        "Chainsaw Man",
+        "Jujutsu Kaisen",
+        "Solo Leveling",
+        "Berserk",
+        "Vinland Saga",
+        "Frieren",
+        "One Punch Man",
+        "Vagabond",
+        "Oshi no Ko"
+    ]
     // anilistId of the suggestion whose "More" menu is open (null = none).
     let sugMenuFor = $state<number | null>(null)
     // anilist ids the user quick-added this session; filtered out of every suggestions fetch
@@ -4143,11 +4157,40 @@
                 {:else if suggestionsLoading && suggestions.length === 0}
                     <p class="muted">Finding titles you might like…</p>
                 {:else if suggestions.length === 0}
-                    <p class="muted">
-                        {suggestionsFailed
-                            ? "Couldn't reach AniList for recommendations right now. Try Refresh again later."
-                            : "No suggestions yet. Add a few titles to your library so we can learn what you like."}
-                    </p>
+                    {#if suggestionsFailed}
+                        <p class="muted">
+                            Couldn't reach AniList for recommendations right now. Try Refresh again later.
+                        </p>
+                    {:else}
+                        <div class="disc-empty">
+                            <h2>Start your library</h2>
+                            <p class="muted">
+                                Recommendations grow from what you read. Add one of these editor picks to get going, or
+                                bring a list you already have.
+                            </p>
+                            <div class="disc-picks">
+                                {#each EDITOR_PICKS as pick}
+                                    <button type="button" class="disc-pick" onclick={() => searchSourcesFor(pick)}>
+                                        {pick}
+                                    </button>
+                                {/each}
+                            </div>
+                            <div class="disc-empty-actions">
+                                <button type="button" class="btn-sm" onclick={() => (activeSection = "Data")}>
+                                    Import a backup (JSON)
+                                </button>
+                                <button type="button" class="btn-sm" onclick={() => (activeSection = "Data")}>
+                                    Connect an AniList list
+                                </button>
+                                <button type="button" class="btn-sm" onclick={() => (activeSection = "Sources")}>
+                                    Browse sources
+                                </button>
+                            </div>
+                            <p class="muted disc-empty-hint">
+                                Or use the search box above to find any title across every source.
+                            </p>
+                        </div>
+                    {/if}
                 {:else}
                     {#if visibleNextInSeries.length > 0 && !sugFiltersActive}
                         {@render rail("Continue the series", visibleNextInSeries)}

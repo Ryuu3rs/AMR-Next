@@ -2027,10 +2027,68 @@ button:disabled {
     align-items: center;
 }
 /* "Mix it up" is a toggle styled as a pressed/unpressed pill: dim when off, accented on. */
+/* Outline toggle: the base button is white-on-accent, so accent-coloured text needs a
+   non-accent background or it disappears. Off = muted outline, On = accent outline. */
+.sug-mix-btn {
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--border);
+}
+.sug-mix-btn:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--surface);
+}
 .sug-mix-btn.on {
     border-color: var(--accent);
     color: var(--accent);
+    background: transparent;
 }
+.sug-mix-btn.on:hover:not(:disabled) {
+    background: var(--surface);
+}
+/* Cold-start Discover empty state: editor picks + ways to bring your own list. */
+.disc-empty {
+    max-width: 640px;
+    margin: 32px auto;
+    text-align: center;
+}
+.disc-empty h2 {
+    margin: 0 0 6px;
+}
+.disc-picks {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin: 18px 0;
+}
+.disc-pick {
+    min-height: 34px;
+    padding: 0 14px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+}
+.disc-pick:hover:not(:disabled) {
+    color: #fff;
+    background: var(--accent);
+    border-color: var(--accent);
+}
+.disc-empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+.disc-empty-hint {
+    margin-top: 16px;
+    font-size: 12.5px;
+}
+
 .sug-toast {
     position: fixed;
     left: 50%;
