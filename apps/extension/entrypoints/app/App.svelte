@@ -2578,11 +2578,39 @@
         port.postMessage({ type: "manga:search", query })
     }
 
+    // Close the search popover and return to the normal Discover page: stop any in-flight
+    // search, drop the query and every result, so nothing lingers underneath the suggestions.
+    function clearSearch() {
+        if (searchDebounceHandle) {
+            clearTimeout(searchDebounceHandle)
+            searchDebounceHandle = null
+        }
+        if (searchPort) {
+            searchPort.disconnect()
+            searchPort = null
+        }
+        browseQuery = ""
+        searchResults = []
+        searchLoading = false
+        searchTotal = 0
+        searchSettled = 0
+        selectedManga = null
+        mangaChapters = []
+        searchAddMessage = ""
+        autoExpandSourceId = null
+        expandedSourceGroups = new Set()
+    }
+
     // Debounced type-to-search: fires ~450ms after the user stops typing, once the
     // query is at least 3 characters. Enter/submit (doSearch called directly) always
-    // fires immediately regardless of this timer or the minimum length.
+    // fires immediately regardless of this timer or the minimum length. Emptying the
+    // field closes the popover straight away rather than leaving stale results behind.
     function scheduleAutoSearch() {
         if (searchDebounceHandle) clearTimeout(searchDebounceHandle)
+        if (browseQuery.trim().length === 0) {
+            clearSearch()
+            return
+        }
         searchDebounceHandle = setTimeout(() => {
             searchDebounceHandle = null
             if (browseQuery.trim().length >= SEARCH_MIN_LENGTH) doSearch()
@@ -2626,6 +2654,13 @@
 
     let addingResultKey = $state<string | null>(null)
     let searchAddMessage = $state("")
+    // The "Added to your library." (and error) notice clears itself after 10s so it doesn't
+    // sit on screen indefinitely. Re-arms on each new message; cleared if the message is reset.
+    $effect(() => {
+        if (!searchAddMessage) return
+        const t = setTimeout(() => (searchAddMessage = ""), 10000)
+        return () => clearTimeout(t)
+    })
 
     function resultKey(result: SearchResult): string {
         return `${result.sourceId}:${result.sourceMangaId}`
@@ -3791,179 +3826,206 @@
                     {searchLoading ? "Searching…" : "Search"}
                 </button>
             </form>
-            {#if selectedManga}
-                <div class="chapters-panel">
-                    <button
-                        type="button"
-                        class="btn-back"
-                        onclick={() => {
-                            selectedManga = null
-                            mangaChapters = []
-                        }}>← Back to search</button>
-                    <h2 class="chapters-title">{selectedManga.title}</h2>
-                    {#if chaptersLoading}
-                        <p class="muted">Loading chapters...</p>
-                    {:else if mangaChapters.length === 0}
-                        <p class="muted">No English chapters found.</p>
-                    {:else}
-                        <p class="muted chapters-count">
-                            {mangaChapters.length} chapter{mangaChapters.length === 1 ? "" : "s"}
-                            {#if selectedMangaLibraryEntry?.lastReadChapterNumber !== undefined}
-                                · last read ch {selectedMangaLibraryEntry.lastReadChapterNumber}
-                            {/if}
-                        </p>
-                        <div class="chapter-list">
-                            {#each mangaChapters as ch}
-                                {@const isLastRead =
-                                    !!selectedMangaLibraryEntry &&
-                                    selectedMangaLibraryEntry.lastReadChapterId === ch.id}
-                                <div class="chapter-row" class:chapter-row-current={isLastRead}>
-                                    <p class="chapter-title">
-                                        {ch.title}
-                                        {#if isLastRead}<span class="chapter-lastread-badge">Last read</span>{/if}
-                                    </p>
-                                    <button type="button" onclick={() => void readChapter(ch.url)}>Read</button>
-                                </div>
-                            {/each}
-                        </div>
-                    {/if}
-                </div>
-            {:else}
-                {#if searchLoading && searchResults.length === 0}
-                    <p class="muted">
-                        Searching…{searchTotal > 0 ? ` (${searchSettled}/${searchTotal} sources)` : ""}
-                    </p>
-                {/if}
-                {#if searchResults.length > 0}
-                    {#if searchLoading}
-                        <p class="muted search-progress">
-                            Searching… {searchSettled}/{searchTotal} sources - {searchResults.length} result{searchResults.length ===
-                            1
-                                ? ""
-                                : "s"} so far
-                        </p>
-                    {/if}
-                    <div style="display:flex;align-items:center;gap:8px;margin:4px 0 12px">
-                        <label class="toggle">
-                            <input
-                                type="checkbox"
-                                bind:checked={groupDuplicates}
-                                aria-label="Group duplicate results across sources" />
-                            <span class="track"></span>
-                        </label>
-                        <span class="muted">Group duplicates across sources</span>
-                    </div>
-                    {#if searchAddMessage}<p class="notice">{searchAddMessage}</p>{/if}
-                    {#if groupDuplicates}
-                        <div class="search-results">
-                            {#each searchWorks as work (work.key)}
-                                <div class="search-result">
-                                    <div class="result-cover">
-                                        {#if work.coverUrl}<img src={work.coverUrl} alt={work.title} />{:else}<span
-                                                >{work.title[0]}</span
-                                            >{/if}
-                                    </div>
-                                    <div class="result-info">
-                                        <p class="result-title">{work.title}</p>
-                                        <p class="muted">
-                                            {work.members.length} source{work.members.length === 1 ? "" : "s"}
-                                        </p>
-                                        <p class="muted">Click a source to add it - Ctrl-click to open on site</p>
-                                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
-                                            {#each work.members as member (member.sourceId + member.sourceMangaId)}
-                                                {@const inLibrary = resultInLibrary(member)}
-                                                <span style="display:inline-flex;align-items:center;gap:2px">
-                                                    <button
-                                                        type="button"
-                                                        class="btn-sm"
-                                                        disabled={inLibrary || addingResultKey === resultKey(member)}
-                                                        title={inLibrary
-                                                            ? "Already in your library"
-                                                            : "Add to library (Ctrl-click or middle-click to open on site)"}
-                                                        onclick={e => activateResult(e, member)}
-                                                        onauxclick={e => auxActivateResult(e, member)}>
-                                                        {inLibrary ? "✓ " : ""}{sourceMeta.get(member.sourceId)?.name ??
-                                                            member.sourceId}
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        class="btn-sm"
-                                                        title="Open on source site"
-                                                        aria-label="Open {sourceMeta.get(member.sourceId)?.name ??
-                                                            member.sourceId} on site"
-                                                        onclick={() => void openResult(member)}>↗</button>
-                                                </span>
-                                            {/each}
-                                        </div>
-                                    </div>
-                                </div>
-                            {/each}
-                        </div>
-                    {:else}
-                        {#each searchBySource as [sourceId, results]}
-                            {@const expanded =
-                                expandedSourceGroups.has(sourceId) ||
-                                (expandedSourceGroups.size === 0 && sourceId === autoExpandSourceId)}
-                            <div class="source-group">
+            {#if searchActive}
+                <!-- Results live in a popover over the page, not inline, so a long result list
+                     no longer shoves the Discover shelves down. Clicking the dim backdrop or the
+                     close button (or emptying the field) returns to the normal Discover page. -->
+                <div class="search-overlay">
+                    <button type="button" class="search-backdrop" aria-label="Close search" onclick={clearSearch}
+                    ></button>
+                    <div class="search-popover" aria-label="Search results">
+                        <button type="button" class="search-close" aria-label="Close search" onclick={clearSearch}
+                            >×</button>
+                        {#if selectedManga}
+                            <div class="chapters-panel">
                                 <button
                                     type="button"
-                                    class="source-group-head"
-                                    aria-expanded={expanded}
-                                    onclick={() => toggleSourceGroup(sourceId)}>
-                                    <span class="source-name">{sourceMeta.get(sourceId)?.name ?? sourceId}</span>
-                                    <span class="muted">{results.length} result{results.length === 1 ? "" : "s"}</span>
-                                    <span class="source-caret">{expanded ? "▾" : "▸"}</span>
-                                </button>
-                                {#if expanded}
-                                    <div class="search-results">
-                                        {#each results as result}
-                                            {@const inLibrary = resultInLibrary(result)}
-                                            <div class="search-result">
-                                                <div class="result-cover">
-                                                    {#if result.coverUrl}<img
-                                                            src={result.coverUrl}
-                                                            alt={result.title} />{:else}<span>{result.title[0]}</span
+                                    class="btn-back"
+                                    onclick={() => {
+                                        selectedManga = null
+                                        mangaChapters = []
+                                    }}>← Back to search</button>
+                                <h2 class="chapters-title">{selectedManga.title}</h2>
+                                {#if chaptersLoading}
+                                    <p class="muted">Loading chapters...</p>
+                                {:else if mangaChapters.length === 0}
+                                    <p class="muted">No English chapters found.</p>
+                                {:else}
+                                    <p class="muted chapters-count">
+                                        {mangaChapters.length} chapter{mangaChapters.length === 1 ? "" : "s"}
+                                        {#if selectedMangaLibraryEntry?.lastReadChapterNumber !== undefined}
+                                            · last read ch {selectedMangaLibraryEntry.lastReadChapterNumber}
+                                        {/if}
+                                    </p>
+                                    <div class="chapter-list">
+                                        {#each mangaChapters as ch}
+                                            {@const isLastRead =
+                                                !!selectedMangaLibraryEntry &&
+                                                selectedMangaLibraryEntry.lastReadChapterId === ch.id}
+                                            <div class="chapter-row" class:chapter-row-current={isLastRead}>
+                                                <p class="chapter-title">
+                                                    {ch.title}
+                                                    {#if isLastRead}<span class="chapter-lastread-badge">Last read</span
                                                         >{/if}
-                                                </div>
-                                                <div class="result-info">
-                                                    <p class="result-title">{result.title}</p>
-                                                    <p class="muted">
-                                                        {#if result.latestChapter}latest ch {result.latestChapter}{:else}-{/if}
-                                                    </p>
-                                                </div>
-                                                <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
-                                                    <button
-                                                        type="button"
-                                                        disabled={inLibrary || addingResultKey === resultKey(result)}
-                                                        title={inLibrary
-                                                            ? "Already in your library"
-                                                            : "Add to library (Ctrl-click or middle-click to open on site)"}
-                                                        onclick={e => activateResult(e, result)}
-                                                        onauxclick={e => auxActivateResult(e, result)}>
-                                                        {#if inLibrary}✓ In library{:else if addingResultKey === resultKey(result)}Adding…{:else}Add{/if}
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        title={result.sourceId === "mangadex"
-                                                            ? "Browse chapters"
-                                                            : "Open on source site"}
-                                                        aria-label={result.sourceId === "mangadex"
-                                                            ? "Browse chapters"
-                                                            : "Open on source site"}
-                                                        onclick={() => void openResult(result)}>
-                                                        {result.sourceId === "mangadex" ? "Chapters" : "↗"}
-                                                    </button>
-                                                </div>
+                                                </p>
+                                                <button type="button" onclick={() => void readChapter(ch.url)}
+                                                    >Read</button>
                                             </div>
                                         {/each}
                                     </div>
                                 {/if}
                             </div>
-                        {/each}
-                    {/if}
-                {:else if browseQuery.trim() && !searchLoading}
-                    <p class="muted">No results across any source.</p>
-                {/if}
+                        {:else}
+                            {#if searchLoading && searchResults.length === 0}
+                                <p class="muted">
+                                    Searching…{searchTotal > 0 ? ` (${searchSettled}/${searchTotal} sources)` : ""}
+                                </p>
+                            {/if}
+                            {#if searchResults.length > 0}
+                                {#if searchLoading}
+                                    <p class="muted search-progress">
+                                        Searching… {searchSettled}/{searchTotal} sources - {searchResults.length} result{searchResults.length ===
+                                        1
+                                            ? ""
+                                            : "s"} so far
+                                    </p>
+                                {/if}
+                                <div style="display:flex;align-items:center;gap:8px;margin:4px 0 12px">
+                                    <label class="toggle">
+                                        <input
+                                            type="checkbox"
+                                            bind:checked={groupDuplicates}
+                                            aria-label="Group duplicate results across sources" />
+                                        <span class="track"></span>
+                                    </label>
+                                    <span class="muted">Group duplicates across sources</span>
+                                </div>
+                                {#if searchAddMessage}<p class="notice">{searchAddMessage}</p>{/if}
+                                {#if groupDuplicates}
+                                    <div class="search-results">
+                                        {#each searchWorks as work (work.key)}
+                                            <div class="search-result">
+                                                <div class="result-cover">
+                                                    {#if work.coverUrl}<img
+                                                            src={work.coverUrl}
+                                                            alt={work.title} />{:else}<span>{work.title[0]}</span>{/if}
+                                                </div>
+                                                <div class="result-info">
+                                                    <p class="result-title">{work.title}</p>
+                                                    <p class="muted">
+                                                        {work.members.length} source{work.members.length === 1
+                                                            ? ""
+                                                            : "s"}
+                                                    </p>
+                                                    <p class="muted">
+                                                        Click a source to add it - Ctrl-click to open on site
+                                                    </p>
+                                                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+                                                        {#each work.members as member (member.sourceId + member.sourceMangaId)}
+                                                            {@const inLibrary = resultInLibrary(member)}
+                                                            <span
+                                                                style="display:inline-flex;align-items:center;gap:2px">
+                                                                <button
+                                                                    type="button"
+                                                                    class="btn-sm"
+                                                                    disabled={inLibrary ||
+                                                                        addingResultKey === resultKey(member)}
+                                                                    title={inLibrary
+                                                                        ? "Already in your library"
+                                                                        : "Add to library (Ctrl-click or middle-click to open on site)"}
+                                                                    onclick={e => activateResult(e, member)}
+                                                                    onauxclick={e => auxActivateResult(e, member)}>
+                                                                    {inLibrary ? "✓ " : ""}{sourceMeta.get(
+                                                                        member.sourceId
+                                                                    )?.name ?? member.sourceId}
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    class="btn-sm"
+                                                                    title="Open on source site"
+                                                                    aria-label="Open {sourceMeta.get(member.sourceId)
+                                                                        ?.name ?? member.sourceId} on site"
+                                                                    onclick={() => void openResult(member)}>↗</button>
+                                                            </span>
+                                                        {/each}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                {:else}
+                                    {#each searchBySource as [sourceId, results]}
+                                        {@const expanded =
+                                            expandedSourceGroups.has(sourceId) ||
+                                            (expandedSourceGroups.size === 0 && sourceId === autoExpandSourceId)}
+                                        <div class="source-group">
+                                            <button
+                                                type="button"
+                                                class="source-group-head"
+                                                aria-expanded={expanded}
+                                                onclick={() => toggleSourceGroup(sourceId)}>
+                                                <span class="source-name"
+                                                    >{sourceMeta.get(sourceId)?.name ?? sourceId}</span>
+                                                <span class="muted"
+                                                    >{results.length} result{results.length === 1 ? "" : "s"}</span>
+                                                <span class="source-caret">{expanded ? "▾" : "▸"}</span>
+                                            </button>
+                                            {#if expanded}
+                                                <div class="search-results">
+                                                    {#each results as result}
+                                                        {@const inLibrary = resultInLibrary(result)}
+                                                        <div class="search-result">
+                                                            <div class="result-cover">
+                                                                {#if result.coverUrl}<img
+                                                                        src={result.coverUrl}
+                                                                        alt={result.title} />{:else}<span
+                                                                        >{result.title[0]}</span
+                                                                    >{/if}
+                                                            </div>
+                                                            <div class="result-info">
+                                                                <p class="result-title">{result.title}</p>
+                                                                <p class="muted">
+                                                                    {#if result.latestChapter}latest ch {result.latestChapter}{:else}-{/if}
+                                                                </p>
+                                                            </div>
+                                                            <div
+                                                                style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={inLibrary ||
+                                                                        addingResultKey === resultKey(result)}
+                                                                    title={inLibrary
+                                                                        ? "Already in your library"
+                                                                        : "Add to library (Ctrl-click or middle-click to open on site)"}
+                                                                    onclick={e => activateResult(e, result)}
+                                                                    onauxclick={e => auxActivateResult(e, result)}>
+                                                                    {#if inLibrary}✓ In library{:else if addingResultKey === resultKey(result)}Adding…{:else}Add{/if}
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    title={result.sourceId === "mangadex"
+                                                                        ? "Browse chapters"
+                                                                        : "Open on source site"}
+                                                                    aria-label={result.sourceId === "mangadex"
+                                                                        ? "Browse chapters"
+                                                                        : "Open on source site"}
+                                                                    onclick={() => void openResult(result)}>
+                                                                    {result.sourceId === "mangadex" ? "Chapters" : "↗"}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    {/each}
+                                                </div>
+                                            {/if}
+                                        </div>
+                                    {/each}
+                                {/if}
+                            {:else if browseQuery.trim() && !searchLoading}
+                                <p class="muted">No results across any source.</p>
+                            {/if}
+                        {/if}
+                    </div>
+                </div>
             {/if}
             {#if !searchActive}
                 {#snippet sugActions(s: Suggestion)}
