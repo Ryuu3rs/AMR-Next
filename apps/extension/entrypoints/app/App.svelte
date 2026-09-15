@@ -2601,6 +2601,17 @@
         expandedSourceGroups = new Set()
     }
 
+    // Jump from the Library filter to a full source search for the same term: switch to
+    // Discover, seed the query, and run it so the results popover opens. Lets the Library
+    // filter double as "find something new" when a title isn't in the list yet.
+    function searchSourcesFor(term: string) {
+        const q = term.trim()
+        if (!q) return
+        activeSection = "Discover"
+        browseQuery = q
+        doSearch()
+    }
+
     // Debounced type-to-search: fires ~450ms after the user stops typing, once the
     // query is at least 3 characters. Enter/submit (doSearch called directly) always
     // fires immediately regardless of this timer or the minimum length. Emptying the
@@ -4308,8 +4319,14 @@
                     <input
                         class="toolbar-search"
                         bind:value={query}
+                        onkeydown={e => {
+                            if (e.key === "Enter") {
+                                e.preventDefault()
+                                searchSourcesFor(query)
+                            }
+                        }}
                         aria-label="Search library"
-                        placeholder="Search titles..." />
+                        placeholder="Search titles, or press Enter to search all sources..." />
                     <div class="toolbar-group toolbar-primary-end">
                         <div class="view-toggle">
                             <button
@@ -4675,6 +4692,11 @@
                 <p class="muted" style="margin-top:16px">
                     {query || libraryFilter !== "all" ? "No titles match." : "Your library is empty."}
                 </p>
+                {#if query.trim()}
+                    <button type="button" class="btn-sm" style="margin-top:8px" onclick={() => searchSourcesFor(query)}>
+                        Search all sources for “{query.trim()}”
+                    </button>
+                {/if}
             {:else if libraryView === "grid"}
                 <div class="poster-grid">
                     {#each pagedLibrary as manga (manga.id)}
