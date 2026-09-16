@@ -1,5 +1,68 @@
 # Changelog
 
+## [0.21.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.20.0...v0.21.0) (2026-09-16)
+
+
+### Features
+
+* **account:** link a weeb.ltd account and sync the library ([9e2f739](https://github.com/Ryuu3rs/AMR-Next/commit/9e2f7390784f98c08aaebbb411f19a1cf92988fd))
+* **account:** link the community id to the weeb.ltd account ([3dcfb42](https://github.com/Ryuu3rs/AMR-Next/commit/3dcfb426f8e341ad6f2c982d6ad168dc784aa8ae))
+* **app:** IA refresh - Discover replaces Home, Activity tab, start-page setting ([4965cfc](https://github.com/Ryuu3rs/AMR-Next/commit/4965cfca35f687b0ad4bf079fb53d275a3a4958a))
+* **app:** move the weeb.ltd account link into Settings so the site's instructions match ([b2a56e9](https://github.com/Ryuu3rs/AMR-Next/commit/b2a56e90f33affc732ef92ec25550fa5d3713a02))
+* **app:** nicer placeholder covers for titles with no/broken image ([49c5a82](https://github.com/Ryuu3rs/AMR-Next/commit/49c5a8275fa47f72e79990b4ebf6cc4c7722b3ca))
+* **app:** settings hub with section rail, find-a-setting filter, and card grid ([2b85d24](https://github.com/Ryuu3rs/AMR-Next/commit/2b85d24eea76c28f056cf47502beae16cd9f80da))
+* **app:** unify On Hold and Paused; detail modal status cleanup ([272e9d3](https://github.com/Ryuu3rs/AMR-Next/commit/272e9d306eda99794990567f14d507a6e29f2823))
+* **app:** weeb.ltd Community nav + footer link, gated on setting and reachability ([cdeb65f](https://github.com/Ryuu3rs/AMR-Next/commit/cdeb65f9d0f815f97fbb687cf7a912b4d3edee36))
+* **community:** affiliate click tracking + admin aggregate ([75c4699](https://github.com/Ryuu3rs/AMR-Next/commit/75c4699d846654d8b5bba245f2611f928e865938))
+* **community:** consent-gated data collection, GDPR controls, and install counts ([094647b](https://github.com/Ryuu3rs/AMR-Next/commit/094647b34e6328c5c6be15a67d2b40683273a77e))
+* **community:** owner announcements + admin dashboard API ([9f48bd9](https://github.com/Ryuu3rs/AMR-Next/commit/9f48bd97a389c23d0c0e803f62346c22d2c841d2))
+* **community:** per-chapter read counts, genre backfill across events, and source-suffix title cleanup ([7ca6242](https://github.com/Ryuu3rs/AMR-Next/commit/7ca6242c44d6bcce90370781ecb87e0331fe9845))
+* **data:** optional passphrase-encrypted backups (AES-GCM) ([a190efe](https://github.com/Ryuu3rs/AMR-Next/commit/a190efe242828cefafe0ca034e47bb2ecd061e8c))
+* **discover:** add community-trending rail ([2385322](https://github.com/Ryuu3rs/AMR-Next/commit/23853224fa1c8c3536bdc532861794dea22ec17b))
+* **discover:** add continue-the-series rail from AniList sequels ([6574d7f](https://github.com/Ryuu3rs/AMR-Next/commit/6574d7ff22ce833148c834198860dfc394076b57))
+* **discover:** backfill thin suggestion pools with top-genre picks ([0640cb7](https://github.com/Ryuu3rs/AMR-Next/commit/0640cb74878a990987967bcb77a8c36e0f40a3ef))
+* **discover:** confirmation toast on quick-add (mark read / plan-to-read) ([c81f674](https://github.com/Ryuu3rs/AMR-Next/commit/c81f674b249c2b18798b250408617e83f1994a69))
+* **discover:** Find + More menu to log a suggestion as read or plan-to-read ([2ad6ec5](https://github.com/Ryuu3rs/AMR-Next/commit/2ad6ec558a4bfc2352481a5dabd7bfe1f6e8ee97))
+* **discover:** source search in a popover, clearable, self-timing add notice ([92df068](https://github.com/Ryuu3rs/AMR-Next/commit/92df0685a385b35c429069b74dc97e93670a2f07))
+* **discover:** weight by AniList rec strength, add hidden-gems rail ([fa8ab49](https://github.com/Ryuu3rs/AMR-Next/commit/fa8ab492988db8a63af9d388ad603a29a365ac29))
+* **discover:** weight recs by rating/status, add not-interested + mix-it-up ([f5a9a2a](https://github.com/Ryuu3rs/AMR-Next/commit/f5a9a2a1af6b1e3348076dd487b9a1b20e998b8d))
+* **library:** bulk set status in Select mode ([e80e0aa](https://github.com/Ryuu3rs/AMR-Next/commit/e80e0aa922912c9b9f3184f7b27533b497c466fd))
+* **library:** escalate the filter box to an all-source search ([e0f6949](https://github.com/Ryuu3rs/AMR-Next/commit/e0f6949239ebe408cc8118def7ce225fd2256131))
+* **library:** manual genre/metadata backfill; tags vs genres finalized ([0a1adc3](https://github.com/Ryuu3rs/AMR-Next/commit/0a1adc3d7142aa78a42061fbd7e594d1be698168))
+* **library:** updates-first default, status counts, New/New-ch badges, Tools menu ([d3da2a1](https://github.com/Ryuu3rs/AMR-Next/commit/d3da2a16e284cca38e820a38730f2ee67a0ee2bf))
+* **popup:** unread-first library overview in the toolbar popup ([330f48e](https://github.com/Ryuu3rs/AMR-Next/commit/330f48e9dfcc588a9e37dd6e91f43f8e30b78043))
+* **reader:** default view setting, per-title page-width override, fix fast-click page jump ([ab652cd](https://github.com/Ryuu3rs/AMR-Next/commit/ab652cddf9d9364d8799311698b913cab7eecc36))
+* **sources:** add DragonTea with novel URLs and per-site Ko-fi links ([6a5fe74](https://github.com/Ryuu3rs/AMR-Next/commit/6a5fe74ff6a7c5ffbf5803666b5532ef3f0f7dfe))
+* **sources:** add Nyanu Kafe (nyanukafe.com) ([a309361](https://github.com/Ryuu3rs/AMR-Next/commit/a3093612fc56eaa1a54ec5d7b486b4e85a8526f2))
+* **sources:** tip links for LHTranslation, MangaSushi, Nyanu Kafe, Tritinia, Flame Comics ([4ff95f0](https://github.com/Ryuu3rs/AMR-Next/commit/4ff95f0d3c975f6e124cfc8cc842f400c520031a))
+
+
+### Bug Fixes
+
+* **app:** center Community nav entry to match other sidebar items ([27b1e22](https://github.com/Ryuu3rs/AMR-Next/commit/27b1e22a6acaf85b5895c9ae0bee3f7b79cb1cea))
+* **community:** allowlist title normalization, safe chapter dedup, rating alignment ([b119269](https://github.com/Ryuu3rs/AMR-Next/commit/b1192695c9cbb2c705a3482329d055d3fd36e937))
+* **community:** guard /events shape, serialize tombstones, fix sync boundary, guard json_each ([8532287](https://github.com/Ryuu3rs/AMR-Next/commit/8532287f15f0acf9effdc1c1c2b8c316e6cd3e62))
+* **deps:** bump hono 4.13.5 + @hono/node-server 1.19.17 (moderate CVEs) ([4f8001a](https://github.com/Ryuu3rs/AMR-Next/commit/4f8001a665f92a11bc77f345183a90da9ed22f1d))
+* **discover,library,updates:** podium sizing, select-mode checkbox + bulk caught-up, de-conflate bot-block skips ([2e0186e](https://github.com/Ryuu3rs/AMR-Next/commit/2e0186e91dd600e30b19b7a204852fed6685a838))
+* **discover:** don't blank the page when a refresh can't reach AniList ([acd3764](https://github.com/Ryuu3rs/AMR-Next/commit/acd376471816e49a1c748ace1f73582bd36402f1))
+* **discover:** fixed-size centered podium, full-width layout, centered top controls ([00a41cd](https://github.com/Ryuu3rs/AMR-Next/commit/00a41cd449d3ca32f5e746c14f3d0e850a950c1d))
+* **discover:** keep quick-added titles out of suggestions (no stale-cache flash-back) ([d732952](https://github.com/Ryuu3rs/AMR-Next/commit/d7329528ef601f642217eb29e2844c182f5211bb))
+* **discover:** quick-add sent a Svelte $state proxy array (unclonable) - spread genres to a plain array ([fbc1b0d](https://github.com/Ryuu3rs/AMR-Next/commit/fbc1b0d4720ab3db3731c4016e576ec9b164ce08))
+* **discover:** stop full-width main overflowing the shell horizontally ([625c0e4](https://github.com/Ryuu3rs/AMR-Next/commit/625c0e4559f9219dc2274b7e0a77960ec6d14576))
+* **discover:** visible Mix it up toggle, editor-picks cold-start empty state ([0dc64c2](https://github.com/Ryuu3rs/AMR-Next/commit/0dc64c23420457c5a4289e991d2af957397c9195))
+* **library:** don't flag already-read Discover adds as needing a source ([61921cf](https://github.com/Ryuu3rs/AMR-Next/commit/61921cf66a187b9da3c878c316831de234ad99ea))
+* **library:** responsive duplicate merge + keep-source picker ([9327468](https://github.com/Ryuu3rs/AMR-Next/commit/93274682810a6dfb10ea0a10f166ae6023f5ec8e))
+* **nyanukafe:** parse the full chapter anchor (real inners are ~1.4KB, not &lt;400) ([07a5544](https://github.com/Ryuu3rs/AMR-Next/commit/07a554477f633a009d7ef0cb7c91f79ccb58f36f))
+* **privacy:** point policy URL at the live host privacy.weeb.ltd ([2613b11](https://github.com/Ryuu3rs/AMR-Next/commit/2613b11d7a502d0b9312ccd5f6c3a1b5141e7467))
+* **reader,discover:** bughunt fixes - preserve per-title width, show empty search, onboarding on cold start ([989dcda](https://github.com/Ryuu3rs/AMR-Next/commit/989dcda6174b7036bdb3ad30bd6be2d4c8bb512f))
+* **reader:** capture JS-injected pages in tab render (MangaHub truncation) ([1ddfd44](https://github.com/Ryuu3rs/AMR-Next/commit/1ddfd444983c7a1418324eb91010cf85495e1fae))
+* **reader:** immersive top bar so it stops limiting image size ([6888a54](https://github.com/Ryuu3rs/AMR-Next/commit/6888a54d79544e4de77e0943c883c91548d67bc1))
+
+
+### Performance Improvements
+
+* **suggestions:** cache AniList recommendations per seed to stop hammering AniList ([e6726f4](https://github.com/Ryuu3rs/AMR-Next/commit/e6726f489efcc562209f3e7b440a2248e3dbfbb7))
+
 ## [0.20.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.19.0...v0.20.0) (2026-08-23)
 
 
