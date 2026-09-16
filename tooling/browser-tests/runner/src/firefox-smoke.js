@@ -61,8 +61,13 @@ async function run() {
         const heading = await driver.wait(until.elementLocated(By.css("h1")), 15_000)
         assert.equal(await heading.getText(), "All Mangas Reader")
 
-        const stateHeading = await driver.wait(until.elementLocated(By.css("section.card h2")), 15_000)
-        assert.equal(await stateHeading.getText(), "Not a supported manga page")
+        // Opened directly, the active tab is not a supported manga page and the library is empty,
+        // so the popup shows its empty-library state.
+        const emptyState = await driver.wait(
+            until.elementLocated(By.xpath("//p[contains(text(), 'Your library is empty.')]")),
+            15_000
+        )
+        assert.ok(await emptyState.isDisplayed())
     } catch (error) {
         if (driver) {
             await mkdir(artifactsDirectory, { recursive: true })
