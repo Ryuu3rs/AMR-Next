@@ -20,7 +20,9 @@ test("marking a title caught up clears its New-ch badge and survives reload", as
 
         const app = await context.newPage()
         await app.goto(`chrome-extension://${extensionId}/app.html`)
-        await expect(app.getByRole("heading", { name: "Your shelf is empty" })).toBeVisible()
+        // Wait for the app shell to load; it lands on Discover, so assert the nav, not a
+        // library-specific heading.
+        await expect(app.getByRole("navigation", { name: "Main navigation" })).toBeVisible()
 
         const now = Date.now()
         const envelope = {
@@ -54,7 +56,7 @@ test("marking a title caught up clears its New-ch badge and survives reload", as
         expect(importResult?.ok).toBe(true)
 
         // activeSection/libraryView are plain $state, not persisted - every reload lands
-        // back on the Home tab in grid view, so each round needs to navigate to Library
+        // back on the Discover tab in grid view, so each round needs to navigate to Library
         // and switch to list view (the "Caught up" action only exists in list view).
         async function goToLibraryListView() {
             await app
