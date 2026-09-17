@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/Ryuu3rs/AMR-Next/compare/v0.21.0...v0.21.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **build:** don't stamp the dev-dirty + on tagged or CI release builds ([0c9ee5d](https://github.com/Ryuu3rs/AMR-Next/commit/0c9ee5de7e1031060d1fa88e7ae8c762997dbd6e))
+
 ## [0.21.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.20.0...v0.21.0) (2026-09-16)
 
 
