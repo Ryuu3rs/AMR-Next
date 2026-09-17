@@ -8,11 +8,23 @@ import { ALL_OPTIONAL_ORIGINS, ANILIST_API_ORIGIN, GITHUB_API_ORIGIN, METADATA_C
 function gitBuildId(): string {
     try {
         const sha = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim()
-        let dirty = ""
+        // The "+" flags a LOCAL dev build with uncommitted changes. A release is built in CI from a
+        // tagged commit, where the tree can pick up incidental changes during install/build - so never
+        // stamp "+" on a tagged commit or in CI, or a clean release footer reads as a dirty dev one.
+        let onTag = false
         try {
-            execSync("git diff --quiet")
+            execSync("git describe --exact-match --tags HEAD", { stdio: "ignore" })
+            onTag = true
         } catch {
-            dirty = "+"
+            // not on a tag
+        }
+        let dirty = ""
+        if (!onTag && !process.env.CI) {
+            try {
+                execSync("git diff --quiet")
+            } catch {
+                dirty = "+"
+            }
         }
         return sha ? sha + dirty : "dev"
     } catch {
