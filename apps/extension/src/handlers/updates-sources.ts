@@ -190,6 +190,14 @@ export async function checkUpdates(sourceId?: string) {
         // failure log can show which adapters carry the failures instead of only a
         // 20-row sample. Distinct from botBlockedCounts (a skip, not a failure).
         const failuresBySource = new Map<string, number>()
+        // Per-sourceId count of titles that can't be checked because the source has no
+        // registered adapter (retired/removed, e.g. manganato), has no source link at all,
+        // or its link can't be parsed to a series. These aren't transient failures - they
+        // need the user to relink to a live mirror - so they get their own actionable bucket
+        // instead of hard-failing every check forever with a generic error (or, for a missing
+        // link, being silently skipped and counted nowhere).
+        const needsRelinkCounts = new Map<string, number>()
+        const bumpRelink = (id: string) => needsRelinkCounts.set(id, (needsRelinkCounts.get(id) ?? 0) + 1)
 
         const writeProgress = async (currentTitle?: string) => {
             const progress: UpdateProgress = {
@@ -211,7 +219,24 @@ export async function checkUpdates(sourceId?: string) {
             // below mark progress not-running so the UI doesn't show a wedged check.
             if (updateCheckAborted) break
             const link = await db.sourceLinks.get(item.id)
-            if (link) {
+            if (!link) {
+                // No source link at all - the title can't be checked. Surface it as a relink
+                // candidate rather than silently incrementing done and moving on (which left
+                // these titles updating nowhere and appearing in no count).
+                bumpRelink(item.sourceId)
+                diag.warn("update-check", `no source link for ${item.sourceId}`, { mangaId: item.id })
+                done += 1
+                continue
+            }
+            if (!sourceRegistry.get(link.sourceId)) {
+                // The source adapter is retired/removed (e.g. manganato). Every check would
+                // throw the generic "cannot be refreshed" and hard-fail forever; bucket it as
+                // needs-relink instead, and don't even attempt the fetch.
+                bumpRelink(link.sourceId)
+                done += 1
+                continue
+            }
+            {
                 await writeProgress(item.title)
                 try {
                     const chapters = await listMangaChapters(item, link, language)
@@ -271,6 +296,12 @@ export async function checkUpdates(sourceId?: string) {
                         // console.warn below - this is a known, currently-unactionable-via-
                         // this-path condition (no tab-fallback in this routine background
                         // loop), not a real per-title failure.
+                    } else if (error instanceof Error && error.message === "The source link cannot be refreshed") {
+                        // The adapter exists but can't parse this link into a series (e.g. an
+                        // externally-tracked title minted from an unparseable chapter URL). That
+                        // won't fix itself on retry, so it's a relink candidate, not a hard
+                        // failure that regenerates every check.
+                        bumpRelink(item.sourceId)
                     } else {
                         failed += 1
                         // Count a hard failure toward `checked` too, so `checked` means
@@ -310,7 +341,10 @@ export async function checkUpdates(sourceId?: string) {
             // Sorted worst-first, serialised as a plain object (storage.local can't hold a
             // Map) so the failure log can render a "failures by source" tally over all 450,
             // not just the 20 sampled rows above.
-            failuresBySource: Object.fromEntries([...failuresBySource].sort((a, b) => b[1] - a[1]))
+            failuresBySource: Object.fromEntries([...failuresBySource].sort((a, b) => b[1] - a[1])),
+            // Titles that need relinking (retired/removed adapter, no source link, or an
+            // unparseable link) - shown as an actionable "relink these" bucket, not a failure.
+            needsRelink: Object.fromEntries([...needsRelinkCounts].sort((a, b) => b[1] - a[1]))
         }
         const finalWrite: Record<string, unknown> = {
             updateProgress: { running: false, done, total, startedAt } satisfies UpdateProgress
@@ -334,7 +368,8 @@ export async function checkUpdates(sourceId?: string) {
                 aborted: updateCheckAborted,
                 updatedTitles: updatedTitles.slice(0, 50),
                 botBlocked: Object.fromEntries(botBlockedCounts),
-                failuresBySource: Object.fromEntries(failuresBySource)
+                failuresBySource: Object.fromEntries(failuresBySource),
+                needsRelink: Object.fromEntries(needsRelinkCounts)
             }
         )
         // Notify only on a full, non-aborted check (same gate as the library-wide status)

@@ -64,6 +64,18 @@ describe("formatUpdateFailureLog", () => {
         expect(log).not.toContain("bad")
     })
 
+    it("renders needs-relink sources (retired/unparseable) in their own actionable section", () => {
+        const log = formatUpdateFailureLog([], {
+            ...meta,
+            failed: 0,
+            needsRelink: { manganato: 342, mangapark: 5 }
+        })
+        expect(log).toContain("needs relink (source retired or link unparseable):")
+        expect(log).toContain("- manganato: 342 title(s) - relink to a live mirror")
+        const idx = (s: string) => log.indexOf(s)
+        expect(idx("manganato")).toBeLessThan(idx("mangapark"))
+    })
+
     it("tolerates a garbage failuresBySource without throwing", () => {
         expect(() =>
             formatUpdateFailureLog([], { ...meta, failuresBySource: { good: 3, bad: Number.NaN } as never })

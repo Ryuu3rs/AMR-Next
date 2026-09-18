@@ -905,6 +905,7 @@
         errors?: Array<{ mangaId: string; title: string; message: string }>
         failuresBySource?: Record<string, number>
         skippedSources?: Record<string, number>
+        needsRelink?: Record<string, number>
     } | null>(null)
     let updateProgress = $state<{
         running: boolean
@@ -930,7 +931,8 @@
         if (updateLogCopying) return
         const hasErrors = (updateStatus?.errors?.length ?? 0) > 0
         const hasSkips = Object.keys(updateStatus?.skippedSources ?? {}).length > 0
-        if (!updateStatus || (!hasErrors && !hasSkips)) return
+        const hasRelink = Object.keys(updateStatus?.needsRelink ?? {}).length > 0
+        if (!updateStatus || (!hasErrors && !hasSkips && !hasRelink)) return
         const text = formatUpdateFailureLog(updateStatus.errors ?? [], {
             version: browser.runtime.getManifest().version,
             checkedAt: updateStatus.checkedAt,
@@ -938,7 +940,8 @@
             updated: updateStatus.updated,
             failed: updateStatus.failed,
             ...(updateStatus.failuresBySource ? { failuresBySource: updateStatus.failuresBySource } : {}),
-            ...(updateStatus.skippedSources ? { skippedSources: updateStatus.skippedSources } : {})
+            ...(updateStatus.skippedSources ? { skippedSources: updateStatus.skippedSources } : {}),
+            ...(updateStatus.needsRelink ? { needsRelink: updateStatus.needsRelink } : {})
         })
         updateLogCopying = true
         let outcome: "ok" | "fail"
@@ -5049,7 +5052,8 @@
                         : "No update check has run yet. Click Check all to scan for new chapters."}
                 </p>
                 {@const skippedEntries = Object.entries(updateStatus?.skippedSources ?? {}).sort((a, b) => b[1] - a[1])}
-                {#if (updateStatus?.errors && updateStatus.errors.length > 0) || skippedEntries.length > 0}
+                {@const relinkEntries = Object.entries(updateStatus?.needsRelink ?? {}).sort((a, b) => b[1] - a[1])}
+                {#if (updateStatus?.errors && updateStatus.errors.length > 0) || skippedEntries.length > 0 || relinkEntries.length > 0}
                     <div class="error-panel">
                         <div class="error-panel-head">
                             <p class="row-label">Update check details</p>
@@ -5077,6 +5081,17 @@
                                     <span class="error-title">{source}</span>
                                     <span class="muted"
                                         >{count} title(s) skipped; chapters still load in the reader</span>
+                                </div>
+                            {/each}
+                        {/if}
+                        {#if relinkEntries.length > 0}
+                            <p class="row-sublabel">Needs relinking - source retired or its link can't be read</p>
+                            {#each relinkEntries as [source, count]}
+                                <div class="error-row">
+                                    <span class="error-title">{source}</span>
+                                    <span class="muted"
+                                        >{count} title(s) - open a title and use Re-link / Check mirrors to move it to a live
+                                        source</span>
                                 </div>
                             {/each}
                         {/if}

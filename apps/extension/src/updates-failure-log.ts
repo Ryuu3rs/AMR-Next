@@ -23,6 +23,9 @@ export type UpdateFailureMeta = {
     // (Cloudflare challenge etc.). Not failures - chapters still load in the reader -
     // so they're reported in their own section, never mixed into the failure rows.
     skippedSources?: Record<string, number>
+    // sourceId -> count of titles that can't be checked until relinked (retired/removed
+    // adapter, no source link, or an unparseable link). Actionable, not a failure to chase.
+    needsRelink?: Record<string, number>
 }
 
 const ZWJ = 0x200d
@@ -137,6 +140,23 @@ export function formatUpdateFailureLog(errors: readonly UpdateFailureEntry[], me
             ? `\n\nskipped (site blocks automated checks, not a failure):\n${skippedRows.join("\n")}`
             : ""
 
+    // Titles that need relinking - the source was retired/removed, has no link, or its link
+    // can't be parsed. These can't self-heal; the fix is to relink to a live mirror. Own
+    // section so they don't masquerade as failures that should eventually clear on their own.
+    const relink = meta?.needsRelink
+    const relinkRows =
+        relink && typeof relink === "object"
+            ? Object.entries(relink)
+                  .filter(([, count]) => typeof count === "number" && Number.isFinite(count))
+                  .sort((a, b) => b[1] - a[1])
+                  .map(
+                      ([source, count]) =>
+                          `- ${orPlaceholder(flatten(source), "(unknown source)")}: ${count} title(s) - relink to a live mirror`
+                  )
+            : []
+    const relinkSection =
+        relinkRows.length > 0 ? `\n\nneeds relink (source retired or link unparseable):\n${relinkRows.join("\n")}` : ""
+
     // Tolerate a null/undefined entry or a non-array (corrupt storage / a future producer
     // change) rather than throwing - the whole point is a resilient bug-report artifact.
     const rows = (Array.isArray(errors) ? errors : []).filter((e): e is UpdateFailureEntry => e != null)
@@ -153,5 +173,5 @@ export function formatUpdateFailureLog(errors: readonly UpdateFailureEntry[], me
                   .join("\n")
             : "(no per-title errors recorded)"
 
-    return `${header}${bySourceSection}${skippedSection}\n\n${body}`
+    return `${header}${bySourceSection}${skippedSection}${relinkSection}\n\n${body}`
 }
