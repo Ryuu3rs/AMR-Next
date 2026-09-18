@@ -1,5 +1,12 @@
 import { SourceRequestError } from "@amr/source-sdk"
-import { cacheCover, recordAnalyticsEvent, saveResolvedChapter, trackExternalChapter, updateManga } from "../database"
+import {
+    cacheCover,
+    recordAnalyticsEvent,
+    saveProgress,
+    saveResolvedChapter,
+    trackExternalChapter,
+    updateManga
+} from "../database"
 import { findSource, resolveChapterUrl, resolveMangaMetadata } from "../sources"
 import { getSettings } from "../settings"
 import { scheduleChapterListRefresh } from "./chapter-cache"
@@ -29,7 +36,27 @@ async function doCaptureChapter(url: string) {
     }
 
     const settings = await getSettings()
+    const markRead = settings.markReadOnVisit ?? true
     if (!settings.autoAdd) {
+        // Auto-add is off, so don't create anything - but still advance read progress for a
+        // title already in the library (createIfMissing:false), so opening a chapter on the
+        // source site of a book you already track keeps your position current.
+        if (markRead) {
+            const mangaInfo = source.parseMangaUrl?.(parsedUrl) ?? undefined
+            try {
+                const tracked = await trackExternalChapter({
+                    url,
+                    sourceId: source.manifest.id,
+                    completed: true,
+                    createIfMissing: false,
+                    ...(mangaInfo ? { mangaInfo } : {}),
+                    ...(source.normalizeSourceMangaId ? { normalizeSlug: source.normalizeSourceMangaId } : {})
+                })
+                if (tracked.tracked) publishLive(["library", "chapters", "progress"], [tracked.mangaId])
+            } catch (error) {
+                console.debug("[AMR] mark-read-on-visit (auto-add off) failed", { url, error })
+            }
+        }
         return { supported: true as const, added: false as const }
     }
 
@@ -52,7 +79,7 @@ async function doCaptureChapter(url: string) {
             tracked = await trackExternalChapter({
                 url,
                 sourceId: source.manifest.id,
-                completed: false,
+                completed: markRead,
                 ...(mangaInfo ? { mangaInfo } : {}),
                 ...(source.normalizeSourceMangaId ? { normalizeSlug: source.normalizeSourceMangaId } : {})
             })
@@ -99,7 +126,25 @@ async function doCaptureChapter(url: string) {
             updatedAt: Date.now()
         }
     })
-    publishLive(["library", "chapters"], [resolved.manga.manga.id])
+    // Mark the visited chapter read (ratcheting forward only, never regressing) so reading on
+    // the source site keeps progress current, same as the AMR reader would. saveResolvedChapter
+    // has already written this chapter row, so saveProgress can look up its sortKey.
+    if (markRead) {
+        try {
+            await saveProgress({
+                mangaId: resolved.manga.manga.id,
+                chapterId: resolved.chapter.id,
+                pageIndex: 0,
+                pageCount: 1,
+                completed: true,
+                updatedAt: Date.now()
+            })
+        } catch (error) {
+            console.debug("[AMR] mark-read-on-visit failed", { url, error })
+        }
+    }
+
+    publishLive(["library", "chapters", "progress"], [resolved.manga.manga.id])
 
     // Best-effort: cache the cover as a Blob so the UI can render it from IndexedDB
     // instead of hotlinking the source CDN on every render. The manga record keeps

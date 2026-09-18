@@ -2273,6 +2273,69 @@ describe("trackExternalChapter", () => {
         expect(real.chapterNumber).toBe(42)
     })
 
+    it("marks the visited chapter read and ratchets lastReadChapterNumber forward only", async () => {
+        // Reading on the source site (auto-capture -> completed:true) must advance progress.
+        await trackExternalChapter({
+            url: "https://mangahub.io/chapter/x-title/chapter-5",
+            sourceId: "mangahub",
+            completed: true,
+            mangaInfo: { sourceMangaId: "x-title", mangaUrl: "https://mangahub.io/manga/x-title" }
+        })
+        let manga = await trackExternalChapter({
+            url: "https://mangahub.io/chapter/x-title/chapter-10",
+            sourceId: "mangahub",
+            completed: true,
+            mangaInfo: { sourceMangaId: "x-title", mangaUrl: "https://mangahub.io/manga/x-title" }
+        }).then(r => db.manga.get(r.mangaId))
+        expect(manga?.lastReadChapterNumber).toBe(10)
+
+        // Re-opening an earlier chapter must NOT regress the furthest-read position.
+        manga = await trackExternalChapter({
+            url: "https://mangahub.io/chapter/x-title/chapter-3",
+            sourceId: "mangahub",
+            completed: true,
+            mangaInfo: { sourceMangaId: "x-title", mangaUrl: "https://mangahub.io/manga/x-title" }
+        }).then(r => db.manga.get(r.mangaId))
+        expect(manga?.lastReadChapterNumber).toBe(10)
+    })
+
+    it("createIfMissing:false marks read for an existing title but never creates a new one", async () => {
+        // mark-read-on-visit with auto-add off: an untracked title records nothing.
+        const missing = await trackExternalChapter({
+            url: "https://mangahub.io/chapter/never-added/chapter-1",
+            sourceId: "mangahub",
+            completed: true,
+            createIfMissing: false,
+            mangaInfo: { sourceMangaId: "never-added", mangaUrl: "https://mangahub.io/manga/never-added" }
+        })
+        expect(missing.tracked).toBe(false)
+        expect(await db.manga.get("mangahub:manga:never-added")).toBeUndefined()
+
+        // An already-tracked title still advances.
+        await db.manga.put({
+            id: "mangahub:manga:tracked",
+            title: "Tracked",
+            normalizedTitle: "tracked",
+            sourceId: "mangahub",
+            authors: [],
+            status: "unknown",
+            addedAt: 1,
+            updatedAt: 1,
+            sourceMangaId: "tracked",
+            mangaUrl: "https://mangahub.io/manga/tracked",
+            sourceUrl: "https://mangahub.io/manga/tracked"
+        })
+        const hit = await trackExternalChapter({
+            url: "https://mangahub.io/chapter/tracked/chapter-7",
+            sourceId: "mangahub",
+            completed: true,
+            createIfMissing: false,
+            mangaInfo: { sourceMangaId: "tracked", mangaUrl: "https://mangahub.io/manga/tracked" }
+        })
+        expect(hit.tracked).toBe(true)
+        expect((await db.manga.get("mangahub:manga:tracked"))?.lastReadChapterNumber).toBe(7)
+    })
+
     it("does not adopt an internal-id-sized /chapter/<id> as a number for any source", async () => {
         // The widened regex now parses a bare /chapter/<numericId>, so the internal-id floor
         // must apply to every source (not just mangahub) or a numeric-id site mints a poisoned

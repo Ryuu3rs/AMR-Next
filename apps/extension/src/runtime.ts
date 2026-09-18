@@ -223,6 +223,7 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
         type: z.literal("settings:update"),
         settings: z.object({
             autoAdd: z.boolean().optional(),
+            markReadOnVisit: z.boolean().optional(),
             readingMode: z.enum(["continuous", "single"]).optional(),
             readingSpread: z.union([z.literal(1), z.literal(2)]).optional(),
             readingDirection: z.enum(["ltr", "rtl", "vertical"]).optional(),

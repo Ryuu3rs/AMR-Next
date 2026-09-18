@@ -5,6 +5,11 @@ export type OpenChapterIn = "reader" | "browser"
 
 export type AppSettings = {
     autoAdd: boolean
+    // Mark a chapter read as soon as you open it on the source site (not just in the AMR reader).
+    // On by default so reading next-next-next on a site keeps your progress up to date; turn it off
+    // to only record progress from the AMR reader or the on-page "Mark read" button. Only ever
+    // ratchets progress forward, never backwards.
+    markReadOnVisit: boolean
     readingMode: "continuous" | "single"
     // Default pages-per-view for the paged reader: 1 (single) or 2 (double spread). Combined with
     // readingMode this expresses the reader's 3-way default view (Strip = continuous+1, Single =
@@ -59,6 +64,7 @@ const settingsKey = "settings"
 
 export const defaultSettings: AppSettings = {
     autoAdd: true,
+    markReadOnVisit: true,
     readingMode: "continuous",
     readingSpread: 1,
     readingDirection: "ltr",

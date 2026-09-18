@@ -85,6 +85,7 @@
             label: "Library & updates",
             labels: [
                 "Auto-add manga",
+                "Track reading on the source site",
                 "Update schedule",
                 "Auto-pause after N days",
                 "New-chapter notifications",
@@ -6283,6 +6284,23 @@
                                         type="checkbox"
                                         checked={settings?.autoAdd ?? true}
                                         onchange={e => changeAutoAdd(e.currentTarget.checked)} />
+                                    <span class="track"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row" hidden={!settingMatches("Track reading on the source site")}>
+                                <div>
+                                    <p class="row-label">Track reading on the source site</p>
+                                    <p class="muted">
+                                        Mark a chapter read when you open it on the source site, not just in the AMR
+                                        reader. Only ever moves progress forward.
+                                    </p>
+                                </div>
+                                <label class="toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings?.markReadOnVisit ?? true}
+                                        onchange={e =>
+                                            void updateSetting({ markReadOnVisit: e.currentTarget.checked })} />
                                     <span class="track"></span>
                                 </label>
                             </div>

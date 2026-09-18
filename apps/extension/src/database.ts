@@ -1505,6 +1505,10 @@ export async function trackExternalChapter(input: {
     // matcher recognise the same series across a rotated slug hash (Asura) so a rotated
     // chapter URL attaches to the existing entry instead of forking a duplicate.
     normalizeSlug?: (slug: string) => string
+    // When false, only mark read if the title already exists in the library; never create a
+    // new entry. Used by the mark-read-on-visit path when auto-add is off, so browsing a source
+    // still advances progress on titles you already track without adding everything you glance at.
+    createIfMissing?: boolean
 }): Promise<{ tracked: boolean; title: string; chapterNumber: number | null; mangaId: string; created: boolean }> {
     return db.transaction("rw", [db.manga, db.sourceLinks, db.chapters, db.progress, db.historyEvents], async () => {
         const now = Date.now()
@@ -1576,6 +1580,10 @@ export async function trackExternalChapter(input: {
         }
 
         const created = !manga
+        if (!manga && input.createIfMissing === false) {
+            // Mark-read-on-visit with auto-add off: the title isn't tracked, so record nothing.
+            return { tracked: false, title: "", chapterNumber: null, mangaId: "", created: false }
+        }
         if (!manga) {
             const slug = deriveSlug(u)
             const title = humanizeSlug(slug ?? "") || u.hostname
