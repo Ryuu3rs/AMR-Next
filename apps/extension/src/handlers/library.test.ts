@@ -1204,6 +1204,60 @@ describe("library:numbers", () => {
         expect(stored?.latestChapterNumber).toBeUndefined()
         expect(stored?.lastReadChapterNumber).toBe(5)
     })
+
+    it("advancing lastRead (mark caught up) refreshes lastReadAt, clears a paused override, and bumps updatedAt", async () => {
+        const { libraryHandlers } = await import("./library")
+        const handler = libraryHandlers["library:numbers"]!
+
+        const existing: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/1",
+            latestChapterNumber: 12,
+            lastReadChapterNumber: 3,
+            lastReadAt: 1,
+            updatedAt: 1,
+            readingStatus: "paused"
+        }
+        await db.manga.put(existing)
+
+        await handler(
+            {
+                type: "library:numbers",
+                mangaId: manga.id,
+                lastReadChapterNumber: 12,
+                lastReadChapterId: "mangadex:chapter:12"
+            } as never,
+            ctx
+        )
+
+        const stored = await db.manga.get(manga.id)
+        expect(stored?.lastReadChapterNumber).toBe(12)
+        expect(stored?.readingStatus).toBeUndefined() // paused override cleared
+        expect(stored?.lastReadAt).toBeGreaterThan(1) // clock refreshed so it won't re-auto-pause
+        expect(stored?.updatedAt).toBeGreaterThan(1) // so it pushes to account sync
+    })
+
+    it("editing only latestChapterNumber does NOT touch lastReadAt or a paused override", async () => {
+        const { libraryHandlers } = await import("./library")
+        const handler = libraryHandlers["library:numbers"]!
+
+        const existing: LibraryManga = {
+            ...manga,
+            sourceId: "mangadex",
+            sourceUrl: "https://mangadex.org/chapter/1",
+            lastReadAt: 1,
+            readingStatus: "paused"
+        }
+        await db.manga.put(existing)
+
+        await handler({ type: "library:numbers", mangaId: manga.id, latestChapterNumber: 20 } as never, ctx)
+
+        const stored = await db.manga.get(manga.id)
+        expect(stored?.latestChapterNumber).toBe(20)
+        expect(stored?.readingStatus).toBe("paused") // not a read, override stays
+        expect(stored?.lastReadAt).toBe(1)
+    })
 })
 
 describe("library:reading-prefs", () => {

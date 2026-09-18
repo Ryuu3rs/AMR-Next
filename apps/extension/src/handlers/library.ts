@@ -410,20 +410,24 @@ export const libraryHandlers: HandlerMap = {
 
     "library:rate": async request => {
         const rating = request.rating === 0 ? undefined : request.rating
-        await updateManga(request.mangaId, { rating } as Partial<LibraryManga>)
+        // Stamp updatedAt so this edit is picked up by the account-sync push (it selects rows
+        // by updatedAt > lastPushAt); without it a rating set on one device never crosses.
+        await updateManga(request.mangaId, { rating, updatedAt: Date.now() } as Partial<LibraryManga>)
         return null
     },
 
     "library:manual": async request => {
         await updateManga(request.mangaId, {
-            manualTracking: request.manual ? true : undefined
+            manualTracking: request.manual ? true : undefined,
+            updatedAt: Date.now()
         } as Partial<LibraryManga>)
         return null
     },
 
     "library:hold": async request => {
         await updateManga(request.mangaId, {
-            onHold: request.onHold ? true : undefined
+            onHold: request.onHold ? true : undefined,
+            updatedAt: Date.now()
         } as Partial<LibraryManga>)
         return null
     },
@@ -432,10 +436,12 @@ export const libraryHandlers: HandlerMap = {
     // planning). null clears it, restoring the derived reading/completed/unread status.
     "library:status": async request => {
         // Stamp the change time so bidirectional AniList status sync can last-writer-wins
-        // against the remote entry's updatedAt.
+        // against the remote entry's updatedAt, and so the account-sync push selects the row.
+        const now = Date.now()
         await updateManga(request.mangaId, {
             readingStatus: request.status ?? undefined,
-            readingStatusUpdatedAt: Date.now()
+            readingStatusUpdatedAt: now,
+            updatedAt: now
         } as Partial<LibraryManga>)
         return null
     },
@@ -839,7 +845,20 @@ export const libraryHandlers: HandlerMap = {
         if (request.lastReadChapterNumber !== undefined)
             patch["lastReadChapterNumber"] = request.lastReadChapterNumber ?? undefined
         if (request.lastReadChapterId !== undefined) patch["lastReadChapterId"] = request.lastReadChapterId ?? undefined
+        // Advancing the read position (e.g. bulk "Mark caught up") must behave like actually
+        // reading: refresh lastReadAt so the inactivity auto-pause clock resets, and clear a
+        // stored paused/dropped override so a caught-up title doesn't stay stuck On Hold. Mirrors
+        // saveProgress's clearOverride/lastReadAt on a forward read.
+        const advancingRead = request.lastReadChapterId !== undefined || request.lastReadChapterNumber !== undefined
+        if (advancingRead) {
+            patch["lastReadAt"] = Date.now()
+            const existing = await db.manga.get(request.mangaId)
+            if (existing?.readingStatus === "paused" || existing?.readingStatus === "dropped") {
+                patch["readingStatus"] = undefined
+            }
+        }
         if (Object.keys(patch).length > 0) {
+            patch["updatedAt"] = Date.now()
             await updateManga(request.mangaId, patch as Partial<LibraryManga>)
         }
         return null
@@ -848,7 +867,8 @@ export const libraryHandlers: HandlerMap = {
     "library:categories": async request => {
         const categories = [...new Set(request.categories.map(c => c.trim()).filter(Boolean))]
         await updateManga(request.mangaId, {
-            categories: categories.length > 0 ? categories : undefined
+            categories: categories.length > 0 ? categories : undefined,
+            updatedAt: Date.now()
         } as Partial<LibraryManga>)
         return null
     },
@@ -1118,7 +1138,8 @@ export const libraryHandlers: HandlerMap = {
 
     "library:nsfw": async request => {
         await updateManga(request.mangaId, {
-            nsfw: request.nsfw ? true : undefined
+            nsfw: request.nsfw ? true : undefined,
+            updatedAt: Date.now()
         } as Partial<LibraryManga>)
         return null
     },
@@ -1401,7 +1422,8 @@ export const libraryHandlers: HandlerMap = {
 
     "library:note": async request => {
         await updateManga(request.mangaId, {
-            notes: request.note.trim() || undefined
+            notes: request.note.trim() || undefined,
+            updatedAt: Date.now()
         } as Partial<LibraryManga>)
         return null
     },
@@ -1418,7 +1440,7 @@ export const libraryHandlers: HandlerMap = {
         if (request.pageWidthPct !== undefined) patch.pageWidthPct = request.pageWidthPct ?? undefined
         if (request.noGapContinuous !== undefined) patch.noGapContinuous = request.noGapContinuous ?? undefined
         if (Object.keys(patch).length > 0) {
-            await updateManga(request.mangaId, patch as Partial<LibraryManga>)
+            await updateManga(request.mangaId, { ...patch, updatedAt: Date.now() } as Partial<LibraryManga>)
         }
         return null
     }
