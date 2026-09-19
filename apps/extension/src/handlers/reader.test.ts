@@ -624,3 +624,40 @@ describe("reader:chapters (standard sources without getChapterListUrl)", () => {
         expect(publishLiveMock).not.toHaveBeenCalled()
     })
 })
+
+describe("reader:resolve offline fallback", () => {
+    it("serves a downloaded copy when the network resolve fails and a download exists", async () => {
+        await db.downloads.clear()
+        await db.manga.put(manga)
+        const url = "https://mangadex.org/chapter/ch1"
+        await db.chapters.put(chapter("mangadex:chapter:1", 1, url))
+        await db.downloads.put({
+            chapterId: "mangadex:chapter:1",
+            mangaId: manga.id,
+            pageBlobs: [new Blob(["a"]), new Blob(["b"])],
+            pageCount: 2,
+            downloadedAt: 1
+        })
+        resolveChapterUrlMock.mockRejectedValue(new Error("network down"))
+
+        const result = (await readerHandlers["reader:resolve"]!({ type: "reader:resolve", url } as never, mkCtx())) as {
+            pages: unknown[]
+            chapter: { id: string }
+            manga: { manga: { id: string } }
+        }
+        expect(result.pages).toHaveLength(2)
+        expect(result.chapter.id).toBe("mangadex:chapter:1")
+        expect(result.manga.manga.id).toBe(manga.id)
+    })
+
+    it("rethrows the network error when no download exists", async () => {
+        await db.downloads.clear()
+        resolveChapterUrlMock.mockRejectedValue(new Error("network down"))
+        await expect(
+            readerHandlers["reader:resolve"]!(
+                { type: "reader:resolve", url: "https://mangadex.org/chapter/none" } as never,
+                mkCtx()
+            )
+        ).rejects.toThrow("network down")
+    })
+})

@@ -103,6 +103,34 @@ export const readerHandlers: HandlerMap = {
     },
 
     "reader:resolve": async request => {
+        // Offline fallback: if the chapter can't be fetched (no network) but a downloaded copy
+        // exists, build a ResolvedChapter from the stored rows so the reader still opens it (its
+        // refreshDownloadState swaps in the page blobs) and progress still records. Keyed by the
+        // exact opened URL via the cached chapter row.
+        const resolveFromDownload = async (): Promise<Awaited<ReturnType<typeof resolveChapterUrl>> | null> => {
+            const chapterRow = await db.chapters.where("url").equals(request.url).first()
+            if (!chapterRow) return null
+            const download = await db.downloads.get(chapterRow.id)
+            if (!download || download.pageCount <= 0) return null
+            const mangaRow = await db.manga.get(chapterRow.mangaId)
+            if (!mangaRow) return null
+            const link = await db.sourceLinks.get(chapterRow.mangaId)
+            return {
+                manga: {
+                    manga: mangaRow,
+                    sourceId: mangaRow.sourceId,
+                    sourceMangaId: mangaRow.sourceMangaId ?? "",
+                    url: link?.url ?? mangaRow.mangaUrl ?? mangaRow.sourceUrl ?? request.url
+                },
+                chapter: { ...chapterRow, sourceChapterId: chapterRow.id, language: chapterRow.language ?? "en" },
+                // Placeholder pages sized to the download; the reader renders the real blobs.
+                pages: Array.from({ length: download.pageCount }, (_, i) => ({
+                    id: `${chapterRow.id}:offline:${i}`,
+                    url: ""
+                }))
+            }
+        }
+
         let resolved
         try {
             resolved = await resolveChapterUrl(request.url)
@@ -135,6 +163,10 @@ export const readerHandlers: HandlerMap = {
                     html
                 ).catch(() => {})
             } else {
+                // Network fetch failed (e.g. offline) and it's not a bot-block. Serve a
+                // downloaded copy if we have one before surfacing the error.
+                const offline = await resolveFromDownload()
+                if (offline) return offline
                 throw fetchError
             }
         }
