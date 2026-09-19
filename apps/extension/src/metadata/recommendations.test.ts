@@ -22,9 +22,29 @@ describe("mapRecommendations", () => {
                 anilistId: 101,
                 title: "Vinland Saga",
                 coverUrl: "https://img/xl.jpg",
-                genres: ["Action", "Adventure"]
+                genres: ["Action", "Adventure"],
+                searchTitles: ["Vinland Saga"]
             }
         ])
+    })
+
+    it("builds Latin-only searchTitles from english, romaji and synonyms, best-first and deduped", () => {
+        const cand = mapRecommendations({
+            recommendations: {
+                nodes: [
+                    {
+                        mediaRecommendation: {
+                            id: 55,
+                            // No english on AniList (real case: a Korean manhwa) - romaji + synonyms carry it.
+                            title: { romaji: "Jaebeorui pumgyeok", native: "재벌집 막내아들" },
+                            synonyms: ["Reborn Rich", "The Youngest Son of a Conglomerate", "재벌집", null]
+                        }
+                    }
+                ]
+            }
+        })[0]
+        // Native Hangul is dropped (never matches a source); the rest kept in order, deduped.
+        expect(cand?.searchTitles).toEqual(["Jaebeorui pumgyeok", "Reborn Rich", "The Youngest Son of a Conglomerate"])
     })
 
     it("prefers english then romaji then native for the title", () => {
@@ -63,7 +83,7 @@ describe("mapRecommendations", () => {
                 ]
             }
         }
-        expect(mapRecommendations(raw)).toEqual([{ anilistId: 7, title: "Kept" }])
+        expect(mapRecommendations(raw)).toEqual([{ anilistId: 7, title: "Kept", searchTitles: ["Kept"] }])
     })
 
     it("dedupes repeated recommendation ids, keeping the first", () => {
@@ -75,7 +95,7 @@ describe("mapRecommendations", () => {
                 ]
             }
         }
-        expect(mapRecommendations(raw)).toEqual([{ anilistId: 9, title: "First" }])
+        expect(mapRecommendations(raw)).toEqual([{ anilistId: 9, title: "First", searchTitles: ["First"] }])
     })
 
     it("returns an empty array for empty or null input", () => {
@@ -107,8 +127,15 @@ describe("mapRecommendations", () => {
             }
         }
         expect(mapRecommendations(raw)).toEqual([
-            { anilistId: 1, title: "Strong", recStrength: 42, averageScore: 88, popularity: 12000 },
-            { anilistId: 2, title: "Weak", recStrength: 0, popularity: 0 }
+            {
+                anilistId: 1,
+                title: "Strong",
+                recStrength: 42,
+                averageScore: 88,
+                popularity: 12000,
+                searchTitles: ["Strong"]
+            },
+            { anilistId: 2, title: "Weak", recStrength: 0, popularity: 0, searchTitles: ["Weak"] }
         ])
     })
 })

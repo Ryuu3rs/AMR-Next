@@ -24,6 +24,9 @@ export type Suggestion = {
     // return them.
     averageScore?: number
     popularity?: number
+    // Latin title variants (english/romaji/synonyms) to try when searching sources for this
+    // title, best-first. A romaji-only Korean/Chinese title rarely matches scanlation sites.
+    searchTitles?: string[]
 }
 
 export type CommunityRec = {
@@ -177,7 +180,10 @@ export function scoreSuggestions(input: SuggestionsInput): Suggestion[] {
             score,
             reasons: agg.reasons,
             ...(candidate.averageScore !== undefined ? { averageScore: candidate.averageScore } : {}),
-            ...(candidate.popularity !== undefined ? { popularity: candidate.popularity } : {})
+            ...(candidate.popularity !== undefined ? { popularity: candidate.popularity } : {}),
+            ...(candidate.searchTitles && candidate.searchTitles.length > 0
+                ? { searchTitles: candidate.searchTitles }
+                : {})
         })
     }
 

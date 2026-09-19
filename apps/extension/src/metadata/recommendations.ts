@@ -21,15 +21,41 @@ export type RecCandidate = {
     // with it on a list). Used to surface "hidden gems": highly rated but not widely read.
     averageScore?: number
     popularity?: number
+    // Every Latin title AniList knows for this series (english, romaji, synonyms), best-first.
+    // A source search tries these in turn, because a Korean/Chinese title's romaji rarely
+    // matches how scanlation sites index it - the English name or a synonym usually does.
+    searchTitles?: string[]
 }
 
 type RecMedia = {
     id?: number | null
     title?: { romaji?: string | null; english?: string | null; native?: string | null } | null
+    synonyms?: (string | null)[] | null
     coverImage?: { large?: string | null; extraLarge?: string | null } | null
     genres?: (string | null)[] | null
     averageScore?: number | null
     popularity?: number | null
+}
+
+// Latin-script titles only: a native (Hangul/Kanji) string never matches a scanlation site's
+// index, so it's not a useful search term. english/romaji/synonyms are.
+function buildSearchTitles(media: RecMedia): string[] {
+    const raw = [media.title?.english, media.title?.romaji, ...(media.synonyms ?? [])]
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const t of raw) {
+        if (typeof t !== "string") continue
+        const trimmed = t.trim()
+        if (!trimmed) continue
+        // Skip a title with no Latin letters (pure CJK/Hangul) - it won't match sources.
+        if (!/[a-z]/i.test(trimmed)) continue
+        const key = trimmed.toLocaleLowerCase("en")
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push(trimmed)
+        if (out.length >= 6) break
+    }
+    return out
 }
 
 export type RecommendationsResponse = {
@@ -47,6 +73,7 @@ export const RECOMMENDATIONS_QUERY = `
                     mediaRecommendation {
                         id
                         title { romaji english native }
+                        synonyms
                         coverImage { large extraLarge }
                         genres
                         averageScore
@@ -77,6 +104,7 @@ export function mapRecommendations(raw: RecommendationsResponse): RecCandidate[]
         const averageScore =
             typeof media.averageScore === "number" && media.averageScore > 0 ? media.averageScore : undefined
         const popularity = typeof media.popularity === "number" && media.popularity >= 0 ? media.popularity : undefined
+        const searchTitles = buildSearchTitles(media)
         out.push({
             anilistId: media.id,
             title,
@@ -84,7 +112,8 @@ export function mapRecommendations(raw: RecommendationsResponse): RecCandidate[]
             ...(genres.length > 0 ? { genres } : {}),
             ...(recStrength !== undefined ? { recStrength } : {}),
             ...(averageScore !== undefined ? { averageScore } : {}),
-            ...(popularity !== undefined ? { popularity } : {})
+            ...(popularity !== undefined ? { popularity } : {}),
+            ...(searchTitles.length > 0 ? { searchTitles } : {})
         })
     }
     return out

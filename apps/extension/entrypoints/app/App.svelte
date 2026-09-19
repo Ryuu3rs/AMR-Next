@@ -2583,6 +2583,15 @@
                     searchLoading = false
                     port.disconnect()
                     if (searchPort === port) searchPort = null
+                    // Suggestion search found nothing under this title - try the next variant
+                    // (english/romaji/synonym) so a romaji-only Korean/Chinese title still resolves.
+                    if (searchResults.length === 0 && suggestionSearchQueue.length > 0) {
+                        const next = suggestionSearchQueue.shift()
+                        if (next) {
+                            browseQuery = next
+                            doSearch()
+                        }
+                    }
                 }
             }
         )
@@ -2610,6 +2619,7 @@
         searchResults = []
         searchLoading = false
         hasSearched = false
+        suggestionSearchQueue = []
         searchTotal = 0
         searchSettled = 0
         selectedManga = null
@@ -2636,6 +2646,9 @@
     // field closes the popover straight away rather than leaving stale results behind.
     function scheduleAutoSearch() {
         if (searchDebounceHandle) clearTimeout(searchDebounceHandle)
+        // The user is typing their own query - drop any suggestion fallback chain so we don't
+        // hijack their search by retrying a suggestion's alternate titles.
+        suggestionSearchQueue = []
         if (browseQuery.trim().length === 0) {
             clearSearch()
             return
@@ -3411,9 +3424,18 @@
     })
     // Send the user to the global search prefilled with a suggestion's title so they can
     // add it from whichever mirror carries it.
-    function findSuggestion(title: string) {
-        browseQuery = title
+    // Remaining fallback titles for the active suggestion search. A suggestion's AniList title
+    // (often romaji for a Korean/Chinese series) frequently doesn't match how scanlation sites
+    // index it, so we try english/romaji/synonyms in turn until a search returns results.
+    let suggestionSearchQueue: string[] = []
+    function findSuggestion(title: string, searchTitles?: string[]) {
+        const list = (searchTitles && searchTitles.length > 0 ? searchTitles : [title])
+            .map(t => t.trim())
+            .filter(Boolean)
+        const uniq = [...new Set(list)]
         activeSection = "Discover"
+        suggestionSearchQueue = uniq.slice(1)
+        browseQuery = uniq[0] ?? title
         doSearch()
     }
     // Quick-add a suggestion to the library as already-read/completed or plan-to-read, without
@@ -4073,8 +4095,10 @@
             {#if !searchActive}
                 {#snippet sugActions(s: Suggestion)}
                     <div class="sug-actions">
-                        <button type="button" class="btn-sm sug-find-btn" onclick={() => findSuggestion(s.title)}
-                            >Find</button>
+                        <button
+                            type="button"
+                            class="btn-sm sug-find-btn"
+                            onclick={() => findSuggestion(s.title, s.searchTitles)}>Find</button>
                         <button
                             type="button"
                             class="btn-sm sug-more-btn"
@@ -4089,7 +4113,7 @@
                                     role="menuitem"
                                     onclick={() => {
                                         sugMenuFor = null
-                                        findSuggestion(s.title)
+                                        findSuggestion(s.title, s.searchTitles)
                                     }}>Find on a source</button>
                                 <button type="button" role="menuitem" onclick={() => void quickAddSuggestion(s, "read")}
                                     >Mark as already read</button>
@@ -4109,7 +4133,10 @@
                 {#snippet sugCard(s: Suggestion)}
                     <article class="disc-card">
                         <div class="poster-wrap">
-                            <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
+                            <button
+                                type="button"
+                                class="poster"
+                                onclick={() => findSuggestion(s.title, s.searchTitles)}>
                                 {#if s.coverUrl}<img
                                         src={s.coverUrl}
                                         alt={s.title}
@@ -4271,7 +4298,10 @@
                                 {@const matched = matchedGenres(s)}
                                 <article class="podium-item" class:podium-first={i === 0}>
                                     <div class="poster-wrap">
-                                        <button type="button" class="poster" onclick={() => findSuggestion(s.title)}>
+                                        <button
+                                            type="button"
+                                            class="poster"
+                                            onclick={() => findSuggestion(s.title, s.searchTitles)}>
                                             {#if s.coverUrl}<img
                                                     src={s.coverUrl}
                                                     alt={s.title}

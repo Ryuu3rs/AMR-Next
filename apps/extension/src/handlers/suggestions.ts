@@ -374,7 +374,10 @@ async function genreFill(library: LibraryManga[], scored: Suggestion[], hiddenId
                 score: 0.5 + ((candidate.averageScore ?? 0) / 100) * 0.4,
                 reasons: [],
                 ...(candidate.averageScore !== undefined ? { averageScore: candidate.averageScore } : {}),
-                ...(candidate.popularity !== undefined ? { popularity: candidate.popularity } : {})
+                ...(candidate.popularity !== undefined ? { popularity: candidate.popularity } : {}),
+                ...(candidate.searchTitles && candidate.searchTitles.length > 0
+                    ? { searchTitles: candidate.searchTitles }
+                    : {})
             })
             if (out.length >= MAX_SUGGESTIONS) break
         }
