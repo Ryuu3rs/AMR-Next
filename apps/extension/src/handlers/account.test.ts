@@ -201,6 +201,54 @@ describe("applyRemoteItem", () => {
         expect(row?.status).toBe("unknown")
         expect(row?.rating).toBeUndefined()
     })
+
+    it("applies synced notes, tags, flags and per-title reader overrides on a new title", async () => {
+        await applyRemoteItem({
+            clientId: "meta",
+            title: "Meta",
+            normalizedTitle: "meta",
+            sourceId: "s",
+            mangaUrl: "https://example.test/meta",
+            notes: "a note",
+            categories: ["Favorites"],
+            onHold: true,
+            manualTracking: true,
+            nsfw: true,
+            pageWidthPct: 60,
+            readingDirection: "rtl",
+            pageFit: "height",
+            noGapContinuous: true,
+            clientUpdatedAt: 1
+        })
+        const row = await db.manga.get("meta")
+        expect(row).toMatchObject({
+            notes: "a note",
+            categories: ["Favorites"],
+            onHold: true,
+            manualTracking: true,
+            nsfw: true,
+            pageWidthPct: 60,
+            readingDirection: "rtl",
+            pageFit: "height",
+            noGapContinuous: true
+        })
+    })
+
+    it("ignores an invalid synced readingDirection/pageFit rather than storing junk", async () => {
+        await applyRemoteItem({
+            clientId: "bad",
+            title: "Bad",
+            normalizedTitle: "bad",
+            sourceId: "s",
+            mangaUrl: "https://example.test/bad",
+            readingDirection: "sideways",
+            pageFit: "zoomzoom",
+            clientUpdatedAt: 1
+        })
+        const row = await db.manga.get("bad")
+        expect(row?.readingDirection).toBeUndefined()
+        expect(row?.pageFit).toBeUndefined()
+    })
 })
 
 describe("account:unlink", () => {

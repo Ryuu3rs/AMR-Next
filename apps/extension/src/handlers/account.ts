@@ -44,6 +44,28 @@ function pickRating(v: number | null | undefined): number | undefined {
 // Apply one server-side item locally. The server copy wins only when it is newer than the
 // local row (same last-writer rule the server applies to pushes), so a pull never clobbers
 // an edit made here since the last sync. Returns true when the library changed.
+const READING_DIRECTIONS = new Set(["ltr", "rtl", "vertical"])
+const PAGE_FITS = new Set(["width", "height", "contain", "original", "actual"])
+
+// The user-owned library metadata + per-title reader overrides carried by a synced item.
+// Present values are applied; like the existing rating/status handling this doesn't push a
+// clear across devices (an omitted/absent value is left as-is), so setting a note or tag on
+// one device shows up on another, while unsetting stays local for now.
+function syncedEditableFields(item: SyncItem): Partial<LibraryManga> {
+    const patch: Record<string, unknown> = {}
+    if (typeof item.notes === "string" && item.notes) patch["notes"] = item.notes
+    if (Array.isArray(item.categories) && item.categories.length > 0) patch["categories"] = item.categories
+    if (item.onHold === true) patch["onHold"] = true
+    if (item.manualTracking === true) patch["manualTracking"] = true
+    if (item.nsfw === true) patch["nsfw"] = true
+    if (typeof item.pageWidthPct === "number") patch["pageWidthPct"] = item.pageWidthPct
+    if (typeof item.readingDirection === "string" && READING_DIRECTIONS.has(item.readingDirection))
+        patch["readingDirection"] = item.readingDirection
+    if (typeof item.pageFit === "string" && PAGE_FITS.has(item.pageFit)) patch["pageFit"] = item.pageFit
+    if (typeof item.noGapContinuous === "boolean") patch["noGapContinuous"] = item.noGapContinuous
+    return patch as Partial<LibraryManga>
+}
+
 export async function applyRemoteItem(item: SyncItem): Promise<boolean> {
     const local = await db.manga.get(item.clientId)
     if (item.deleted) {
@@ -69,6 +91,7 @@ export async function applyRemoteItem(item: SyncItem): Promise<boolean> {
                 : {}),
             ...(typeof item.latestChapterNumber === "number" ? { latestChapterNumber: item.latestChapterNumber } : {}),
             ...(typeof item.lastReadAt === "number" ? { lastReadAt: item.lastReadAt } : {}),
+            ...syncedEditableFields(item),
             updatedAt: item.clientUpdatedAt
         })
         return true
@@ -94,6 +117,7 @@ export async function applyRemoteItem(item: SyncItem): Promise<boolean> {
             : {}),
         ...(typeof item.latestChapterNumber === "number" ? { latestChapterNumber: item.latestChapterNumber } : {}),
         ...(typeof item.lastReadAt === "number" ? { lastReadAt: item.lastReadAt } : {}),
+        ...syncedEditableFields(item),
         addedAt: Date.now(),
         updatedAt: item.clientUpdatedAt
     })

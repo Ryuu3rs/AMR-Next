@@ -113,6 +113,17 @@ export type SyncItem = {
     lastReadChapterNumber?: number | null
     latestChapterNumber?: number | null
     lastReadAt?: number | null
+    // User-owned library metadata + per-title reader overrides. Synced so a library carries
+    // its notes, tags, flags and reader tweaks across devices, not just read progress.
+    notes?: string | null
+    categories?: string[] | null
+    onHold?: boolean | null
+    manualTracking?: boolean | null
+    nsfw?: boolean | null
+    pageWidthPct?: number | null
+    readingDirection?: string | null
+    pageFit?: string | null
+    noGapContinuous?: boolean | null
     deleted?: boolean
     clientUpdatedAt: number
 }
@@ -137,6 +148,15 @@ export function toSyncItem(m: LibraryManga): SyncItem {
         lastReadChapterNumber: m.lastReadChapterNumber ?? null,
         latestChapterNumber: m.latestChapterNumber ?? null,
         lastReadAt: m.lastReadAt ?? null,
+        notes: m.notes ?? null,
+        categories: m.categories ?? null,
+        onHold: m.onHold ?? null,
+        manualTracking: m.manualTracking ?? null,
+        nsfw: m.nsfw ?? null,
+        pageWidthPct: m.pageWidthPct ?? null,
+        readingDirection: m.readingDirection ?? null,
+        pageFit: m.pageFit ?? null,
+        noGapContinuous: m.noGapContinuous ?? null,
         clientUpdatedAt: m.updatedAt
     }
 }
