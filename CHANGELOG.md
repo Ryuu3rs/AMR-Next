@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.22.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.21.1...v0.22.0) (2026-09-21)
+
+
+### Features
+
+* **sync:** sync notes, tags, flags and per-title reader overrides across devices ([b9b7a4e](https://github.com/Ryuu3rs/AMR-Next/commit/b9b7a4e82409b64245da8ef25ab3da93b333e435))
+* **tracking:** mark chapters read when opened on the source site ([129508e](https://github.com/Ryuu3rs/AMR-Next/commit/129508e32b8c80e5de363801b43509fa994df336))
+
+
+### Bug Fixes
+
+* **discover:** search a suggestion's alternate titles so romaji-only manhwa resolve ([295096d](https://github.com/Ryuu3rs/AMR-Next/commit/295096dfc65c5905292eb42cdc7d68e919929605))
+* **reader:** read downloaded chapters offline instead of erroring ([d12044e](https://github.com/Ryuu3rs/AMR-Next/commit/d12044ef1157e50a51447534fd377303a95175c6))
+* **sync,library:** stamp updatedAt on edits so they push; caught-up un-pauses ([6669283](https://github.com/Ryuu3rs/AMR-Next/commit/6669283da7bb11d36cced85baa684cad21ee4a93))
+* **updates:** bucket retired/unlinked/unparseable sources as 'needs relink', not eternal failures ([59479df](https://github.com/Ryuu3rs/AMR-Next/commit/59479df6add7e2d7106a79b326e7971974d25dc1))
+
 ## [0.21.1](https://github.com/Ryuu3rs/AMR-Next/compare/v0.21.0...v0.21.1) (2026-09-17)
 
 
