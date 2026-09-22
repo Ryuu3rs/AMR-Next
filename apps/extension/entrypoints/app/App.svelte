@@ -3792,14 +3792,6 @@
             <img src="/icons/icon_48.png" alt="" />
             <span>AMR <strong>Next</strong></span>
         </div>
-        <button type="button" class="signin-btn signin-top" class:linked={accountLinked} onclick={openAccount}>
-            {#if accountLinked}
-                <span class="signin-dot" aria-hidden="true"></span>
-                {accountProfile?.name ?? "weeb.ltd account"}
-            {:else}
-                Sign in
-            {/if}
-        </button>
         <nav aria-label="Main navigation">
             {#each sections as section}
                 <button
@@ -3819,7 +3811,7 @@
         <div class="sidebar-footer">
             <span class="sidebar-version">v{currentVersion}{buildId ? ` · ${buildId}` : ""}</span>
             <button type="button" class="signin-btn signin-footer" class:linked={accountLinked} onclick={openAccount}>
-                {#if accountLinked}👤 {accountProfile?.name ?? "Account"}{:else}🔑 Sign in{/if}
+                {#if accountLinked}{accountProfile?.name ?? "Account"}{:else}Sign in{/if}
             </button>
             <button
                 type="button"

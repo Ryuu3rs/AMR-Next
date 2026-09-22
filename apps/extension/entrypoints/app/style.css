@@ -1582,22 +1582,13 @@ button:disabled {
 .signin-btn:hover {
     background: color-mix(in srgb, var(--accent, #8b5cf6) 14%, transparent);
 }
-.signin-top {
-    margin: 8px 0 4px;
-}
 .signin-footer {
-    margin-top: 6px;
+    margin-top: 4px;
+    margin-bottom: 12px;
 }
 .signin-btn.linked {
     border-color: var(--border);
     color: var(--text);
-}
-.signin-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #2d8a61;
-    flex-shrink: 0;
 }
 
 /* Dismissible account nudge card at the top of Settings. */
