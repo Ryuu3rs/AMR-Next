@@ -1524,6 +1524,13 @@
         await tick()
         jumpToSettings("account")
     }
+    // Start sign-up: open the weeb.ltd sign-up page (where they create an account and get their
+    // link code) in a focused new tab, and ready the paste field in the extension underneath so
+    // it's waiting for them the moment they come back with the code.
+    function startSignIn() {
+        openWeebSignUp()
+        void openAccount()
+    }
 
     async function loadAccountStatus() {
         try {
@@ -3810,7 +3817,11 @@
         </nav>
         <div class="sidebar-footer">
             <span class="sidebar-version">v{currentVersion}{buildId ? ` · ${buildId}` : ""}</span>
-            <button type="button" class="signin-btn signin-footer" class:linked={accountLinked} onclick={openAccount}>
+            <button
+                type="button"
+                class="signin-btn signin-footer"
+                class:linked={accountLinked}
+                onclick={() => (accountLinked ? void openAccount() : startSignIn())}>
                 {#if accountLinked}{accountProfile?.name ?? "Account"}{:else}Sign in{/if}
             </button>
             <button
@@ -6012,7 +6023,7 @@
                         >Keep this safe: a free weeb.ltd account backs your library up automatically and syncs it across
                         devices.</span>
                     <div class="account-nudge-actions">
-                        <button type="button" onclick={openWeebSignUp}>Create a free account</button>
+                        <button type="button" onclick={startSignIn}>Create a free account</button>
                         <button type="button" class="btn-outline" onclick={() => (showImportBackupHint = false)}>
                             Not now
                         </button>
@@ -6341,9 +6352,9 @@
                         unlocks community features. Recommended.
                     </p>
                     <div class="account-nudge-actions">
-                        <button type="button" onclick={openWeebSignUp}>Create a free account</button>
+                        <button type="button" onclick={startSignIn}>Create a free account</button>
                         <button type="button" class="btn-outline" onclick={() => jumpToSettings("account")}>
-                            I already have a token
+                            I already have a code
                         </button>
                     </div>
                 </div>
