@@ -11,7 +11,7 @@
     } from "../../src/reading-status"
     import type { AppSettings } from "../../src/settings"
     import { SITE_BASE, type AccountProfile } from "../../src/account"
-    import { onDestroy, onMount } from "svelte"
+    import { onDestroy, onMount, tick } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { runSettled } from "../../src/bulk"
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
@@ -75,6 +75,9 @@
     let siteReachable = $state(false)
     function openWeebSite() {
         void browser.tabs.create({ url: WEEB_SITE_URL })
+    }
+    function openWeebSignUp() {
+        void browser.tabs.create({ url: `${WEEB_SITE_URL}/join` })
     }
 
     // Settings page: rail + filter + scroll-spy. Sections are literal markup below; this
@@ -1502,12 +1505,37 @@
     let accountToken = $state("")
     let accountBusy = $state(false)
     let accountMessage = $state("")
+    const accountLinked = $derived(Boolean(accountProfile?.token))
+    // The Settings sign-in nudge is shown until the user links an account or dismisses it.
+    // Dismissal persists so it never nags on every visit; the sidebar Sign-in button stays.
+    let accountNudgeDismissed = $state(false)
+    const showAccountNudge = $derived(!accountLinked && !accountNudgeDismissed)
+    // A one-off "make an account to auto-back-up" hint shown right after a manual import - the
+    // highest-intent moment to convert. Not persisted; clears when they act or leave Data.
+    let showImportBackupHint = $state(false)
+
+    function dismissAccountNudge() {
+        accountNudgeDismissed = true
+        void browser.storage.local.set({ accountNudgeDismissed: true })
+    }
+    // Jump to the account section in Settings (token paste + link-device + site link live there).
+    async function openAccount() {
+        activeSection = "Settings"
+        await tick()
+        jumpToSettings("account")
+    }
 
     async function loadAccountStatus() {
         try {
             accountProfile = await sendRuntimeMessage<AccountProfile>({ type: "account:status" })
         } catch {
             // account link optional
+        }
+        try {
+            const stored = await browser.storage.local.get("accountNudgeDismissed")
+            accountNudgeDismissed = stored["accountNudgeDismissed"] === true
+        } catch {
+            // default to showing the nudge
         }
     }
 
@@ -2402,6 +2430,9 @@
         } else {
             dataMessage = `Imported ${result.manga} manga and ${result.chapters} chapters.`
         }
+        // Highest-intent moment to convert: they just showed they care about their list. Nudge a
+        // free account for automatic cloud backup - only if they aren't already linked.
+        if (!accountLinked) showImportBackupHint = true
         void backfillCovers()
     }
 
@@ -3761,6 +3792,14 @@
             <img src="/icons/icon_48.png" alt="" />
             <span>AMR <strong>Next</strong></span>
         </div>
+        <button type="button" class="signin-btn signin-top" class:linked={accountLinked} onclick={openAccount}>
+            {#if accountLinked}
+                <span class="signin-dot" aria-hidden="true"></span>
+                {accountProfile?.name ?? "weeb.ltd account"}
+            {:else}
+                Sign in
+            {/if}
+        </button>
         <nav aria-label="Main navigation">
             {#each sections as section}
                 <button
@@ -3779,6 +3818,9 @@
         </nav>
         <div class="sidebar-footer">
             <span class="sidebar-version">v{currentVersion}{buildId ? ` · ${buildId}` : ""}</span>
+            <button type="button" class="signin-btn signin-footer" class:linked={accountLinked} onclick={openAccount}>
+                {#if accountLinked}👤 {accountProfile?.name ?? "Account"}{:else}🔑 Sign in{/if}
+            </button>
             <button
                 type="button"
                 class="discord-btn"
@@ -5972,6 +6014,19 @@
             {:else if dataMessage}
                 <p class="notice" role="status" aria-live="polite">{dataMessage}</p>
             {/if}
+            {#if showImportBackupHint && !accountLinked}
+                <div class="import-backup-hint">
+                    <span
+                        >Keep this safe: a free weeb.ltd account backs your library up automatically and syncs it across
+                        devices.</span>
+                    <div class="account-nudge-actions">
+                        <button type="button" onclick={openWeebSignUp}>Create a free account</button>
+                        <button type="button" class="btn-outline" onclick={() => (showImportBackupHint = false)}>
+                            Not now
+                        </button>
+                    </div>
+                </div>
+            {/if}
 
             <ImportReconcile
                 mangas={library.filter(m => reconcileIds.includes(m.id) && !isReadOnlyDiscoverAdd(m))}
@@ -6284,6 +6339,23 @@
             {#if anilistMessage}<p class="notice">{anilistMessage}</p>{/if}
         {:else}
             <h1>Settings</h1>
+            {#if showAccountNudge}
+                <div class="account-nudge">
+                    <button type="button" class="account-nudge-x" aria-label="Dismiss" onclick={dismissAccountNudge}
+                        >✕</button>
+                    <p class="account-nudge-title">Get more from your library</p>
+                    <p class="muted">
+                        A free weeb.ltd account syncs your library across devices, keeps an automatic cloud backup, and
+                        unlocks community features. Recommended.
+                    </p>
+                    <div class="account-nudge-actions">
+                        <button type="button" onclick={openWeebSignUp}>Create a free account</button>
+                        <button type="button" class="btn-outline" onclick={() => jumpToSettings("account")}>
+                            I already have a token
+                        </button>
+                    </div>
+                </div>
+            {/if}
             <div class="settings-shell">
                 <aside class="settings-rail">
                     <input

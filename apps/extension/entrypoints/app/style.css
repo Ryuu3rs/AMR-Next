@@ -1563,6 +1563,92 @@ button:disabled {
     filter: brightness(1.08);
 }
 
+/* Sign-in / account entry points (sidebar top + footer). */
+.signin-btn {
+    width: 100%;
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid var(--accent, #8b5cf6);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--accent, #8b5cf6);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+}
+.signin-btn:hover {
+    background: color-mix(in srgb, var(--accent, #8b5cf6) 14%, transparent);
+}
+.signin-top {
+    margin: 8px 0 4px;
+}
+.signin-footer {
+    margin-top: 6px;
+}
+.signin-btn.linked {
+    border-color: var(--border);
+    color: var(--text);
+}
+.signin-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #2d8a61;
+    flex-shrink: 0;
+}
+
+/* Dismissible account nudge card at the top of Settings. */
+.account-nudge {
+    position: relative;
+    border: 1px solid var(--accent, #8b5cf6);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--accent, #8b5cf6) 8%, var(--surface));
+    padding: 16px 18px;
+    margin: 0 0 20px;
+    max-width: 720px;
+}
+.account-nudge-title {
+    font-weight: 700;
+    margin: 0 0 4px;
+}
+.account-nudge-x {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    line-height: 1;
+}
+.account-nudge-x:hover {
+    color: var(--text);
+    background: var(--surface-2);
+}
+.account-nudge-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+/* Post-import "make an account to auto-back-up" hint. */
+.import-backup-hint {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 12px 14px;
+    margin-top: 10px;
+    max-width: 720px;
+}
+
 /* Community nav entry: a normal nav button that opens the external site. */
 .nav-external {
     gap: 5px;
