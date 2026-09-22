@@ -2132,6 +2132,23 @@ button:disabled {
 .disc-empty h2 {
     margin: 0 0 6px;
 }
+/* Front-door sign-up: the first thing a brand-new user sees on the empty Discover. */
+.disc-signup {
+    border: 1px solid var(--accent, #8b5cf6);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--accent, #8b5cf6) 8%, var(--surface));
+    padding: 18px 20px;
+    margin: 0 auto 22px;
+    max-width: 560px;
+}
+.disc-signup-title {
+    font-weight: 700;
+    font-size: 15px;
+    margin: 0 0 4px;
+}
+.disc-signup button {
+    margin-top: 12px;
+}
 .disc-picks {
     display: flex;
     flex-wrap: wrap;

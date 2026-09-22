@@ -4253,6 +4253,16 @@
                         </p>
                     {:else}
                         <div class="disc-empty">
+                            {#if !accountLinked}
+                                <div class="disc-signup">
+                                    <p class="disc-signup-title">Never lose your library</p>
+                                    <p class="muted">
+                                        A free weeb.ltd account syncs your list across devices and keeps an automatic
+                                        cloud backup, so a reinstall or new browser never loses your progress.
+                                    </p>
+                                    <button type="button" onclick={startSignIn}>Create a free account</button>
+                                </div>
+                            {/if}
                             <h2>Start your library</h2>
                             <p class="muted">
                                 Recommendations grow from what you read. Add one of these editor picks to get going, or
