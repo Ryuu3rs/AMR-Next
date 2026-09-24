@@ -23,6 +23,7 @@
     import { repairMangahubChapterNumbers } from "../../src/handlers/updates-sources"
     import { formatUpdateFailureLog } from "../../src/updates-failure-log"
     import { communityConfigured, CONSENT_VERSION } from "../../src/community"
+    import { analyticsConfigured } from "../../src/analytics-usage"
     import {
         PRIVACY_POLICY,
         DATA_COLLECTED,
@@ -6920,7 +6921,11 @@
                         hidden={!sectionVisible("community")}>
                         <header>
                             <h2>Privacy &amp; community</h2>
-                            <p class="muted">Opt-in only. Nothing leaves this device until you switch it on here.</p>
+                            <p class="muted">
+                                Community features are opt-in. Anonymous usage analytics is on by default (legitimate
+                                interest) and can be turned off here; it never includes your titles, reading, or
+                                account.
+                            </p>
                         </header>
                         <div class="settings-grid">
                             {#if !communityConfigured}
@@ -6942,6 +6947,26 @@
                                     <span class="track"></span>
                                 </label>
                             </div>
+                            {#if analyticsConfigured}
+                                <div class="settings-row" hidden={!settingMatches("Usage analytics")}>
+                                    <div>
+                                        <p class="row-label">Usage analytics</p>
+                                        <p class="muted">
+                                            Anonymous counts of which screens and features you use, plus app version, to
+                                            help improve the app. On by default; never your titles, reading, notes, or
+                                            account. Turn it off any time.
+                                        </p>
+                                    </div>
+                                    <label class="toggle">
+                                        <input
+                                            type="checkbox"
+                                            checked={settings?.usageAnalytics ?? true}
+                                            onchange={e =>
+                                                void updateSetting({ usageAnalytics: e.currentTarget.checked })} />
+                                        <span class="track"></span>
+                                    </label>
+                                </div>
+                            {/if}
                             <div
                                 class="settings-row"
                                 style="flex-direction:column;align-items:flex-start;gap:6px"

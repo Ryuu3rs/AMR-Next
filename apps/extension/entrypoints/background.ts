@@ -28,14 +28,17 @@ import {
     extensionUpdateAlarmName,
     backupAlarmName,
     accountAlarmName,
+    analyticsAlarmName,
     configureAccountAlarm,
     configureUpdateAlarm,
     configureSyncAlarm,
     configureCommunityAlarm,
     configureAniListAlarm,
     configureBackupAlarm,
-    configureExtensionUpdateAlarm
+    configureExtensionUpdateAlarm,
+    configureAnalyticsAlarm
 } from "../src/background/alarms"
+import { flushUsageAnalytics } from "../src/background/analytics-flush"
 import {
     checkUpdates,
     checkExtensionUpdate,
@@ -87,6 +90,7 @@ export default defineBackground(() => {
         void configureAniListAlarm()
         void getSettings().then(settings => configureBackupAlarm(settings.autoBackup))
         void configureExtensionUpdateAlarm()
+        void configureAnalyticsAlarm()
         // force=true: bypass 24h throttle and clear stale banner on every install/update
         void checkExtensionUpdate(true)
         if (details.reason === "update") {
@@ -118,6 +122,7 @@ export default defineBackground(() => {
         void configureAniListAlarm()
         void getSettings().then(settings => configureBackupAlarm(settings.autoBackup))
         void configureExtensionUpdateAlarm()
+        void configureAnalyticsAlarm()
         void checkExtensionUpdate()
         // Clear any stale pending-update latch before the backfill reads it (the update
         // applied, or was abandoned when the browser restarted), so a leftover flag can't
@@ -142,6 +147,7 @@ export default defineBackground(() => {
         if (alarm.name === anilistAlarmName) guard("AniList sync", runAniListSync)
         if (alarm.name === extensionUpdateAlarmName) guard("extension-update check", checkExtensionUpdate)
         if (alarm.name === backupAlarmName) guard("auto-backup", runAutoBackup)
+        if (alarm.name === analyticsAlarmName) guard("usage analytics", flushUsageAnalytics)
         if (alarm.name === ADD_BADGE_ALARM_NAME) guard("badge clear", clearAddedBadge)
     })
 
