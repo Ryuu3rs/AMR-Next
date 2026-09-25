@@ -56,14 +56,14 @@ describe("account:link", () => {
     it("validates the token, stores the profile and runs a first sync", async () => {
         routeFetch({
             "GET /api/sync/status": () => json(statusBody),
-            "POST /api/sync/library": () => json({ accepted: 1, rejected: [], serverTime: 5000 }),
-            "GET /api/sync/library": () => json({ items: [], serverTime: 5000 })
+            "POST /api/sync/v2": () => json({ accepted: [], rejected: [], invalid: [], serverTime: 5000 }),
+            "GET /api/sync/v2": () => json({ items: [], nextCursor: null, hasMore: false, serverTime: 5000 })
         })
         await db.manga.put(manga({ id: "m1", title: "One", updatedAt: 10 }))
 
         const profile = await accountHandlers["account:link"]!({ type: "account:link", token: TOKEN }, ctx)
 
-        expect(profile).toMatchObject({ token: TOKEN, userId: "u1", name: "Ryu", invalid: false, lastPullAt: 5000 })
+        expect(profile).toMatchObject({ token: TOKEN, userId: "u1", name: "Ryu", invalid: false, lastSyncAt: 5000 })
         const push = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")!
         expect((push[1]!.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`)
         const sent = JSON.parse(push[1]!.body as string) as { items: Array<{ clientId: string }> }
@@ -84,8 +84,8 @@ describe("account:link", () => {
         const link = vi.fn((_init?: RequestInit) => json({ ok: true, communityUserId: "reader-abc-123" }))
         routeFetch({
             "GET /api/sync/status": () => json(statusBody),
-            "POST /api/sync/library": () => json({ accepted: 0, rejected: [], serverTime: 5000 }),
-            "GET /api/sync/library": () => json({ items: [], serverTime: 5000 }),
+            "POST /api/sync/v2": () => json({ accepted: [], rejected: [], invalid: [], serverTime: 5000 }),
+            "GET /api/sync/v2": () => json({ items: [], nextCursor: null, hasMore: false, serverTime: 5000 }),
             "POST /api/sync/link": link
         })
 
@@ -108,8 +108,8 @@ describe("runAccountSync", () => {
         await db.manga.put(manga({ id: "new", title: "New", updatedAt: 100 }))
         await recordTombstone("gone")
         routeFetch({
-            "POST /api/sync/library": () => json({ accepted: 2, rejected: [], serverTime: 9000 }),
-            "GET /api/sync/library": () => json({ items: [], serverTime: 9000 }),
+            "POST /api/sync/v2": () => json({ accepted: [], rejected: [], invalid: [], serverTime: 9000 }),
+            "GET /api/sync/v2": () => json({ items: [], nextCursor: null, hasMore: false, serverTime: 9000 }),
             "GET /api/sync/status": () => json(statusBody)
         })
 
@@ -133,8 +133,8 @@ describe("runAccountSync", () => {
         await db.manga.put(manga({ id: "upd", title: "Upd", rating: 2, updatedAt: 10 }))
         await db.manga.put(manga({ id: "del", title: "Del", updatedAt: 10 }))
         routeFetch({
-            "POST /api/sync/library": () => json({ accepted: 3, rejected: [], serverTime: 9000 }),
-            "GET /api/sync/library": () =>
+            "POST /api/sync/v2": () => json({ accepted: [], rejected: [], invalid: [], serverTime: 9000 }),
+            "GET /api/sync/v2": () =>
                 json({
                     items: [
                         { clientId: "keep", title: "Keep", normalizedTitle: "keep", rating: 5, clientUpdatedAt: 100 },
@@ -151,6 +151,8 @@ describe("runAccountSync", () => {
                         },
                         { clientId: "nosource", title: "No Source", normalizedTitle: "no source", clientUpdatedAt: 900 }
                     ],
+                    nextCursor: null,
+                    hasMore: false,
                     serverTime: 9000
                 }),
             "GET /api/sync/status": () => json(statusBody)
@@ -163,7 +165,128 @@ describe("runAccountSync", () => {
         expect(await db.manga.get("del")).toBeUndefined()
         expect((await db.manga.get("fresh"))?.status).toBe("completed")
         expect(await db.manga.get("nosource")).toBeUndefined()
-        expect((await getAccountProfile()).lastPullAt).toBe(9000)
+        expect((await getAccountProfile()).lastSyncAt).toBe(9000)
+    })
+
+    it("follows the keyset cursor across pages and stores the final cursor", async () => {
+        await fakeBrowser.storage.local.set({
+            account: { token: TOKEN, lastPushAt: 0, invalid: false, autoSync: true }
+        })
+        let pull = 0
+        const pages = [
+            {
+                items: [
+                    {
+                        clientId: "p1",
+                        title: "Page1",
+                        normalizedTitle: "page1",
+                        sourceId: "mangadex",
+                        mangaUrl: "https://mangadex.org/title/p1",
+                        clientUpdatedAt: 900
+                    }
+                ],
+                nextCursor: "cursor-1",
+                hasMore: true,
+                serverTime: 9000
+            },
+            {
+                items: [
+                    {
+                        clientId: "p2",
+                        title: "Page2",
+                        normalizedTitle: "page2",
+                        sourceId: "mangadex",
+                        mangaUrl: "https://mangadex.org/title/p2",
+                        clientUpdatedAt: 900
+                    }
+                ],
+                nextCursor: "cursor-2",
+                hasMore: false,
+                serverTime: 9000
+            }
+        ]
+        routeFetch({
+            "POST /api/sync/v2": () => json({ accepted: [], rejected: [], invalid: [], serverTime: 9000 }),
+            "GET /api/sync/v2": () => json(pages[Math.min(pull++, 1)]),
+            "GET /api/sync/status": () => json(statusBody)
+        })
+
+        await runAccountSync()
+
+        expect(await db.manga.get("p1")).toBeTruthy()
+        expect(await db.manga.get("p2")).toBeTruthy()
+        expect(pull).toBe(2)
+        expect((await getAccountProfile()).pullCursor).toBe("cursor-2")
+    })
+
+    it("stores the server-resolved workId carried by a pulled item", async () => {
+        await fakeBrowser.storage.local.set({
+            account: { token: TOKEN, lastPushAt: 0, invalid: false, autoSync: true }
+        })
+        routeFetch({
+            "POST /api/sync/v2": () => json({ accepted: [], rejected: [], invalid: [], serverTime: 9000 }),
+            "GET /api/sync/v2": () =>
+                json({
+                    items: [
+                        {
+                            clientId: "w1",
+                            title: "Worked",
+                            normalizedTitle: "worked",
+                            sourceId: "mangadex",
+                            mangaUrl: "https://mangadex.org/title/w1",
+                            workId: "work_xyz",
+                            mediaType: "manga",
+                            clientUpdatedAt: 900
+                        }
+                    ],
+                    nextCursor: null,
+                    hasMore: false,
+                    serverTime: 9000
+                }),
+            "GET /api/sync/status": () => json(statusBody)
+        })
+
+        await runAccountSync()
+
+        expect((await db.manga.get("w1"))?.workId).toBe("work_xyz")
+    })
+
+    it("adopts a rejected push's server copy and logs invalid items", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+        await fakeBrowser.storage.local.set({
+            account: { token: TOKEN, lastPushAt: 0, invalid: false, autoSync: true }
+        })
+        await db.manga.put(manga({ id: "loser", title: "Local", rating: 1, updatedAt: 10 }))
+        routeFetch({
+            "POST /api/sync/v2": () =>
+                json({
+                    accepted: [],
+                    rejected: [
+                        {
+                            clientId: "loser",
+                            server: {
+                                clientId: "loser",
+                                title: "Local",
+                                normalizedTitle: "local",
+                                rating: 5,
+                                clientUpdatedAt: 999
+                            }
+                        }
+                    ],
+                    invalid: [{ clientId: "bad", issues: ["title: Required"] }],
+                    serverTime: 9000
+                }),
+            "GET /api/sync/v2": () => json({ items: [], nextCursor: null, hasMore: false, serverTime: 9000 }),
+            "GET /api/sync/status": () => json(statusBody)
+        })
+
+        await runAccountSync()
+
+        expect((await db.manga.get("loser"))?.rating).toBe(5)
+        expect(warn).toHaveBeenCalledWith("[AMR] Account sync rejected invalid items", [
+            { clientId: "bad", issues: ["title: Required"] }
+        ])
+        warn.mockRestore()
     })
 
     it("marks the profile invalid and clears the alarm on 401", async () => {
@@ -171,7 +294,7 @@ describe("runAccountSync", () => {
             account: { token: TOKEN, lastPushAt: 0, lastPullAt: 0, invalid: false, autoSync: true }
         })
         await db.manga.put(manga({ id: "m1", title: "One", updatedAt: 10 }))
-        routeFetch({ "POST /api/sync/library": () => json({ error: "Unauthorized" }, 401) })
+        routeFetch({ "POST /api/sync/v2": () => json({ error: "Unauthorized" }, 401) })
 
         const profile = await runAccountSync()
 

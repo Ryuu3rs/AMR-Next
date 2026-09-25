@@ -118,7 +118,9 @@ describe("saveResolvedChapter", () => {
             readingDirection: "rtl",
             pageFit: "height",
             pageWidthPct: 50,
-            noGapContinuous: true
+            noGapContinuous: true,
+            // Server-authoritative canonical Work id (C4); a re-capture must not drop it.
+            workId: "work_abc123"
         })
 
         // A re-read/capture hands a plain source MangaRecord with none of these per-title
@@ -130,6 +132,7 @@ describe("saveResolvedChapter", () => {
         expect(stored?.pageFit).toBe("height")
         expect(stored?.pageWidthPct).toBe(50)
         expect(stored?.noGapContinuous).toBe(true)
+        expect(stored?.workId).toBe("work_abc123")
     })
 
     it("keeps a clean stored series title when a capture carries a chapter-suffixed one (S4)", async () => {

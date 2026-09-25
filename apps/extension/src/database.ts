@@ -83,6 +83,10 @@ export type LibraryManga = MangaRecord & {
     // sources use for the same manga) - a future UI can use this to warn instead of
     // silently comparing chapter counts that don't mean what they look like they mean.
     chapterNumberingUnreliable?: boolean
+    // Canonical Work id (ecosystem contract C4). Server-authoritative: resolved by weeb.ltd
+    // on sync and read back onto the row, never set by this client. undefined until the row
+    // has synced through the Work-aware sync path. Preserved across merges like any stored field.
+    workId?: string
 }
 
 export type HistoryEvent = {
@@ -552,6 +556,7 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                 const pageFit = next.pageFit ?? existing.pageFit
                 const pageWidthPct = next.pageWidthPct ?? existing.pageWidthPct
                 const noGapContinuous = next.noGapContinuous ?? existing.noGapContinuous
+                const workId = next.workId ?? existing.workId
                 next = {
                     ...next,
                     addedAt: Math.min(existing.addedAt, next.addedAt),
@@ -568,7 +573,8 @@ export async function rekeyManga(oldId: string, next: LibraryManga, newSourceLin
                     ...(readingDirection !== undefined ? { readingDirection } : {}),
                     ...(pageFit !== undefined ? { pageFit } : {}),
                     ...(pageWidthPct !== undefined ? { pageWidthPct } : {}),
-                    ...(noGapContinuous !== undefined ? { noGapContinuous } : {})
+                    ...(noGapContinuous !== undefined ? { noGapContinuous } : {}),
+                    ...(workId !== undefined ? { workId } : {})
                 }
             }
             await db.manga.put(next)
@@ -702,6 +708,7 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                 const pageFit = merged.pageFit ?? loser.pageFit
                 const pageWidthPct = merged.pageWidthPct ?? loser.pageWidthPct
                 const noGapContinuous = merged.noGapContinuous ?? loser.noGapContinuous
+                const workId = merged.workId ?? loser.workId
 
                 merged = {
                     ...merged,
@@ -729,7 +736,8 @@ export async function mergeMangaRecords(primaryId: string, loserIds: string[]): 
                     ...(readingDirection !== undefined ? { readingDirection } : {}),
                     ...(pageFit !== undefined ? { pageFit } : {}),
                     ...(pageWidthPct !== undefined ? { pageWidthPct } : {}),
-                    ...(noGapContinuous !== undefined ? { noGapContinuous } : {})
+                    ...(noGapContinuous !== undefined ? { noGapContinuous } : {}),
+                    ...(workId !== undefined ? { workId } : {})
                 }
 
                 // Re-point (not copy) dependent rows onto the primary's id.
@@ -1027,6 +1035,7 @@ export async function saveResolvedChapter(input: {
             ...(existing?.chapterNumberingUnreliable !== undefined
                 ? { chapterNumberingUnreliable: existing.chapterNumberingUnreliable }
                 : {}),
+            ...(existing?.workId !== undefined ? { workId: existing.workId } : {}),
             // rating lives in MangaRecord - prefer existing if the source didn't supply one
             ...(!input.manga.rating && existing?.rating !== undefined ? { rating: existing.rating } : {})
         }
