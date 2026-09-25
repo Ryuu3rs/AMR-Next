@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.23.0...v0.24.0) (2026-09-25)
+
+
+### Features
+
+* **library:** carry optional canonical workId on library rows ([#81](https://github.com/Ryuu3rs/AMR-Next/issues/81)) ([fb3d441](https://github.com/Ryuu3rs/AMR-Next/commit/fb3d441a9b7bf449fe55759ac77607fd3b8affa1))
+
 ## [0.23.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.22.0...v0.23.0) (2026-09-25)
 
 
