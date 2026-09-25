@@ -11,6 +11,7 @@
     } from "../../src/reading-status"
     import type { AppSettings } from "../../src/settings"
     import { SITE_BASE, type AccountProfile } from "../../src/account"
+    import { IMPORT_FORMATS } from "../../src/import"
     import { onDestroy, onMount, tick } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { runSettled } from "../../src/bulk"
@@ -2455,6 +2456,82 @@
         } finally {
             importWorking = false
         }
+    }
+
+    // --- Import from another reader (Mihon/Tachiyomi/...) ---
+    type ReaderImportPreview = { total: number; withAniList: number; trackingOnly: number; withProgress: number }
+    let readerImportFormat = $state<string>(IMPORT_FORMATS[0]?.id ?? "")
+    let readerImportPreview = $state<ReaderImportPreview | null>(null)
+    let readerImportB64 = $state<string | null>(null)
+    let readerImportWorking = $state(false)
+    let readerImportMessage = $state("")
+    const readerImportAccept = $derived(IMPORT_FORMATS.find(f => f.id === readerImportFormat)?.accept ?? "")
+
+    async function fileToBase64(file: File): Promise<string> {
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        let binary = ""
+        const CHUNK = 0x8000
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+            binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+        }
+        return btoa(binary)
+    }
+
+    async function previewReaderImport(file: File) {
+        readerImportPreview = null
+        readerImportB64 = null
+        readerImportMessage = ""
+        readerImportWorking = true
+        try {
+            const dataB64 = await fileToBase64(file)
+            const preview = await sendRuntimeMessage<ReaderImportPreview>({
+                type: "import:reader",
+                format: readerImportFormat,
+                dataB64,
+                preview: true
+            })
+            if (preview.total === 0) {
+                readerImportMessage = "No titles found in that file. Is it the right backup and format?"
+                return
+            }
+            readerImportB64 = dataB64
+            readerImportPreview = preview
+        } catch (cause) {
+            readerImportMessage = cause instanceof Error ? cause.message : "That file could not be read."
+        } finally {
+            readerImportWorking = false
+        }
+    }
+
+    async function confirmReaderImport() {
+        if (!readerImportB64) return
+        readerImportWorking = true
+        try {
+            const result = await sendRuntimeMessage<{ imported: number; skipped: number; total: number }>({
+                type: "import:reader",
+                format: readerImportFormat,
+                dataB64: readerImportB64,
+                preview: false
+            })
+            readerImportPreview = null
+            readerImportB64 = null
+            await load()
+            readerImportMessage = `Imported ${result.imported} titles${result.skipped > 0 ? ` (${result.skipped} already in your library)` : ""}.`
+            // High-intent moment (they just brought a whole library across) - nudge a free account
+            // for automatic cloud backup, same as a normal import.
+            if (!accountLinked) showImportBackupHint = true
+            void backfillCovers()
+        } catch (cause) {
+            readerImportMessage = cause instanceof Error ? cause.message : "Import failed."
+        } finally {
+            readerImportWorking = false
+        }
+    }
+
+    function cancelReaderImport() {
+        readerImportPreview = null
+        readerImportB64 = null
+        readerImportMessage = ""
     }
 
     function cancelImport() {
@@ -5764,6 +5841,55 @@
                                 if (f) void importData(f)
                             }} />
                     </label>
+                </div>
+                <div class="data-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+                    <div>
+                        <p class="row-label">Import from another reader</p>
+                        <p class="muted">
+                            Bring a library across from Mihon, Tachiyomi, or a fork (SY, J2K, Aniyomi, Neko). Titles,
+                            read progress, categories and AniList links import; a title whose source isn't supported
+                            here comes in as tracking-only. This only adds to your library, it never wipes it.
+                        </p>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <select bind:value={readerImportFormat} aria-label="Backup format">
+                            {#each IMPORT_FORMATS as f}
+                                <option value={f.id}>{f.label}</option>
+                            {/each}
+                        </select>
+                        <label class="file-label">
+                            Choose file
+                            <input
+                                type="file"
+                                accept={readerImportAccept}
+                                onchange={e => {
+                                    const input = e.currentTarget
+                                    const f = input.files?.[0]
+                                    input.value = ""
+                                    if (f) void previewReaderImport(f)
+                                }} />
+                        </label>
+                        {#if readerImportWorking && !readerImportPreview}<span class="muted">Reading…</span>{/if}
+                    </div>
+                    {#if readerImportPreview}
+                        <div style="display:flex;flex-direction:column;gap:8px;width:100%">
+                            <p class="muted">
+                                {readerImportPreview.total} titles found: {readerImportPreview.withAniList} with an AniList
+                                link, {readerImportPreview.trackingOnly} tracking-only, {readerImportPreview.withProgress}
+                                with read progress.
+                            </p>
+                            <div style="display:flex;gap:8px">
+                                <button
+                                    type="button"
+                                    disabled={readerImportWorking}
+                                    onclick={() => void confirmReaderImport()}>
+                                    {readerImportWorking ? "Importing…" : `Import ${readerImportPreview.total} titles`}
+                                </button>
+                                <button type="button" class="btn-outline" onclick={cancelReaderImport}>Cancel</button>
+                            </div>
+                        </div>
+                    {/if}
+                    {#if readerImportMessage}<p class="muted">{readerImportMessage}</p>{/if}
                 </div>
                 {#if pendingEncryptedText}
                     <div class="data-row" style="flex-direction:column;align-items:flex-start;gap:8px">
