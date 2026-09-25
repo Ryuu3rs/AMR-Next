@@ -91,6 +91,7 @@ export async function applyRemoteItem(item: SyncItem): Promise<boolean> {
                 : {}),
             ...(typeof item.latestChapterNumber === "number" ? { latestChapterNumber: item.latestChapterNumber } : {}),
             ...(typeof item.lastReadAt === "number" ? { lastReadAt: item.lastReadAt } : {}),
+            ...(item.workId ? { workId: item.workId } : {}),
             ...syncedEditableFields(item),
             updatedAt: item.clientUpdatedAt
         })
@@ -117,6 +118,7 @@ export async function applyRemoteItem(item: SyncItem): Promise<boolean> {
             : {}),
         ...(typeof item.latestChapterNumber === "number" ? { latestChapterNumber: item.latestChapterNumber } : {}),
         ...(typeof item.lastReadAt === "number" ? { lastReadAt: item.lastReadAt } : {}),
+        ...(item.workId ? { workId: item.workId } : {}),
         ...syncedEditableFields(item),
         addedAt: Date.now(),
         updatedAt: item.clientUpdatedAt
@@ -161,14 +163,26 @@ export async function runAccountSync(): Promise<AccountProfile> {
         let newestPushed = profile.lastPushAt
         for (let i = 0; i < items.length; i += PUSH_BATCH) {
             const batch = items.slice(i, i + PUSH_BATCH)
+            // V2 returns per-record results: rejected rows carry the newer server copy (adopt it
+            // like a pull); invalid rows never merged (log so a persistently bad row is visible).
             const result = await apiPush(token, batch)
             for (const r of result.rejected) libraryChanged = (await applyRemoteItem(r.server)) || libraryChanged
+            if (result.invalid.length > 0) console.warn("[AMR] Account sync rejected invalid items", result.invalid)
             for (const b of batch) if (!b.deleted && b.clientUpdatedAt > newestPushed) newestPushed = b.clientUpdatedAt
         }
         if (Object.keys(tombstones).length > 0) await clearTombstones(tombstones)
 
-        const pulled = await apiPull(token, profile.lastPullAt)
-        for (const item of pulled.items) libraryChanged = (await applyRemoteItem(item)) || libraryChanged
+        // Keyset pull loop: page until the server says there is no more, carrying the opaque
+        // cursor forward so a boundary write (two rows in the same millisecond) can't be skipped.
+        let cursor = profile.pullCursor
+        let serverTime = profile.lastSyncAt
+        for (;;) {
+            const page = await apiPull(token, cursor)
+            for (const item of page.items) libraryChanged = (await applyRemoteItem(item)) || libraryChanged
+            if (page.nextCursor) cursor = page.nextCursor
+            serverTime = page.serverTime
+            if (!page.hasMore) break
+        }
 
         const status = await apiAccountStatus(token).catch(() => null)
         const community = await getCommunityProfile()
@@ -176,8 +190,8 @@ export async function runAccountSync(): Promise<AccountProfile> {
         const linked = shouldLink ? await apiLinkCommunity(token, community.userId).catch(() => null) : null
         profile = await updateAccountProfile({
             lastPushAt: newestPushed,
-            lastPullAt: pulled.serverTime,
-            lastSyncAt: Date.now(),
+            ...(cursor ? { pullCursor: cursor } : {}),
+            lastSyncAt: serverTime || Date.now(),
             ...(status ? statusPatch(status) : {}),
             ...(linked?.ok ? { communityLinkedId: community.userId } : {})
         })
@@ -203,7 +217,13 @@ export const accountHandlers: HandlerMap = {
     "account:link": async request => {
         const token = request.token.trim()
         const status = await apiAccountStatus(token)
-        await updateAccountProfile({ token, ...statusPatch(status), invalid: false, lastPushAt: 0, lastPullAt: 0 })
+        await updateAccountProfile({
+            token,
+            ...statusPatch(status),
+            invalid: false,
+            lastPushAt: 0,
+            pullCursor: undefined
+        })
         await configureAccountAlarm()
         return runAccountSync()
     },

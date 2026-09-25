@@ -19,8 +19,11 @@ export type AccountProfile = {
     itemCount?: number
     // Local clock of the newest item pushed; the next push sends items updated after it.
     lastPushAt: number
-    // Server time from the last successful pull; the next pull asks for changes since it.
-    lastPullAt: number
+    // Opaque keyset cursor from the last successful V2 pull; the next pull resumes strictly after
+    // it. undefined = pull from the beginning (also the one-time full re-pull when upgrading from
+    // the V1 `since`-based sync, which is safe: applies are last-writer-wins and re-adds idempotent).
+    // Explicit `| undefined` so the link handler can reset it under exactOptionalPropertyTypes.
+    pullCursor?: string | undefined
     lastSyncAt: number
     // Set when the server rejected the token (revoked on the site). Sync stops until re-linked.
     invalid: boolean
@@ -29,7 +32,7 @@ export type AccountProfile = {
     communityLinkedId?: string
 }
 
-const defaultProfile: AccountProfile = { lastPushAt: 0, lastPullAt: 0, lastSyncAt: 0, invalid: false, autoSync: true }
+const defaultProfile: AccountProfile = { lastPushAt: 0, lastSyncAt: 0, invalid: false, autoSync: true }
 
 export async function getAccountProfile(): Promise<AccountProfile> {
     const stored = await browser.storage.local.get(ACCOUNT_KEY)
@@ -126,6 +129,11 @@ export type SyncItem = {
     noGapContinuous?: boolean | null
     deleted?: boolean
     clientUpdatedAt: number
+    // Read-only extras carried by a V2 pull / rejected-push server copy. Server-authoritative:
+    // the client never sends these (a client-sent workId is stripped server-side). workId is the
+    // canonical Work bridge (C4), null until the server resolves it; mediaType comes from the Work.
+    workId?: string | null
+    mediaType?: string | null
 }
 
 const isHttpUrl = (v: string | undefined): v is string => typeof v === "string" && /^https?:\/\//.test(v)
@@ -182,19 +190,30 @@ export function apiAccountStatus(token: string): Promise<AccountStatus> {
     return request<AccountStatus>(token, "/api/sync/status")
 }
 
+// Sync V2 (/api/sync/v2) per-record push result. `accepted` is the clientIds the server stored;
+// `rejected` lost the last-writer compare and carry the newer server copy to adopt; `invalid`
+// failed validation and never reached the merge. `?preview=1` computes the merge and writes
+// nothing (dry-run) - same shape with `preview: true`.
 export type PushResult = {
-    accepted: number
+    accepted: string[]
     rejected: Array<{ clientId: string; server: SyncItem }>
+    invalid: Array<{ clientId: string | null; issues: string[] }>
     serverTime: number
+    preview?: boolean
 }
 
-export function apiPush(token: string, items: SyncItem[]): Promise<PushResult> {
-    return request<PushResult>(token, "/api/sync/library", { method: "POST", body: JSON.stringify({ items }) })
+export function apiPush(token: string, items: SyncItem[], preview = false): Promise<PushResult> {
+    const q = preview ? "?preview=1" : ""
+    return request<PushResult>(token, `/api/sync/v2${q}`, { method: "POST", body: JSON.stringify({ items }) })
 }
 
-export function apiPull(token: string, since: number): Promise<{ items: SyncItem[]; serverTime: number }> {
-    const q = since > 0 ? `?since=${since}` : ""
-    return request(token, `/api/sync/library${q}`)
+// One keyset page of a V2 pull. Loop on `hasMore`, passing `nextCursor` back in, until it is false;
+// persist the final cursor so the next sync resumes strictly after the last row seen.
+export type PullPage = { items: SyncItem[]; nextCursor: string | null; hasMore: boolean; serverTime: number }
+
+export function apiPull(token: string, cursor?: string): Promise<PullPage> {
+    const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""
+    return request<PullPage>(token, `/api/sync/v2${q}`)
 }
 
 // Ties this device's anonymous community id (amr-api) to the account so the site can own the
