@@ -11,7 +11,7 @@
     } from "../../src/reading-status"
     import type { AppSettings } from "../../src/settings"
     import { SITE_BASE, type AccountProfile } from "../../src/account"
-    import { onDestroy, onMount } from "svelte"
+    import { onDestroy, onMount, tick } from "svelte"
     import { sendRuntimeMessage } from "../../src/runtime"
     import { runSettled } from "../../src/bulk"
     import { sourceOrigins, syncOrigins } from "../../src/permissions"
@@ -23,6 +23,7 @@
     import { repairMangahubChapterNumbers } from "../../src/handlers/updates-sources"
     import { formatUpdateFailureLog } from "../../src/updates-failure-log"
     import { communityConfigured, CONSENT_VERSION } from "../../src/community"
+    import { analyticsConfigured } from "../../src/analytics-usage"
     import {
         PRIVACY_POLICY,
         DATA_COLLECTED,
@@ -75,6 +76,9 @@
     let siteReachable = $state(false)
     function openWeebSite() {
         void browser.tabs.create({ url: WEEB_SITE_URL })
+    }
+    function openWeebSignUp() {
+        void browser.tabs.create({ url: `${WEEB_SITE_URL}/join` })
     }
 
     // Settings page: rail + filter + scroll-spy. Sections are literal markup below; this
@@ -1502,12 +1506,44 @@
     let accountToken = $state("")
     let accountBusy = $state(false)
     let accountMessage = $state("")
+    const accountLinked = $derived(Boolean(accountProfile?.token))
+    // The Settings sign-in nudge is shown until the user links an account or dismisses it.
+    // Dismissal persists so it never nags on every visit; the sidebar Sign-in button stays.
+    let accountNudgeDismissed = $state(false)
+    const showAccountNudge = $derived(!accountLinked && !accountNudgeDismissed)
+    // A one-off "make an account to auto-back-up" hint shown right after a manual import - the
+    // highest-intent moment to convert. Not persisted; clears when they act or leave Data.
+    let showImportBackupHint = $state(false)
+
+    function dismissAccountNudge() {
+        accountNudgeDismissed = true
+        void browser.storage.local.set({ accountNudgeDismissed: true })
+    }
+    // Jump to the account section in Settings (token paste + link-device + site link live there).
+    async function openAccount() {
+        activeSection = "Settings"
+        await tick()
+        jumpToSettings("account")
+    }
+    // Start sign-up: open the weeb.ltd sign-up page (where they create an account and get their
+    // link code) in a focused new tab, and ready the paste field in the extension underneath so
+    // it's waiting for them the moment they come back with the code.
+    function startSignIn() {
+        openWeebSignUp()
+        void openAccount()
+    }
 
     async function loadAccountStatus() {
         try {
             accountProfile = await sendRuntimeMessage<AccountProfile>({ type: "account:status" })
         } catch {
             // account link optional
+        }
+        try {
+            const stored = await browser.storage.local.get("accountNudgeDismissed")
+            accountNudgeDismissed = stored["accountNudgeDismissed"] === true
+        } catch {
+            // default to showing the nudge
         }
     }
 
@@ -2402,6 +2438,9 @@
         } else {
             dataMessage = `Imported ${result.manga} manga and ${result.chapters} chapters.`
         }
+        // Highest-intent moment to convert: they just showed they care about their list. Nudge a
+        // free account for automatic cloud backup - only if they aren't already linked.
+        if (!accountLinked) showImportBackupHint = true
         void backfillCovers()
     }
 
@@ -3781,6 +3820,13 @@
             <span class="sidebar-version">v{currentVersion}{buildId ? ` · ${buildId}` : ""}</span>
             <button
                 type="button"
+                class="signin-btn signin-footer"
+                class:linked={accountLinked}
+                onclick={() => (accountLinked ? void openAccount() : startSignIn())}>
+                {#if accountLinked}{accountProfile?.name ?? "Account"}{:else}Sign in{/if}
+            </button>
+            <button
+                type="button"
                 class="discord-btn"
                 onclick={() => void browser.tabs.create({ url: "https://discord.gg/mVx4W4AQKx" })}>
                 <svg
@@ -4208,6 +4254,16 @@
                         </p>
                     {:else}
                         <div class="disc-empty">
+                            {#if !accountLinked}
+                                <div class="disc-signup">
+                                    <p class="disc-signup-title">Never lose your library</p>
+                                    <p class="muted">
+                                        A free weeb.ltd account syncs your list across devices and keeps an automatic
+                                        cloud backup, so a reinstall or new browser never loses your progress.
+                                    </p>
+                                    <button type="button" onclick={startSignIn}>Create a free account</button>
+                                </div>
+                            {/if}
                             <h2>Start your library</h2>
                             <p class="muted">
                                 Recommendations grow from what you read. Add one of these editor picks to get going, or
@@ -5972,6 +6028,19 @@
             {:else if dataMessage}
                 <p class="notice" role="status" aria-live="polite">{dataMessage}</p>
             {/if}
+            {#if showImportBackupHint && !accountLinked}
+                <div class="import-backup-hint">
+                    <span
+                        >Keep this safe: a free weeb.ltd account backs your library up automatically and syncs it across
+                        devices.</span>
+                    <div class="account-nudge-actions">
+                        <button type="button" onclick={startSignIn}>Create a free account</button>
+                        <button type="button" class="btn-outline" onclick={() => (showImportBackupHint = false)}>
+                            Not now
+                        </button>
+                    </div>
+                </div>
+            {/if}
 
             <ImportReconcile
                 mangas={library.filter(m => reconcileIds.includes(m.id) && !isReadOnlyDiscoverAdd(m))}
@@ -6284,6 +6353,23 @@
             {#if anilistMessage}<p class="notice">{anilistMessage}</p>{/if}
         {:else}
             <h1>Settings</h1>
+            {#if showAccountNudge}
+                <div class="account-nudge">
+                    <button type="button" class="account-nudge-x" aria-label="Dismiss" onclick={dismissAccountNudge}
+                        >✕</button>
+                    <p class="account-nudge-title">Get more from your library</p>
+                    <p class="muted">
+                        A free weeb.ltd account syncs your library across devices, keeps an automatic cloud backup, and
+                        unlocks community features. Recommended.
+                    </p>
+                    <div class="account-nudge-actions">
+                        <button type="button" onclick={startSignIn}>Create a free account</button>
+                        <button type="button" class="btn-outline" onclick={() => jumpToSettings("account")}>
+                            I already have a code
+                        </button>
+                    </div>
+                </div>
+            {/if}
             <div class="settings-shell">
                 <aside class="settings-rail">
                     <input
@@ -6835,7 +6921,11 @@
                         hidden={!sectionVisible("community")}>
                         <header>
                             <h2>Privacy &amp; community</h2>
-                            <p class="muted">Opt-in only. Nothing leaves this device until you switch it on here.</p>
+                            <p class="muted">
+                                Community features are opt-in. Anonymous usage analytics is on by default (legitimate
+                                interest) and can be turned off here; it never includes your titles, reading, or
+                                account.
+                            </p>
                         </header>
                         <div class="settings-grid">
                             {#if !communityConfigured}
@@ -6857,6 +6947,26 @@
                                     <span class="track"></span>
                                 </label>
                             </div>
+                            {#if analyticsConfigured}
+                                <div class="settings-row" hidden={!settingMatches("Usage analytics")}>
+                                    <div>
+                                        <p class="row-label">Usage analytics</p>
+                                        <p class="muted">
+                                            Anonymous counts of which screens and features you use, plus app version, to
+                                            help improve the app. On by default; never your titles, reading, notes, or
+                                            account. Turn it off any time.
+                                        </p>
+                                    </div>
+                                    <label class="toggle">
+                                        <input
+                                            type="checkbox"
+                                            checked={settings?.usageAnalytics ?? true}
+                                            onchange={e =>
+                                                void updateSetting({ usageAnalytics: e.currentTarget.checked })} />
+                                        <span class="track"></span>
+                                    </label>
+                                </div>
+                            {/if}
                             <div
                                 class="settings-row"
                                 style="flex-direction:column;align-items:flex-start;gap:6px"

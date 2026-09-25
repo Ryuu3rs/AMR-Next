@@ -58,6 +58,15 @@ export type AppSettings = {
     // hide automatically whenever the site is unreachable, so a dead/retired site never leaves
     // a broken button behind.
     showCommunity: boolean
+    // Anonymous usage analytics (which screens/features are used, capture success, app version).
+    // On by default on a legitimate-interest basis (see ECO_ANALYTICS_LIA.md); never carries
+    // titles, genres, URLs, or any content. Quiet opt-out - turning it off stops sending
+    // immediately. Also suppressed when a linked account has opted out.
+    usageAnalytics: boolean
+    // Chrome-only gate: the Chrome Web Store requires affirmative consent BEFORE collection, so on
+    // the Chrome build nothing is sent until the user makes a first-run choice (true once chosen).
+    // Ignored on Firefox, where default-on + this opt-out is store-compliant.
+    usageAnalyticsChoice: boolean
 }
 
 const settingsKey = "settings"
@@ -89,7 +98,9 @@ export const defaultSettings: AppSettings = {
     searchDisabledSourceIds: [],
     discoverDiversify: true,
     startPage: "discover",
-    showCommunity: true
+    showCommunity: true,
+    usageAnalytics: true,
+    usageAnalyticsChoice: false
 }
 
 export async function getSettings(): Promise<AppSettings> {

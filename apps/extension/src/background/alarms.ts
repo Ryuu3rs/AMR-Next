@@ -1,5 +1,6 @@
 import { getAccountProfile } from "../account"
 import { getAniListConfig } from "../anilist"
+import { analyticsConfigured } from "../analytics-usage"
 import { getCommunityProfile } from "../community"
 import { getSettings } from "../settings"
 import { getSyncConfig } from "../sync"
@@ -11,6 +12,7 @@ export const anilistAlarmName = "anilist-sync"
 export const extensionUpdateAlarmName = "check-extension-update"
 export const backupAlarmName = "amr-daily-backup"
 export const accountAlarmName = "account-sync"
+export const analyticsAlarmName = "usage-analytics"
 
 export const EXTENSION_UPDATE_INTERVAL_HOURS = 24
 export const GITHUB_RELEASES_URL = "https://api.github.com/repos/Ryuu3rs/AMR-Next/releases/latest"
@@ -86,4 +88,14 @@ export async function configureAccountAlarm(): Promise<void> {
 
 export async function configureExtensionUpdateAlarm(): Promise<void> {
     await ensureAlarm(extensionUpdateAlarmName, EXTENSION_UPDATE_INTERVAL_HOURS * 60)
+}
+
+// Usage analytics flush runs every 6h; the flush itself gates on the Settings toggle and the
+// Chrome first-run choice, so the alarm exists only when a build actually has an endpoint.
+export async function configureAnalyticsAlarm(): Promise<void> {
+    if (analyticsConfigured) {
+        await ensureAlarm(analyticsAlarmName, 6 * 60)
+    } else {
+        await browser.alarms.clear(analyticsAlarmName)
+    }
 }
