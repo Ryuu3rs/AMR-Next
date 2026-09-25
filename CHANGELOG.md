@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.24.0...v0.25.0) (2026-09-25)
+
+
+### Features
+
+* **import:** import Mihon/Tachiyomi libraries for tracking ([#83](https://github.com/Ryuu3rs/AMR-Next/issues/83)) ([6be373a](https://github.com/Ryuu3rs/AMR-Next/commit/6be373a48bfa2bc1e2528a51a91636de8bb83939))
+
 ## [0.24.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.23.0...v0.24.0) (2026-09-25)
 
 
