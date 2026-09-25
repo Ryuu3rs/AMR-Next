@@ -74,6 +74,7 @@ export const MUTATION_SCOPES: Partial<Record<RuntimeRequest["type"], LiveScope[]
     "library:note": ["library"],
     "library:reading-prefs": ["library"],
     "data:import": ["all"],
+    "import:reader": ["library"],
     "data:seed": ["all"],
     "data:backup:restore": ["all"],
     "sync:pull": ["all"],

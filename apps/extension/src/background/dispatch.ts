@@ -7,6 +7,7 @@ import { readerHandlers } from "../handlers/reader"
 import { downloadsBookmarksAnalyticsHandlers } from "../handlers/downloads-bookmarks-analytics"
 import { suggestionsHandlers } from "../handlers/suggestions"
 import { accountHandlers } from "../handlers/account"
+import { importHandlers } from "../handlers/import"
 import type { HandlerMap } from "./handler-types"
 
 // Merged dispatch table for every RuntimeRequest variant. TypeScript's structural
@@ -24,7 +25,8 @@ export const handlers: HandlerMap = {
     ...readerHandlers,
     ...downloadsBookmarksAnalyticsHandlers,
     ...suggestionsHandlers,
-    ...accountHandlers
+    ...accountHandlers,
+    ...importHandlers
 }
 
 // Exposed only for the exhaustiveness/duplicate-key test - not used by the dispatcher.
@@ -37,5 +39,6 @@ export const handlerGroups = {
     readerHandlers,
     downloadsBookmarksAnalyticsHandlers,
     suggestionsHandlers,
-    accountHandlers
+    accountHandlers,
+    importHandlers
 }

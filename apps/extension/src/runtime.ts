@@ -252,6 +252,12 @@ export const runtimeRequestSchema = z.discriminatedUnion("type", [
             usageAnalytics: z.boolean().optional(),
             usageAnalyticsChoice: z.boolean().optional()
         })
+    }),
+    z.object({
+        type: z.literal("import:reader"),
+        format: z.string().min(1),
+        dataB64: z.string().min(1),
+        preview: z.boolean().optional()
     })
 ])
 
