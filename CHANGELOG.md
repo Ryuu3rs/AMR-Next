@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.22.0...v0.23.0) (2026-09-25)
+
+
+### Features
+
+* **privacy:** default-on usage analytics + canonical privacy policy ([#79](https://github.com/Ryuu3rs/AMR-Next/issues/79)) ([3693775](https://github.com/Ryuu3rs/AMR-Next/commit/369377559be6c1b1f9fd6056f05e074f3fa619e6))
+
 ## [0.22.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.21.1...v0.22.0) (2026-09-21)
 
 
