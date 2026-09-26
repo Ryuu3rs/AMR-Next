@@ -19,6 +19,19 @@ export function getSourceById(sourceId: string) {
     return sourceRegistry.get(sourceId)
 }
 
+// The ids of every registered source whose manifest declares the "pages" capability.
+// Used as a rankCandidates tie-break (a source that can serve pages in-app ranks
+// above a chapters-only mirror). Computed from the registry so background-context
+// callers don't need to round-trip through the sources:list message.
+export function getPagesCapableSourceIds(): Set<string> {
+    return new Set(
+        sourceRegistry
+            .list()
+            .filter(adapter => adapter.manifest.capabilities.includes("pages"))
+            .map(adapter => adapter.manifest.id)
+    )
+}
+
 const wrapFetch = (requestUrl: string, init: Parameters<typeof fetch>[1]) =>
     fetch(requestUrl, init).then(r => ({
         ok: r.ok,

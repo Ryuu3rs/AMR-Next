@@ -1,14 +1,29 @@
 import { describe, expect, it } from "vitest"
 import {
+    candidateSortByChapter,
     cleanQuery,
+    dedupeCandidates,
     filterEligibleCandidates,
     formatReconcileLog,
     matchReadChapterByUrl,
     matchReadChapterId,
+    normTitle,
     rankCandidates,
+    scoreOverlapFallback,
+    selectCloseMatches,
+    selectExactMatches,
+    wordOverlap,
+    type MatchableResult,
     type RankableCandidate,
     type TitleLogEntry
 } from "./reconcile-match"
+
+// A search-result-shaped fixture for the title-matching helpers. Only the three
+// MatchableResult fields matter; the rest mirror a real SourceSearchResult so the
+// helpers are exercised against a realistic object shape.
+function res(title: string, sourceId = "src", latestChapter?: string): MatchableResult {
+    return { title, sourceId, ...(latestChapter !== undefined ? { latestChapter } : {}) }
+}
 
 describe("matchReadChapterByUrl", () => {
     it("matches on exact URL", () => {
@@ -402,5 +417,121 @@ describe("formatReconcileLog", () => {
         expect(out).toContain("ranked order (actually attempted): mangadex, asura")
         expect(out).toContain("benched (dropped by repeat-failure threshold): kagane")
         expect(out).toContain("[auto] mangadex")
+    })
+})
+
+describe("normTitle", () => {
+    it("lowercases and collapses punctuation/separators to single spaces", () => {
+        expect(normTitle("  One-Piece: The_Movie!!  ")).toBe("one piece the movie")
+    })
+
+    it("returns an empty string for punctuation-only input", () => {
+        expect(normTitle("---")).toBe("")
+    })
+})
+
+describe("wordOverlap", () => {
+    it("scores an identical significant-word set as 1", () => {
+        expect(wordOverlap("vinland saga", "vinland saga")).toBe(1)
+    })
+
+    it("measures overlap against the shorter word set so a long form still matches its short form", () => {
+        // "vinland" is the only word > 2 chars not a stop word in the shorter set,
+        // and it appears in the longer set - full overlap.
+        expect(wordOverlap("vinland", "the vinland saga official edition")).toBe(1)
+    })
+
+    it("ignores stop words and words of length <= 2", () => {
+        // Only "cat" is significant on each side; "the"/"of"/"a"/"an" and 2-char
+        // words drop out, leaving a perfect overlap of the one real word.
+        expect(wordOverlap("the cat of an", "a cat")).toBe(1)
+    })
+
+    it("returns a partial ratio for a partial overlap", () => {
+        // shorter set {alpha, beta}; longer {alpha, gamma, delta} - 1 of 2 shared.
+        expect(wordOverlap("alpha beta", "alpha gamma delta")).toBe(0.5)
+    })
+
+    it("returns 0 when the shorter significant-word set is empty", () => {
+        expect(wordOverlap("of to", "vinland saga")).toBe(0)
+    })
+})
+
+describe("candidateSortByChapter", () => {
+    it("orders higher chapter counts first and treats missing/'?' as 0", () => {
+        const sorted = [res("a", "s", "10"), res("b", "s"), res("c", "s", "?"), res("d", "s", "55")].sort(
+            candidateSortByChapter
+        )
+        expect(sorted.map(r => r.title)).toEqual(["d", "a", "b", "c"])
+    })
+})
+
+describe("dedupeCandidates", () => {
+    it("collapses near-duplicate titles within one source, keeping the higher chapter count", () => {
+        const out = dedupeCandidates([res("One Piece", "mangadex", "1000"), res("One Piece!", "mangadex", "1050")])
+        expect(out).toHaveLength(1)
+        expect(out[0]!.latestChapter).toBe("1050")
+    })
+
+    it("prefers a real chapter number over a missing one when collapsing a duplicate", () => {
+        const out = dedupeCandidates([res("One Piece", "mangadex"), res("One Piece", "mangadex", "1050")])
+        expect(out).toHaveLength(1)
+        expect(out[0]!.latestChapter).toBe("1050")
+    })
+
+    it("never merges the same title across different sources (legitimate mirrors)", () => {
+        const out = dedupeCandidates([res("One Piece", "mangadex", "1000"), res("One Piece", "asura", "1000")])
+        expect(out.map(r => r.sourceId)).toEqual(["mangadex", "asura"])
+    })
+
+    it("keeps genuinely different series from one source", () => {
+        const out = dedupeCandidates([res("Naruto", "mangadex", "700"), res("Bleach", "mangadex", "686")])
+        expect(out).toHaveLength(2)
+    })
+})
+
+describe("selectExactMatches", () => {
+    it("returns only results whose normalized title equals the wanted title", () => {
+        const out = selectExactMatches(
+            [res("One Piece", "a"), res("One Piece: Digital Colored", "b"), res("ONE  PIECE!", "c")],
+            "one piece"
+        )
+        expect(out.map(r => r.sourceId)).toEqual(["a", "c"])
+    })
+})
+
+describe("selectCloseMatches", () => {
+    it("keeps exact, substring, and >= 0.6 overlap matches; drops unrelated titles", () => {
+        const out = selectCloseMatches(
+            [
+                res("One Piece", "exact"),
+                res("One Piece: Digital Colored Comics", "superstring"),
+                res("Naruto", "unrelated")
+            ],
+            "one piece"
+        )
+        expect(out.map(r => r.sourceId).sort()).toEqual(["exact", "superstring"])
+    })
+
+    it("returns nothing when no result is close enough", () => {
+        expect(selectCloseMatches([res("Bleach", "a"), res("Naruto", "b")], "one piece")).toEqual([])
+    })
+})
+
+describe("scoreOverlapFallback", () => {
+    it("drops zero-overlap results and orders by descending overlap score", () => {
+        // want has three significant words; "two" shares 2/3, "three" shares 3/3, and
+        // "zero" shares none (dropped). Distinct scores exercise the score ordering
+        // itself rather than the chapter-count tiebreak.
+        const out = scoreOverlapFallback(
+            [res("alpha beta delta", "two"), res("zeta eta", "zero"), res("alpha beta gamma", "three")],
+            "alpha beta gamma"
+        )
+        expect(out.map(r => r.sourceId)).toEqual(["three", "two"])
+    })
+
+    it("caps the fallback list at 10 results", () => {
+        const many = Array.from({ length: 15 }, (_, i) => res(`Solo Leveling ${i}`, `s${i}`, String(i)))
+        expect(scoreOverlapFallback(many, "solo leveling")).toHaveLength(10)
     })
 })

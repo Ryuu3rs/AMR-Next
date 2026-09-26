@@ -1,5 +1,6 @@
 import type { MangaStatus, MetadataProvider, MetadataQuery, MetadataResult } from "./provider"
 import {
+    buildSearchTitles,
     mapRecommendations,
     RECOMMENDATIONS_QUERY,
     type RecCandidate,
@@ -52,6 +53,7 @@ function mapStatus(status: string | null | undefined): MangaStatus {
 type AniListMedia = {
     id: number
     title?: { romaji?: string | null; english?: string | null; native?: string | null } | null
+    synonyms?: (string | null)[] | null
     status?: string | null
     format?: string | null
     genres?: (string | null)[] | null
@@ -79,6 +81,7 @@ export function mapAniListMedia(media: AniListMedia): MetadataResult {
 const MEDIA_FIELDS = `
     id
     title { romaji english native }
+    synonyms
     status
     format
     genres
@@ -129,6 +132,18 @@ export const anilistProvider: MetadataProvider = {
             return data?.Media ? mapAniListMedia(data.Media) : null
         } catch {
             return null
+        }
+    },
+
+    async resolveSearchTitles(anilistId: number): Promise<string[]> {
+        try {
+            const data = await query<{ Media: AniListMedia | null }>(
+                `query ($id: Int) { Media(id: $id, type: MANGA) { id title { romaji english native } synonyms } }`,
+                { id: anilistId }
+            )
+            return data?.Media ? buildSearchTitles(data.Media) : []
+        } catch {
+            return []
         }
     },
 

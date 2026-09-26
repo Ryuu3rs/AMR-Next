@@ -35,6 +35,12 @@ export interface MetadataProvider {
     readonly name: string
     resolve(query: MetadataQuery): Promise<MetadataResult | null>
     getByAnilistId?(id: number): Promise<MetadataResult | null>
+    // Every Latin search title AniList knows for a media id, best-first (english,
+    // romaji, then synonyms). Lets the source resolver try tracker-authoritative
+    // title variants against source search when a scanlation site indexes a title
+    // differently from the mirror it was added under. Returns [] on no match or any
+    // network/parse failure so callers can fall back to the local title.
+    resolveSearchTitles?(anilistId: number): Promise<string[]>
     // Titles that "readers who liked this also liked", for the Suggestions engine.
     // Returns [] on no match or any network/parse failure so callers can fall through.
     getRecommendations?(id: number): Promise<RecCandidate[]>

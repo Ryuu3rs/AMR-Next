@@ -6,6 +6,106 @@ export function cleanQuery(title: string): string {
     return title.replace(/\s*[(\[«][^)\]»]*\bofficial\b[^)\]»]*[)\]»]/gi, "").trim()
 }
 
+// The minimal shape the title-matching helpers below need from a search result:
+// a display title, its owning source (so per-source dedupe never merges mirrors),
+// and an optional chapter-count label used purely as a sort tiebreak.
+export type MatchableResult = { title: string; sourceId: string; latestChapter?: string }
+
+// Normalizes a title to a lowercase, alphanumeric-only, single-spaced form so
+// punctuation, casing and separator differences between two mirrors' titles don't
+// defeat an equality/substring/overlap comparison.
+export function normTitle(s: string): string {
+    return s
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+}
+
+// Short, structurally meaningless words that would inflate word-overlap scores
+// (every title shares "the"/"of") - excluded before overlap is measured.
+const STOP_WORDS = new Set(["a", "an", "the", "of", "in", "to", "and", "or", "for", "on"])
+
+// Jaccard-style overlap of the significant words of two already-normalized titles,
+// measured against the SHORTER title's word set so a long official title still
+// scores 1.0 against its own short form. Returns 0 when the shorter set is empty.
+export function wordOverlap(a: string, b: string): number {
+    const words = (s: string) => new Set(s.split(" ").filter(w => w.length > 2 && !STOP_WORDS.has(w)))
+    const wa = words(a)
+    const wb = words(b)
+    const [shorter, longer] = wa.size <= wb.size ? [wa, wb] : [wb, wa]
+    if (shorter.size === 0) return 0
+    let shared = 0
+    for (const w of shorter) if (longer.has(w)) shared++
+    return shared / shorter.size
+}
+
+// Descending by parsed chapter count; a "?"/missing/non-numeric label sorts as 0.
+export function candidateSortByChapter(a: MatchableResult, b: MatchableResult): number {
+    return (parseFloat(b.latestChapter ?? "0") || 0) - (parseFloat(a.latestChapter ?? "0") || 0)
+}
+
+// Same-source search endpoints can return duplicate/near-duplicate entries for one
+// underlying series - different sourceMangaIds under slightly different title
+// variants or translations (a catalog-data issue on the source's end). Collapse
+// those per-source so a candidate list doesn't show the same series twice; entries
+// from DIFFERENT sources are never merged even when titles match closely, since
+// that's a legitimate multi-mirror scenario. When a pair differs on chapter count,
+// keep whichever result has a real (non-"?"/non-missing) number.
+export function dedupeCandidates<T extends MatchableResult>(results: T[]): T[] {
+    const kept: T[] = []
+    for (const result of results) {
+        const norm = normTitle(result.title)
+        const dupIdx = kept.findIndex(k => {
+            if (k.sourceId !== result.sourceId) return false
+            const kNorm = normTitle(k.title)
+            return kNorm === norm || kNorm.includes(norm) || norm.includes(kNorm) || wordOverlap(kNorm, norm) >= 0.6
+        })
+        if (dupIdx === -1) {
+            kept.push(result)
+            continue
+        }
+        const existing = kept[dupIdx]!
+        const existingHasChapter = !!existing.latestChapter
+        const candidateHasChapter = !!result.latestChapter
+        if (!existingHasChapter && candidateHasChapter) {
+            kept[dupIdx] = result
+        } else if (existingHasChapter && candidateHasChapter) {
+            const existingNum = parseFloat(existing.latestChapter ?? "0") || 0
+            const candidateNum = parseFloat(result.latestChapter ?? "0") || 0
+            if (candidateNum > existingNum) kept[dupIdx] = result
+        }
+    }
+    return kept
+}
+
+// The results whose normalized title exactly equals the wanted title.
+export function selectExactMatches<T extends MatchableResult>(results: T[], want: string): T[] {
+    return results.filter(r => normTitle(cleanQuery(r.title)) === want)
+}
+
+// Results that plausibly name the wanted series: exact, substring either way, or a
+// >= 0.6 word overlap. The stricter exact/eligibility gates run downstream on this
+// pre-narrowed set.
+export function selectCloseMatches<T extends MatchableResult>(all: T[], want: string): T[] {
+    return all.filter(r => {
+        const t = normTitle(cleanQuery(r.title))
+        return t === want || t.includes(want) || want.includes(t) || wordOverlap(t, want) >= 0.6
+    })
+}
+
+// Fallback ranking used when nothing clears the close-match bar: score every result
+// by word overlap with the wanted title, drop zero-overlap results, order by score
+// (chapter count breaking ties), dedupe per source, and cap at 10 for a manual pick.
+export function scoreOverlapFallback<T extends MatchableResult>(all: T[], want: string): T[] {
+    return dedupeCandidates(
+        all
+            .map(r => ({ r, score: wordOverlap(normTitle(cleanQuery(r.title)), want) }))
+            .filter(({ score }) => score > 0)
+            .sort((a, b) => b.score - a.score || candidateSortByChapter(a.r, b.r))
+            .map(({ r }) => r)
+    ).slice(0, 10)
+}
+
 // After a source switch the old lastReadChapterId points at a now-deleted chapter
 // row from the previous mirror. Re-point it at the equivalent chapter in the new
 // mirror by the source-independent read NUMBER: the chapter with the greatest

@@ -27,7 +27,7 @@ export type RecCandidate = {
     searchTitles?: string[]
 }
 
-type RecMedia = {
+export type RecMedia = {
     id?: number | null
     title?: { romaji?: string | null; english?: string | null; native?: string | null } | null
     synonyms?: (string | null)[] | null
@@ -38,8 +38,11 @@ type RecMedia = {
 }
 
 // Latin-script titles only: a native (Hangul/Kanji) string never matches a scanlation site's
-// index, so it's not a useful search term. english/romaji/synonyms are.
-function buildSearchTitles(media: RecMedia): string[] {
+// index, so it's not a useful search term. english/romaji/synonyms are. Best-first
+// (english, then romaji, then synonyms), deduped case-insensitively, capped at 6.
+// Shared with the source resolver so tracker-driven source lookups derive the same
+// variant order the suggestions engine uses.
+export function buildSearchTitles(media: RecMedia): string[] {
     const raw = [media.title?.english, media.title?.romaji, ...(media.synonyms ?? [])]
     const out: string[] = []
     const seen = new Set<string>()
