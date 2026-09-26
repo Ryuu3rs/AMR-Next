@@ -5,6 +5,13 @@
     import { untrack, onMount } from "svelte"
     import {
         cleanQuery,
+        normTitle,
+        wordOverlap,
+        dedupeCandidates,
+        candidateSortByChapter,
+        selectExactMatches,
+        selectCloseMatches,
+        scoreOverlapFallback,
         rankCandidates,
         filterEligibleCandidates,
         formatReconcileLog,
@@ -140,13 +147,6 @@
         return cause instanceof Error ? cause.message : String(cause)
     }
 
-    function normTitle(s: string): string {
-        return s
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, " ")
-            .trim()
-    }
-
     // Sources whose adapter manifest declares the "pages" capability, fetched once
     // from sources:list rather than plumbed through the search response schema.
     // Used purely as a rankCandidates tie-breaker (see reconcile-match.ts) - the
@@ -176,18 +176,6 @@
         void ensureSourcesList()
     })
 
-    const STOP_WORDS = new Set(["a", "an", "the", "of", "in", "to", "and", "or", "for", "on"])
-    function wordOverlap(a: string, b: string): number {
-        const words = (s: string) => new Set(s.split(" ").filter(w => w.length > 2 && !STOP_WORDS.has(w)))
-        const wa = words(a),
-            wb = words(b)
-        const [shorter, longer] = wa.size <= wb.size ? [wa, wb] : [wb, wa]
-        if (shorter.size === 0) return 0
-        let shared = 0
-        for (const w of shorter) if (longer.has(w)) shared++
-        return shared / shorter.size
-    }
-
     // sendRuntimeMessage() rejects with whatever message the background dispatcher
     // forwarded verbatim (see src/background/handler-types.ts's failure()) - for
     // network-layer failures (a source timing out, 403ing, etc.) that's raw debug
@@ -202,41 +190,6 @@
         const raw = cause instanceof Error ? cause.message : ""
         if (!raw || RAW_ERROR_PATTERN.test(raw)) return fallback
         return raw
-    }
-
-    // Same-source search endpoints can return duplicate/near-duplicate entries for
-    // one underlying series - different sourceMangaIds under slightly different
-    // title variants or translations (a catalog-data issue on the source's end,
-    // not something this UI can correct). Collapse those per-source so the
-    // candidate list doesn't show the same series twice; entries from DIFFERENT
-    // sources are never merged even when titles match closely, since that's a
-    // legitimate multi-mirror scenario. When a pair differs on chapter count,
-    // keep whichever result has a real (non-"?"/non-missing) number.
-    function dedupeCandidates(results: SearchResult[]): SearchResult[] {
-        const kept: SearchResult[] = []
-        for (const result of results) {
-            const norm = normTitle(result.title)
-            const dupIdx = kept.findIndex(k => {
-                if (k.sourceId !== result.sourceId) return false
-                const kNorm = normTitle(k.title)
-                return kNorm === norm || kNorm.includes(norm) || norm.includes(kNorm) || wordOverlap(kNorm, norm) >= 0.6
-            })
-            if (dupIdx === -1) {
-                kept.push(result)
-                continue
-            }
-            const existing = kept[dupIdx]!
-            const existingHasChapter = !!existing.latestChapter
-            const candidateHasChapter = !!result.latestChapter
-            if (!existingHasChapter && candidateHasChapter) {
-                kept[dupIdx] = result
-            } else if (existingHasChapter && candidateHasChapter) {
-                const existingNum = parseFloat(existing.latestChapter ?? "0") || 0
-                const candidateNum = parseFloat(result.latestChapter ?? "0") || 0
-                if (candidateNum > existingNum) kept[dupIdx] = result
-            }
-        }
-        return kept
     }
 
     async function dismissManual(manga: LibraryManga) {
@@ -359,23 +312,12 @@
             }
             entry.rawResultCount = all.length
             const want = normTitle(cleanQuery(manga.title))
-            const sortByChapter = (a: SearchResult, b: SearchResult) =>
-                (parseFloat(b.latestChapter ?? "0") || 0) - (parseFloat(a.latestChapter ?? "0") || 0)
-            const close = all.filter(r => {
-                const t = normTitle(cleanQuery(r.title))
-                return t === want || t.includes(want) || want.includes(t) || wordOverlap(t, want) >= 0.6
-            })
+            const close = selectCloseMatches(all, want)
             entry.closeMatchCount = close.length
             if (close.length > 0) {
-                card.results = dedupeCandidates(close).sort(sortByChapter)
+                card.results = dedupeCandidates(close).sort(candidateSortByChapter)
             } else if (all.length > 0) {
-                const scored = dedupeCandidates(
-                    all
-                        .map(r => ({ r, score: wordOverlap(normTitle(cleanQuery(r.title)), want) }))
-                        .filter(({ score }) => score > 0)
-                        .sort((a, b) => b.score - a.score || sortByChapter(a.r, b.r))
-                        .map(({ r }) => r)
-                ).slice(0, 10)
+                const scored = scoreOverlapFallback(all, want)
                 card.results = scored
                 if (scored.length === 0) {
                     card.message = noLiveSourceMessage(manga.title)
@@ -412,7 +354,7 @@
         await ensureSourcesList()
 
         const want = normTitle(cleanQuery(manga.title))
-        const exactMatches = card.results.filter(r => normTitle(cleanQuery(r.title)) === want)
+        const exactMatches = selectExactMatches(card.results, want)
         // Preserve the old single-result >=85% word-overlap fallback for near-title
         // matches that don't normalize to an exact match, but keep it subject to the
         // exact same downstream eligibility/safety filters as an exact match - no
