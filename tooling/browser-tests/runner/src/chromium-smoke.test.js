@@ -16,7 +16,7 @@ test("Chromium loads the extension popup and app", async () => {
 
         const popup = await context.newPage()
         await popup.goto(`chrome-extension://${extensionId}/popup.html`)
-        await expect(popup.getByRole("heading", { name: "All Mangas Reader" })).toBeVisible()
+        await expect(popup.getByRole("heading", { name: "StoryHoard" })).toBeVisible()
         // Opened directly, the active tab is not a supported manga page and the library is empty,
         // so the popup shows its empty-library state.
         await expect(popup.getByText("Your library is empty.")).toBeVisible()

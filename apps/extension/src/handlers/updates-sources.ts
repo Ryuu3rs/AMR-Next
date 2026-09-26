@@ -513,7 +513,7 @@ export async function checkExtensionUpdate(force = false): Promise<void> {
         if (!latestVersion) return
         const currentVersion = browser.runtime.getManifest().version
         // Pick the release asset that matches THIS build's browser (assets are named
-        // amrextension-<v>-chrome.zip / -firefox.zip) so the in-app "Download update"
+        // storyhoard-<v>-chrome.zip / -firefox.zip) so the in-app "Download update"
         // button grabs the right one without the user hunting on GitHub. Edge and any
         // other Chromium build take the chrome zip.
         const wantSuffix = import.meta.env.BROWSER === "firefox" ? "-firefox.zip" : "-chrome.zip"
@@ -773,7 +773,7 @@ export const updatesSourcesHandlers: HandlerMap = {
             | undefined
         const url = stored?.downloadUrl
         if (!url) return { started: false as const, filename: "" }
-        const filename = stored?.downloadName || url.split("/").pop() || "amrextension.zip"
+        const filename = stored?.downloadName || url.split("/").pop() || "storyhoard.zip"
         await browser.downloads.download({ url, filename })
         return { started: true as const, filename }
     },

@@ -12,7 +12,7 @@ describe("formatUpdateFailureLog", () => {
             ],
             meta
         )
-        expect(log).toContain("AMR update-failure log")
+        expect(log).toContain("StoryHoard update-failure log")
         expect(log).toContain("checked at: 2026-07-23T00:00:00.000Z")
         expect(log).toContain("extension version: 0.13.0")
         expect(log).toContain("checked: 10 | updated: 7 | failed: 2")

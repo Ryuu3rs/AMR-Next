@@ -36,6 +36,13 @@ const BUILD_ID = gitBuildId()
 export default defineConfig({
     manifestVersion: 3,
     modules: ["@wxt-dev/module-svelte"],
+    // Release-asset filename prefix. Overrides WXT's default {{name}} (which sanitizes the
+    // @amr/extension package name to "amrextension") so built zips are storyhoard-<version>-chrome.zip
+    // / -firefox.zip / -sources.zip. The -chrome.zip / -firefox.zip SUFFIX must stay: the in-app
+    // self-updater and amo-submit.yml match on it. The @amr npm scope is unchanged.
+    zip: {
+        name: "storyhoard"
+    },
     // Fully disable Vite's modulepreload - extensions use self.importScripts, not link preload,
     // and the preload helper injects Function() + innerHTML which violate MV3 CSP and AMO policy.
     vite: () => ({
@@ -47,8 +54,8 @@ export default defineConfig({
         }
     }),
     manifest: ({ browser }) => ({
-        name: "All Mangas Reader",
-        description: "Read and track manga from supported websites.",
+        name: "StoryHoard",
+        description: "Track and read your manga and comics library across many sources.",
         // Fixed public key so "Load unpacked" always computes the SAME extension ID
         // regardless of which folder the zip is extracted to. Without this, Chrome
         // derives the id from the unpacked folder's path - since release zips are
@@ -59,6 +66,7 @@ export default defineConfig({
         // not required for unpacked loading - only needed if we ever pack/sign a .crx).
         ...(browser !== "firefox"
             ? {
+                  // FROZEN: never change - Chrome extension id + IndexedDB origin (renaming empties every library)
                   key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuFs/Zy3z054Tl4XnWmlr+CBQ8vsvnzIUNJBJ/o/ltpGW3vsNypznLvMDeDlZ3yMhNCA0ZkEuy0o2cfyQ6BtBE+wEZu/teb0AKyRzVEOVo3gy//lcPhVaewqfAVF4woFG5lWnEoOS5Fg+88NBdZp6/rY+OyjFgLv6oX1PWnCfX7WRYnAwi90KJK9c27MtgNRJfMaQGHAK4vieUdLcyObKoHxZlVQXqMQOFtUR3WJIQI3AVKg3wheXF8IvBHKHxueyR2f3C5EAWfBI7mm/F051ivpnQT9foV9ED6R9rF3mqfflHZLjqcfoq64qMCYsHkR/9J8BpWTFNfcYmSR21sCE+wIDAQAB"
               }
             : {}),
@@ -99,6 +107,7 @@ export default defineConfig({
             browser === "firefox"
                 ? {
                       gecko: {
+                          // FROZEN: never change - AMO auto-update + IndexedDB origin
                           id: "amr-next@ryuu3rs.dev",
                           strict_min_version: "142.0",
                           // Nothing is collected by default (required: none). Community

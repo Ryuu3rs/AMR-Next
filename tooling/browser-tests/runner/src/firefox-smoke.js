@@ -59,7 +59,7 @@ async function run() {
 
         await driver.get(`moz-extension://${extensionUuid}/popup.html`)
         const heading = await driver.wait(until.elementLocated(By.css("h1")), 15_000)
-        assert.equal(await heading.getText(), "All Mangas Reader")
+        assert.equal(await heading.getText(), "StoryHoard")
 
         // Opened directly, the active tab is not a supported manga page and the library is empty,
         // so the popup shows its empty-library state.

@@ -1,4 +1,4 @@
-# AMR Technical Architecture
+# StoryHoard Technical Architecture
 
 Last updated: 2026-08-09
 

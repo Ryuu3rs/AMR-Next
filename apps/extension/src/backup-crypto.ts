@@ -80,7 +80,7 @@ export async function decryptBackup(blob: string, passphrase: string): Promise<s
     try {
         envelope = JSON.parse(blob) as BackupEnvelope
     } catch {
-        throw new Error("This backup is not a valid AMR encrypted envelope.")
+        throw new Error("This backup is not a valid StoryHoard encrypted envelope.")
     }
     if (
         !envelope ||

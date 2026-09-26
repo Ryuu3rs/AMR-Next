@@ -1413,7 +1413,7 @@
     style="--spread-gap: {spreadGapPx}px; --page-width: {pageWidthPct}%">
     {#if chapter && !error && !resolving && zeroPages}
         <div class="mirror-banner">
-            <span>No reader pages available - open on site and use the AMR sidebar to navigate.</span>
+            <span>No reader pages available - open on site and use the StoryHoard sidebar to navigate.</span>
             <button type="button" class="btn-mirror" onclick={() => void openOnSiteAndTrack()}>
                 Open on site &amp; mark read
             </button>
@@ -1441,9 +1441,9 @@
                 <h1>Site not supported in reader view</h1>
                 <p>{error}</p>
                 <p class="muted">
-                    AMR doesn't have a reader adapter for this site yet, but the
-                    <strong>AMR sidebar</strong> may still work - open the chapter normally and the sidebar lets you track
-                    progress and navigate chapters while you read on the site.
+                    StoryHoard doesn't have a reader adapter for this site yet, but the
+                    <strong>StoryHoard sidebar</strong> may still work - open the chapter normally and the sidebar lets you
+                    track progress and navigate chapters while you read on the site.
                 </p>
                 {#if chapterUrl}
                     <button type="button" class="btn-mirror" onclick={() => void openOnSiteAndTrack()}>
@@ -1464,7 +1464,8 @@
                 <p>{error}</p>
                 <p class="muted">
                     The site may be temporarily down or blocking requests. Try again in a moment, or read directly on
-                    the site - the <strong>AMR sidebar</strong> will still let you track your progress and navigate chapters.
+                    the site - the <strong>StoryHoard sidebar</strong> will still let you track your progress and navigate
+                    chapters.
                 </p>
                 {#if chapterUrl}
                     <button type="button" onclick={() => void loadChapter(chapterUrl)}>Try again</button>

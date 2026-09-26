@@ -1,7 +1,7 @@
 # Source Adapter Authoring Guide
 
 How to add a new manga source (a single site, or a whole template family) to
-AMR-Next. Read this before writing any adapter code - most new sources are a
+StoryHoard. Read this before writing any adapter code - most new sources are a
 **config row**, not new code.
 
 Key files referenced throughout:
