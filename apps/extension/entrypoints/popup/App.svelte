@@ -145,7 +145,7 @@
     <header>
         <img src="/icons/icon_48.png" alt="" />
         <div class="brand">
-            <h1>All Mangas Reader</h1>
+            <h1>StoryHoard</h1>
             <p>{unreadCount > 0 ? `${unreadCount} with new chapters` : "Your library"}</p>
         </div>
         <button class="icon" type="button" onclick={openApp} title="Open the full library">Library</button>
@@ -155,7 +155,7 @@
         <section class="card">
             <span class="source">{page.sourceName ?? "Supported source"} · chapter</span>
             <button type="button" class="primary" onclick={grantAndRead} disabled={busy}>
-                {busy ? "Resolving chapter…" : "Read this chapter in AMR"}
+                {busy ? "Resolving chapter…" : "Read this chapter in StoryHoard"}
             </button>
         </section>
     {/if}

@@ -103,7 +103,7 @@ function num(n: unknown): string {
 
 export function formatUpdateFailureLog(errors: readonly UpdateFailureEntry[], meta: UpdateFailureMeta): string {
     const header = [
-        "AMR update-failure log",
+        "StoryHoard update-failure log",
         `checked at: ${isoOrUnknown(meta?.checkedAt)}`,
         `extension version: ${orPlaceholder(flatten(meta?.version), "unknown")}`,
         `checked: ${num(meta?.checked)} | updated: ${num(meta?.updated)} | failed: ${num(meta?.failed)}`

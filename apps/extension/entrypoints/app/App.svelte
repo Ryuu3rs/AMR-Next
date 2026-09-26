@@ -3888,7 +3888,7 @@
     <aside>
         <div class="brand">
             <img src="/icons/icon_48.png" alt="" />
-            <span>AMR <strong>Next</strong></span>
+            <span>Story<strong>Hoard</strong></span>
         </div>
         <nav aria-label="Main navigation">
             {#each sections as section}
@@ -3955,7 +3955,7 @@
         {/each}
         {#if extensionUpdate?.available && !updateBannerDismissed}
             <div class="update-banner" role="alert">
-                <span>AMR <strong>v{extensionUpdate.latestVersion}</strong> is available.</span>
+                <span>StoryHoard <strong>v{extensionUpdate.latestVersion}</strong> is available.</span>
                 {#if extensionUpdate.downloadUrl}
                     <button type="button" class="btn-sm" onclick={() => void downloadUpdate()}>
                         Download {isFirefoxBuild ? "Firefox" : "Chrome"} build
@@ -3994,13 +3994,13 @@
         {#if activeSection === "Discover"}
             {#if !hasPermission && !onboardingDismissed}
                 <div class="onboarding">
-                    <h2>Welcome to AMR Next</h2>
+                    <h2>Welcome to StoryHoard</h2>
                     <p class="muted">
                         Track and read manga from many sources - everything stays local in your browser.
                     </p>
                     <ol class="onboarding-steps">
                         <li>Grant access to the manga sites you use.</li>
-                        <li>Open a chapter and click “Read in AMR”, or paste a chapter URL below.</li>
+                        <li>Open a chapter and click “Read in StoryHoard”, or paste a chapter URL below.</li>
                         <li>Search across every source, or set up Gist sync under Data.</li>
                     </ol>
                     <div class="onboarding-actions">
@@ -5838,7 +5838,7 @@
                 <div class="data-row">
                     <div>
                         <p class="row-label">Restore backup</p>
-                        <p class="muted">Import a previously exported AMR backup file (plain or encrypted).</p>
+                        <p class="muted">Import a previously exported StoryHoard backup file (plain or encrypted).</p>
                     </div>
                     <label class="file-label">
                         Import
@@ -6291,7 +6291,7 @@
                                         rel="noopener noreferrer">anilist.co/settings/developer</a>
                                     and click <strong>Create New Client</strong>.
                                 </li>
-                                <li><strong>Name:</strong> anything, for example <code>AMR-Next</code>.</li>
+                                <li><strong>Name:</strong> anything, for example <code>StoryHoard</code>.</li>
                                 <li>
                                     <strong>Redirect URL:</strong> paste this exactly:
                                     <span
@@ -6561,8 +6561,8 @@
                                 <div>
                                     <p class="row-label">Track reading on the source site</p>
                                     <p class="muted">
-                                        Mark a chapter read when you open it on the source site, not just in the AMR
-                                        reader. Only ever moves progress forward.
+                                        Mark a chapter read when you open it on the source site, not just in the
+                                        StoryHoard reader. Only ever moves progress forward.
                                     </p>
                                 </div>
                                 <label class="toggle">
@@ -6649,7 +6649,7 @@
                                         {:else if extensionUpdate}
                                             Up to date (v{extensionUpdate.latestVersion}).
                                         {:else}
-                                            Check for a new version of AMR.
+                                            Check for a new version of StoryHoard.
                                         {/if}
                                     </p>
                                 </div>
@@ -6922,7 +6922,7 @@
                             <div class="settings-row" hidden={!settingMatches("Start page")}>
                                 <div>
                                     <p class="row-label">Start page</p>
-                                    <p class="muted">Which page AMR opens to.</p>
+                                    <p class="muted">Which page StoryHoard opens to.</p>
                                 </div>
                                 <select
                                     aria-label="Start page"
@@ -7681,7 +7681,7 @@
 {#if showConsentCard}
     <div class="consent-card" role="region" aria-label="Community data consent">
         <div class="consent-body">
-            <p class="consent-title">Help improve AMR (optional)</p>
+            <p class="consent-title">Help improve StoryHoard (optional)</p>
             <p class="muted">{CONSENT_SUMMARY}</p>
             <button type="button" class="link-btn" onclick={() => (consentExpand = !consentExpand)}>
                 {consentExpand ? "Hide details" : "What we collect"}

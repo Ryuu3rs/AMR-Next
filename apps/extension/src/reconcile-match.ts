@@ -369,7 +369,7 @@ export function formatReconcileLog(entries: TitleLogEntry[], meta: SweepMeta | n
           `stopped early: ${meta.stopped ? "yes" : "no"} | total in sweep: ${meta.total}`
         : "sweep meta: none (these entries came from standalone searches, not a Search all sweep)"
     const header = [
-        `AMR reconcile debug log`,
+        `StoryHoard reconcile debug log`,
         `generated: ${generatedAt}`,
         `extension version: ${version}`,
         metaLine

@@ -15,7 +15,7 @@ export const DATA_COLLECTED: readonly string[] = [
 
 export const DATA_NOT_COLLECTED: readonly string[] = [
     "The pages and chapters you read, or anything you download",
-    "Your browsing history outside AMR",
+    "Your browsing history outside StoryHoard",
     "Your name, email, or IP-based location (the community channel has no account; creating a " +
         "weeb.ltd account is separate and asks for an email)",
     "Any payment information"
@@ -23,14 +23,14 @@ export const DATA_NOT_COLLECTED: readonly string[] = [
 
 // One-line summary for the consent card body.
 export const CONSENT_SUMMARY =
-    "AMR can send anonymous usage and a username you choose to the AMR community server to " +
+    "StoryHoard can send anonymous usage and a username you choose to the StoryHoard community server to " +
     "power install counts, leaderboards, and recommendations. We never sell your data, and " +
     "you can turn this off anytime in Settings."
 
 // What the "Disable" choice means, shown under that button so declining is a fully informed,
 // low-pressure choice (keeps consent freely given).
 export const DECLINE_EXPLAINER =
-    "AMR keeps working exactly the same - you just won't see community features like " +
+    "StoryHoard keeps working exactly the same - you just won't see community features like " +
     "leaderboards and recommendations. You can turn it on anytime in Settings."
 
 // The full policy is hosted; this is the in-app summary. POLICY_VERSION stamps the hosted copy
@@ -44,9 +44,9 @@ export type PolicySection = { heading: string; body: string[] }
 
 export const PRIVACY_POLICY: readonly PolicySection[] = [
     {
-        heading: "AMR-Next Privacy & Data Policy",
+        heading: "StoryHoard Privacy & Data Policy",
         body: [
-            "AMR-Next is a browser extension for reading and tracking manga. Reading, tracking, " +
+            "StoryHoard is a browser extension for reading and tracking manga. Reading, tracking, " +
                 "downloads, and history stay in your browser and need no account, sign-in, or " +
                 "server connection.",
             "This is a summary. The full policy that governs the extension, the weeb.ltd website, " +
@@ -80,7 +80,7 @@ export const PRIVACY_POLICY: readonly PolicySection[] = [
         heading: "Account sync (optional, off until you link an account)",
         body: [
             "Syncing is separate from community features and off until you link an account by " +
-                "pasting a device code from weeb.ltd. When enabled, AMR uploads your library so " +
+                "pasting a device code from weeb.ltd. When enabled, StoryHoard uploads your library so " +
                 "it can be restored on your other devices. For each title that includes:",
             "- The title, its source site, source URL, cover image URL, and genres",
             "- Your reading progress, ratings, and reading status",
@@ -92,7 +92,7 @@ export const PRIVACY_POLICY: readonly PolicySection[] = [
                 "removes the tie.",
             "Your account identity (your email and sign-in provider) is collected by weeb.ltd " +
                 "when you create the account, not by the extension, and is covered by the full " +
-                "policy. AMR never uploads the pages or chapter content you read."
+                "policy. StoryHoard never uploads the pages or chapter content you read."
         ]
     },
     {

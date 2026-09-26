@@ -1,7 +1,7 @@
 // GitHub Gist sync for the library/progress/settings backup. Stores a personal
 // access token (gist scope) + gist id in storage.local. Snapshot-based:
 // push uploads the full human-readable JSON export; pull imports it (bulkPut
-// merge). Last push wins at the gist level — per-record LWW merge is future work.
+// merge). Last push wins at the gist level - per-record LWW merge is future work.
 
 const SYNC_KEY = "syncConfig"
 const GIST_FILENAME = "amr-library.json"
@@ -28,7 +28,7 @@ export async function setSyncConfig(patch: Partial<SyncConfig>): Promise<SyncCon
     return next
 }
 
-// Token-free view for the UI — never ship the token back to the page.
+// Token-free view for the UI - never ship the token back to the page.
 export async function getSyncStatus(): Promise<{
     hasToken: boolean
     gistId?: string
@@ -72,7 +72,7 @@ export async function pushToGist(envelope: unknown): Promise<{ gistId: string }>
     if (config.gistId) {
         await githubFetch(`/gists/${config.gistId}`, config.token, {
             method: "PATCH",
-            body: JSON.stringify({ description: "AMR library backup", files })
+            body: JSON.stringify({ description: "StoryHoard library backup", files })
         })
         await setSyncConfig({ lastPushedAt: Date.now() })
         return { gistId: config.gistId }
@@ -80,7 +80,7 @@ export async function pushToGist(envelope: unknown): Promise<{ gistId: string }>
 
     const res = await githubFetch(`/gists`, config.token, {
         method: "POST",
-        body: JSON.stringify({ description: "AMR library backup", public: false, files })
+        body: JSON.stringify({ description: "StoryHoard library backup", public: false, files })
     })
     const json = (await res.json()) as { id: string }
     await setSyncConfig({ gistId: json.id, lastPushedAt: Date.now() })
@@ -94,7 +94,7 @@ export async function pullFromGist(): Promise<unknown> {
     const json = (await res.json()) as { files?: Record<string, { content?: string } | undefined> }
     const file = json.files?.[GIST_FILENAME]
     if (!file?.content) throw new Error("Backup file not found in the gist")
-    // Parse before updating the timestamp — a corrupted/truncated backup would
+    // Parse before updating the timestamp - a corrupted/truncated backup would
     // otherwise mark the pull as successful even though import never runs.
     const parsed: unknown = JSON.parse(file.content)
     await setSyncConfig({ lastPulledAt: Date.now() })

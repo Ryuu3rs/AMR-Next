@@ -85,7 +85,7 @@ function formatSnapshot(s: LibrarySnapshot): string {
 export function formatDiagnosticLog(entries: readonly LogEntry[], meta: DiagnosticLogMeta): string {
     const secrets = meta.secrets.filter((s): s is string => typeof s === "string" && s.length > 0)
     const header = [
-        "AMR diagnostic log",
+        "StoryHoard diagnostic log",
         `generated: ${new Date().toISOString()}`,
         `extension version: ${meta.version}`,
         `browser: ${meta.browser}`,

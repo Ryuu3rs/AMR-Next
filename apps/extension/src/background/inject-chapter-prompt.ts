@@ -121,7 +121,7 @@ export function injectChapterPrompt(chapterUrl: string, support?: ChapterPromptS
     const progTrack = mk("div", { className: "prog-track" })
     progTrack.appendChild(progFill)
 
-    const ttl = mk("div", { className: "ttl", textContent: "📖 AMR" })
+    const ttl = mk("div", { className: "ttl", textContent: "📖 StoryHoard" })
     const sub = mk("div", { id: "sub", className: "sub", textContent: "Chapter detected" })
     const hdLeft = mk("div")
     hdLeft.append(ttl, sub)
@@ -136,7 +136,7 @@ export function injectChapterPrompt(chapterUrl: string, support?: ChapterPromptS
     const row1 = mk("div", { className: "row" })
     row1.append(bprev, bnext)
 
-    const bopen = mk("button", { id: "bopen", className: "btn btn-p", textContent: "Open in AMR" })
+    const bopen = mk("button", { id: "bopen", className: "btn btn-p", textContent: "Open in StoryHoard" })
     const bdark = mk("button", {
         id: "bdark",
         className: `btn btn-moon${darkBtnActive}`,
