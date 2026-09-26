@@ -1,4 +1,4 @@
-# All Mangas Reader Or AMR Next
+# StoryHoard
 
 A lightweight, privacy-respecting Firefox and Chromium extension for reading and
 tracking manga from many sources. All data lives locally in your browser; the only
@@ -70,11 +70,11 @@ Download the latest release from the [Releases page](https://github.com/Ryuu3rs/
 
 ### Firefox
 
-1. Download `amrextension-X.X.X-firefox.xpi`
+1. Download `storyhoard-X.X.X-firefox.xpi`
 2. Open Firefox and go to `about:addons`
 3. Click the gear icon → **Install Add-on From File…**
 4. Select the `.xpi` file - Firefox will prompt you to confirm
-5. Open the AMR panel and grant source access when prompted
+5. Open the StoryHoard panel and grant source access when prompted
 
 > Releases are submitted to Mozilla (AMO) for signing automatically. Install the signed `.xpi` attached to the GitHub release, or install from the AMO listing.
 
@@ -86,11 +86,11 @@ Firefox for Android supports the same `.xpi`. Install the signed release from th
 
 Chrome no longer allows installing packed extensions from outside the Web Store (Google removed that in 2018). Until the extension is published on the Chrome Web Store, manual install requires developer mode:
 
-1. Download `amrextension-X.X.X-chrome.zip` and **unzip it** to a permanent folder (don't delete it - Chrome loads it live from that folder)
+1. Download `storyhoard-X.X.X-chrome.zip` and **unzip it** to a permanent folder (don't delete it - Chrome loads it live from that folder)
 2. Open `chrome://extensions` (or `edge://extensions` / `brave://extensions`)
 3. Enable **Developer mode** (toggle, top-right)
 4. Click **Load unpacked** and select the unzipped folder
-5. Open the AMR panel and grant source access when prompted
+5. Open the StoryHoard panel and grant source access when prompted
 
 > The extension stays loaded as long as the folder exists. If you move or delete the folder it will stop working - just re-load it from the new location.
 
@@ -197,7 +197,7 @@ See [docs/README.md](docs/README.md) for architecture, source adapter authoring,
 
 Licensed under the **Apache License, Version 2.0** (see [LICENSE](LICENSE) and [NOTICE](NOTICE)).
 
-AMR-Next is an original codebase. It shares the "All Mangas Reader" name with an earlier,
+StoryHoard is an original codebase. It shares the "All Mangas Reader" name with an earlier,
 unmaintained extension of that name but contains none of its code. You may use, modify and
-redistribute it under the Apache-2.0 terms; the AMR-Next name and logo are not part of that
+redistribute it under the Apache-2.0 terms; the StoryHoard name and logo are not part of that
 grant.
