@@ -25,3 +25,21 @@ export async function resolveMetadata(query: MetadataQuery): Promise<MetadataRes
     }
     return null
 }
+
+// Chain-level title-variant lookup for the source resolver: iterates the SAME
+// provider chain in order (VPS catalog first, AniList fallback) and returns the
+// first provider's non-empty variant list. A provider without the method, or one
+// that returns [] or throws, is skipped so the chain falls through to the next.
+// Returns [] when no provider yields variants.
+export async function resolveSearchTitles(anilistId: number): Promise<string[]> {
+    for (const provider of providers) {
+        if (!provider.resolveSearchTitles) continue
+        try {
+            const titles = await provider.resolveSearchTitles(anilistId)
+            if (titles.length > 0) return titles
+        } catch {
+            // Provider unavailable - fall through to the next.
+        }
+    }
+    return []
+}

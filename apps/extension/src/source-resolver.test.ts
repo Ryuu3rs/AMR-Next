@@ -7,11 +7,11 @@ vi.mock("./sources", () => ({
 vi.mock("./settings", () => ({
     getSettings: vi.fn()
 }))
-vi.mock("./metadata/anilist", () => ({
-    anilistProvider: { resolveSearchTitles: vi.fn() }
+vi.mock("./metadata", () => ({
+    resolveSearchTitles: vi.fn()
 }))
 
-import { anilistProvider } from "./metadata/anilist"
+import { resolveSearchTitles } from "./metadata"
 import { getSettings } from "./settings"
 import { resolveSource } from "./source-resolver"
 import { getPagesCapableSourceIds, searchManga, type MangaSearchResult } from "./sources"
@@ -19,7 +19,7 @@ import { getPagesCapableSourceIds, searchManga, type MangaSearchResult } from ".
 const search = vi.mocked(searchManga)
 const pagesCapable = vi.mocked(getPagesCapableSourceIds)
 const getSettingsMock = vi.mocked(getSettings)
-const resolveSearchTitles = vi.mocked(anilistProvider.resolveSearchTitles!)
+const resolveSearchTitlesMock = vi.mocked(resolveSearchTitles)
 
 const makeSettings = (searchDisabledSourceIds: string[]) =>
     ({ searchDisabledSourceIds }) as unknown as Awaited<ReturnType<typeof getSettings>>
@@ -76,23 +76,23 @@ describe("resolveSource", () => {
         expect(r.confidence).toBe("none")
     })
 
-    it("tries explicit searchTitles best-first and does not derive from the tracker", async () => {
+    it("tries explicit searchTitles best-first and does not derive from the metadata chain", async () => {
         search.mockImplementation(async query =>
             query === "Romaji Title" ? [result("Romaji Title", "mangadex", "10")] : []
         )
         const r = await resolveSource({ title: "Local Title", searchTitles: ["English Title", "Romaji Title"] })
         expect(search).toHaveBeenNthCalledWith(1, "English Title", expect.any(Set))
         expect(search).toHaveBeenNthCalledWith(2, "Romaji Title", expect.any(Set))
-        expect(resolveSearchTitles).not.toHaveBeenCalled()
+        expect(resolveSearchTitlesMock).not.toHaveBeenCalled()
         expect(r.confidence).toBe("high")
         expect(r.best?.sourceId).toBe("mangadex")
     })
 
-    it("lazily derives search-title variants from the AniList id when none are supplied", async () => {
-        resolveSearchTitles.mockResolvedValue(["Derived Title"])
+    it("lazily derives search-title variants from the metadata chain by AniList id when none are supplied", async () => {
+        resolveSearchTitlesMock.mockResolvedValue(["Derived Title"])
         search.mockResolvedValue([result("Derived Title", "mangadex", "3")])
         const r = await resolveSource({ title: "Local Fallback", anilistId: 123 })
-        expect(resolveSearchTitles).toHaveBeenCalledWith(123)
+        expect(resolveSearchTitlesMock).toHaveBeenCalledWith(123)
         expect(search).toHaveBeenCalledWith("Derived Title", expect.any(Set))
         expect(r.confidence).toBe("high")
     })

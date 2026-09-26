@@ -66,4 +66,8 @@ export const vpsProvider: MetadataProvider = {
         const body = await getJson(`${origin}/metadata/by-anilist/${encodeURIComponent(String(id))}`)
         return isMetadataResult(body) ? body : null
     }
+
+    // resolveSearchTitles is intentionally not implemented yet: the chain skips a
+    // provider that lacks it, so title-variant lookups fall through to AniList. Add
+    // it here once the catalog serves per-id title variants, to keep them VPS-first.
 }

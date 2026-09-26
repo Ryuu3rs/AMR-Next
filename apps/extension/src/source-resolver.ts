@@ -1,4 +1,4 @@
-import { anilistProvider } from "./metadata/anilist"
+import { resolveSearchTitles } from "./metadata"
 import {
     cleanQuery,
     dedupeCandidates,
@@ -45,13 +45,14 @@ function noMatch(): ResolveResult {
 }
 
 // The title variants to try, best-first: an explicit searchTitles list wins; else,
-// when an anilistId is known, the tracker's Latin variants are fetched lazily; else
-// just the local title. Deriving from the tracker is skipped entirely when the
-// caller already supplied variants, so this never fires an unnecessary AniList call.
+// when an anilistId is known, the tracker's Latin variants are fetched lazily
+// through our metadata provider chain (VPS catalog first, AniList fallback); else
+// just the local title. Deriving is skipped entirely when the caller already
+// supplied variants, so this never fires an unnecessary metadata lookup.
 async function resolveVariants(input: ResolveSourceInput): Promise<string[]> {
     if (input.searchTitles && input.searchTitles.length > 0) return input.searchTitles
-    if (input.anilistId != null && anilistProvider.resolveSearchTitles) {
-        const derived = await anilistProvider.resolveSearchTitles(input.anilistId)
+    if (input.anilistId != null) {
+        const derived = await resolveSearchTitles(input.anilistId)
         if (derived.length > 0) return derived
     }
     return [input.title]
