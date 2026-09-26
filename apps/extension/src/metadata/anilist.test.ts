@@ -88,6 +88,44 @@ describe("anilistProvider.resolve", () => {
     })
 })
 
+describe("anilistProvider.resolveSearchTitles", () => {
+    afterEach(() => vi.unstubAllGlobals())
+
+    function stubMedia(media: unknown) {
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { Media: media } }) }))
+    }
+
+    it("derives best-first Latin variants from english, romaji then synonyms, deduped", async () => {
+        stubMedia({
+            id: 105398,
+            title: { english: "Solo Leveling", romaji: "Na Honjaman Level Up", native: "나 혼자만 레벨업" },
+            synonyms: ["Only I Level Up", "solo leveling", "나 혼자만 레벨업", null]
+        })
+        // english first, then romaji, then the one new Latin synonym; the case-only
+        // duplicate of the english title and the pure-Hangul synonym are dropped.
+        expect(await anilistProvider.resolveSearchTitles!(105398)).toEqual([
+            "Solo Leveling",
+            "Na Honjaman Level Up",
+            "Only I Level Up"
+        ])
+    })
+
+    it("falls back to romaji when there is no english title", async () => {
+        stubMedia({ id: 1, title: { romaji: "Kagurabachi", native: "カグラバチ" }, synonyms: [] })
+        expect(await anilistProvider.resolveSearchTitles!(1)).toEqual(["Kagurabachi"])
+    })
+
+    it("returns [] on no match", async () => {
+        stubMedia(null)
+        expect(await anilistProvider.resolveSearchTitles!(999)).toEqual([])
+    })
+
+    it("returns [] on a network error", async () => {
+        vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")))
+        expect(await anilistProvider.resolveSearchTitles!(1)).toEqual([])
+    })
+})
+
 describe("anilistProvider rate limiting", () => {
     afterEach(() => vi.unstubAllGlobals())
 
