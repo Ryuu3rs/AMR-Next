@@ -36,6 +36,8 @@
     import { subscribeLive } from "../../src/live"
     import ActivityHeatmap from "./ActivityHeatmap.svelte"
     import ImportReconcile from "./ImportReconcile.svelte"
+    import FindSource from "./FindSource.svelte"
+    import { entryNeedsSource } from "../../src/find-source"
 
     type SyncStatus = {
         hasToken: boolean
@@ -1139,6 +1141,17 @@
             relinkMessage = describeError(cause, "Re-link failed - the source may be unavailable.")
         }
     }
+    // The manual "Find source" flow (FindSource.svelte) adopted a live source onto a
+    // tracking-only / dead-source entry via library:switch. switchMangaSource preserved
+    // all data in place (progress/rating/categories/notes/workId, read chapter remapped
+    // by number), so we just refresh and re-point the open detail modal at the same id.
+    // The row keeps its id across a switch, unlike relink which can mint a new one.
+    async function onSourceAdopted(mangaId: string) {
+        await load()
+        detailManga = library.find(m => m.id === mangaId) ?? null
+        reconcileIds = reconcileIds.filter(rid => rid !== mangaId)
+    }
+
     let hasPermission = $state(false)
     let onboardingDismissed = $state(true)
     let browseQuery = $state("")
@@ -7548,6 +7561,12 @@
                         bind:value={noteDraft}
                         onblur={() => detailManga && void saveNote(detailManga)}></textarea>
                 </label>
+                {#if entryNeedsSource(detailManga, Boolean(updateStatus?.needsRelink?.[detailManga.id]))}
+                    <div class="detail-categories detail-section">
+                        <span class="muted">Find a live source (keeps your progress)</span>
+                        <FindSource manga={detailManga} {hasPermission} onAdopted={onSourceAdopted} />
+                    </div>
+                {/if}
                 <label class="detail-categories detail-section">
                     <span class="muted">Re-link source (paste a chapter URL from a new mirror)</span>
                     <div class="sync-token">
