@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.25.0...v0.26.0) (2026-09-26)
+
+
+### Features
+
+* **import:** Mangayomi format + ci: decouple AMO submission ([#85](https://github.com/Ryuu3rs/AMR-Next/issues/85)) ([90d4ed7](https://github.com/Ryuu3rs/AMR-Next/commit/90d4ed767e071e4b58c095c580d4dcc70ba8e832))
+* **resolver:** source-resolver core (slices 0-2, read-only) ([#86](https://github.com/Ryuu3rs/AMR-Next/issues/86)) ([667fc32](https://github.com/Ryuu3rs/AMR-Next/commit/667fc32eec27a2f992c7acbf918d9ec10b8ece15))
+
 ## [0.25.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.24.0...v0.25.0) (2026-09-25)
 
 
