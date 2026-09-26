@@ -5846,7 +5846,7 @@
                     <div>
                         <p class="row-label">Import from another reader</p>
                         <p class="muted">
-                            Bring a library across from Mihon, Tachiyomi, or a fork (SY, J2K, Aniyomi, Neko). Titles,
+                            Bring a library across from Mihon, Tachiyomi (SY, J2K, Aniyomi, Neko) or Mangayomi. Titles,
                             read progress, categories and AniList links import; a title whose source isn't supported
                             here comes in as tracking-only. This only adds to your library, it never wipes it.
                         </p>

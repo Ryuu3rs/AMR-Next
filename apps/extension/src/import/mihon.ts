@@ -15,30 +15,24 @@ import {
     repeatedVarints,
     type Fields
 } from "./protobuf"
+import type { ImportedManga, ReaderStatus } from "./types"
 
 // Tachiyomi/Mihon tracker sync ids (TrackerManager). We only care about the two that map to our
 // metadata: AniList (its remote id IS our anilistId) and MyAnimeList.
 const TRACKER_ANILIST = 2
 const TRACKER_MYANIMELIST = 1
 
-export type ImportedManga = {
-    title: string
-    // Source-relative url + numeric source id from the origin app. Kept for a future source-map;
-    // by default an import is tracking-only (we can't reliably resolve another app's source ids).
-    url?: string
-    sourceId?: string
-    coverUrl?: string
-    genres: string[]
-    // Origin app's status enum (0 unknown,1 ongoing,2 completed,3 licensed,4 publishing finished,
-    // 5 cancelled,6 hiatus). Mapped to our status in the import handler.
-    status: number
-    // Category names this title belonged to in the origin app (resolved via backupCategories).
-    categories: string[]
-    // Highest chapter number marked read - maps to lastReadChapterNumber (tracking-first).
-    maxReadChapter?: number
-    anilistId?: number
-    malId?: number
-    notes?: string
+// Tachiyomi/Mihon SManga status enum -> our status. 0 unknown, 3 licensed fall through.
+function mihonStatus(n: number): ReaderStatus {
+    return n === 1
+        ? "ongoing"
+        : n === 2 || n === 4
+          ? "completed"
+          : n === 5
+            ? "cancelled"
+            : n === 6
+              ? "hiatus"
+              : "unknown"
 }
 
 function readTracking(fields: Fields): { anilistId?: number; malId?: number } {
@@ -109,7 +103,7 @@ export function parseMihonBackup(bytes: Uint8Array): ImportedManga[] {
             ...(source !== undefined ? { sourceId: source.toString() } : {}),
             ...(coverUrl ? { coverUrl } : {}),
             genres: repeatedStrings(m.get(7)),
-            status: fieldInt(m.get(8)) ?? 0,
+            status: mihonStatus(fieldInt(m.get(8)) ?? 0),
             categories: categoryNames,
             ...(maxReadChapter !== undefined ? { maxReadChapter } : {}),
             ...(anilistId ? { anilistId } : {}),
