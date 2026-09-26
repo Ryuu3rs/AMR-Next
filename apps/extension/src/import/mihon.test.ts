@@ -69,7 +69,7 @@ describe("parseMihonBackup", () => {
         const out = parseMihonBackup(backup())
         const sl = out.find(m => m.title === "Solo Leveling")!
         expect(sl).toBeTruthy()
-        expect(sl.status).toBe(2)
+        expect(sl.status).toBe("completed")
         expect(sl.coverUrl).toBe("https://cover.test/sl.jpg")
         expect(sl.genres).toEqual(["Action", "Fantasy"])
         expect(sl.categories).toEqual(["Reading"])

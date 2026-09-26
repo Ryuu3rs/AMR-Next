@@ -3,16 +3,6 @@ import type { HandlerMap } from "../background/handler-types"
 import { addImportedManga, type LibraryManga } from "../database"
 import { getImportFormat, type ImportedManga } from "../import"
 
-// Origin app status enum (Tachiyomi/Mihon SManga) -> our library status. Unlisted (0 unknown,
-// 3 licensed) fall through to "unknown".
-const STATUS_MAP: Record<number, LibraryManga["status"]> = {
-    1: "ongoing",
-    2: "completed",
-    4: "completed", // publishing finished
-    5: "cancelled",
-    6: "hiatus"
-}
-
 function base64ToBytes(b64: string): Uint8Array {
     const bin = atob(b64)
     const out = new Uint8Array(bin.length)
@@ -34,7 +24,7 @@ function toCandidate(m: ImportedManga): LibraryManga {
         title: m.title,
         normalizedTitle,
         authors: [],
-        status: STATUS_MAP[m.status] ?? "unknown",
+        status: m.status,
         sourceId: hasAniList ? "anilist.co" : "import",
         sourceUrl: hasAniList
             ? `https://anilist.co/manga/${m.anilistId}`
