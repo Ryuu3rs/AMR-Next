@@ -7,10 +7,10 @@ name: Release Please
 # rather than in a separate tag-triggered workflow because tags pushed by
 # GITHUB_TOKEN do not trigger other workflows.
 #
-# AMO submission is a separate job gated behind the "amo" environment (requires
-# manual approval in the Actions UI) so a failed/slow AMO submission can never
-# strand the GitHub release without its build assets, and so a human always
-# signs off before anything is pushed to Mozilla's review queue.
+# AMO submission lives in its own workflow (amo-submit.yml), triggered when the
+# release is published. Keeping it out of this workflow means its manual "amo"
+# approval waits in a separate concurrency lane and can never block the next
+# Release Please run.
 
 on:
     push:
@@ -122,55 +122,3 @@ jobs:
               run: |
                   files=(apps/extension/.output/*.zip apps/extension/.output/SHA256SUMS.txt)
                   gh release upload "$TAG" "${files[@]}" --clobber
-
-            - name: Upload Firefox build for AMO submission
-              if: ${{ steps.release.outputs.release_created }}
-              uses: actions/upload-artifact@v7
-              with:
-                  name: firefox-dist
-                  path: apps/extension/.output/firefox-mv3
-                  retention-days: 7
-
-    amo-submit:
-        needs: release-please
-        if: ${{ needs.release-please.outputs.release_created }}
-        runs-on: ubuntu-latest
-        timeout-minutes: 15
-        environment: amo
-        steps:
-            - name: Download Firefox build
-              uses: actions/download-artifact@v8
-              with:
-                  name: firefox-dist
-                  path: firefox-mv3
-
-            - name: Setup Node.js
-              uses: actions/setup-node@v7
-              with:
-                  node-version: 22
-
-            - name: Sign Firefox add-on (AMO)
-              env:
-                  AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
-                  AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-              run: |
-                  npx --yes web-ext sign \
-                    --channel=listed \
-                    --approval-timeout=0 \
-                    --api-key="$AMO_JWT_ISSUER" \
-                    --api-secret="$AMO_JWT_SECRET" \
-                    --source-dir=firefox-mv3 \
-                    --artifacts-dir=amo-artifacts
-
-            - name: Attach signed xpi to the release
-              if: always()
-              shell: bash
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                  TAG: ${{ needs.release-please.outputs.tag_name }}
-              run: |
-                  if compgen -G "amo-artifacts/*.xpi" > /dev/null; then
-                    gh release upload "$TAG" amo-artifacts/*.xpi --clobber
-                  else
-                    echo "No signed xpi produced - AMO submission likely failed or is pending review."
-                  fi
