@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.27.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.26.0...v0.27.0) (2026-09-26)
+
+
+### Features
+
+* rebrand to StoryHoard ([#90](https://github.com/Ryuu3rs/AMR-Next/issues/90)) ([8e4d5eb](https://github.com/Ryuu3rs/AMR-Next/commit/8e4d5ebe149f79d37a8a74b291402fa57dacec77))
+* **resolver:** manual Find source + adopt (slice 3) ([#88](https://github.com/Ryuu3rs/AMR-Next/issues/88)) ([8fe33f8](https://github.com/Ryuu3rs/AMR-Next/commit/8fe33f8f7e9d5a41e390be85ffd71131344c9029))
+
 ## [0.26.0](https://github.com/Ryuu3rs/AMR-Next/compare/v0.25.0...v0.26.0) (2026-09-26)
 
 
